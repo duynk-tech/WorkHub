@@ -60,6 +60,16 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'MENU_ROLES', name: 'Menu Phân quyền', group: 'Tổ chức', category: 'MENU', sortOrder: 530 },
   { code: 'FEATURE_ROLE_MANAGE', name: 'Cấu hình vai trò & quyền', group: 'Tổ chức', category: 'FEATURE', sortOrder: 531 },
 
+  // ── Thiết bị & Tài sản ──
+  { code: 'MENU_ASSETS', name: 'Menu Quản lý thiết bị', group: 'Thiết bị', category: 'MENU', sortOrder: 550 },
+  { code: 'FEATURE_ASSET_CREATE', name: 'Thêm thiết bị mới', group: 'Thiết bị', category: 'FEATURE', sortOrder: 551 },
+  { code: 'FEATURE_ASSET_EDIT', name: 'Sửa thông tin thiết bị', group: 'Thiết bị', category: 'FEATURE', sortOrder: 552 },
+  { code: 'FEATURE_ASSET_ASSIGN', name: 'Cấp phát & Thu hồi thiết bị', group: 'Thiết bị', category: 'FEATURE', sortOrder: 553 },
+  { code: 'FEATURE_ASSET_UPGRADE', name: 'Nâng cấp phần cứng thiết bị', group: 'Thiết bị', category: 'FEATURE', sortOrder: 554 },
+  { code: 'FEATURE_ASSET_MAINTENANCE', name: 'Bảo hành & Sửa chữa thiết bị', group: 'Thiết bị', category: 'FEATURE', sortOrder: 555 },
+  { code: 'FEATURE_ASSET_LIQUIDATE', name: 'Thanh lý thiết bị', group: 'Thiết bị', category: 'FEATURE', sortOrder: 556 },
+  { code: 'FEATURE_ASSET_DELETE', name: 'Xóa thiết bị', group: 'Thiết bị', category: 'FEATURE', sortOrder: 557 },
+
   // ── Báo cáo ──
   { code: 'MENU_REPORTS', name: 'Menu Báo cáo', group: 'Báo cáo', category: 'MENU', sortOrder: 600 },
   { code: 'FEATURE_REPORT_ATTENDANCE', name: 'Báo cáo chấm công', group: 'Báo cáo', category: 'FEATURE', sortOrder: 601 },
@@ -105,6 +115,7 @@ export const SYSTEM_ROLES = [
       'MENU_LEAVES', 'FEATURE_LEAVE_REQUEST', 'FEATURE_LEAVE_APPROVE', 'FEATURE_LEAVE_BALANCE_MANAGE', 'FEATURE_LEAVE_TYPE_MANAGE',
       'MENU_ATTENDANCE', 'FEATURE_ATTENDANCE_CHECKIN', 'FEATURE_ATTENDANCE_EDIT', 'FEATURE_ATTENDANCE_IMPORT', 'FEATURE_ATTENDANCE_SHIFT_MANAGE',
       'MENU_APPROVALS', 'MENU_DEPARTMENTS', 'MENU_EMPLOYEES', 'FEATURE_EMPLOYEE_MANAGE',
+      'MENU_ASSETS', 'FEATURE_ASSET_CREATE', 'FEATURE_ASSET_EDIT', 'FEATURE_ASSET_ASSIGN', 'FEATURE_ASSET_UPGRADE', 'FEATURE_ASSET_MAINTENANCE', 'FEATURE_ASSET_LIQUIDATE',
       'MENU_REPORTS', 'FEATURE_REPORT_ATTENDANCE', 'FEATURE_REPORT_TASK', 'FEATURE_REPORT_LEAVE', 'FEATURE_REPORT_EXPORT',
       'FEATURE_SETTING_HOLIDAY',
     ],
@@ -120,6 +131,7 @@ export const SYSTEM_ROLES = [
       'FEATURE_TASK_EXPORT', 'FEATURE_TASK_REMINDER',
       'MENU_LEAVES', 'FEATURE_LEAVE_REQUEST', 'FEATURE_LEAVE_APPROVE',
       'MENU_ATTENDANCE', 'FEATURE_ATTENDANCE_CHECKIN',
+      'MENU_ASSETS', 'FEATURE_ASSET_ASSIGN',
       'MENU_APPROVALS', 'MENU_EMPLOYEES',
       'MENU_REPORTS', 'FEATURE_REPORT_ATTENDANCE', 'FEATURE_REPORT_TASK', 'FEATURE_REPORT_LEAVE', 'FEATURE_REPORT_EXPORT',
     ],
@@ -134,6 +146,7 @@ export const SYSTEM_ROLES = [
       'MENU_DASHBOARD', 'MENU_TASKS', 'FEATURE_TASK_CREATE',
       'MENU_LEAVES', 'FEATURE_LEAVE_REQUEST',
       'MENU_ATTENDANCE', 'FEATURE_ATTENDANCE_CHECKIN',
+      'MENU_ASSETS',
     ],
   },
 ];

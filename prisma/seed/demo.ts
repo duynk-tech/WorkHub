@@ -190,3 +190,272 @@ export async function seedDemoTasks(prisma: PrismaClient, employees: Map<string,
   }
   return samples.length;
 }
+
+export async function seedDemoAssets(prisma: PrismaClient, employees: Map<string, number>) {
+  const count = await prisma.asset.count();
+  if (count > 0) return 0;
+
+  const year = new Date().getFullYear();
+  const nv005 = employees.get('NV005');
+  const nv006 = employees.get('NV006');
+  const nv007 = employees.get('NV007');
+
+  // 1. MacBook Pro M2 (NV005 đang dùng, có nâng cấp RAM/SSD)
+  const a1 = await prisma.asset.create({
+    data: {
+      assetCode: `AST-${year}-0001`,
+      name: 'MacBook Pro 16 inch M2 Pro',
+      category: 'LAPTOP',
+      brand: 'Apple',
+      model: 'A2780 (2023)',
+      serialNumber: 'C02G41KSMD6T',
+      status: 'IN_USE',
+      specs: {
+        cpu: 'Apple M2 Pro 12-core',
+        ram: '32GB Unified Memory',
+        storage: '1TB Apple SSD',
+        gpu: '19-core GPU',
+        screen: '16.2 inch Liquid Retina XDR 120Hz',
+        os: 'macOS Sequoia 15',
+        other: 'Space Gray, Pin 96%',
+      },
+      purchaseDate: new Date('2024-03-15'),
+      purchasePrice: 58000000,
+      supplier: 'FPT Shop',
+      warrantyMonths: 12,
+      warrantyExpiresAt: new Date('2025-03-15'),
+      location: 'Bàn làm việc Phòng Phát triển phần mềm',
+      currentAssigneeId: nv005 || null,
+      assignedAt: new Date('2024-03-20'),
+      notes: 'Máy cấp cho Tech Lead, có nâng cấp RAM và SSD phục vụ build Docker',
+    },
+  });
+
+  if (nv005) {
+    await prisma.assetAssignment.create({
+      data: {
+        assetId: a1.id,
+        employeeId: nv005,
+        type: 'ASSIGN',
+        assignedDate: new Date('2024-03-20'),
+        conditionOnAssign: 'Mới 100% nguyên hộp, sạc MagSafe 140W',
+        handoverNote: 'Bàn giao thiết bị làm việc chính thức',
+      },
+    });
+
+    // Lịch sử nâng cấp RAM & SSD
+    await prisma.assetUpgrade.create({
+      data: {
+        assetId: a1.id,
+        component: 'RAM',
+        action: 'Nâng cấp thêm',
+        beforeSpec: '16GB Unified',
+        afterSpec: '32GB Unified Memory',
+        cost: 6500000,
+        provider: 'Apple Care Support Center',
+        notes: 'Nâng cấp RAM lên 32GB phục vụ chạy nhiều Docker container',
+        upgradeDate: new Date('2024-06-10'),
+      },
+    });
+
+    await prisma.assetUpgrade.create({
+      data: {
+        assetId: a1.id,
+        component: 'STORAGE',
+        action: 'Nâng cấp thêm',
+        beforeSpec: '512GB SSD',
+        afterSpec: '1TB Apple SSD',
+        cost: 4500000,
+        provider: 'Apple Care Support Center',
+        notes: 'Nâng dung lượng lưu trữ phục vụ dự án AI',
+        upgradeDate: new Date('2024-06-10'),
+      },
+    });
+  }
+
+  // 2. Dell XPS 15 (NV006 đang dùng)
+  const a2 = await prisma.asset.create({
+    data: {
+      assetCode: `AST-${year}-0002`,
+      name: 'Dell XPS 15 9520',
+      category: 'LAPTOP',
+      brand: 'Dell',
+      model: 'XPS 15 9520',
+      serialNumber: '8J3X9Q2',
+      status: 'IN_USE',
+      specs: {
+        cpu: 'Intel Core i7-12700H 14-core',
+        ram: '32GB (16GB x 2) DDR5 4800MHz',
+        storage: '1TB NVMe PCIe Gen 4 SSD',
+        gpu: 'NVIDIA GeForce RTX 3050 Ti 4GB',
+        screen: '15.6 inch OLED 3.5K Touch',
+        os: 'Windows 11 Pro',
+      },
+      purchaseDate: new Date('2024-05-10'),
+      purchasePrice: 42000000,
+      supplier: 'Phong Vũ',
+      warrantyMonths: 24,
+      warrantyExpiresAt: new Date('2026-05-10'),
+      location: 'Phòng Phát triển phần mềm',
+      currentAssigneeId: nv006 || null,
+      assignedAt: new Date('2024-05-15'),
+    },
+  });
+
+  if (nv006) {
+    await prisma.assetAssignment.create({
+      data: {
+        assetId: a2.id,
+        employeeId: nv006,
+        type: 'ASSIGN',
+        assignedDate: new Date('2024-05-15'),
+        conditionOnAssign: 'Mới 100%, kèm sạc 130W Type-C',
+        handoverNote: 'Cấp phát máy cho Senior Frontend Developer',
+      },
+    });
+  }
+
+  // 3. Asus ROG Strix G16 (Trong kho sẵn sàng cấp phát)
+  await prisma.asset.create({
+    data: {
+      assetCode: `AST-${year}-0003`,
+      name: 'Asus ROG Strix G16 (2024)',
+      category: 'LAPTOP',
+      brand: 'Asus',
+      model: 'G614JIR',
+      serialNumber: 'R8NRCX0149204',
+      status: 'IN_STOCK',
+      specs: {
+        cpu: 'Intel Core i9-14900HX',
+        ram: '32GB DDR5 5600MHz',
+        storage: '1TB M.2 NVMe SSD',
+        gpu: 'NVIDIA RTX 4070 8GB GDDR6',
+        screen: '16 inch QHD+ 240Hz Nebula Display',
+        os: 'Windows 11 Home',
+      },
+      purchaseDate: new Date('2025-01-20'),
+      purchasePrice: 48500000,
+      supplier: 'GearVN',
+      warrantyMonths: 24,
+      warrantyExpiresAt: new Date('2027-01-20'),
+      location: 'Kho IT Tầng 3 - Tủ thiết bị dự phòng',
+      notes: 'Máy cấu hình cao dự phòng cho nhân sự AI / Game Dev',
+    },
+  });
+
+  // 4. Màn hình Dell Ultrasharp 27 inch 4K (NV007 đang dùng)
+  const a4 = await prisma.asset.create({
+    data: {
+      assetCode: `AST-${year}-0004`,
+      name: 'Màn hình Dell UltraSharp U2723QE 27 inch 4K',
+      category: 'MONITOR',
+      brand: 'Dell',
+      model: 'U2723QE',
+      serialNumber: 'CN0837X174411',
+      status: 'IN_USE',
+      specs: {
+        screen: '27 inch IPS Black, 4K UHD 3840x2160, 100% sRGB, Type-C 90W Hub',
+        other: 'Chân đế công thái học nâng hạ xoay 90 độ',
+      },
+      purchaseDate: new Date('2024-08-01'),
+      purchasePrice: 12500000,
+      supplier: 'Hacom',
+      warrantyMonths: 36,
+      warrantyExpiresAt: new Date('2027-08-01'),
+      location: 'Bàn làm việc Phòng Kiểm thử (P_QC)',
+      currentAssigneeId: nv007 || null,
+      assignedAt: new Date('2024-08-05'),
+    },
+  });
+
+  if (nv007) {
+    await prisma.assetAssignment.create({
+      data: {
+        assetId: a4.id,
+        employeeId: nv007,
+        type: 'ASSIGN',
+        assignedDate: new Date('2024-08-05'),
+        conditionOnAssign: 'Màn hình hiển thị chuẩn màu, không điểm chết',
+      },
+    });
+  }
+
+  // 5. ThinkPad T14s (Đang sửa chữa bàn phím)
+  const a5 = await prisma.asset.create({
+    data: {
+      assetCode: `AST-${year}-0005`,
+      name: 'Lenovo ThinkPad T14s Gen 3',
+      category: 'LAPTOP',
+      brand: 'Lenovo',
+      model: '21CQ000DVA',
+      serialNumber: 'PF3X7K99',
+      status: 'UNDER_MAINTENANCE',
+      specs: {
+        cpu: 'AMD Ryzen 7 PRO 6850U',
+        ram: '16GB LPDDR5 6400MHz',
+        storage: '512GB SSD PCIe Gen 4',
+        screen: '14 inch WUXGA IPS chống chói',
+        os: 'Ubuntu 24.04 LTS',
+      },
+      purchaseDate: new Date('2023-11-15'),
+      purchasePrice: 27000000,
+      supplier: 'ThinkPro',
+      warrantyMonths: 12,
+      warrantyExpiresAt: new Date('2024-11-15'),
+      location: 'Trung tâm sửa chữa Laptop24h',
+      notes: 'Bị kẹt phím Space và bụi quạt tản nhiệt',
+    },
+  });
+
+  await prisma.assetMaintenance.create({
+    data: {
+      assetId: a5.id,
+      type: 'REPAIR',
+      title: 'Thay cụm bàn phím gõ kẹt & Vệ sinh tra keo tản nhiệt',
+      description: 'Phím cách kẹt không nảy, nhiệt độ CPU cao lúc tải nặng',
+      provider: 'Laptop24h Thái Hà',
+      cost: 850000,
+      startDate: new Date('2026-09-18'),
+      status: 'PENDING',
+    },
+  });
+
+  // 6. HP Pavilion 14 (Đã thanh lý)
+  const a6 = await prisma.asset.create({
+    data: {
+      assetCode: `AST-${year}-0006`,
+      name: 'HP Pavilion 14 (Core i3 Gen 8)',
+      category: 'LAPTOP',
+      brand: 'HP',
+      model: '14-ce0021TU',
+      serialNumber: '5CD8391K3P',
+      status: 'LIQUIDATED',
+      specs: {
+        cpu: 'Intel Core i3-8130U',
+        ram: '4GB DDR4',
+        storage: '1TB HDD',
+      },
+      purchaseDate: new Date('2019-05-10'),
+      purchasePrice: 11500000,
+      supplier: 'Trần Anh',
+      warrantyMonths: 12,
+      warrantyExpiresAt: new Date('2020-05-10'),
+      location: 'Đã xuất kho thanh lý',
+      notes: 'Máy đời cũ 2019, pin chai, phồng nhẹ, đã khấu hao hết 100%',
+    },
+  });
+
+  await prisma.assetLiquidation.create({
+    data: {
+      assetId: a6.id,
+      liquidationDate: new Date('2026-08-20'),
+      reason: 'Đã hết thời gian khấu hao (5 năm), cấu hình chậm không còn đáp ứng công việc',
+      liquidationType: 'SELL_SCRAP',
+      recoveredAmount: 1200000,
+      buyer: 'Đơn vị thu mua đồ điện tử cũ',
+      notes: 'Đã tháo ổ cứng tiêu hủy dữ liệu an toàn trước khi bán',
+    },
+  });
+
+  return 6;
+}

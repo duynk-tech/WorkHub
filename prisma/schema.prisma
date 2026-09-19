@@ -40,6 +40,7 @@ model Department {
   employees  Employee[]      @relation("EmployeeDept")
   tasks      Task[]
   roleScopes RoleDeptScope[]
+  assets     Asset[]         @relation("AssetCurrentDept")
 
   @@index([parentId])
   @@index([path])
@@ -119,6 +120,13 @@ model Employee {
   attendance     AttendanceRecord[]
   notifications  NotificationOutbox[]
   workflowSteps  WorkflowStep[]       @relation("StepSpecificApprover")
+
+  assetsInUse               Asset[]             @relation("AssetCurrentAssignee")
+  assetAssignments          AssetAssignment[]   @relation("AssetAssignee")
+  assetHandoversDone        AssetAssignment[]   @relation("AssetHandoverBy")
+  assetMaintenancesDone     AssetMaintenance[]  @relation("AssetMaintenancePerformedBy")
+  assetUpgradesDone         AssetUpgrade[]      @relation("AssetUpgradePerformedBy")
+  assetLiquidationsApproved AssetLiquidation[]  @relation("AssetLiquidationApprovedBy")
 
   @@index([departmentId])
   @@index([managerId])
@@ -984,4 +992,126 @@ model ReportSchedule {
   isActive       Boolean       @default(true)
   lastRunAt      DateTime?
   createdAt      DateTime      @default(now())
+}
+
+// ============================================================
+// 12. QUẢN LÝ THIẾT BỊ & TÀI SẢN (ASSET MANAGEMENT)
+// ============================================================
+
+model Asset {
+  id                  Int          @id @default(autoincrement())
+  assetCode           String       @unique @db.VarChar(64)
+  name                String       @db.VarChar(191)
+  category            String       @db.VarChar(64) // LAPTOP, DESKTOP, MONITOR, MOBILE, NETWORK, PRINTER, PERIPHERAL, OTHER
+  brand               String?      @db.VarChar(100)
+  model               String?      @db.VarChar(100)
+  serialNumber        String?      @unique @db.VarChar(100)
+  specs               Json?        // { cpu, ram, storage, gpu, os, screen, other }
+  status              String       @default("IN_STOCK") @db.VarChar(32) // IN_STOCK, IN_USE, UNDER_MAINTENANCE, UNDER_WARRANTY, BROKEN, LIQUIDATED, LOST
+  purchaseDate        DateTime?    @db.Date
+  purchasePrice       Decimal?     @db.Decimal(15, 2)
+  supplier            String?      @db.VarChar(191)
+  warrantyMonths      Int?
+  warrantyExpiresAt   DateTime?    @db.Date
+  location            String?      @db.VarChar(191)
+  currentAssigneeId   Int?
+  currentDepartmentId Int?
+  assignedAt          DateTime?
+  notes               String?      @db.Text
+  imageUrl            String?      @db.VarChar(512)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  currentAssignee     Employee?         @relation("AssetCurrentAssignee", fields: [currentAssigneeId], references: [id], onDelete: SetNull)
+  currentDepartment   Department?       @relation("AssetCurrentDept", fields: [currentDepartmentId], references: [id], onDelete: SetNull)
+  assignments         AssetAssignment[]
+  maintenances        AssetMaintenance[]
+  upgrades            AssetUpgrade[]
+  liquidation         AssetLiquidation?
+
+  @@index([status])
+  @@index([category])
+  @@index([currentAssigneeId])
+  @@index([currentDepartmentId])
+}
+
+model AssetAssignment {
+  id                Int       @id @default(autoincrement())
+  assetId           Int
+  employeeId        Int?
+  departmentId      Int?
+  type              String    @db.VarChar(32) // ASSIGN, TRANSFER, REVOKE
+  assignedDate      DateTime  @default(now())
+  returnedDate      DateTime?
+  conditionOnAssign String?   @db.VarChar(255)
+  conditionOnReturn String?   @db.VarChar(255)
+  handoverById      Int?
+  handoverNote      String?   @db.Text
+  documentUrl       String?   @db.VarChar(512)
+  createdAt         DateTime  @default(now())
+
+  asset             Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  employee          Employee?   @relation("AssetAssignee", fields: [employeeId], references: [id], onDelete: SetNull)
+  handoverBy        Employee?   @relation("AssetHandoverBy", fields: [handoverById], references: [id], onDelete: SetNull)
+
+  @@index([assetId])
+  @@index([employeeId])
+}
+
+model AssetMaintenance {
+  id             Int       @id @default(autoincrement())
+  assetId        Int
+  type           String    @db.VarChar(32) // WARRANTY, REPAIR, MAINTENANCE
+  title          String    @db.VarChar(255)
+  description    String?   @db.Text
+  provider       String?   @db.VarChar(191)
+  cost           Decimal?  @db.Decimal(15, 2)
+  startDate      DateTime  @db.Date
+  completedDate  DateTime? @db.Date
+  status         String    @default("PENDING") @db.VarChar(32) // PENDING, COMPLETED, CANCELLED
+  result         String?   @db.Text
+  performedById  Int?
+  createdAt      DateTime  @default(now())
+
+  asset          Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  performedBy    Employee? @relation("AssetMaintenancePerformedBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([assetId])
+  @@index([status])
+}
+
+model AssetUpgrade {
+  id            Int       @id @default(autoincrement())
+  assetId       Int
+  upgradeDate   DateTime  @default(now()) @db.Date
+  component     String    @db.VarChar(64) // RAM, STORAGE, GPU, BATTERY, SCREEN, OTHER
+  action        String    @db.VarChar(64) // UPGRADE, REPLACE, REMOVE
+  beforeSpec    String?   @db.VarChar(255)
+  afterSpec     String?   @db.VarChar(255)
+  cost          Decimal?  @db.Decimal(15, 2)
+  provider      String?   @db.VarChar(191)
+  performedById Int?
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+
+  asset         Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  performedBy   Employee? @relation("AssetUpgradePerformedBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([assetId])
+}
+
+model AssetLiquidation {
+  id              Int       @id @default(autoincrement())
+  assetId         Int       @unique
+  liquidationDate DateTime  @default(now()) @db.Date
+  reason          String    @db.VarChar(255)
+  liquidationType String    @db.VarChar(64) // SELL_EMPLOYEE, SELL_SCRAP, RETURN_PARTNER, DISPOSE
+  recoveredAmount Decimal?  @db.Decimal(15, 2)
+  buyer           String?   @db.VarChar(191)
+  approvedById    Int?
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
+
+  asset           Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  approvedBy      Employee? @relation("AssetLiquidationApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
 }

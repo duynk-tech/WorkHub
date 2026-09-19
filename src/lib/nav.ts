@@ -35,6 +35,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Tài sản',
+    items: [
+      { href: '/assets', label: 'Quản lý thiết bị', icon: 'Laptop', permission: 'MENU_ASSETS' },
+    ],
+  },
+  {
     title: 'Phân tích',
     items: [
       { href: '/reports', label: 'Báo cáo', icon: 'BarChart3', permission: 'MENU_REPORTS' },

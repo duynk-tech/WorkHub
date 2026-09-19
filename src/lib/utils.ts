@@ -27,6 +27,11 @@ export function formatNumber(value: Numberish, digits = 0) {
   return n.toLocaleString('vi-VN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+export function formatCurrency(value: Numberish) {
+  const n = toNumber(value);
+  return `${formatNumber(n)} ₫`;
+}
+
 /** 1.5 → "1,5" — bỏ phần thập phân thừa cho số ngày phép */
 export function formatDays(value: Numberish) {
   const n = toNumber(value);

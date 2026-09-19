@@ -4,7 +4,7 @@ import {
   seedPermissions, seedRoles, seedPositions, seedWorkShifts, seedLeaveTypes,
   seedHolidays, seedSystemSettings, seedNotificationTemplates, seedDefaultWorkflow,
 } from './core';
-import { seedDemoOrg, seedDemoEmployees, seedDemoTasks } from './demo';
+import { seedDemoOrg, seedDemoEmployees, seedDemoTasks, seedDemoAssets } from './demo';
 import { hashPassword } from '../../src/server/auth/password';
 
 const prisma = new PrismaClient();
@@ -43,6 +43,7 @@ async function main() {
     const employees = await seedDemoEmployees(prisma, depts, process.env.SEED_DEMO_PASSWORD || 'Workhub@123');
     console.log('→ Nhân sự demo         :', employees.size);
     console.log('→ Công việc demo       :', await seedDemoTasks(prisma, employees));
+    console.log('→ Thiết bị demo        :', await seedDemoAssets(prisma, employees));
   }
 
   await ensureAdmin();
