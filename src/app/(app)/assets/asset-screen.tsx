@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useTransition, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -24,8 +25,15 @@ import {
   Boxes,
   Cpu,
   MoreVertical,
+  MoreHorizontal,
+  Eye,
+  Wrench,
+  AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { Button, Card, Input, Select, Badge } from '@/components/ui';
+import { ConfirmDialog } from '@/components/ui/modal';
+import { useToast } from '@/components/ui/toast';
 import {
   ASSET_CATEGORIES,
   ASSET_STATUSES,
@@ -34,8 +42,12 @@ import {
   AssetFormModal,
   AssignAssetModal,
   RevokeAssetModal,
+  UpgradeAssetModal,
+  MaintenanceModal,
+  LiquidationModal,
   AssetPrintStickerModal,
 } from '@/components/domain/asset-modals';
+import { deleteAssetAction } from '@/server/modules/asset/actions';
 import { fmtDate } from '@/lib/date';
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
@@ -78,7 +90,13 @@ export function AssetScreen({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Selected for batch print
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -88,7 +106,68 @@ export function AssetScreen({
   const [editAsset, setEditAsset] = useState<any>(null);
   const [assignAsset, setAssignAsset] = useState<any>(null);
   const [revokeAsset, setRevokeAsset] = useState<any>(null);
+  const [upgradeAsset, setUpgradeAsset] = useState<any>(null);
+  const [maintenanceAsset, setMaintenanceAsset] = useState<any>(null);
+  const [liquidationAsset, setLiquidationAsset] = useState<any>(null);
   const [printAssets, setPrintAssets] = useState<any[] | null>(null);
+  const [deleteConfirmAsset, setDeleteConfirmAsset] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Floating Action Menu state (Dropdown ...)
+  const [menuState, setMenuState] = useState<{
+    id: number;
+    top: number;
+    right: number;
+    openUpwards?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!menuState) return;
+    const handleClickOutside = () => setMenuState(null);
+    const handleScroll = () => setMenuState(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuState(null);
+    };
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuState]);
+
+  const handleOpenMenu = (e: React.MouseEvent<HTMLButtonElement>, item: any) => {
+    e.stopPropagation();
+    if (menuState?.id === item.id) {
+      setMenuState(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropdownHeight = 330;
+    const openUpwards = rect.bottom + dropdownHeight > window.innerHeight && rect.top > dropdownHeight;
+    setMenuState({
+      id: item.id,
+      top: openUpwards ? rect.top - 6 : rect.bottom + 6,
+      right: Math.max(12, window.innerWidth - rect.right),
+      openUpwards,
+    });
+  };
+
+  const handleDeleteAsset = async () => {
+    if (!deleteConfirmAsset) return;
+    setDeleting(true);
+    const res = await deleteAssetAction(deleteConfirmAsset.id);
+    setDeleting(false);
+    if (res.ok) {
+      toast.success(res.message);
+      setDeleteConfirmAsset(null);
+      router.refresh();
+    } else {
+      toast.error(res.message);
+    }
+  };
 
   // Search & Filters
   const [search, setSearch] = useState(filter.search);
@@ -480,48 +559,32 @@ export function AssetScreen({
 
                       {/* Thao tác */}
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
                           <Link
                             href={`/assets/${item.id}`}
                             className="btn btn-secondary btn-sm"
-                            style={{ textDecoration: 'none', padding: '4px 8px' }}
+                            style={{ textDecoration: 'none', padding: '4px 10px', fontSize: 12.5 }}
                             title="Xem chi tiết thiết bị"
                           >
                             Chi tiết
                           </Link>
 
-                          {canAssign && (
-                            item.currentAssignee ? (
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '4px 8px', color: '#ef4444' }}
-                                onClick={() => setRevokeAsset(item)}
-                                title="Thu hồi về kho"
-                              >
-                                <Undo2 style={{ width: 14, height: 14 }} />
-                              </button>
-                            ) : item.status !== 'LIQUIDATED' ? (
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '4px 8px', color: '#0284c7' }}
-                                onClick={() => setAssignAsset(item)}
-                                title="Cấp phát cho nhân sự"
-                              >
-                                <UserCheck style={{ width: 14, height: 14 }} />
-                              </button>
-                            ) : null
-                          )}
-
                           <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            style={{ padding: '4px 8px' }}
-                            onClick={() => handlePrintSingle(item)}
-                            title="In tem QR"
+                            style={{
+                              padding: '4px 7px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: menuState?.id === item.id ? 'var(--surface-hover)' : undefined,
+                              borderColor: menuState?.id === item.id ? 'var(--primary, #0284c7)' : undefined,
+                            }}
+                            onClick={(e) => handleOpenMenu(e, item)}
+                            title="Mở menu thao tác..."
+                            aria-label="Menu thao tác"
                           >
-                            <Printer style={{ width: 14, height: 14 }} />
+                            <MoreHorizontal style={{ width: 16, height: 16 }} />
                           </button>
                         </div>
                       </td>
@@ -533,6 +596,165 @@ export function AssetScreen({
           </table>
         </div>
       </Card>
+
+      {/* Floating Action Dropdown Menu (Portal) */}
+      {mounted && menuState && (() => {
+        const item = assets.find((a) => a.id === menuState.id);
+        if (!item) return null;
+        return createPortal(
+          <div
+            className="dropdown"
+            style={{
+              position: 'fixed',
+              top: menuState.openUpwards ? undefined : menuState.top,
+              bottom: menuState.openUpwards ? (window.innerHeight - menuState.top) : undefined,
+              right: menuState.right,
+              width: 230,
+              zIndex: 9999,
+              boxShadow: 'var(--shadow-xl, 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1))',
+              border: '1px solid var(--border-base, #cbd5e1)',
+              background: 'var(--surface-card, #ffffff)',
+              borderRadius: 'var(--radius-lg, 8px)',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="dropdown-head" style={{ fontSize: 12, padding: '8px 12px', background: 'var(--surface-sunken, #f8fafc)' }}>
+              <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{item.assetCode}</span>
+              <span className="hint" style={{ fontSize: 11 }}>Menu thao tác</span>
+            </div>
+
+            <Link
+              href={`/assets/${item.id}`}
+              className="dropdown-item"
+              onClick={() => setMenuState(null)}
+              style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <Eye size={14} color="var(--primary, #0284c7)" />
+              <span>Xem chi tiết</span>
+            </Link>
+
+            {canEdit && (
+              <button
+                type="button"
+                className="dropdown-item"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}
+                onClick={() => {
+                  setMenuState(null);
+                  setEditAsset(item);
+                }}
+              >
+                <Edit size={14} color="var(--brand, #6366f1)" />
+                <span>Sửa thông tin</span>
+              </button>
+            )}
+
+            {canAssign && (
+              item.currentAssignee ? (
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  style={{ width: '100%', color: '#ef4444', display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => {
+                    setMenuState(null);
+                    setRevokeAsset(item);
+                  }}
+                >
+                  <Undo2 size={14} color="#ef4444" />
+                  <span>Thu hồi về kho</span>
+                </button>
+              ) : item.status !== 'LIQUIDATED' ? (
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  style={{ width: '100%', color: '#0284c7', display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => {
+                    setMenuState(null);
+                    setAssignAsset(item);
+                  }}
+                >
+                  <UserCheck size={14} color="#0284c7" />
+                  <span>Cấp phát nhân sự</span>
+                </button>
+              ) : null
+            )}
+
+            {canUpgrade && item.status !== 'LIQUIDATED' && (
+              <button
+                type="button"
+                className="dropdown-item"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}
+                onClick={() => {
+                  setMenuState(null);
+                  setUpgradeAsset(item);
+                }}
+              >
+                <Cpu size={14} color="#10b981" />
+                <span>Nâng cấp RAM/SSD</span>
+              </button>
+            )}
+
+            {canMaintenance && item.status !== 'LIQUIDATED' && (
+              <button
+                type="button"
+                className="dropdown-item"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}
+                onClick={() => {
+                  setMenuState(null);
+                  setMaintenanceAsset(item);
+                }}
+              >
+                <Wrench size={14} color="#f59e0b" />
+                <span>Bảo hành / Sửa chữa</span>
+              </button>
+            )}
+
+            {canLiquidate && item.status !== 'LIQUIDATED' && (
+              <button
+                type="button"
+                className="dropdown-item"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}
+                onClick={() => {
+                  setMenuState(null);
+                  setLiquidationAsset(item);
+                }}
+              >
+                <Boxes size={14} color="#64748b" />
+                <span>Thanh lý thiết bị</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="dropdown-item"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}
+              onClick={() => {
+                setMenuState(null);
+                handlePrintSingle(item);
+              }}
+            >
+              <Printer size={14} color="var(--text-base)" />
+              <span>In tem mã QR</span>
+            </button>
+
+            {canDelete && (
+              <button
+                type="button"
+                className="dropdown-item"
+                style={{ width: '100%', color: 'var(--danger, #ef4444)', display: 'flex', alignItems: 'center', gap: 8 }}
+                onClick={() => {
+                  setMenuState(null);
+                  setDeleteConfirmAsset(item);
+                }}
+              >
+                <Trash2 size={14} color="var(--danger, #ef4444)" />
+                <span>Xóa thiết bị</span>
+              </button>
+            )}
+          </div>,
+          document.body
+        );
+      })()}
 
       {/* Modals */}
       {createModalOpen && (
@@ -572,11 +794,56 @@ export function AssetScreen({
         />
       )}
 
+      {upgradeAsset && (
+        <UpgradeAssetModal
+          open={Boolean(upgradeAsset)}
+          asset={upgradeAsset}
+          onClose={() => setUpgradeAsset(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {maintenanceAsset && (
+        <MaintenanceModal
+          open={Boolean(maintenanceAsset)}
+          asset={maintenanceAsset}
+          onClose={() => setMaintenanceAsset(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {liquidationAsset && (
+        <LiquidationModal
+          open={Boolean(liquidationAsset)}
+          asset={liquidationAsset}
+          onClose={() => setLiquidationAsset(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
       {printAssets && printAssets.length > 0 && (
         <AssetPrintStickerModal
           open={Boolean(printAssets)}
           assets={printAssets}
           onClose={() => setPrintAssets(null)}
+        />
+      )}
+
+      {deleteConfirmAsset && (
+        <ConfirmDialog
+          open={Boolean(deleteConfirmAsset)}
+          onClose={() => setDeleteConfirmAsset(null)}
+          onConfirm={handleDeleteAsset}
+          title="Xác nhận xóa thiết bị"
+          message={
+            <span>
+              Bạn có chắc chắn muốn xóa thiết bị <strong>{deleteConfirmAsset.name}</strong> ({deleteConfirmAsset.assetCode})?
+              Hành động này sẽ xóa toàn bộ lịch sử luân chuyển, nâng cấp và bảo hành liên quan.
+            </span>
+          }
+          confirmText="Xóa vĩnh viễn"
+          danger
+          loading={deleting}
         />
       )}
     </div>
