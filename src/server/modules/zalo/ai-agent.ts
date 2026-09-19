@@ -106,6 +106,28 @@ export async function buildAuthContextForEmployee(employeeId: number): Promise<A
   };
 }
 
+import {
+  PROMPT_VARIABLES,
+  DEFAULT_SYSTEM_PROMPT,
+  PRESET_PROMPT_TEMPLATES,
+  renderSystemPrompt,
+  type PromptVariable,
+  type PromptTemplate,
+  type AiAgentTestStep,
+  type AiAgentTestResult,
+} from '@/lib/ai-prompt';
+
+export {
+  PROMPT_VARIABLES,
+  DEFAULT_SYSTEM_PROMPT,
+  PRESET_PROMPT_TEMPLATES,
+  renderSystemPrompt,
+  type PromptVariable,
+  type PromptTemplate,
+  type AiAgentTestStep,
+  type AiAgentTestResult,
+};
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: string;
@@ -153,6 +175,10 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
   }
 
   const selectedModel = (await getSetting<string>('ai.model', '')) || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const configuredTemp = await getSetting<number>('ai.temperature', 0.2);
+  const temperature = Math.min(1.0, Math.max(0.0, Number(configuredTemp) || 0.2));
+  const configuredMaxIterations = await getSetting<number>('ai.maxIterations', 5);
+  const maxIterations = Math.min(10, Math.max(1, Number(configuredMaxIterations) || 5));
 
   const ctx = await buildAuthContextForEmployee(employeeId);
   if (!ctx) {
@@ -209,15 +235,21 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
 
   const tools = [...mcpGeminiTools, ...customGeminiTools];
 
-  const systemPrompt = `Bạn là trợ lý AI nội bộ của WorkHub, đang hỗ trợ nhân sự "${ctx.fullName}" (${ctx.positionName || 'Nhân viên'}, phòng ${ctx.departmentName || 'Chung'}) qua Zalo.
-Quyền hạn: ${ctx.isAdmin ? 'Toàn quyền quản trị (ADMIN)' : `Phạm vi dữ liệu ${ctx.dataScope}`}.
-Ngày hiện tại: ${fmtDate(new Date())}.
+  // Render System Prompt tùy chỉnh với các biến ngữ cảnh
+  const customTemplate = await getSetting<string>('ai.systemPrompt', '');
+  const allToolNames = tools.map((t) => t.function.name).join(', ');
+  const promptVars: Record<string, string> = {
+    user_name: ctx.fullName,
+    user_position: ctx.positionName || 'Nhân viên',
+    user_department: ctx.departmentName || 'Chung',
+    user_role: ctx.isAdmin ? 'Toàn quyền quản trị (ADMIN)' : (ctx.roleNames.join(', ') || 'Nhân viên'),
+    data_scope: ctx.dataScope,
+    current_date: fmtDate(new Date()),
+    company_name: process.env.APP_NAME || 'WorkHub',
+    tools_list: allToolNames || 'Không có',
+  };
 
-Quy tắc bắt buộc:
-1. Trả lời bằng tiếng Việt, ngắn gọn, lịch sự, thân thiện, rõ ràng, định dạng Markdown hỗ trợ trên Zalo (dùng **in đậm**, _in nghiêng_, \`mã code\`, danh sách gạch đầu dòng -, và emoji nhẹ nhàng: 📋, 🟢, 🏖, ⏱...). Không dùng tiêu đề '#' mà hãy dùng dòng in đậm '**Tiêu đề**'.
-2. Khi người dùng hỏi thông tin (công việc, nhân sự, nghỉ phép, duyệt đơn, hoặc các tra cứu qua custom tool...), LUÔN LUÔN gọi công cụ phù hợp để tra cứu dữ liệu thực tế trước khi trả lời.
-3. Không bịa đặt thông tin không có trong kết quả trả về từ công cụ.
-4. Nếu thực hiện thao tác (tạo việc, đổi trạng thái việc, duyệt đơn...), hãy xác nhận rõ kết quả thao tác.`;
+  const systemPrompt = renderSystemPrompt(customTemplate, promptVars);
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -225,7 +257,6 @@ Quy tắc bắt buộc:
   ];
 
   let iterations = 0;
-  const maxIterations = 5;
 
   while (iterations < maxIterations) {
     iterations++;
@@ -234,7 +265,7 @@ Quy tắc bắt buộc:
       model: selectedModel,
       messages,
       tools: tools.length > 0 ? tools : undefined,
-      temperature: 0.2,
+      temperature,
     };
 
     const data = await callGeminiApi(apiKey, payload);
@@ -289,13 +320,244 @@ Quy tắc bắt buộc:
           content: toolResultStr,
         });
       }
-      // Tiếp tục vòng lặp để AI phân tích kết quả trả về từ Tool
       continue;
     }
 
-    // AI đã trả về câu trả lời hoàn chỉnh
     return assistantMsg.content || 'Đã xử lý xong yêu cầu của bạn.';
   }
 
   return 'Yêu cầu của bạn mất quá nhiều bước xử lý, vui lòng thử lại câu hỏi cụ thể hơn.';
+}
+
+/**
+ * Chạy kiểm thử AI Agent phục vụ n8n-style Playground
+ * Trả về chi tiết các bước gọi tool và câu trả lời hoàn chỉnh.
+ */
+export async function runAiAgentTest(
+  userPrompt: string,
+  targetEmployeeId?: number,
+): Promise<AiAgentTestResult> {
+  const startTime = Date.now();
+  const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
+  if (!apiKey) {
+    return {
+      ok: false,
+      reply: '',
+      model: '',
+      temperature: 0,
+      durationMs: Date.now() - startTime,
+      steps: [],
+      error: 'Chưa cấu hình API Key (Google Gemini hoặc LLM Provider)',
+    };
+  }
+
+  const selectedModel = (await getSetting<string>('ai.model', '')) || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const configuredTemp = await getSetting<number>('ai.temperature', 0.2);
+  const temperature = Math.min(1.0, Math.max(0.0, Number(configuredTemp) || 0.2));
+  const configuredMaxIterations = await getSetting<number>('ai.maxIterations', 5);
+  const maxIterations = Math.min(10, Math.max(1, Number(configuredMaxIterations) || 5));
+
+  // Lấy nhân sự đại diện để test
+  let empId = targetEmployeeId;
+  if (!empId) {
+    const firstEmp = await prisma.employee.findFirst({ select: { id: true } });
+    empId = firstEmp?.id || 1;
+  }
+
+  const ctx = await buildAuthContextForEmployee(empId);
+  if (!ctx) {
+    return {
+      ok: false,
+      reply: '',
+      model: selectedModel,
+      temperature,
+      durationMs: Date.now() - startTime,
+      steps: [],
+      error: 'Không tìm thấy hồ sơ nhân sự đại diện để chạy kiểm thử',
+    };
+  }
+
+  const identity: McpIdentity = {
+    clientId: 0,
+    clientName: 'PlaygroundTester',
+    readOnly: false,
+    scopes: [],
+    ctx,
+  };
+
+  const allowedTools = MCP_TOOLS.filter((t) => !t.permission || can(ctx, t.permission));
+  const mcpGeminiTools = allowedTools.map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: `${t.title}: ${t.description}`,
+      parameters: t.inputSchema,
+    },
+  }));
+
+  const customTools = await getActiveCustomTools();
+  const customToolsMap = new Map<string, CustomAgentTool>();
+  const customGeminiTools = customTools.map((ct) => {
+    customToolsMap.set(ct.name, ct);
+    const properties: Record<string, { type: string; description: string }> = {};
+    const required: string[] = [];
+    for (const p of ct.parameters) {
+      properties[p.name] = {
+        type: p.type || 'string',
+        description: p.description,
+      };
+      if (p.required) required.push(p.name);
+    }
+    return {
+      type: 'function' as const,
+      function: {
+        name: ct.name,
+        description: `${ct.title}: ${ct.description}`,
+        parameters: {
+          type: 'object',
+          properties,
+          required,
+        },
+      },
+    };
+  });
+
+  const tools = [...mcpGeminiTools, ...customGeminiTools];
+  const customTemplate = await getSetting<string>('ai.systemPrompt', '');
+  const allToolNames = tools.map((t) => t.function.name).join(', ');
+  const promptVars: Record<string, string> = {
+    user_name: ctx.fullName,
+    user_position: ctx.positionName || 'Nhân viên',
+    user_department: ctx.departmentName || 'Chung',
+    user_role: ctx.isAdmin ? 'Toàn quyền quản trị (ADMIN)' : (ctx.roleNames.join(', ') || 'Nhân viên'),
+    data_scope: ctx.dataScope,
+    current_date: fmtDate(new Date()),
+    company_name: process.env.APP_NAME || 'WorkHub',
+    tools_list: allToolNames || 'Không có',
+  };
+
+  const systemPrompt = renderSystemPrompt(customTemplate, promptVars);
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+
+  const steps: AiAgentTestStep[] = [];
+  let iterations = 0;
+
+  try {
+    while (iterations < maxIterations) {
+      iterations++;
+
+      const payload = {
+        model: selectedModel,
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+        temperature,
+      };
+
+      const data = await callGeminiApi(apiKey, payload);
+      const choice = data.choices?.[0];
+      if (!choice) {
+        return {
+          ok: false,
+          reply: 'Không nhận được phản hồi từ mô hình LLM.',
+          model: selectedModel,
+          temperature,
+          durationMs: Date.now() - startTime,
+          steps,
+        };
+      }
+
+      const assistantMsg = choice.message as ChatMessage;
+      messages.push(assistantMsg);
+
+      if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
+        for (const call of assistantMsg.tool_calls) {
+          const stepStart = Date.now();
+          const toolName = call.function.name;
+          let toolArgs: Record<string, unknown> = {};
+          try {
+            toolArgs = JSON.parse(call.function.arguments || '{}');
+          } catch {
+            toolArgs = {};
+          }
+
+          let toolResultRaw: unknown = null;
+          let toolResultStr = '';
+          const customTool = customToolsMap.get(toolName);
+          const mcpTool = TOOLS_BY_NAME.get(toolName);
+
+          if (customTool) {
+            try {
+              toolResultRaw = await executeCustomTool(customTool, toolArgs);
+              toolResultStr = JSON.stringify(toolResultRaw);
+            } catch (err) {
+              toolResultRaw = { error: err instanceof Error ? err.message : String(err) };
+              toolResultStr = JSON.stringify(toolResultRaw);
+            }
+          } else if (mcpTool) {
+            if (mcpTool.permission && !can(ctx, mcpTool.permission)) {
+              toolResultRaw = { error: `Không có quyền "${mcpTool.permission}"` };
+              toolResultStr = JSON.stringify(toolResultRaw);
+            } else {
+              try {
+                toolResultRaw = await mcpTool.handler(toolArgs, identity);
+                toolResultStr = JSON.stringify(toolResultRaw);
+              } catch (err) {
+                toolResultRaw = { error: err instanceof Error ? err.message : String(err) };
+                toolResultStr = JSON.stringify(toolResultRaw);
+              }
+            }
+          } else {
+            toolResultRaw = { error: `Công cụ "${toolName}" không tồn tại` };
+            toolResultStr = JSON.stringify(toolResultRaw);
+          }
+
+          steps.push({
+            toolName,
+            args: toolArgs,
+            result: toolResultRaw,
+            durationMs: Date.now() - stepStart,
+          });
+
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: toolResultStr,
+          });
+        }
+        continue;
+      }
+
+      return {
+        ok: true,
+        reply: assistantMsg.content || 'Đã xử lý xong.',
+        model: selectedModel,
+        temperature,
+        durationMs: Date.now() - startTime,
+        steps,
+      };
+    }
+
+    return {
+      ok: false,
+      reply: `Đã vượt quá số bước lặp suy luận tối đa (${maxIterations} bước).`,
+      model: selectedModel,
+      temperature,
+      durationMs: Date.now() - startTime,
+      steps,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reply: '',
+      model: selectedModel,
+      temperature,
+      durationMs: Date.now() - startTime,
+      steps,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

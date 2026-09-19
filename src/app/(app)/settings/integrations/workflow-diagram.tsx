@@ -65,6 +65,9 @@ interface WorkflowDiagramProps {
   zaloWebhookUrl: string;
   hasGeminiKey: boolean;
   llmModel?: string;
+  temperature?: number;
+  maxIterations?: number;
+  hasCustomPrompt?: boolean;
   canManage: boolean;
   onNewTool: () => void;
   onEditTool: (tool: CustomAgentTool) => void;
@@ -84,6 +87,9 @@ export function ZaloWorkflowDiagram({
   zaloWebhookUrl,
   hasGeminiKey,
   llmModel,
+  temperature = 0.2,
+  maxIterations = 5,
+  hasCustomPrompt = false,
   canManage,
   onNewTool,
   onEditTool,
@@ -727,6 +733,16 @@ export function ZaloWorkflowDiagram({
                     <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand)' }}>{llmModel || 'gemini-1.5-flash'}</code>
                   </div>
                   <div className="row-between" style={{ fontSize: 11 }}>
+                    <span className="hint">Temp / Steps:</span>
+                    <span style={{ fontWeight: 550, fontFamily: 'var(--font-mono)' }}>{temperature} / {maxIterations}s</span>
+                  </div>
+                  <div className="row-between" style={{ fontSize: 11 }}>
+                    <span className="hint">Prompt:</span>
+                    <span style={{ color: hasCustomPrompt ? 'var(--brand)' : 'var(--text-muted)', fontWeight: 550 }}>
+                      {hasCustomPrompt ? 'Tùy biến' : 'Mặc định'}
+                    </span>
+                  </div>
+                  <div className="row-between" style={{ fontSize: 11 }}>
                     <span className="hint">Công cụ:</span>
                     <span style={{ fontWeight: 600 }}>{mcpToolsCount + customTools.filter((t) => t.isActive).length} active</span>
                   </div>
@@ -748,7 +764,7 @@ export function ZaloWorkflowDiagram({
                         gap: 2,
                       }}
                     >
-                      <Sparkles size={11} /> Cấu hình &rarr;
+                      <Sparkles size={11} /> Studio &rarr;
                     </span>
                   )}
                 </div>

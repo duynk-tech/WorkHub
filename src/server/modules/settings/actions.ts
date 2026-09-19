@@ -16,8 +16,10 @@ import {
   executeCustomTool,
   type CustomAgentTool,
 } from '@/server/modules/zalo/custom-tools';
+import { runAiAgentTest } from '@/server/modules/zalo/ai-agent';
 import { PRESET_LLM_MODELS, type LlmModelItem } from '@/lib/llm-models';
-export type { LlmModelItem };
+import type { PromptVariable, PromptTemplate, AiAgentTestResult, AiAgentTestStep } from '@/lib/ai-prompt';
+export type { LlmModelItem, PromptVariable, PromptTemplate, AiAgentTestResult, AiAgentTestStep };
 
 export interface Result { ok: boolean; message: string }
 
@@ -399,4 +401,18 @@ export async function fetchLlmModelsAction(
   }
 }
 
-
+export async function testAiAgentAction(
+  prompt: string,
+  employeeId?: number,
+): Promise<Result & { result?: AiAgentTestResult }> {
+  await requirePermission('FEATURE_SETTING_ZALO');
+  const cleanPrompt = prompt.trim();
+  if (!cleanPrompt) {
+    return { ok: false, message: 'Vui lòng nhập câu hỏi thử nghiệm cho AI Agent' };
+  }
+  const testRes = await runAiAgentTest(cleanPrompt, employeeId);
+  if (!testRes.ok) {
+    return { ok: false, message: testRes.error || testRes.reply || 'Kiểm thử Agent thất bại', result: testRes };
+  }
+  return { ok: true, message: 'Kiểm thử thành công', result: testRes };
+}

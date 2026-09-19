@@ -28,7 +28,7 @@ export default async function IntegrationsPage({
     prisma.user.findMany({
       where: { isActive: true },
       orderBy: { username: 'asc' },
-      select: { id: true, username: true, employee: { select: { fullName: true } } },
+      select: { id: true, username: true, employeeId: true, employee: { select: { fullName: true } } },
     }),
     prisma.mcpCallLog.findMany({
       orderBy: { createdAt: 'desc' }, take: 30,
@@ -45,7 +45,7 @@ export default async function IntegrationsPage({
       initialSubtab={initialSubtab}
       clients={JSON.parse(JSON.stringify(clients))}
       webhooks={JSON.parse(JSON.stringify(webhooks))}
-      users={users.map((u) => ({ id: u.id, username: u.username, fullName: u.employee.fullName }))}
+      users={users.map((u) => ({ id: u.id, employeeId: u.employeeId, username: u.username, fullName: u.employee.fullName }))}
       tools={MCP_TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, mutating: Boolean(t.mutating) }))}
       recentCalls={JSON.parse(JSON.stringify(recentCalls))}
       mcpUrl={`${process.env.APP_URL || 'http://localhost:3000'}/api/mcp`}

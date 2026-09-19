@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useTransition, useEffect } from 'react';
+import { useState, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus, Plug, Copy, Trash2, Lock, Unlock, Webhook, Send, KeyRound, Terminal,
   CheckCircle2, AlertTriangle, Bot, MessageCircle, RefreshCw, Check, Save,
   Wrench, Play, Edit2, Code, Globe, X, Layers, Settings, Sparkles, Eye, EyeOff,
+  SlidersHorizontal, Wand2, FileText, Flame, Cpu, CheckCheck, Clock, RotateCcw,
+  HelpCircle, MessageSquare,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
@@ -22,9 +24,19 @@ import {
 import {
   saveSettingsAction, testZaloBotAction, registerZaloWebhookAction, getZaloWebhookInfoAction,
   saveCustomToolAction, deleteCustomToolAction, toggleCustomToolAction, testCustomToolAction,
-  fetchLlmModelsAction,
+  fetchLlmModelsAction, testAiAgentAction,
 } from '@/server/modules/settings/actions';
 import { PRESET_LLM_MODELS, type LlmModelItem } from '@/lib/llm-models';
+import {
+  PROMPT_VARIABLES,
+  DEFAULT_SYSTEM_PROMPT,
+  PRESET_PROMPT_TEMPLATES,
+  renderSystemPrompt,
+  type PromptVariable,
+  type PromptTemplate,
+  type AiAgentTestStep,
+  type AiAgentTestResult,
+} from '@/lib/ai-prompt';
 import type { CustomAgentTool, CustomToolParam } from '@/server/modules/zalo/custom-tools';
 import { parseCurlCommand } from '@/lib/curl-parser';
 import { ZaloWorkflowDiagram } from './workflow-diagram';
@@ -49,7 +61,7 @@ export function IntegrationScreen({
   initialModal?: string;
   initialSubtab?: string;
   clients: any[]; webhooks: any[];
-  users: { id: number; username: string; fullName: string }[];
+  users: { id: number; employeeId?: number; username: string; fullName: string }[];
   tools: { name: string; title: string; description: string; mutating: boolean }[];
   recentCalls: any[];
   mcpUrl: string;
@@ -100,17 +112,96 @@ export function IntegrationScreen({
   const [zaloWebhookLoading, setZaloWebhookLoading] = useState(false);
   const [savingZalo, setSavingZalo] = useState(false);
 
-  const isInitialModalOpen = ['config', 'zalo', 'bot', 'webhook', 'gemini'].includes(initialModal);
+  type ZaloConfigTab = 'prompt' | 'model' | 'tools' | 'playground' | 'bot' | 'webhook';
+  const isInitialModalOpen = ['config', 'zalo', 'bot', 'webhook', 'gemini', 'prompt', 'model', 'tools', 'playground'].includes(initialModal);
   const [zaloConfigModalOpen, setZaloConfigModalOpen] = useState(isInitialModalOpen);
-  const [zaloConfigTab, setZaloConfigTab] = useState<'bot' | 'webhook' | 'gemini'>(() => {
-    if (['bot', 'webhook', 'gemini'].includes(initialSubtab)) return initialSubtab as 'bot' | 'webhook' | 'gemini';
-    if (['bot', 'webhook', 'gemini'].includes(initialModal)) return initialModal as 'bot' | 'webhook' | 'gemini';
-    return 'bot';
+  const [zaloConfigTab, setZaloConfigTab] = useState<ZaloConfigTab>(() => {
+    const raw = initialSubtab || initialModal;
+    if (raw === 'gemini') return 'model';
+    if (['prompt', 'model', 'tools', 'playground', 'bot', 'webhook'].includes(raw)) return raw as ZaloConfigTab;
+    return 'prompt';
   });
 
-  const openZaloConfigModal = (initialTab: 'bot' | 'webhook' | 'gemini' = 'bot') => {
-    setZaloConfigTab(initialTab);
+  const openZaloConfigModal = (initialTab: ZaloConfigTab | 'gemini' = 'prompt') => {
+    setZaloConfigTab(initialTab === 'gemini' ? 'model' : initialTab);
     setZaloConfigModalOpen(true);
+  };
+
+  // AI Prompt & Studio State
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showLivePreview, setShowLivePreview] = useState(false);
+
+  // Interactive Playground State
+  const [playgroundPrompt, setPlaygroundPrompt] = useState('');
+  const [playgroundEmployeeId, setPlaygroundEmployeeId] = useState<string>('');
+  const [playgroundRunning, setPlaygroundRunning] = useState(false);
+  const [playgroundResult, setPlaygroundResult] = useState<AiAgentTestResult | null>(null);
+  const [playgroundHistory, setPlaygroundHistory] = useState<Array<{
+    id: string;
+    userPrompt: string;
+    timestamp: Date;
+    result: AiAgentTestResult;
+  }>>([]);
+
+  const insertPromptVariable = (varTag: string) => {
+    const tagToInsert = `{{${varTag}}}`;
+    const currentVal = zaloValues['ai.systemPrompt'] !== undefined ? String(zaloValues['ai.systemPrompt']) : DEFAULT_SYSTEM_PROMPT;
+    const textarea = promptTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart ?? currentVal.length;
+      const end = textarea.selectionEnd ?? currentVal.length;
+      const newVal = currentVal.substring(0, start) + tagToInsert + currentVal.substring(end);
+      setZalo('ai.systemPrompt', newVal);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + tagToInsert.length, start + tagToInsert.length);
+      }, 50);
+    } else {
+      setZalo('ai.systemPrompt', currentVal + ' ' + tagToInsert);
+    }
+    toast.info(`Đã chèn biến {{${varTag}}}`);
+  };
+
+  const handleApplyPreset = (preset: PromptTemplate) => {
+    setZalo('ai.systemPrompt', preset.prompt);
+    toast.success(`Đã áp dụng mẫu: ${preset.name}`);
+  };
+
+  const handleResetToDefaultPrompt = () => {
+    setZalo('ai.systemPrompt', DEFAULT_SYSTEM_PROMPT);
+    toast.success('Đã khôi phục System Prompt mặc định');
+  };
+
+  const handleRunPlayground = async () => {
+    if (!playgroundPrompt.trim()) return;
+    setPlaygroundRunning(true);
+    try {
+      const targetEmpId = playgroundEmployeeId ? parseInt(playgroundEmployeeId, 10) : undefined;
+      const res = await testAiAgentAction(playgroundPrompt.trim(), targetEmpId);
+      if (res.result) {
+        setPlaygroundResult(res.result);
+        setPlaygroundHistory((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            userPrompt: playgroundPrompt.trim(),
+            timestamp: new Date(),
+            result: res.result!,
+          },
+        ]);
+        if (res.ok) {
+          toast.success('AI Agent đã phản hồi!');
+        } else {
+          toast.error(res.message);
+        }
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Lỗi gọi kiểm thử AI Agent');
+    } finally {
+      setPlaygroundRunning(false);
+    }
   };
 
   // Custom Tools state
@@ -177,6 +268,9 @@ export function IntegrationScreen({
         'ai.geminiApiKey': zaloValues['ai.geminiApiKey'],
         'ai.baseUrl': zaloValues['ai.baseUrl'] ?? '',
         'ai.model': zaloValues['ai.model'] || 'gemini-1.5-flash',
+        'ai.systemPrompt': zaloValues['ai.systemPrompt'] ?? '',
+        'ai.temperature': zaloValues['ai.temperature'] !== undefined ? String(zaloValues['ai.temperature']) : '0.2',
+        'ai.maxIterations': zaloValues['ai.maxIterations'] !== undefined ? String(zaloValues['ai.maxIterations']) : '5',
       };
       const res = await saveSettingsAction('zalo', payload);
       setSavingZalo(false);
@@ -672,6 +766,9 @@ export function IntegrationScreen({
             zaloWebhookUrl={zaloWebhookInput || zaloWebhookUrl}
             hasGeminiKey={Boolean(zaloValues['ai.geminiApiKey'])}
             llmModel={zaloValues['ai.model'] || 'gemini-1.5-flash'}
+            temperature={parseFloat(zaloValues['ai.temperature'] ?? '0.2')}
+            maxIterations={parseInt(zaloValues['ai.maxIterations'] ?? '5', 10)}
+            hasCustomPrompt={Boolean(zaloValues['ai.systemPrompt']?.trim())}
             canManage={canManageZalo}
             onNewTool={handleNewTool}
             onEditTool={handleEditTool}
@@ -687,9 +784,9 @@ export function IntegrationScreen({
             onToggleTool={handleToggleTool}
             onDeleteTool={(tool) => setConfirmDeleteTool(tool)}
             onConfigureZalo={() => openZaloConfigModal('bot')}
-            onConfigureGemini={() => openZaloConfigModal('gemini')}
+            onConfigureGemini={() => openZaloConfigModal('prompt')}
             onTestZalo={handleTestZalo}
-            onViewMcpTools={() => setMcpToolsModal(true)}
+            onViewMcpTools={() => openZaloConfigModal('tools')}
           />
         </div>
       )}
@@ -795,19 +892,30 @@ export function IntegrationScreen({
         </Card>
       )}
 
-      {/* Modal Cấu hình Zalo AI Bot */}
+      {/* Modal Cấu hình AI Agent Studio & Zalo Bot */}
       <Modal
         open={zaloConfigModalOpen}
         onClose={() => setZaloConfigModalOpen(false)}
-        title="Cấu hình Zalo AI Bot"
-        description="Kết nối Zalo Bot Platform với AI Agent (Google Gemini) để kích hoạt xử lý tự động"
-        size="lg"
+        title={
+          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <Sparkles size={18} color="var(--brand)" />
+            <span>AI Agent Studio & Trợ lý Zalo</span>
+            <Badge tone="brand">n8n Style</Badge>
+          </div>
+        }
+        description="Thiết kế trợ lý AI thông minh: tùy biến System Prompt, nạp mẫu preset, điều chỉnh tham số mô hình, quản lý công cụ và kiểm thử tương tác thực tế"
+        size="xl"
         footer={
-          <div className="row-between" style={{ width: '100%' }}>
-            <div>
-              <Button size="sm" variant="secondary" onClick={handleTestZalo} loading={pending}>
-                <Send size={13} /> Gửi tin thử
+          <div className="row-between" style={{ width: '100%', flexWrap: 'wrap', gap: 8 }}>
+            <div className="row" style={{ gap: 8 }}>
+              <Button size="sm" variant="secondary" onClick={handleTestZalo} loading={pending} title="Gửi tin nhắn chào mừng thử nghiệm qua Zalo Bot Platform">
+                <Send size={13} /> Gửi tin Zalo thử
               </Button>
+              {zaloConfigTab === 'playground' && playgroundHistory.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => { setPlaygroundHistory([]); setPlaygroundResult(null); }}>
+                  <RotateCcw size={13} /> Xóa lịch sử thử
+                </Button>
+              )}
             </div>
             <div className="row" style={{ gap: 8 }}>
               <Button size="sm" variant="secondary" onClick={() => setZaloConfigModalOpen(false)}>
@@ -815,7 +923,7 @@ export function IntegrationScreen({
               </Button>
               {canManageZalo && (
                 <Button size="sm" variant="primary" onClick={saveZaloConfig} loading={savingZalo}>
-                  <Save size={13} /> Lưu cấu hình
+                  <Save size={13} /> Lưu cấu hình Agent
                 </Button>
               )}
             </div>
@@ -823,15 +931,47 @@ export function IntegrationScreen({
         }
       >
         <div className="stack" style={{ gap: 16 }}>
-          {/* Modal Tabs */}
-          <div className="tabs" style={{ marginBottom: 4 }}>
+          {/* Modal Tabs (n8n AI Agent Studio style) */}
+          <div className="tabs" style={{ marginBottom: 4, overflowX: 'auto', flexWrap: 'nowrap' }}>
+            <div
+              className="tab"
+              data-active={zaloConfigTab === 'prompt'}
+              onClick={() => setZaloConfigTab('prompt')}
+            >
+              <Wand2 size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              1. Prompt & Persona
+            </div>
+            <div
+              className="tab"
+              data-active={zaloConfigTab === 'model'}
+              onClick={() => setZaloConfigTab('model')}
+            >
+              <SlidersHorizontal size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              2. Mô hình & Tham số
+            </div>
+            <div
+              className="tab"
+              data-active={zaloConfigTab === 'tools'}
+              onClick={() => setZaloConfigTab('tools')}
+            >
+              <Wrench size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              3. Công cụ ({tools.length + customToolsList.length})
+            </div>
+            <div
+              className="tab"
+              data-active={zaloConfigTab === 'playground'}
+              onClick={() => setZaloConfigTab('playground')}
+            >
+              <Play size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              4. Thử nghiệm Agent
+            </div>
             <div
               className="tab"
               data-active={zaloConfigTab === 'bot'}
               onClick={() => setZaloConfigTab('bot')}
             >
               <MessageCircle size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
-              1. Kết nối Zalo Bot
+              5. Kết nối Zalo
             </div>
             <div
               className="tab"
@@ -839,19 +979,760 @@ export function IntegrationScreen({
               onClick={() => setZaloConfigTab('webhook')}
             >
               <Webhook size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
-              2. Đăng ký Webhook
-            </div>
-            <div
-              className="tab"
-              data-active={zaloConfigTab === 'gemini'}
-              onClick={() => setZaloConfigTab('gemini')}
-            >
-              <Sparkles size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
-              3. Google Gemini AI
+              6. Webhook
             </div>
           </div>
 
-          {/* Tab 1: Kết nối Bot */}
+          {/* TAB 1: SYSTEM PROMPT & PERSONA */}
+          {zaloConfigTab === 'prompt' && (
+            <div className="stack" style={{ gap: 14 }}>
+              {/* Presets and Actions Header */}
+              <div className="row-between" style={{ flexWrap: 'wrap', gap: 10, background: 'var(--surface-sunken)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Wand2 size={15} color="var(--brand)" />
+                    <span>System Prompt & Chỉ dẫn vai trò (Persona)</span>
+                  </div>
+                  <div className="hint" style={{ fontSize: 12 }}>
+                    Định hình tính cách, quy tắc nghiệp vụ, ngữ cảnh công ty và cách AI Agent gọi công cụ
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <Select
+                    style={{ fontSize: 12.5, height: 32, minWidth: 200 }}
+                    value=""
+                    onChange={(e) => {
+                      const found = PRESET_PROMPT_TEMPLATES.find((p) => p.id === e.target.value);
+                      if (found) handleApplyPreset(found);
+                    }}
+                  >
+                    <option value="" disabled>-- Nạp mẫu thiết kế sẵn --</option>
+                    {PRESET_PROMPT_TEMPLATES.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.badge})
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleResetToDefaultPrompt}
+                    title="Khôi phục về System Prompt tiêu chuẩn của WorkHub"
+                    style={{ fontSize: 12, height: 32 }}
+                  >
+                    <RotateCcw size={13} /> Khôi phục mặc định
+                  </Button>
+                </div>
+              </div>
+
+              {/* Dynamic Variables Chips (n8n style expression helper) */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-strong)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Code size={13} color="var(--brand)" />
+                  <span>Biến ngữ cảnh động (Click để chèn vào vị trí con trỏ):</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {PROMPT_VARIABLES.map((v) => (
+                    <button
+                      key={v.tag}
+                      type="button"
+                      onClick={() => insertPromptVariable(v.tag)}
+                      title={`${v.description} (Ví dụ: ${v.example})`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '4px 9px',
+                        borderRadius: 6,
+                        background: 'var(--surface-card)',
+                        border: '1px solid var(--border-base)',
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-strong)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--brand)';
+                        e.currentTarget.style.background = 'var(--surface-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-base)';
+                        e.currentTarget.style.background = 'var(--surface-card)';
+                      }}
+                    >
+                      <span style={{ color: 'var(--brand)', fontWeight: 600 }}>{`{{${v.tag}}}`}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>{v.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Textarea Editor */}
+              <div>
+                <textarea
+                  ref={promptTextareaRef}
+                  rows={13}
+                  value={zaloValues['ai.systemPrompt'] !== undefined ? zaloValues['ai.systemPrompt'] : DEFAULT_SYSTEM_PROMPT}
+                  onChange={(e) => setZalo('ai.systemPrompt', e.target.value)}
+                  placeholder="Nhập System Prompt tùy biến tại đây..."
+                  style={{
+                    width: '100%',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12.5,
+                    lineHeight: 1.6,
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-base)',
+                    background: 'var(--surface-card)',
+                    color: 'var(--text-normal)',
+                    resize: 'vertical',
+                    outline: 'none',
+                  }}
+                />
+                <div
+                  className="row-between"
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11.5,
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <div className="row" style={{ gap: 12 }}>
+                    <span>
+                      Độ dài: <strong style={{ color: 'var(--text-strong)' }}>{(zaloValues['ai.systemPrompt'] ?? DEFAULT_SYSTEM_PROMPT).length}</strong> ký tự
+                    </span>
+                    <span>
+                      Biến ngữ cảnh đang dùng:{' '}
+                      <strong style={{ color: 'var(--brand)' }}>
+                        {PROMPT_VARIABLES.filter((v) => (zaloValues['ai.systemPrompt'] ?? DEFAULT_SYSTEM_PROMPT).includes(`{{${v.tag}}}`)).length} / {PROMPT_VARIABLES.length}
+                      </strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowLivePreview(!showLivePreview)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--brand)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    {showLivePreview ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {showLivePreview ? 'Ẩn xem thử giải nén' : 'Xem thử giải nén biến (Live Preview)'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Preview Container */}
+              {showLivePreview && (
+                <div
+                  style={{
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border-base)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: 12,
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, color: 'var(--text-strong)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={13} color="var(--brand)" />
+                    <span>Kết quả giải nén mẫu (Nguyễn Văn An - Trưởng phòng Kỹ thuật):</span>
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: 'var(--text-strong)',
+                      background: 'var(--surface-card)',
+                      padding: 10,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-subtle)',
+                      maxHeight: 220,
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {renderSystemPrompt(zaloValues['ai.systemPrompt'] ?? DEFAULT_SYSTEM_PROMPT, {
+                      user_name: 'Nguyễn Văn An',
+                      user_position: 'Trưởng phòng Kỹ thuật',
+                      user_department: 'Phòng Công nghệ Thông tin',
+                      user_role: 'Trưởng phòng (Quản trị)',
+                      data_scope: 'DEPT_TREE',
+                      current_date: new Date().toLocaleDateString('vi-VN'),
+                      company_name: 'WorkHub',
+                      tools_list: ['list_tasks', 'get_leave_balance', 'check_in', 'list_employees', ...customToolsList.map((t) => t.name)].join(', '),
+                    })}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: MÔ HÌNH & THAM SỐ (MODEL & HYPERPARAMETERS) */}
+          {zaloConfigTab === 'model' && (
+            <div className="stack" style={{ gap: 14 }}>
+              <Field
+                label="API Key (Google Gemini / LLM Provider)"
+                hint="Dùng miễn phí từ Google AI Studio (aistudio.google.com), OpenRouter hoặc nhà cung cấp LLM tương thích"
+                required
+              >
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>
+                    <Input
+                      id="gemini-key-input"
+                      type="password"
+                      value={zaloValues['ai.geminiApiKey'] ?? ''}
+                      onChange={(e) => setZalo('ai.geminiApiKey', e.target.value)}
+                      placeholder="Nhập API key mới (AIzaSy... hoặc sk-...)"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    loading={fetchingModels}
+                    onClick={handleFetchModels}
+                    title="Gọi API kiểm tra key và lấy danh sách các mô hình thực tế từ nhà cung cấp"
+                    style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    <RefreshCw size={13} className={fetchingModels ? 'animate-spin' : ''} />
+                    {fetchingModels ? 'Đang gọi API...' : 'Gọi API lấy Model'}
+                  </Button>
+                </div>
+              </Field>
+
+              {fetchModelsStatus && (
+                <Alert tone={fetchModelsStatus.tone} style={{ padding: '8px 12px', fontSize: 12.5 }}>
+                  {fetchModelsStatus.message}
+                </Alert>
+              )}
+
+              <Field
+                label="Mô hình LLM (AI Model)"
+                hint="Chọn mô hình AI từ danh sách đã nạp trực tiếp qua API hoặc các mô hình phổ biến (Gemini 2.5, Claude 3.5, GPT-4o...)"
+              >
+                <div className="stack" style={{ gap: 8 }}>
+                  <Select
+                    value={
+                      llmModels.some((m) => m.id === (zaloValues['ai.model'] || 'gemini-1.5-flash'))
+                        ? (zaloValues['ai.model'] || 'gemini-1.5-flash')
+                        : 'custom'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'custom') {
+                        setZalo('ai.model', 'claude-3-5-sonnet');
+                      } else {
+                        setZalo('ai.model', val);
+                      }
+                    }}
+                  >
+                    {llmModels.some((m) => m.source === 'api') && (
+                      <optgroup label={`Danh sách mô hình từ API (${llmModels.filter((m) => m.source === 'api').length})`}>
+                        {llmModels.filter((m) => m.source === 'api').map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    <optgroup label="Mô hình phổ biến (Gemini, Claude 3.5, OpenAI)">
+                      {PRESET_LLM_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </optgroup>
+
+                    <option value="custom">Tùy chỉnh (Nhập mã mô hình khác...)</option>
+                  </Select>
+
+                  {(!llmModels.some((m) => m.id === (zaloValues['ai.model'] || 'gemini-1.5-flash')) || zaloValues['ai.model'] === 'custom') && (
+                    <Field label="Tên mã mô hình tùy chỉnh" hint="Nhập chính xác ID mô hình (ví dụ: claude-3-5-sonnet-20241022, gemini-2.5-flash...)">
+                      <Input
+                        value={zaloValues['ai.model'] ?? ''}
+                        onChange={(e) => setZalo('ai.model', e.target.value)}
+                        placeholder="Mã mô hình..."
+                      />
+                    </Field>
+                  )}
+                </div>
+              </Field>
+
+              {/* Tinh chỉnh siêu tham số (Hyperparameters Tuning) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                {/* Temperature */}
+                <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+                  <div className="row-between" style={{ marginBottom: 6 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Flame size={14} color="#f97316" />
+                      <span>Temperature: {Number(zaloValues['ai.temperature'] ?? '0.2').toFixed(2)}</span>
+                    </label>
+                    <Badge tone={Number(zaloValues['ai.temperature'] ?? '0.2') <= 0.3 ? 'success' : Number(zaloValues['ai.temperature'] ?? '0.2') <= 0.7 ? 'info' : 'warning'}>
+                      {Number(zaloValues['ai.temperature'] ?? '0.2') <= 0.3 ? 'Chính xác & Nhất quán' : Number(zaloValues['ai.temperature'] ?? '0.2') <= 0.7 ? 'Cân bằng' : 'Sáng tạo cao'}
+                    </Badge>
+                  </div>
+                  <div className="hint" style={{ marginBottom: 10, fontSize: 11.5 }}>
+                    Khuyên dùng 0.1 - 0.3 cho trợ lý nội bộ để gọi tool chính xác và không bịa đặt số liệu.
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={zaloValues['ai.temperature'] ?? '0.2'}
+                    onChange={(e) => setZalo('ai.temperature', e.target.value)}
+                    style={{ width: '100%', cursor: 'pointer' }}
+                  />
+                  <div className="row-between" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    <span>0.0 (Chính xác)</span>
+                    <span>0.5 (Cân bằng)</span>
+                    <span>1.0 (Sáng tạo)</span>
+                  </div>
+                </div>
+
+                {/* Max Reasoning Steps */}
+                <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+                  <div className="row-between" style={{ marginBottom: 6 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Cpu size={14} color="var(--brand)" />
+                      <span>Max Steps: {zaloValues['ai.maxIterations'] ?? '5'} lượt suy luận</span>
+                    </label>
+                    <Badge tone="neutral">Mặc định: 5 bước</Badge>
+                  </div>
+                  <div className="hint" style={{ marginBottom: 10, fontSize: 11.5 }}>
+                    Giới hạn số vòng lặp AI gọi công cụ liên tiếp trong một câu hỏi để chống lặp vô tận và tiết kiệm chi phí.
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={zaloValues['ai.maxIterations'] ?? '5'}
+                    onChange={(e) => setZalo('ai.maxIterations', e.target.value)}
+                    style={{ width: '100%', cursor: 'pointer' }}
+                  />
+                  <div className="row-between" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    <span>1 bước (Tối thiểu)</span>
+                    <span>5 bước (Chuẩn)</span>
+                    <span>10 bước (Tối đa)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tùy chọn nâng cao: Base URL endpoint */}
+              <div style={{ border: '1px dashed var(--border-base)', borderRadius: 'var(--radius-md)', padding: 10, background: 'var(--surface-sunken)' }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setShowAdvancedLlm(!showAdvancedLlm)}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 560, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Settings size={13} />
+                    Cấu hình nâng cao: Base URL / Gateway (Tùy chọn)
+                  </span>
+                  <span style={{ fontSize: 11.5, color: 'var(--brand)' }}>
+                    {showAdvancedLlm ? 'Thu gọn ▲' : 'Mở rộng ▼'}
+                  </span>
+                </div>
+
+                {showAdvancedLlm && (
+                  <div style={{ marginTop: 10 }}>
+                    <Field
+                      label="Endpoint / Base URL"
+                      hint="Mặc định để trống dùng Google Gemini chính thức. Điền https://openrouter.ai/api/v1 để dùng Claude 3.5 Sonnet / GPT-4o, hoặc proxy OpenAI tương thích."
+                    >
+                      <Input
+                        value={zaloValues['ai.baseUrl'] ?? ''}
+                        onChange={(e) => setZalo('ai.baseUrl', e.target.value)}
+                        placeholder="https://generativelanguage.googleapis.com/v1beta/openai (Mặc định Gemini)"
+                      />
+                    </Field>
+                  </div>
+                )}
+              </div>
+
+              {/* Thông tin chi tiết mô hình đang chọn */}
+              <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14, fontSize: 12.5 }}>
+                <div style={{ fontWeight: 600, color: 'var(--text-strong)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Bot size={15} color="#8b5cf6" />
+                  Đang chọn mô hình: <code style={{ color: 'var(--brand)', fontFamily: 'var(--font-mono)' }}>{zaloValues['ai.model'] || 'gemini-1.5-flash'}</code>
+                </div>
+                <div className="hint" style={{ lineHeight: 1.5 }}>
+                  {zaloValues['ai.model']?.includes('claude-3-5')
+                    ? 'Claude 3.5 (Sonnet / Haiku) từ Anthropic là một trong những mô hình hàng đầu thế giới về khả năng lập trình, tuân thủ hướng dẫn và gọi tool / function calling cực kỳ chính xác.'
+                    : zaloValues['ai.model']?.includes('2.5')
+                    ? 'Gemini 2.5 là dòng mô hình mới nhất của Google mang lại khả năng suy luận đa phương thức nâng cao, hiểu ngữ cảnh phức tạp và tốc độ phản hồi ấn tượng.'
+                    : zaloValues['ai.model']?.includes('2.0-flash')
+                    ? 'Gemini 2.0 Flash thế hệ mới với độ trễ phản hồi cực thấp, tốc độ sinh token cao và khả năng gọi function calling đặc biệt chính xác.'
+                    : zaloValues['ai.model']?.includes('1.5-pro')
+                    ? 'Gemini 1.5 Pro có khả năng suy luận mạnh mẽ, hiểu ngữ cảnh tài liệu lớn, thích hợp phân tích tổng hợp dữ liệu sâu.'
+                    : 'Mô hình được tối ưu hóa cân bằng giữa tốc độ phản hồi nhanh, nhận diện ý định tiếng Việt mượt mà và gọi công cụ hệ thống chính xác.'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: CÔNG CỤ & KHẢ NĂNG (TOOLS & CAPABILITIES) */}
+          {zaloConfigTab === 'tools' && (
+            <div className="stack" style={{ gap: 14 }}>
+              <div className="row-between" style={{ flexWrap: 'wrap', gap: 10, background: 'var(--surface-sunken)', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Wrench size={15} color="var(--brand)" />
+                    <span>Kho công cụ & Khả năng của Agent</span>
+                  </div>
+                  <div className="hint" style={{ fontSize: 12 }}>
+                    AI Agent tự động phân tích câu hỏi người dùng và gọi các công cụ này dựa trên phân quyền thực tế
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 8 }}>
+                  <Badge tone="brand">{tools.length} MCP Tools</Badge>
+                  <Badge tone="info">{customToolsList.length} Custom Tools</Badge>
+                  {canManageZalo && (
+                    <Button size="sm" variant="primary" onClick={handleNewTool}>
+                      <Plus size={13} /> Thêm Custom Tool
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* MCP System Tools */}
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-strong)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Terminal size={14} color="var(--brand)" />
+                  <span>Công cụ lõi hệ thống WorkHub (MCP Built-in Tools):</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10, maxHeight: 260, overflowY: 'auto' }}>
+                  {tools.map((t) => (
+                    <div
+                      key={t.name}
+                      style={{
+                        background: 'var(--surface-card)',
+                        border: '1px solid var(--border-base)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: 10,
+                        fontSize: 12,
+                      }}
+                    >
+                      <div className="row-between" style={{ marginBottom: 4 }}>
+                        <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--brand)', fontWeight: 600 }}>{t.name}</code>
+                        <Badge tone={t.mutating ? 'warning' : 'info'}>
+                          {t.mutating ? 'Ghi/Sửa' : 'Chỉ đọc'}
+                        </Badge>
+                      </div>
+                      <div style={{ fontWeight: 550, color: 'var(--text-strong)', marginBottom: 2 }}>{t.title}</div>
+                      <div className="hint" style={{ fontSize: 11.5, lineHeight: 1.4 }}>{t.description}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom REST / Webhook Tools */}
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-strong)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Globe size={14} color="#8b5cf6" />
+                  <span>Công cụ tích hợp bên ngoài (Custom Webhook / REST Tools):</span>
+                </div>
+                {customToolsList.length === 0 ? (
+                  <div style={{ padding: 18, textAlign: 'center', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-base)', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                    Chưa có Custom Tool nào. Bấm &quot;Thêm Custom Tool&quot; để kết nối AI Agent với các API bên ngoài của bạn.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+                    {customToolsList.map((ct) => (
+                      <div
+                        key={ct.id}
+                        style={{
+                          background: 'var(--surface-card)',
+                          border: '1px solid var(--border-base)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: 10,
+                          fontSize: 12,
+                        }}
+                      >
+                        <div className="row-between" style={{ marginBottom: 4 }}>
+                          <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: '#8b5cf6', fontWeight: 600 }}>{ct.name}</code>
+                          <Badge tone={ct.httpConfig?.method === 'POST' ? 'brand' : 'neutral'}>
+                            {ct.actionType === 'HTTP' ? (ct.httpConfig?.method || 'GET') : 'CODE'}
+                          </Badge>
+                        </div>
+                        <div style={{ fontWeight: 550, color: 'var(--text-strong)', marginBottom: 2 }}>{ct.title}</div>
+                        <div className="hint" style={{ fontSize: 11.5, marginBottom: 6, lineHeight: 1.4 }}>{ct.description}</div>
+                        <div className="row-between" style={{ marginTop: 6, borderTop: '1px solid var(--border-subtle)', paddingTop: 6 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{(ct.parameters || []).length} tham số</span>
+                          {canManageZalo && (
+                            <div className="row" style={{ gap: 4 }}>
+                              <Button size="sm" variant="ghost" iconOnly onClick={() => handleEditTool(ct)} title="Sửa tool">
+                                <Edit2 size={12} />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                iconOnly
+                                onClick={() => {
+                                  setStandaloneTestTool(ct);
+                                  const initialArgs: Record<string, any> = {};
+                                  (ct.parameters || []).forEach((p) => { initialArgs[p.name] = ''; });
+                                  setTestArgs(initialArgs);
+                                  setTestResult(null);
+                                }}
+                                title="Chạy thử tool"
+                              >
+                                <Play size={12} />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: THỬ NGHIỆM TƯƠNG TÁC (PLAYGROUND / CHAT SIMULATOR) */}
+          {zaloConfigTab === 'playground' && (
+            <div className="stack" style={{ gap: 14 }}>
+              {/* Context Selector Bar */}
+              <div className="row-between" style={{ flexWrap: 'wrap', gap: 10, background: 'var(--surface-sunken)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>Ngữ cảnh nhân sự thử nghiệm:</span>
+                  <Select
+                    style={{ fontSize: 12, height: 32, minWidth: 220 }}
+                    value={playgroundEmployeeId}
+                    onChange={(e) => setPlaygroundEmployeeId(e.target.value)}
+                  >
+                    <option value="">Tự động (Dùng tài khoản đang đăng nhập)</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={String(u.employeeId || u.id)}>
+                        {u.fullName} (@{u.username})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <Badge tone="info">
+                  Model: {zaloValues['ai.model'] || 'gemini-1.5-flash'} | Temp: {zaloValues['ai.temperature'] ?? '0.2'}
+                </Badge>
+              </div>
+
+              {/* Quick Suggestion Chips */}
+              <div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 5 }}>
+                  Gợi ý câu hỏi mẫu để kiểm tra khả năng gọi tool:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {[
+                    'Hôm nay tôi đã chấm công lúc mấy giờ?',
+                    'Danh sách công việc đang cần làm của tôi',
+                    'Tôi còn bao nhiêu ngày phép trong năm nay?',
+                    'Danh sách nhân viên trong phòng ban của tôi',
+                    'Kiểm tra xem có ai đang nghỉ phép hôm nay không?',
+                  ].map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setPlaygroundPrompt(sug)}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        background: 'var(--surface-card)',
+                        border: '1px solid var(--border-base)',
+                        fontSize: 11.5,
+                        color: 'var(--text-strong)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Prompt Input & Execute */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <Textarea
+                  rows={2}
+                  value={playgroundPrompt}
+                  onChange={(e) => setPlaygroundPrompt(e.target.value)}
+                  placeholder="Nhập câu hỏi hoặc yêu cầu cần kiểm thử... (ví dụ: 'Cho tôi xem danh sách task hôm nay')"
+                  style={{ flex: 1, fontSize: 13, resize: 'none' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleRunPlayground();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="primary"
+                  loading={playgroundRunning}
+                  onClick={handleRunPlayground}
+                  disabled={!playgroundPrompt.trim()}
+                  style={{ height: 'auto', alignSelf: 'stretch', paddingLeft: 18, paddingRight: 18 }}
+                >
+                  <Play size={14} /> Chạy thử
+                </Button>
+              </div>
+
+              {/* Chat Transcript / Output View */}
+              <div
+                style={{
+                  background: 'var(--surface-sunken)',
+                  border: '1px solid var(--border-base)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 14,
+                  minHeight: 240,
+                  maxHeight: 400,
+                  overflowY: 'auto',
+                }}
+              >
+                {playgroundHistory.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
+                    <Bot size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
+                    <div style={{ fontSize: 13.5, fontWeight: 550, color: 'var(--text-strong)' }}>Trình giả lập AI Agent Playground</div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>
+                      Nhập câu hỏi hoặc chọn câu hỏi mẫu ở trên và bấm &quot;Chạy thử&quot; để kiểm tra câu trả lời thực tế và các bước gọi công cụ (Tool Tracing).
+                    </div>
+                  </div>
+                ) : (
+                  <div className="stack" style={{ gap: 16 }}>
+                    {playgroundHistory.map((item) => (
+                      <div key={item.id} className="stack" style={{ gap: 10 }}>
+                        {/* User Message */}
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <div
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: '50%',
+                              background: 'var(--brand)',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              flexShrink: 0,
+                            }}
+                          >
+                            U
+                          </div>
+                          <div
+                            style={{
+                              background: 'var(--surface-card)',
+                              border: '1px solid var(--border-base)',
+                              padding: '8px 12px',
+                              borderRadius: 'var(--radius-md)',
+                              fontSize: 13,
+                              fontWeight: 500,
+                              maxWidth: '85%',
+                            }}
+                          >
+                            {item.userPrompt}
+                          </div>
+                        </div>
+
+                        {/* Tool Execution Steps Tracing */}
+                        {item.result.steps && item.result.steps.length > 0 && (
+                          <div style={{ marginLeft: 38, borderLeft: '2px solid var(--border-base)', paddingLeft: 12 }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <Wrench size={12} color="var(--brand)" />
+                              <span>Các bước thực thi công cụ ({item.result.steps.length} bước):</span>
+                            </div>
+                            <div className="stack" style={{ gap: 6 }}>
+                              {item.result.steps.map((step, sIdx) => (
+                                <div
+                                  key={sIdx}
+                                  style={{
+                                    background: 'var(--surface-card)',
+                                    border: '1px solid var(--border-subtle)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    padding: '6px 10px',
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <div className="row-between">
+                                    <span style={{ fontWeight: 600, color: 'var(--brand)', fontFamily: 'var(--font-mono)' }}>
+                                      #{sIdx + 1}: {step.toolName}
+                                    </span>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>⏱ {step.durationMs} ms</span>
+                                  </div>
+                                  <div style={{ marginTop: 4, fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                                    Args: {JSON.stringify(step.args)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* AI Assistant Reply */}
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <div
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: '50%',
+                              background: '#8b5cf6',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Bot size={16} />
+                          </div>
+                          <div
+                            style={{
+                              background: 'var(--surface-card)',
+                              border: '1px solid var(--border-base)',
+                              padding: '10px 14px',
+                              borderRadius: 'var(--radius-md)',
+                              fontSize: 13,
+                              lineHeight: 1.6,
+                              maxWidth: '85%',
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {item.result.reply || (
+                              <span style={{ color: 'var(--danger)' }}>{item.result.error || 'Lỗi không xác định'}</span>
+                            )}
+                            <div
+                              style={{
+                                marginTop: 8,
+                                paddingTop: 6,
+                                borderTop: '1px solid var(--border-subtle)',
+                                fontSize: 11,
+                                color: 'var(--text-muted)',
+                                display: 'flex',
+                                gap: 12,
+                              }}
+                            >
+                              <span>Mô hình: {item.result.model}</span>
+                              <span>Độ trễ: {item.result.durationMs} ms</span>
+                              <span>Công cụ đã gọi: {item.result.steps?.length || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: KẾT NỐI ZALO BOT */}
           {zaloConfigTab === 'bot' && (
             <div className="stack" style={{ gap: 14 }}>
               <label
@@ -942,7 +1823,7 @@ export function IntegrationScreen({
             </div>
           )}
 
-          {/* Tab 2: Đăng ký Webhook */}
+          {/* TAB 6: ĐĂNG KÝ WEBHOOK */}
           {zaloConfigTab === 'webhook' && (
             <div className="stack" style={{ gap: 14 }}>
               <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14 }}>
@@ -1001,146 +1882,6 @@ export function IntegrationScreen({
                     )}
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* Tab 3: Google Gemini AI & LLM Model */}
-          {zaloConfigTab === 'gemini' && (
-            <div className="stack" style={{ gap: 14 }}>
-              <Field
-                label="API Key (Google Gemini / LLM Provider)"
-                hint="Dùng miễn phí từ Google AI Studio (aistudio.google.com), OpenRouter hoặc nhà cung cấp LLM tương thích"
-                required
-              >
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <div style={{ flex: 1 }}>
-                    <Input
-                      id="gemini-key-input"
-                      type="password"
-                      value={zaloValues['ai.geminiApiKey'] ?? ''}
-                      onChange={(e) => setZalo('ai.geminiApiKey', e.target.value)}
-                      placeholder="Nhập API key mới (AIzaSy... hoặc sk-...)"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    loading={fetchingModels}
-                    onClick={handleFetchModels}
-                    title="Gọi API kiểm tra key và lấy danh sách các mô hình thực tế từ nhà cung cấp"
-                    style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                  >
-                    <RefreshCw size={13} className={fetchingModels ? 'animate-spin' : ''} />
-                    {fetchingModels ? 'Đang gọi API...' : 'Gọi API lấy Model'}
-                  </Button>
-                </div>
-              </Field>
-
-              {fetchModelsStatus && (
-                <Alert tone={fetchModelsStatus.tone} style={{ padding: '8px 12px', fontSize: 12.5 }}>
-                  {fetchModelsStatus.message}
-                </Alert>
-              )}
-
-              <Field
-                label="Mô hình LLM (AI Model)"
-                hint="Chọn mô hình AI từ danh sách đã nạp trực tiếp qua API hoặc các mô hình phổ biến (Gemini 2.5, Claude 3.5, GPT-4o...)"
-              >
-                <div className="stack" style={{ gap: 8 }}>
-                  <Select
-                    value={
-                      llmModels.some((m) => m.id === (zaloValues['ai.model'] || 'gemini-1.5-flash'))
-                        ? (zaloValues['ai.model'] || 'gemini-1.5-flash')
-                        : 'custom'
-                    }
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'custom') {
-                        setZalo('ai.model', 'claude-3-5-sonnet');
-                      } else {
-                        setZalo('ai.model', val);
-                      }
-                    }}
-                  >
-                    {llmModels.some((m) => m.source === 'api') && (
-                      <optgroup label={`Danh sách mô hình từ API (${llmModels.filter((m) => m.source === 'api').length})`}>
-                        {llmModels.filter((m) => m.source === 'api').map((m) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </optgroup>
-                    )}
-
-                    <optgroup label="Mô hình phổ biến (Gemini, Claude 3.5, OpenAI)">
-                      {PRESET_LLM_MODELS.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </optgroup>
-
-                    <option value="custom">Tùy chỉnh (Nhập mã mô hình khác...)</option>
-                  </Select>
-
-                  {(!llmModels.some((m) => m.id === (zaloValues['ai.model'] || 'gemini-1.5-flash')) || zaloValues['ai.model'] === 'custom') && (
-                    <Field label="Tên mã mô hình tùy chỉnh" hint="Nhập chính xác ID mô hình (ví dụ: claude-3-5-sonnet-20241022, gemini-2.5-flash...)">
-                      <Input
-                        value={zaloValues['ai.model'] ?? ''}
-                        onChange={(e) => setZalo('ai.model', e.target.value)}
-                        placeholder="Mã mô hình..."
-                      />
-                    </Field>
-                  )}
-                </div>
-              </Field>
-
-              {/* Tùy chọn nâng cao: Base URL endpoint */}
-              <div style={{ border: '1px dashed var(--border-base)', borderRadius: 'var(--radius-md)', padding: 10, background: 'var(--surface-sunken)' }}>
-                <div
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
-                  onClick={() => setShowAdvancedLlm(!showAdvancedLlm)}
-                >
-                  <span style={{ fontSize: 12.5, fontWeight: 560, color: 'var(--text-strong)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Settings size={13} />
-                    Cấu hình nâng cao: Base URL / Gateway (Tùy chọn)
-                  </span>
-                  <span style={{ fontSize: 11.5, color: 'var(--brand)' }}>
-                    {showAdvancedLlm ? 'Thu gọn ▲' : 'Mở rộng ▼'}
-                  </span>
-                </div>
-
-                {showAdvancedLlm && (
-                  <div style={{ marginTop: 10 }}>
-                    <Field
-                      label="Endpoint / Base URL"
-                      hint="Mặc định để trống dùng Google Gemini chính thức. Điền https://openrouter.ai/api/v1 để dùng Claude 3.5 Sonnet / GPT-4o, hoặc proxy OpenAI tương thích."
-                    >
-                      <Input
-                        value={zaloValues['ai.baseUrl'] ?? ''}
-                        onChange={(e) => setZalo('ai.baseUrl', e.target.value)}
-                        placeholder="https://generativelanguage.googleapis.com/v1beta/openai (Mặc định Gemini)"
-                      />
-                    </Field>
-                  </div>
-                )}
-              </div>
-
-              {/* Thông tin chi tiết mô hình đang chọn */}
-              <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14, fontSize: 12.5 }}>
-                <div style={{ fontWeight: 600, color: 'var(--text-strong)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Bot size={15} color="#8b5cf6" />
-                  Đang chọn mô hình: <code style={{ color: 'var(--brand)', fontFamily: 'var(--font-mono)' }}>{zaloValues['ai.model'] || 'gemini-1.5-flash'}</code>
-                </div>
-                <div className="hint" style={{ lineHeight: 1.5 }}>
-                  {zaloValues['ai.model']?.includes('claude-3-5')
-                    ? 'Claude 3.5 (Sonnet / Haiku) từ Anthropic là một trong những mô hình hàng đầu thế giới về khả năng lập trình, tuân thủ hướng dẫn và gọi tool / function calling cực kỳ chính xác.'
-                    : zaloValues['ai.model']?.includes('2.5')
-                    ? 'Gemini 2.5 là dòng mô hình mới nhất của Google mang lại khả năng suy luận đa phương thức nâng cao, hiểu ngữ cảnh phức tạp và tốc độ phản hồi ấn tượng.'
-                    : zaloValues['ai.model']?.includes('2.0-flash')
-                    ? 'Gemini 2.0 Flash thế hệ mới với độ trễ phản hồi cực thấp, tốc độ sinh token cao và khả năng gọi function calling đặc biệt chính xác.'
-                    : zaloValues['ai.model']?.includes('1.5-pro')
-                    ? 'Gemini 1.5 Pro có khả năng suy luận mạnh mẽ, hiểu ngữ cảnh tài liệu lớn, thích hợp phân tích tổng hợp dữ liệu sâu.'
-                    : 'Mô hình được tối ưu hóa cân bằng giữa tốc độ phản hồi nhanh, nhận diện ý định tiếng Việt mượt mà và gọi công cụ hệ thống chính xác.'}
-                </div>
               </div>
             </div>
           )}
