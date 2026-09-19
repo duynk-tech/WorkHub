@@ -53,6 +53,25 @@ import { generateQrSvg } from '@/lib/qrcode';
 import { fmtDate } from '@/lib/date';
 import { formatCurrency } from '@/lib/utils';
 
+function getCategoryIcon(cat: string) {
+  switch (cat) {
+    case 'MONITOR':
+      return <Monitor style={{ width: 28, height: 28 }} />;
+    case 'PC':
+      return <HardDrive style={{ width: 28, height: 28 }} />;
+    case 'PRINTER':
+      return <Printer style={{ width: 28, height: 28 }} />;
+    case 'NETWORK':
+      return <Wifi style={{ width: 28, height: 28 }} />;
+    case 'PHONE_TABLET':
+      return <Smartphone style={{ width: 28, height: 28 }} />;
+    case 'ACCESSORY':
+      return <Keyboard style={{ width: 28, height: 28 }} />;
+    default:
+      return <Laptop style={{ width: 28, height: 28 }} />;
+  }
+}
+
 export function AssetDetailScreen({
   asset,
   departments,
@@ -115,7 +134,7 @@ export function AssetDetailScreen({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* 1. Breadcrumb & Back */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Link
           href="/assets"
           style={{
@@ -132,46 +151,86 @@ export function AssetDetailScreen({
         </Link>
       </div>
 
-      {/* 1. Header Card */}
+      {/* 2. Header Card */}
       <Card style={{ padding: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 12,
-                background: 'var(--surface-muted, #f1f5f9)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--primary, #0284c7)',
-                flexShrink: 0,
-              }}
-            >
-              <Laptop style={{ width: 32, height: 32 }} />
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{asset.name}</h1>
-                <Badge tone={statusInfo.badgeTone as any}>{statusInfo.label}</Badge>
-              </div>
-
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6, fontSize: 13, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary, #0284c7)' }}>
-                  Mã: {asset.assetCode}
-                </span>
-                {asset.serialNumber && <span>S/N: {asset.serialNumber}</span>}
-                {asset.brand && <span>Hãng: {asset.brand}</span>}
-                {asset.model && <span>Model: {asset.model}</span>}
-                <span>Loại: {ASSET_CATEGORIES[asset.category]?.label?.split('/')[0] || asset.category}</span>
-              </div>
-            </div>
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          {/* Device Icon */}
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 14,
+              background: 'var(--surface-muted, #f1f5f9)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--primary, #0284c7)',
+              flexShrink: 0,
+              boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)',
+            }}
+          >
+            {getCategoryIcon(asset.category)}
           </div>
 
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {/* Title & Metadata */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>{asset.name}</h1>
+              <Badge tone={statusInfo.badgeTone as any}>{statusInfo.label}</Badge>
+            </div>
+
+            {/* Metadata Pills */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, fontSize: 13, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  fontFamily: 'monospace',
+                  fontWeight: 700,
+                  color: 'var(--primary, #0284c7)',
+                  background: 'var(--primary-subtle, #e0f2fe)',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                {asset.assetCode}
+              </span>
+              {asset.serialNumber && (
+                <span>
+                  S/N: <strong style={{ color: 'var(--text)' }}>{asset.serialNumber}</strong>
+                </span>
+              )}
+              {asset.brand && (
+                <span>
+                  • Hãng: <strong style={{ color: 'var(--text)' }}>{asset.brand}</strong>
+                </span>
+              )}
+              {asset.model && (
+                <span>
+                  • Model: <strong style={{ color: 'var(--text)' }}>{asset.model}</strong>
+                </span>
+              )}
+              <span>
+                • Loại: <strong style={{ color: 'var(--text)' }}>{ASSET_CATEGORIES[asset.category]?.label?.split('/')[0] || asset.category}</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Toolbar */}
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            paddingTop: 16,
+            marginTop: 18,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 10,
+          }}
+        >
+          {/* Operations group */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {canAssign && (
               asset.currentAssignee ? (
                 <Button variant="danger" size="sm" onClick={() => setRevokeModalOpen(true)}>
@@ -205,7 +264,10 @@ export function AssetDetailScreen({
                 <PackageCheck style={{ width: 14, height: 14, marginRight: 6 }} /> Thanh lý
               </Button>
             )}
+          </div>
 
+          {/* Admin group */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {canEdit && (
               <Button variant="secondary" size="sm" onClick={() => setEditModalOpen(true)}>
                 <Edit style={{ width: 14, height: 14, marginRight: 6 }} /> Sửa
@@ -220,7 +282,7 @@ export function AssetDetailScreen({
           </div>
         </div>
 
-        {/* Thanh lý banner nếu có */}
+        {/* Liquidation banner if any */}
         {asset.liquidation && (
           <div
             style={{
@@ -349,150 +411,413 @@ export function AssetDetailScreen({
 
       {/* 4. Tab 1: Cấu hình & Thông tin chi tiết */}
       {activeTab === 'specs' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-          {/* Card Cấu hình phần cứng */}
-          <Card style={{ padding: 18 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Cpu style={{ width: 18, height: 18, color: 'var(--primary, #0284c7)' }} />
-              Cấu hình phần cứng
-            </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Top Section: 2 Balanced Cards (Hiện trạng & Mua hàng) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 20 }}>
+            {/* Card 1: Hiện trạng & Người sử dụng */}
+            <Card style={{ padding: 20, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                <UserCheck style={{ width: 18, height: 18, color: '#10b981' }} />
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Hiện trạng & Người sử dụng</h3>
+              </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Bộ vi xử lý (CPU)</span>
-                <span style={{ fontWeight: 600 }}>{specs.cpu || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Bộ nhớ RAM</span>
-                <span style={{ fontWeight: 600 }}>{specs.ram || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Ổ cứng (Storage)</span>
-                <span style={{ fontWeight: 600 }}>{specs.storage || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Card đồ họa (GPU)</span>
-                <span style={{ fontWeight: 600 }}>{specs.gpu || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Màn hình</span>
-                <span style={{ fontWeight: 600 }}>{specs.screen || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Hệ điều hành</span>
-                <span style={{ fontWeight: 600 }}>{specs.os || '—'}</span>
-              </div>
-              {specs.other && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 2 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Khác</span>
-                  <span style={{ fontWeight: 500 }}>{specs.other}</span>
+              {asset.currentAssignee ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
+                  {/* User Profile Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '50%',
+                        background: '#0284c7',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 16,
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {asset.currentAssignee.fullName?.charAt(0) || 'U'}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                        {asset.currentAssignee.fullName}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Mã NV: <strong>{asset.currentAssignee.code}</strong> {asset.currentAssignee.department?.name ? `• ${asset.currentAssignee.department.name}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Detail Key-Value List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Email nhân sự</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)', wordBreak: 'break-word' }}>{asset.currentAssignee.email || '—'}</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Số điện thoại</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>{asset.currentAssignee.phone || '—'}</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Ngày bàn giao</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>{asset.assignedAt ? fmtDate(asset.assignedAt) : '—'}</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Vị trí làm việc</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text)', wordBreak: 'break-word' }}>{asset.location || asset.currentDepartment?.name || 'Văn phòng làm việc'}</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Tình trạng lúc giao</span>
+                      <span style={{ fontWeight: 500, color: 'var(--text)' }}>{asset.assignments?.[0]?.conditionOnAssign || 'Mới 100%, hoạt động tốt'}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : asset.currentDepartment ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', background: 'var(--surface-subtle, #f8fafc)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 8,
+                        background: 'var(--primary-subtle, #e0f2fe)',
+                        color: 'var(--primary, #0284c7)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Building style={{ width: 24, height: 24 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{asset.currentDepartment.name}</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Cấp phát sử dụng chung cho phòng ban</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Mã phòng ban</span>
+                      <span style={{ fontWeight: 600 }}>{asset.currentDepartment.code}</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Ngày bàn giao</span>
+                      <span style={{ fontWeight: 600 }}>{asset.assignedAt ? fmtDate(asset.assignedAt) : '—'}</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Vị trí thiết bị</span>
+                      <span style={{ fontWeight: 600 }}>{asset.location || asset.currentDepartment.name}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1, justifyContent: 'center' }}>
+                  <div style={{ padding: '20px 16px', textAlign: 'center', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                    <PackageCheck style={{ width: 36, height: 36, color: '#16a34a', margin: '0 auto 8px', display: 'block' }} />
+                    <div style={{ fontWeight: 700, fontSize: 15, color: '#15803d' }}>Thiết bị đang lưu trong kho IT</div>
+                    <div style={{ fontSize: 12.5, color: '#166534', marginTop: 4 }}>Sẵn sàng cấp phát bàn giao cho nhân sự mới</div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Trạng thái</span>
+                      <span><Badge tone="success">Trong kho (Sẵn sàng)</Badge></span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', gap: 12 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Vị trí lưu kho</span>
+                      <span style={{ fontWeight: 600 }}>{asset.location || 'Kho thiết bị IT'}</span>
+                    </div>
+                  </div>
                 </div>
               )}
-            </div>
-          </Card>
+            </Card>
 
-          {/* Card Người sử dụng hiện tại */}
-          <Card style={{ padding: 18 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <UserCheck style={{ width: 18, height: 18, color: '#10b981' }} />
-              Người sử dụng hiện tại
-            </h3>
+            {/* Card 2: Mua hàng & Bảo hành */}
+            <Card style={{ padding: 20, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                <ShieldCheck style={{ width: 18, height: 18, color: '#8b5cf6' }} />
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Hồ sơ Mua hàng & Bảo hành</h3>
+              </div>
 
-            {asset.currentAssignee ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: '50%',
-                      background: '#0284c7',
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 16,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {asset.currentAssignee.fullName?.charAt(0) || 'U'}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{asset.currentAssignee.fullName}</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                      Mã NV: {asset.currentAssignee.code} • {asset.currentAssignee.department?.name}
-                    </div>
+              <div style={{ display: 'flex', flexDirection: 'column', fontSize: 13, flex: 1 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Ngày mua</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{asset.purchaseDate ? fmtDate(asset.purchaseDate) : '—'}</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Nguyên giá mua vào</span>
+                  <span style={{ fontWeight: 700, color: 'var(--text)' }}>
+                    {asset.purchasePrice != null ? formatCurrency(Number(asset.purchasePrice)) : '—'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Nhà cung cấp</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{asset.supplier || '—'}</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Thời hạn bảo hành</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{asset.warrantyMonths ? `${asset.warrantyMonths} tháng` : '—'}</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Hạn bảo hành</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, color: isWarrantyExpired ? '#ef4444' : 'var(--text)' }}>
+                      {asset.warrantyExpiresAt ? fmtDate(asset.warrantyExpiresAt) : '—'}
+                    </span>
+                    {asset.warrantyExpiresAt && (
+                      <Badge tone={isWarrantyExpired ? 'danger' : 'success'}>
+                        {isWarrantyExpired ? 'Đã hết hạn' : 'Còn bảo hành'}
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, marginTop: 4 }}>
-                  {asset.currentAssignee.email && (
-                    <div style={{ color: 'var(--text-muted)' }}>Email: {asset.currentAssignee.email}</div>
-                  )}
-                  {asset.currentAssignee.phone && (
-                    <div style={{ color: 'var(--text-muted)' }}>SĐT: {asset.currentAssignee.phone}</div>
-                  )}
-                  {asset.assignedAt && (
-                    <div style={{ color: 'var(--text-muted)' }}>
-                      Bàn giao từ: <strong>{fmtDate(asset.assignedAt)}</strong>
-                    </div>
-                  )}
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', borderBottom: '1px solid var(--border)', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Số Serial (S/N)</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>{asset.serialNumber || '—'}</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'baseline', padding: '9px 4px', gap: 12 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Vị trí lưu giữ</span>
+                  <span style={{ fontWeight: 500, color: 'var(--text)', wordBreak: 'break-word' }}>{asset.location || 'Kho IT'}</span>
                 </div>
               </div>
-            ) : asset.currentDepartment ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 0' }}>
-                <Building style={{ width: 28, height: 28, color: '#0284c7' }} />
+            </Card>
+          </div>
+
+          {/* Bottom Section: Card Cấu hình phần cứng chi tiết (Rộng rãi, 2 cột thẳng tắp) */}
+          <Card style={{ padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, borderBottom: '1px solid var(--border)', paddingBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: 'var(--primary-subtle, #e0f2fe)',
+                    color: 'var(--primary, #0284c7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Cpu style={{ width: 22, height: 22 }} />
+                </div>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{asset.currentDepartment.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Cấp phát chung cho phòng ban</div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Cấu hình phần cứng & Thông số kỹ thuật</h3>
+                  <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Chi tiết linh kiện phần cứng, thiết bị hiển thị và cấu hình hiện tại
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <PackageCheck style={{ width: 36, height: 36, color: '#10b981', margin: '0 auto 8px', display: 'block' }} />
-                <div style={{ fontWeight: 600, color: '#10b981' }}>Thiết bị đang ở trong kho</div>
-                <div style={{ fontSize: 12.5, marginTop: 2 }}>Sẵn sàng cấp phát cho nhân sự mới</div>
+
+              {canUpgrade && asset.status !== 'LIQUIDATED' && (
+                <Button variant="secondary" size="sm" onClick={() => setUpgradeModalOpen(true)}>
+                  <Cpu style={{ width: 14, height: 14, marginRight: 6 }} /> Nâng cấp phần cứng
+                </Button>
+              )}
+            </div>
+
+            {/* 2 Cột thông số: Cố định Label 160px, Value left-aligned thẳng hàng */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '14px 32px' }}>
+              {/* Cột 1 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    background: 'var(--surface-subtle, #f8fafc)',
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Bộ vi xử lý (CPU)
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: specs.cpu ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.cpu || '—'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Bộ nhớ RAM
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: specs.ram ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.ram || '—'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    background: 'var(--surface-subtle, #f8fafc)',
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Ổ cứng lưu trữ
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: specs.storage ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.storage || '—'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Card đồ họa (GPU)
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: specs.gpu ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.gpu || '—'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Cột 2 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    background: 'var(--surface-subtle, #f8fafc)',
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Màn hình hiển thị
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: specs.screen ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.screen || '—'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Hệ điều hành
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: specs.os ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.os || '—'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    background: 'var(--surface-subtle, #f8fafc)',
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Hãng & Model
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', wordBreak: 'break-word' }}>
+                    {[asset.brand, asset.model].filter(Boolean).join(' ') || '—'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '160px 1fr',
+                    alignItems: 'baseline',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid var(--border)',
+                    borderRadius: 6,
+                    gap: 16,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    Thông số khác
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 500, color: specs.other ? 'var(--text)' : 'var(--text-muted)', wordBreak: 'break-word' }}>
+                    {specs.other || '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Ghi chú kỹ thuật nếu có */}
+            {asset.notes && (
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: '12px 16px',
+                  background: 'var(--surface-subtle, #f8fafc)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border)',
+                  fontSize: 13,
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 10,
+                }}
+              >
+                <span style={{ fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  Ghi chú kỹ thuật:
+                </span>
+                <span style={{ color: 'var(--text)', wordBreak: 'break-word' }}>{asset.notes}</span>
               </div>
             )}
-          </Card>
-
-          {/* Card Mua hàng & Bảo hành */}
-          <Card style={{ padding: 18 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ShieldCheck style={{ width: 18, height: 18, color: '#8b5cf6' }} />
-              Mua hàng & Bảo hành
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Ngày mua</span>
-                <span style={{ fontWeight: 600 }}>{asset.purchaseDate ? fmtDate(asset.purchaseDate) : '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Nguyên giá mua vào</span>
-                <span style={{ fontWeight: 600 }}>
-                  {asset.purchasePrice != null ? formatCurrency(Number(asset.purchasePrice)) : '—'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Nhà cung cấp</span>
-                <span style={{ fontWeight: 600 }}>{asset.supplier || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Thời hạn bảo hành</span>
-                <span style={{ fontWeight: 600 }}>{asset.warrantyMonths ? `${asset.warrantyMonths} tháng` : '—'}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Hạn bảo hành</span>
-                <span style={{ fontWeight: 600, color: isWarrantyExpired ? '#ef4444' : 'inherit' }}>
-                  {asset.warrantyExpiresAt ? `${fmtDate(asset.warrantyExpiresAt)} ${isWarrantyExpired ? '(Hết hạn)' : ''}` : '—'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 2 }}>
-                <span style={{ color: 'var(--text-muted)' }}>Vị trí lưu giữ</span>
-                <span style={{ fontWeight: 500 }}>{asset.location || 'Kho IT'}</span>
-              </div>
-            </div>
           </Card>
         </div>
       )}
@@ -550,40 +875,41 @@ export function AssetDetailScreen({
                           {isCurrent && <Badge tone="info">Đang giữ</Badge>}
                         </div>
 
-                        <div style={{ fontSize: 13, marginTop: 4 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, fontSize: 13 }}>
                           {item.employee && (
-                            <span>
-                              Người nhận: <strong>{item.employee.fullName}</strong> ({item.employee.code})
-                            </span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12 }}>
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Người nhận máy:</span>
+                              <span style={{ color: 'var(--text)' }}><strong>{item.employee.fullName}</strong> ({item.employee.code})</span>
+                            </div>
                           )}
                           {item.handoverBy && (
-                            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
-                              • Người giao: {item.handoverBy.fullName}
-                            </span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12 }}>
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Người bàn giao:</span>
+                              <span style={{ color: 'var(--text)' }}>{item.handoverBy.fullName}</span>
+                            </div>
+                          )}
+                          {item.conditionOnAssign && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12 }}>
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Tình trạng giao:</span>
+                              <span style={{ color: 'var(--text)' }}>{item.conditionOnAssign}</span>
+                            </div>
+                          )}
+                          {item.returnedDate && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12 }}>
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Ngày thu hồi:</span>
+                              <span style={{ color: 'var(--text)' }}>{fmtDate(item.returnedDate)} {item.conditionOnReturn ? `(Tình trạng: ${item.conditionOnReturn})` : ''}</span>
+                            </div>
+                          )}
+                          {item.handoverNote && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12 }}>
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>Ghi chú:</span>
+                              <span style={{ color: 'var(--text-muted)' }}>{item.handoverNote}</span>
+                            </div>
                           )}
                         </div>
-
-                        {item.conditionOnAssign && (
-                          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                            Tình trạng lúc giao: <em>{item.conditionOnAssign}</em>
-                          </div>
-                        )}
-
-                        {item.returnedDate && (
-                          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                            Ngày thu hồi: {fmtDate(item.returnedDate)}
-                            {item.conditionOnReturn && ` • Tình trạng lúc trả: ${item.conditionOnReturn}`}
-                          </div>
-                        )}
-
-                        {item.handoverNote && (
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, background: 'var(--surface-subtle, #f8fafc)', padding: '6px 10px', borderRadius: 4 }}>
-                            Ghi chú: {item.handoverNote}
-                          </div>
-                        )}
                       </div>
 
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                         {fmtDate(item.assignedDate)}
                       </div>
                     </div>
@@ -715,14 +1041,28 @@ export function AssetDetailScreen({
                           </div>
                         )}
 
-                        <div style={{ display: 'flex', gap: 16, fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8, flexWrap: 'wrap' }}>
-                          <span>Ngày gửi: <strong>{fmtDate(item.startDate)}</strong></span>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px', fontSize: 13, marginTop: 10, padding: '8px 12px', background: 'var(--surface, #fff)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Ngày gửi:</span>
+                            <strong style={{ color: 'var(--text)' }}>{fmtDate(item.startDate)}</strong>
+                          </div>
                           {item.completedDate && (
-                            <span>Ngày xong: <strong>{fmtDate(item.completedDate)}</strong></span>
+                            <div>
+                              <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Ngày hoàn tất:</span>
+                              <strong style={{ color: 'var(--text)' }}>{fmtDate(item.completedDate)}</strong>
+                            </div>
                           )}
-                          {item.provider && <span>Nơi sửa: <strong>{item.provider}</strong></span>}
+                          {item.provider && (
+                            <div>
+                              <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Nơi sửa:</span>
+                              <strong style={{ color: 'var(--text)' }}>{item.provider}</strong>
+                            </div>
+                          )}
                           {item.cost != null && (
-                            <span>Chi phí: <strong>{formatCurrency(Number(item.cost))}</strong></span>
+                            <div>
+                              <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Chi phí:</span>
+                              <strong style={{ color: 'var(--primary, #0284c7)' }}>{formatCurrency(Number(item.cost))}</strong>
+                            </div>
                           )}
                         </div>
 
