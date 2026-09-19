@@ -1,0 +1,422 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
+import { requireAuth, requirePermission, can } from '@/server/auth/context';
+import { startWorkflow, actOnApproval, cancelWorkflow } from '@/server/modules/workflow/engine';
+import { notify } from '@/server/modules/notify/service';
+import { dateOnly, fmtDate } from '@/lib/date';
+import { formatDays } from '@/lib/utils';
+import {
+  calculateLeaveDays, generateLeaveCode, adjustBalance, findOverlapping, getOrCreateBalance, remainingDays,
+} from './service';
+import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
+
+export interface Result { ok: boolean; message: string; id?: number }
+
+const schema = z.object({
+  leaveTypeId: z.number().int(),
+  startDate: z.string().min(1, 'Chọn ngày bắt đầu'),
+  endDate: z.string().min(1, 'Chọn ngày kết thúc'),
+  durationType: z.enum(['FULL_DAY', 'HALF_DAY_MORNING', 'HALF_DAY_AFTERNOON']).default('FULL_DAY'),
+  reason: z.string().min(3, 'Nhập lý do nghỉ (tối thiểu 3 ký tự)'),
+  handoverToId: z.number().int().nullable(),
+  handoverNote: z.string().nullable().or(z.literal('')),
+  contactDuringLeave: z.string().nullable().or(z.literal('')),
+  attachmentUrl: z.string().nullable().or(z.literal('')),
+  attachmentName: z.string().nullable().or(z.literal('')),
+  /** true = nộp duyệt ngay, false = lưu nháp */
+  submit: z.boolean().default(true),
+});
+
+/** Xem trước số ngày nghỉ thực tế trước khi nộp đơn. */
+export async function previewLeaveDaysAction(startDate: string, endDate: string, durationType: string) {
+  const ctx = await requireAuth();
+  try {
+    const result = await calculateLeaveDays(ctx.employeeId, new Date(startDate), new Date(endDate), durationType);
+    return {
+      ok: true as const,
+      totalDays: result.totalDays,
+      workingDays: result.days.length,
+      skipped: result.skipped.map((s) => ({ date: s.date.toISOString().slice(0, 10), reason: s.reason })),
+    };
+  } catch (e) {
+    return { ok: false as const, message: e instanceof Error ? e.message : 'Không tính được số ngày nghỉ' };
+  }
+}
+
+export async function submitLeaveAction(id: number | null, raw: unknown): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_LEAVE_REQUEST');
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ' };
+  const d = parsed.data;
+
+  const leaveType = await prisma.leaveType.findUnique({ where: { id: d.leaveTypeId } });
+  if (!leaveType || !leaveType.isActive) return { ok: false, message: 'Loại nghỉ phép không hợp lệ' };
+
+  const startDate = dateOnly(new Date(d.startDate));
+  const endDate = dateOnly(new Date(d.endDate));
+  if (endDate < startDate) return { ok: false, message: 'Ngày kết thúc phải sau ngày bắt đầu' };
+
+  if (leaveType.requiresAttachment && !d.attachmentUrl && d.submit) {
+    return { ok: false, message: `Loại nghỉ "${leaveType.name}" yêu cầu đính kèm giấy tờ` };
+  }
+
+  // Báo trước tối thiểu
+  if (d.submit && leaveType.minAdvanceDays > 0) {
+    const daysAhead = Math.floor((startDate.getTime() - dateOnly(new Date()).getTime()) / 86400000);
+    if (daysAhead < leaveType.minAdvanceDays) {
+      return { ok: false, message: `Loại nghỉ "${leaveType.name}" cần báo trước ít nhất ${leaveType.minAdvanceDays} ngày` };
+    }
+  }
+
+  const { days, totalDays } = await calculateLeaveDays(ctx.employeeId, startDate, endDate, d.durationType);
+  if (totalDays <= 0) return { ok: false, message: 'Khoảng thời gian chọn không có ngày làm việc nào' };
+
+  if (leaveType.maxConsecutiveDays && totalDays > leaveType.maxConsecutiveDays) {
+    return { ok: false, message: `Loại nghỉ này tối đa ${leaveType.maxConsecutiveDays} ngày liên tục` };
+  }
+
+  const overlap = await findOverlapping(ctx.employeeId, startDate, endDate, id ?? undefined);
+  if (overlap) {
+    return { ok: false, message: `Trùng với đơn ${overlap.code} (${fmtDate(overlap.startDate)} – ${fmtDate(overlap.endDate)})` };
+  }
+
+  const year = startDate.getUTCFullYear();
+
+  // Kiểm tra quỹ phép nếu loại nghỉ có trừ phép
+  if (leaveType.deductsBalance && d.submit) {
+    const balance = await getOrCreateBalance(ctx.employeeId, year);
+    const available = remainingDays(balance) - Number(balance.pendingDays);
+    const allowNegative = await prisma.systemSetting.findUnique({ where: { key: 'leave.allowNegativeBalance' } });
+    if (available < totalDays && allowNegative?.valueJson !== true) {
+      return { ok: false, message: `Quỹ phép không đủ: còn ${formatDays(available)} ngày, đơn cần ${formatDays(totalDays)} ngày` };
+    }
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const data = {
+        employeeId: ctx.employeeId,
+        leaveTypeId: d.leaveTypeId,
+        startDate, endDate,
+        durationType: d.durationType,
+        totalDays,
+        reason: d.reason,
+        handoverToId: d.handoverToId,
+        handoverNote: d.handoverNote || null,
+        contactDuringLeave: d.contactDuringLeave || null,
+        attachmentUrl: d.attachmentUrl || null,
+        attachmentName: d.attachmentName || null,
+        status: (d.submit ? 'PENDING' : 'DRAFT') as never,
+        submittedAt: d.submit ? new Date() : null,
+        source: 'WEB' as const,
+      };
+
+      let request;
+      if (id) {
+        const existing = await tx.leaveRequest.findUnique({ where: { id } });
+        if (!existing) throw new Error('Không tìm thấy đơn');
+        if (existing.employeeId !== ctx.employeeId) throw new Error('Bạn chỉ sửa được đơn của chính mình');
+        if (!['DRAFT', 'REJECTED'].includes(existing.status)) throw new Error('Chỉ sửa được đơn ở trạng thái nháp hoặc bị từ chối');
+
+        request = await tx.leaveRequest.update({ where: { id }, data });
+        await tx.leaveRequestDay.deleteMany({ where: { requestId: id } });
+      } else {
+        request = await tx.leaveRequest.create({ data: { ...data, code: await generateLeaveCode(tx) } });
+      }
+
+      await tx.leaveRequestDay.createMany({
+        data: days.map((day) => ({ requestId: request.id, date: day.date, portion: day.portion })),
+      });
+
+      if (!d.submit) return { request, workflowStatus: null as string | null };
+
+      // Giữ chỗ quỹ phép ngay khi nộp
+      if (leaveType.deductsBalance) {
+        await adjustBalance(tx, ctx.employeeId, year, { pending: totalDays });
+      }
+
+      const instance = await startWorkflow({
+        entityType: 'LEAVE',
+        entityId: request.id,
+        requesterId: ctx.employeeId,
+        definitionId: leaveType.workflowDefinitionId,
+        context: {
+          totalDays,
+          leaveTypeCode: leaveType.code,
+          isPaid: leaveType.isPaid,
+          departmentId: ctx.departmentId,
+          employeeId: ctx.employeeId,
+        },
+      }, tx);
+
+      await tx.leaveRequest.update({ where: { id: request.id }, data: { workflowInstanceId: instance.id } });
+
+      return { request, workflowStatus: instance.status };
+    });
+
+    // Đơn tự duyệt xong ngay (mọi bước bị bỏ qua) → chốt luôn
+    if (result.workflowStatus === 'APPROVED') {
+      await finalizeLeave(result.request.id, 'APPROVED');
+    } else if (result.workflowStatus === 'RUNNING') {
+      await notifyPendingApprovers(result.request.id);
+    }
+
+    if (d.submit) {
+      dispatchOutboundWebhook('leave.submitted', {
+        id: result.request.id,
+        code: result.request.code,
+        employeeId: ctx.employeeId,
+        employeeName: ctx.fullName,
+        leaveTypeId: d.leaveTypeId,
+        leaveTypeName: leaveType.name,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        totalDays,
+        reason: d.reason,
+      }).catch((err) => console.error('[Webhook leave.submitted Error]:', err));
+    }
+
+    revalidatePath('/leaves');
+    revalidatePath('/approvals');
+    return {
+      ok: true,
+      message: d.submit ? `Đã nộp đơn ${result.request.code} (${formatDays(totalDays)} ngày)` : 'Đã lưu nháp đơn nghỉ phép',
+      id: result.request.id,
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Nộp đơn thất bại' };
+  }
+}
+
+/** Chốt kết quả đơn sau khi quy trình duyệt kết thúc: cập nhật trạng thái, quỹ phép, thông báo. */
+export async function finalizeLeave(requestId: number, status: 'APPROVED' | 'REJECTED' | 'CANCELLED', note?: string) {
+  const request = await prisma.leaveRequest.findUnique({
+    where: { id: requestId },
+    include: { leaveType: true, employee: { select: { id: true, fullName: true } } },
+  });
+  if (!request) return;
+  if (['APPROVED', 'REJECTED', 'CANCELLED'].includes(request.status)) return;
+
+  const year = request.startDate.getUTCFullYear();
+  const total = Number(request.totalDays);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveRequest.update({
+      where: { id: requestId },
+      data: { status: status as never, closedAt: new Date(), closingNote: note ?? null },
+    });
+
+    if (request.leaveType.deductsBalance && request.submittedAt) {
+      if (status === 'APPROVED') {
+        await adjustBalance(tx, request.employeeId, year, { pending: -total, used: total });
+      } else {
+        await adjustBalance(tx, request.employeeId, year, { pending: -total });
+      }
+    }
+  });
+
+  // Đồng bộ bảng chấm công cho các ngày đã duyệt
+  if (status === 'APPROVED') {
+    const days = await prisma.leaveRequestDay.findMany({ where: { requestId } });
+    for (const day of days) {
+      await prisma.attendanceRecord.upsert({
+        where: { employeeId_workDate: { employeeId: request.employeeId, workDate: day.date } },
+        update: { status: Number(day.portion) < 1 ? 'HALF_DAY' : 'LEAVE' },
+        create: {
+          employeeId: request.employeeId, workDate: day.date, source: 'SYSTEM',
+          status: Number(day.portion) < 1 ? 'HALF_DAY' : 'LEAVE',
+        },
+      });
+    }
+  }
+
+  const balance = await getOrCreateBalance(request.employeeId, year);
+  const approverName = note ?? '';
+
+  await notify({
+    templateCode: status === 'APPROVED' ? 'LEAVE_APPROVED' : 'LEAVE_REJECTED',
+    employeeIds: [request.employeeId, ...(request.handoverToId && status === 'APPROVED' ? [request.handoverToId] : [])],
+    linkPath: `/leaves/${requestId}`,
+    vars: {
+      code: request.code,
+      leaveType: request.leaveType.name,
+      startDate: fmtDate(request.startDate),
+      endDate: fmtDate(request.endDate),
+      totalDays: formatDays(request.totalDays),
+      approver: approverName || 'Hệ thống',
+      reason: note ?? '',
+      remaining: formatDays(remainingDays(balance)),
+    },
+  });
+
+  if (status === 'APPROVED' || status === 'REJECTED') {
+    const event = status === 'APPROVED' ? 'leave.approved' : 'leave.rejected';
+    dispatchOutboundWebhook(event, {
+      id: request.id,
+      code: request.code,
+      employeeId: request.employeeId,
+      employeeName: request.employee.fullName,
+      leaveTypeId: request.leaveTypeId,
+      leaveTypeName: request.leaveType.name,
+      startDate: request.startDate.toISOString(),
+      endDate: request.endDate.toISOString(),
+      totalDays: Number(request.totalDays),
+      status,
+      closingNote: note ?? null,
+    }).catch((err) => console.error(`[Webhook ${event} Error]:`, err));
+  }
+}
+
+/** Gửi thông báo cho những người đang phải duyệt ở bước hiện tại. */
+export async function notifyPendingApprovers(requestId: number) {
+  const request = await prisma.leaveRequest.findUnique({
+    where: { id: requestId },
+    include: {
+      employee: { select: { fullName: true, department: { select: { name: true } } } },
+      leaveType: { select: { name: true } },
+      workflow: { include: { tasks: { where: { status: 'PENDING' }, select: { approverId: true } } } },
+    },
+  });
+  if (!request?.workflow) return;
+
+  const approverIds = request.workflow.tasks.map((t) => t.approverId);
+  if (approverIds.length === 0) return;
+
+  await notify({
+    templateCode: 'LEAVE_SUBMITTED',
+    employeeIds: approverIds,
+    linkPath: `/leaves/${requestId}`,
+    dedupeKey: `LEAVE_SUBMITTED:${requestId}:${request.workflow.currentStepOrder}`,
+    vars: {
+      code: request.code,
+      employee: request.employee.fullName,
+      department: request.employee.department?.name ?? '—',
+      leaveType: request.leaveType.name,
+      startDate: fmtDate(request.startDate),
+      endDate: fmtDate(request.endDate),
+      totalDays: formatDays(request.totalDays),
+      reason: request.reason,
+    },
+  });
+}
+
+export async function approveLeaveAction(approvalTaskId: number, decision: 'APPROVE' | 'REJECT', comment?: string): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_LEAVE_APPROVE');
+
+  if (decision === 'REJECT' && !comment?.trim()) {
+    return { ok: false, message: 'Vui lòng nhập lý do từ chối' };
+  }
+
+  const result = await actOnApproval({
+    approvalTaskId, actorEmployeeId: ctx.employeeId, decision, comment: comment?.trim(),
+  });
+  if (!result.ok) return { ok: false, message: result.message };
+
+  if (result.entityType === 'LEAVE' && result.entityId) {
+    if (result.instanceStatus === 'APPROVED') {
+      await finalizeLeave(result.entityId, 'APPROVED', ctx.fullName);
+    } else if (result.instanceStatus === 'REJECTED') {
+      await finalizeLeave(result.entityId, 'REJECTED', comment?.trim() || ctx.fullName);
+    } else {
+      await notifyPendingApprovers(result.entityId);
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: ctx.userId, entityType: 'LeaveRequest', entityId: String(result.entityId ?? ''),
+      action: decision === 'APPROVE' ? 'APPROVE' : 'REJECT', diffJson: { comment } as never,
+    },
+  });
+
+  revalidatePath('/approvals');
+  revalidatePath('/leaves');
+  if (result.entityId) revalidatePath(`/leaves/${result.entityId}`);
+  return { ok: true, message: result.message };
+}
+
+export async function cancelLeaveAction(requestId: number, reason?: string): Promise<Result> {
+  const ctx = await requireAuth();
+  const request = await prisma.leaveRequest.findUnique({ where: { id: requestId } });
+  if (!request) return { ok: false, message: 'Không tìm thấy đơn' };
+
+  const isOwner = request.employeeId === ctx.employeeId;
+  if (!isOwner && !can(ctx, 'FEATURE_LEAVE_FORCE_CLOSE')) {
+    return { ok: false, message: 'Bạn không có quyền hủy đơn này' };
+  }
+  if (!['DRAFT', 'PENDING', 'APPROVED'].includes(request.status)) {
+    return { ok: false, message: 'Đơn này không thể hủy' };
+  }
+  if (request.status === 'APPROVED' && isOwner && request.startDate < new Date()) {
+    return { ok: false, message: 'Không thể tự hủy đơn đã bắt đầu — liên hệ HR' };
+  }
+
+  if (request.workflowInstanceId) {
+    await cancelWorkflow(request.workflowInstanceId, ctx.employeeId, reason);
+  }
+
+  const leaveType = await prisma.leaveType.findUnique({ where: { id: request.leaveTypeId } });
+  const year = request.startDate.getUTCFullYear();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveRequest.update({
+      where: { id: requestId },
+      data: { status: 'CANCELLED', closedAt: new Date(), closingNote: reason ?? null },
+    });
+
+    if (leaveType?.deductsBalance && request.submittedAt) {
+      if (request.status === 'APPROVED') await adjustBalance(tx, request.employeeId, year, { used: -Number(request.totalDays) });
+      else if (request.status === 'PENDING') await adjustBalance(tx, request.employeeId, year, { pending: -Number(request.totalDays) });
+    }
+
+    // Trả lại bảng công về trạng thái chưa chốt
+    await tx.attendanceRecord.deleteMany({
+      where: {
+        employeeId: request.employeeId,
+        workDate: { gte: request.startDate, lte: request.endDate },
+        source: 'SYSTEM',
+        status: { in: ['LEAVE', 'HALF_DAY'] },
+      },
+    });
+  });
+
+  revalidatePath('/leaves');
+  revalidatePath(`/leaves/${requestId}`);
+  revalidatePath('/approvals');
+  return { ok: true, message: `Đã hủy đơn ${request.code}` };
+}
+
+const balanceSchema = z.object({
+  employeeId: z.number().int(),
+  year: z.number().int(),
+  standardDays: z.number(),
+  bonusDays: z.number(),
+  carriedOverDays: z.number(),
+  note: z.string().nullable().or(z.literal('')),
+});
+
+export async function updateBalanceAction(raw: unknown): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_LEAVE_BALANCE_MANAGE');
+  const parsed = balanceSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ' };
+  const d = parsed.data;
+
+  const balance = await getOrCreateBalance(d.employeeId, d.year);
+  await prisma.leaveBalance.update({
+    where: { id: balance.id },
+    data: {
+      standardDays: d.standardDays, bonusDays: d.bonusDays,
+      carriedOverDays: d.carriedOverDays, note: d.note || null,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: { actorId: ctx.userId, entityType: 'LeaveBalance', entityId: String(balance.id), action: 'UPDATE', diffJson: d as never },
+  });
+
+  revalidatePath('/leaves');
+  return { ok: true, message: 'Đã cập nhật quỹ phép' };
+}

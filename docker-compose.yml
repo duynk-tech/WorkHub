@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: workhub-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=mysql://workhub:workhub_secret_pw@db:3306/workhub
+      - APP_URL=http://localhost:3000
+      - APP_NAME=WorkHub
+      - AUTH_SECRET=change-this-to-a-secure-random-secret-key-32-chars
+      - APP_ENCRYPTION_KEY=ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=
+      - CRON_SECRET=production-cron-secret
+      - TZ=Asia/Ho_Chi_Minh
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    container_name: workhub-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root_secret_pw
+      MARIADB_DATABASE: workhub
+      MARIADB_USER: workhub
+      MARIADB_PASSWORD: workhub_secret_pw
+    ports:
+      - "3306:3306"
+    volumes:
+      - workhub_mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  workhub_mariadb_data:

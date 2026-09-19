@@ -1,0 +1,987 @@
+// WorkHub — code-first schema. Nguồn sự thật duy nhất của database.
+// Provider mysql: chạy được trên cả MySQL 8 và MariaDB 10.6+.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// ============================================================
+// 1. TỔ CHỨC — phòng ban phân cấp, chức danh, nhân sự, tài khoản
+// ============================================================
+
+model Department {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(64)
+  name        String   @db.VarChar(191)
+  parentId    Int?
+  /// Materialized path dạng "/1/4/9/" — truy vấn cả nhánh bằng LIKE '/1/4/%'
+  path        String   @default("/") @db.VarChar(512)
+  level       Int      @default(1)
+  sortOrder   Int      @default(0)
+  managerId   Int?
+  email       String?  @db.VarChar(191)
+  phone       String?  @db.VarChar(32)
+  costCenter  String?  @db.VarChar(64)
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Department?  @relation("DeptTree", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  children Department[] @relation("DeptTree")
+  manager  Employee?    @relation("DeptManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  employees  Employee[]      @relation("EmployeeDept")
+  tasks      Task[]
+  roleScopes RoleDeptScope[]
+
+  @@index([parentId])
+  @@index([path])
+  @@index([managerId])
+}
+
+model Position {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @db.VarChar(64)
+  name      String   @db.VarChar(191)
+  /// Cấp bậc dùng cho định tuyến duyệt (số càng lớn càng cao)
+  rankLevel Int      @default(1)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  PROBATION
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  RESIGNED
+}
+
+model Employee {
+  id             Int            @id @default(autoincrement())
+  code           String         @unique @db.VarChar(64)
+  fullName       String         @db.VarChar(191)
+  email          String?        @unique @db.VarChar(191)
+  phone          String?        @db.VarChar(32)
+  zaloUserId     String?        @unique @db.VarChar(191)
+  avatarUrl      String?        @db.VarChar(512)
+  departmentId   Int?
+  positionId     Int?
+  managerId      Int?
+  workShiftId    Int?
+  employmentType EmploymentType @default(FULL_TIME)
+  status         EmployeeStatus @default(ACTIVE)
+  gender         String?        @db.VarChar(16)
+  dateOfBirth    DateTime?      @db.Date
+  joinDate       DateTime?      @db.Date
+  leaveDate      DateTime?      @db.Date
+  note           String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  department Department? @relation("EmployeeDept", fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  position   Position?   @relation(fields: [positionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  manager    Employee?   @relation("EmployeeChain", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reports    Employee[]  @relation("EmployeeChain")
+  workShift  WorkShift?  @relation(fields: [workShiftId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  user           User?
+  managedDepts   Department[]         @relation("DeptManager")
+  tasksAssigned  Task[]               @relation("TaskAssignee")
+  tasksCreated   Task[]               @relation("TaskCreator")
+  tasksReviewing Task[]               @relation("TaskReviewer")
+  taskWatchers   TaskWatcher[]
+  taskComments   TaskComment[]
+  taskTimeLogs   TaskTimeLog[]
+  leaveBalances  LeaveBalance[]
+  leaveRequests  LeaveRequest[]       @relation("LeaveRequester")
+  leaveHandovers LeaveRequest[]       @relation("LeaveHandover")
+  approvalTasks  ApprovalTask[]       @relation("Approver")
+  delegatedTasks ApprovalTask[]       @relation("DelegatedFrom")
+  attendance     AttendanceRecord[]
+  notifications  NotificationOutbox[]
+  workflowSteps  WorkflowStep[]       @relation("StepSpecificApprover")
+
+  @@index([departmentId])
+  @@index([managerId])
+  @@index([positionId])
+  @@index([status])
+}
+
+model User {
+  id                 Int       @id @default(autoincrement())
+  employeeId         Int       @unique
+  username           String    @unique @db.VarChar(64)
+  passwordHash       String    @db.VarChar(255)
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  lastLoginIp        String?   @db.VarChar(64)
+  failedAttempts     Int       @default(0)
+  lockedUntil        DateTime?
+  locale             String    @default("vi") @db.VarChar(8)
+  theme              String    @default("system") @db.VarChar(16)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  roles         UserRole[]
+  auditLogs     AuditLog[]
+  inAppNotifs   InAppNotification[]
+  mcpClients    McpClient[]         @relation("McpActAsUser")
+  reportPresets ReportPreset[]
+  zaloLinkCodes ZaloLinkCode[]
+}
+
+/// Phạm vi dữ liệu của một vai trò
+enum DataScope {
+  ALL
+  DEPT_TREE
+  DEPT
+  SELF
+  CUSTOM
+}
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(64)
+  name        String    @db.VarChar(191)
+  description String?   @db.Text
+  dataScope   DataScope @default(SELF)
+  isSystem    Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+  deptScopes  RoleDeptScope[]
+  wfSteps     WorkflowStep[]   @relation("StepRoleApprover")
+}
+
+enum PermissionCategory {
+  MENU
+  FEATURE
+}
+
+model Permission {
+  code        String             @id @db.VarChar(64)
+  name        String             @db.VarChar(191)
+  groupName   String             @db.VarChar(64)
+  category    PermissionCategory @default(FEATURE)
+  description String?            @db.Text
+  sortOrder   Int                @default(0)
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId         Int
+  permissionCode String @db.VarChar(64)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  permission Permission @relation(fields: [permissionCode], references: [code], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([roleId, permissionCode])
+  @@index([permissionCode])
+}
+
+model UserRole {
+  userId Int
+  roleId Int
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RoleDeptScope {
+  roleId       Int
+  departmentId Int
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([roleId, departmentId])
+  @@index([departmentId])
+}
+
+// ============================================================
+// 2. CÔNG VIỆC
+// ============================================================
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  BLOCKED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum RecordSource {
+  WEB
+  ZALO
+  MCP
+  IMPORT
+  SYSTEM
+}
+
+model Task {
+  id             Int          @id @default(autoincrement())
+  code           String       @unique @db.VarChar(32)
+  title          String       @db.VarChar(255)
+  description    String?      @db.Text
+  departmentId   Int?
+  creatorId      Int
+  assigneeId     Int?
+  reviewerId     Int?
+  parentTaskId   Int?
+  status         TaskStatus   @default(TODO)
+  priority       TaskPriority @default(MEDIUM)
+  startDate      DateTime?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  progress       Int          @default(0)
+  estimateHours  Decimal?     @db.Decimal(7, 2)
+  actualHours    Decimal?     @db.Decimal(7, 2)
+  tags           String?      @db.VarChar(512)
+  isRecurring    Boolean      @default(false)
+  recurrenceRule String?      @db.VarChar(255)
+  source         RecordSource @default(WEB)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  creator    Employee    @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  assignee   Employee?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reviewer   Employee?   @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  parentTask Task?       @relation("SubTask", fields: [parentTaskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  subTasks   Task[]      @relation("SubTask")
+
+  watchers    TaskWatcher[]
+  checklist   TaskChecklistItem[]
+  comments    TaskComment[]
+  attachments TaskAttachment[]
+  timeLogs    TaskTimeLog[]
+  activities  TaskActivity[]
+  reminders   TaskReminder[]
+
+  @@index([assigneeId, status])
+  @@index([departmentId, status])
+  @@index([dueDate])
+  @@index([creatorId])
+  @@index([parentTaskId])
+}
+
+model TaskWatcher {
+  taskId     Int
+  employeeId Int
+
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([taskId, employeeId])
+  @@index([employeeId])
+}
+
+model TaskChecklistItem {
+  id          Int       @id @default(autoincrement())
+  taskId      Int
+  content     String    @db.VarChar(512)
+  isDone      Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  completedAt DateTime?
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskComment {
+  id        Int          @id @default(autoincrement())
+  taskId    Int
+  authorId  Int
+  content   String       @db.Text
+  source    RecordSource @default(WEB)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  task   Task     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  author Employee @relation(fields: [authorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([taskId])
+  @@index([authorId])
+}
+
+model TaskAttachment {
+  id           Int      @id @default(autoincrement())
+  taskId       Int
+  fileName     String   @db.VarChar(255)
+  filePath     String   @db.VarChar(512)
+  mimeType     String?  @db.VarChar(128)
+  sizeBytes    Int      @default(0)
+  uploadedById Int?
+  createdAt    DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskTimeLog {
+  id          Int      @id @default(autoincrement())
+  taskId      Int
+  employeeId  Int
+  workDate    DateTime @db.Date
+  hours       Decimal  @db.Decimal(5, 2)
+  description String?  @db.VarChar(512)
+  createdAt   DateTime @default(now())
+
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([taskId])
+  @@index([employeeId, workDate])
+}
+
+model TaskActivity {
+  id        Int      @id @default(autoincrement())
+  taskId    Int
+  actorId   Int?
+  action    String   @db.VarChar(64)
+  field     String?  @db.VarChar(64)
+  oldValue  String?  @db.Text
+  newValue  String?  @db.Text
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskReminder {
+  id                     Int       @id @default(autoincrement())
+  taskId                 Int
+  offsetMinutesBeforeDue Int       @default(1440)
+  channels               String    @default("ZALO,IN_APP") @db.VarChar(64)
+  targetAssignee         Boolean   @default(true)
+  targetWatchers         Boolean   @default(false)
+  targetManager          Boolean   @default(false)
+  isActive               Boolean   @default(true)
+  lastSentAt             DateTime?
+  createdAt              DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([taskId])
+}
+
+// ============================================================
+// 3. NGHỈ PHÉP
+// ============================================================
+
+model LeaveType {
+  id                   Int      @id @default(autoincrement())
+  code                 String   @unique @db.VarChar(64)
+  name                 String   @db.VarChar(191)
+  description          String?  @db.Text
+  defaultDaysPerYear   Decimal  @default(12) @db.Decimal(5, 1)
+  isPaid               Boolean  @default(true)
+  deductsBalance       Boolean  @default(true)
+  requiresAttachment   Boolean  @default(false)
+  allowHalfDay         Boolean  @default(true)
+  minAdvanceDays       Int      @default(1)
+  maxConsecutiveDays   Int?
+  workflowDefinitionId Int?
+  color                String   @default("#3b82f6") @db.VarChar(16)
+  isActive             Boolean  @default(true)
+  sortOrder            Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  workflowDefinition WorkflowDefinition? @relation(fields: [workflowDefinitionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  requests           LeaveRequest[]
+}
+
+model LeaveBalance {
+  id              Int      @id @default(autoincrement())
+  employeeId      Int
+  year            Int
+  standardDays    Decimal  @default(12) @db.Decimal(5, 1)
+  bonusDays       Decimal  @default(0) @db.Decimal(5, 1)
+  carriedOverDays Decimal  @default(0) @db.Decimal(5, 1)
+  usedDays        Decimal  @default(0) @db.Decimal(5, 1)
+  pendingDays     Decimal  @default(0) @db.Decimal(5, 1)
+  note            String?  @db.VarChar(512)
+  updatedAt       DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([employeeId, year])
+  @@index([year])
+}
+
+enum LeaveStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveDuration {
+  FULL_DAY
+  HALF_DAY_MORNING
+  HALF_DAY_AFTERNOON
+}
+
+model LeaveRequest {
+  id                 Int           @id @default(autoincrement())
+  code               String        @unique @db.VarChar(32)
+  employeeId         Int
+  leaveTypeId        Int
+  startDate          DateTime      @db.Date
+  endDate            DateTime      @db.Date
+  durationType       LeaveDuration @default(FULL_DAY)
+  totalDays          Decimal       @default(1) @db.Decimal(5, 1)
+  reason             String        @db.Text
+  attachmentUrl      String?       @db.VarChar(512)
+  attachmentName     String?       @db.VarChar(255)
+  handoverToId       Int?
+  handoverNote       String?       @db.Text
+  contactDuringLeave String?       @db.VarChar(64)
+  status             LeaveStatus   @default(DRAFT)
+  workflowInstanceId Int?          @unique
+  submittedAt        DateTime?
+  closedAt           DateTime?
+  closingNote        String?       @db.Text
+  source             RecordSource  @default(WEB)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  employee   Employee          @relation("LeaveRequester", fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  leaveType  LeaveType         @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  handoverTo Employee?         @relation("LeaveHandover", fields: [handoverToId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  workflow   WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  days       LeaveRequestDay[]
+
+  @@index([employeeId, status])
+  @@index([startDate, endDate])
+  @@index([status])
+}
+
+model LeaveRequestDay {
+  id        Int      @id @default(autoincrement())
+  requestId Int
+  date      DateTime @db.Date
+  portion   Decimal  @default(1.0) @db.Decimal(3, 1)
+
+  request LeaveRequest @relation(fields: [requestId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([requestId, date])
+  @@index([date])
+}
+
+model Holiday {
+  id     Int      @id @default(autoincrement())
+  date   DateTime @unique @db.Date
+  name   String   @db.VarChar(191)
+  isPaid Boolean  @default(true)
+  year   Int
+
+  @@index([year])
+}
+
+// ============================================================
+// 4. WORKFLOW ENGINE (dùng chung cho Leave / OT / điều chỉnh công)
+// ============================================================
+
+enum WorkflowEntityType {
+  LEAVE
+  OVERTIME
+  ATTENDANCE_ADJUST
+  TASK_CLOSE
+}
+
+enum ApproverType {
+  DIRECT_MANAGER
+  MANAGER_CHAIN_LEVEL
+  DEPT_HEAD
+  PARENT_DEPT_HEAD
+  ROLE
+  POSITION_RANK
+  SPECIFIC_USER
+  HR
+}
+
+enum StepMode {
+  SEQUENTIAL
+  PARALLEL_ALL
+  PARALLEL_ANY
+}
+
+model WorkflowDefinition {
+  id            Int                @id @default(autoincrement())
+  code          String             @unique @db.VarChar(64)
+  name          String             @db.VarChar(191)
+  description   String?            @db.Text
+  entityType    WorkflowEntityType @default(LEAVE)
+  version       Int                @default(1)
+  isActive      Boolean            @default(true)
+  isDefault     Boolean            @default(false)
+  /// Điều kiện áp dụng: {"departmentIds":[1,2],"leaveTypeCodes":["ANNUAL"]}
+  appliesToJson Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  steps      WorkflowStep[]
+  instances  WorkflowInstance[]
+  leaveTypes LeaveType[]
+
+  @@index([entityType, isActive])
+}
+
+model WorkflowStep {
+  id                    Int          @id @default(autoincrement())
+  definitionId          Int
+  stepOrder             Int
+  name                  String       @db.VarChar(191)
+  approverType          ApproverType
+  /// Tham chiếu phụ thuộc approverType: roleId / positionRank / specificEmployeeId / chainLevel
+  roleId                Int?
+  positionRank          Int?
+  specificEmployeeId    Int?
+  chainLevel            Int?
+  mode                  StepMode     @default(SEQUENTIAL)
+  /// Điều kiện chạy bước: {"field":"totalDays","op":">","value":3}
+  conditionJson         Json?
+  slaHours              Int?
+  allowDelegate         Boolean      @default(true)
+  skipIfSameAsRequester Boolean      @default(true)
+  skipIfNoApprover      Boolean      @default(true)
+  notifyOnly            Boolean      @default(false)
+
+  definition       WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  role             Role?              @relation("StepRoleApprover", fields: [roleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  specificEmployee Employee?          @relation("StepSpecificApprover", fields: [specificEmployeeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  approvalTasks    ApprovalTask[]
+
+  @@unique([definitionId, stepOrder])
+  @@index([roleId])
+  @@index([specificEmployeeId])
+}
+
+enum WorkflowStatus {
+  RUNNING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model WorkflowInstance {
+  id               Int                @id @default(autoincrement())
+  definitionId     Int
+  entityType       WorkflowEntityType
+  entityId         Int
+  requesterId      Int
+  status           WorkflowStatus     @default(RUNNING)
+  currentStepOrder Int                @default(1)
+  /// Ảnh chụp dữ liệu đơn lúc nộp, dùng để đánh giá điều kiện bước
+  contextJson      Json?
+  startedAt        DateTime           @default(now())
+  finishedAt       DateTime?
+
+  definition   WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  tasks        ApprovalTask[]
+  logs         WorkflowLog[]
+  leaveRequest LeaveRequest?
+
+  @@index([entityType, entityId])
+  @@index([status])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+  DELEGATED
+  EXPIRED
+  CANCELLED
+}
+
+model ApprovalTask {
+  id              Int            @id @default(autoincrement())
+  instanceId      Int
+  stepId          Int
+  stepOrder       Int
+  approverId      Int
+  status          ApprovalStatus @default(PENDING)
+  comment         String?        @db.Text
+  actedAt         DateTime?
+  dueAt           DateTime?
+  delegatedFromId Int?
+  remindedAt      DateTime?
+  createdAt       DateTime       @default(now())
+
+  instance      WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  step          WorkflowStep     @relation(fields: [stepId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  approver      Employee         @relation("Approver", fields: [approverId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  delegatedFrom Employee?        @relation("DelegatedFrom", fields: [delegatedFromId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([instanceId, stepOrder])
+  @@index([approverId, status])
+}
+
+model WorkflowLog {
+  id         Int      @id @default(autoincrement())
+  instanceId Int
+  actorId    Int?
+  action     String   @db.VarChar(64)
+  fromStatus String?  @db.VarChar(32)
+  toStatus   String?  @db.VarChar(32)
+  note       String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([instanceId])
+}
+
+// ============================================================
+// 5. CHẤM CÔNG
+// ============================================================
+
+model WorkShift {
+  id               Int      @id @default(autoincrement())
+  code             String   @unique @db.VarChar(64)
+  name             String   @db.VarChar(191)
+  startTime        String   @db.VarChar(5)
+  endTime          String   @db.VarChar(5)
+  breakMinutes     Int      @default(60)
+  lateToleranceMin Int      @default(5)
+  /// Bitmask thứ làm việc: bit0=CN … bit6=T7 (mặc định T2–T6 = 62)
+  workDays         Int      @default(62)
+  standardHours    Decimal  @default(8) @db.Decimal(4, 2)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  employees Employee[]
+  records   AttendanceRecord[]
+}
+
+model OfficeLocation {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(191)
+  address      String?  @db.VarChar(512)
+  latitude     Decimal  @db.Decimal(10, 7)
+  longitude    Decimal  @db.Decimal(10, 7)
+  radiusMeters Int      @default(200)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  EARLY_LEAVE
+  ABSENT
+  LEAVE
+  HALF_DAY
+  HOLIDAY
+  WEEKEND
+  WFH
+  MISSING_CHECKOUT
+}
+
+model AttendanceRecord {
+  id                Int              @id @default(autoincrement())
+  employeeId        Int
+  workDate          DateTime         @db.Date
+  shiftId           Int?
+  checkInAt         DateTime?
+  checkOutAt        DateTime?
+  source            RecordSource     @default(WEB)
+  checkInLat        Decimal?         @db.Decimal(10, 7)
+  checkInLng        Decimal?         @db.Decimal(10, 7)
+  checkInAddress    String?          @db.VarChar(512)
+  checkOutLat       Decimal?         @db.Decimal(10, 7)
+  checkOutLng       Decimal?         @db.Decimal(10, 7)
+  deviceInfo        String?          @db.VarChar(255)
+  lateMinutes       Int              @default(0)
+  earlyLeaveMinutes Int              @default(0)
+  workedMinutes     Int              @default(0)
+  otMinutes         Int              @default(0)
+  status            AttendanceStatus @default(PRESENT)
+  note              String?          @db.VarChar(512)
+  importBatchId     Int?
+  editedById        Int?
+  editedAt          DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  employee    Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  shift       WorkShift?             @relation(fields: [shiftId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  importBatch AttendanceImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  adjustments AttendanceAdjustment[]
+
+  @@unique([employeeId, workDate])
+  @@index([workDate])
+  @@index([status])
+}
+
+model AttendanceImportBatch {
+  id           Int      @id @default(autoincrement())
+  fileName     String   @db.VarChar(255)
+  importedById Int?
+  rowCount     Int      @default(0)
+  okCount      Int      @default(0)
+  errorCount   Int      @default(0)
+  logJson      Json?
+  createdAt    DateTime @default(now())
+
+  records AttendanceRecord[]
+}
+
+model AttendanceAdjustment {
+  id                 Int            @id @default(autoincrement())
+  recordId           Int
+  requestedById      Int
+  reason             String         @db.Text
+  proposedJson       Json
+  workflowInstanceId Int?
+  status             ApprovalStatus @default(PENDING)
+  createdAt          DateTime       @default(now())
+  resolvedAt         DateTime?
+
+  record AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([recordId])
+}
+
+// ============================================================
+// 6. THÔNG BÁO / ZALO
+// ============================================================
+
+enum NotifyChannel {
+  ZALO
+  IN_APP
+  EMAIL
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationTemplate {
+  code          String        @id @db.VarChar(64)
+  name          String        @db.VarChar(191)
+  channel       NotifyChannel @default(ZALO)
+  title         String?       @db.VarChar(255)
+  bodyTemplate  String        @db.Text
+  variablesJson Json?
+  isActive      Boolean       @default(true)
+  updatedAt     DateTime      @updatedAt
+}
+
+model NotificationOutbox {
+  id                  Int           @id @default(autoincrement())
+  channel             NotifyChannel @default(ZALO)
+  templateCode        String?       @db.VarChar(64)
+  recipientEmployeeId Int?
+  zaloUserId          String?       @db.VarChar(191)
+  title               String?       @db.VarChar(255)
+  body                String        @db.Text
+  payloadJson         Json?
+  linkUrl             String?       @db.VarChar(512)
+  status              OutboxStatus  @default(PENDING)
+  attempts            Int           @default(0)
+  sendAfter           DateTime      @default(now())
+  sentAt              DateTime?
+  error               String?       @db.Text
+  dedupeKey           String?       @unique @db.VarChar(191)
+  createdAt           DateTime      @default(now())
+
+  recipient Employee? @relation(fields: [recipientEmployeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([status, sendAfter])
+  @@index([recipientEmployeeId])
+}
+
+model InAppNotification {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  title     String    @db.VarChar(255)
+  body      String    @db.Text
+  linkUrl   String?   @db.VarChar(512)
+  icon      String?   @db.VarChar(32)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model ZaloLinkCode {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique @db.VarChar(16)
+  userId    Int
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+}
+
+model ZaloInboundLog {
+  id          Int      @id @default(autoincrement())
+  messageId   String?  @unique @db.VarChar(191)
+  zaloUserId  String?  @db.VarChar(191)
+  text        String?  @db.Text
+  payloadJson Json?
+  handled     Boolean  @default(false)
+  response    String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([zaloUserId])
+}
+
+// ============================================================
+// 7. HỆ THỐNG / MCP / BÁO CÁO
+// ============================================================
+
+model SystemSetting {
+  key       String   @id @db.VarChar(128)
+  valueJson Json
+  groupName String   @default("general") @db.VarChar(64)
+  isSecret  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@index([groupName])
+}
+
+model McpClient {
+  id              Int       @id @default(autoincrement())
+  name            String    @db.VarChar(191)
+  keyPrefix       String    @unique @db.VarChar(16)
+  keyHash         String    @db.VarChar(255)
+  scopesJson      Json
+  actAsUserId     Int
+  readOnly        Boolean   @default(true)
+  rateLimitPerMin Int       @default(60)
+  allowedIps      String?   @db.VarChar(512)
+  lastUsedAt      DateTime?
+  callCount       Int       @default(0)
+  expiresAt       DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  actAsUser User         @relation("McpActAsUser", fields: [actAsUserId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  callLogs  McpCallLog[]
+}
+
+model McpCallLog {
+  id         Int      @id @default(autoincrement())
+  clientId   Int
+  toolName   String   @db.VarChar(128)
+  argsJson   Json?
+  success    Boolean  @default(true)
+  error      String?  @db.Text
+  durationMs Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  client McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+model OutboundWebhook {
+  id           Int       @id @default(autoincrement())
+  name         String    @db.VarChar(191)
+  url          String    @db.VarChar(512)
+  events       String    @db.VarChar(512)
+  secret       String?   @db.VarChar(255)
+  isActive     Boolean   @default(true)
+  lastStatus   Int?
+  lastCalledAt DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model AuditLog {
+  id         Int          @id @default(autoincrement())
+  actorId    Int?
+  entityType String       @db.VarChar(64)
+  entityId   String?      @db.VarChar(64)
+  action     String       @db.VarChar(64)
+  diffJson   Json?
+  ip         String?      @db.VarChar(64)
+  userAgent  String?      @db.VarChar(255)
+  source     RecordSource @default(WEB)
+  createdAt  DateTime     @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+model ReportPreset {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(191)
+  reportKey   String   @db.VarChar(64)
+  filtersJson Json
+  ownerId     Int
+  isShared    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([reportKey])
+}
+
+model ReportSchedule {
+  id             Int           @id @default(autoincrement())
+  name           String        @db.VarChar(191)
+  reportKey      String        @db.VarChar(64)
+  filtersJson    Json?
+  cronExpr       String        @db.VarChar(64)
+  channel        NotifyChannel @default(ZALO)
+  recipientsJson Json
+  isActive       Boolean       @default(true)
+  lastRunAt      DateTime?
+  createdAt      DateTime      @default(now())
+}
