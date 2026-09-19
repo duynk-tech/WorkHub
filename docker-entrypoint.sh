@@ -2,7 +2,7 @@
 set -e
 
 echo "→ Chờ MySQL sẵn sàng…"
-until echo "SELECT 1;" | npx prisma db execute --stdin >/dev/null 2>&1; do
+until echo "SELECT 1;" | npx prisma db execute --url "$DATABASE_URL" --stdin >/dev/null 2>&1; do
   echo "  MySQL chưa sẵn sàng, thử lại sau 3 giây…"
   sleep 3
 done

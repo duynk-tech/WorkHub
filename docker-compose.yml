@@ -6,15 +6,18 @@ services:
     container_name: workhub-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       - DATABASE_URL=mysql://workhub:workhub_secret_pw@db:3306/workhub
-      - APP_URL=http://localhost:3000
+      - APP_URL=https://work-hub.sunny.io.vn
       - APP_NAME=WorkHub
       - AUTH_SECRET=change-this-to-a-secure-random-secret-key-32-chars
       - APP_ENCRYPTION_KEY=ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=
       - CRON_SECRET=production-cron-secret
       - TZ=Asia/Ho_Chi_Minh
+    networks:
+      - default
+      - server
     depends_on:
       db:
         condition: service_healthy
@@ -29,7 +32,7 @@ services:
       MARIADB_USER: workhub
       MARIADB_PASSWORD: workhub_secret_pw
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3307:3306"
     volumes:
       - workhub_mariadb_data:/var/lib/mysql
     healthcheck:
@@ -37,6 +40,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - default
+
+networks:
+  server:
+    external: true
 
 volumes:
   workhub_mariadb_data:
