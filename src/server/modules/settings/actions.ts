@@ -4,7 +4,14 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission } from '@/server/auth/context';
 import { setSetting, getSetting } from './service';
-import { getBotInfo, sendZaloMessage, setZaloWebhook, getZaloWebhookInfo, deleteZaloWebhook } from '@/server/modules/notify/zalo';
+import {
+  getBotInfo,
+  sendZaloMessage,
+  setZaloWebhook,
+  testZaloWebhook,
+  getZaloWebhookInfo,
+  deleteZaloWebhook,
+} from '@/server/modules/notify/zalo';
 import { processOutbox } from '@/server/modules/notify/zalo';
 import { createLinkCode, unlinkZalo } from '@/server/modules/zalo/link';
 import { dateOnly } from '@/lib/date';
@@ -164,38 +171,76 @@ export async function saveLeaveTypeAction(id: number | null, data: {
   }
 }
 
-export async function registerZaloWebhookAction(webhookUrl: string, secretToken?: string): Promise<Result & { info?: unknown }> {
+export async function registerZaloWebhookAction(
+  webhookUrl: string,
+  secretToken?: string,
+  botToken?: string,
+): Promise<Result & { info?: unknown }> {
   await requirePermission('FEATURE_SETTING_ZALO');
   const cleanUrl = webhookUrl.trim();
   if (!cleanUrl.startsWith('https://')) {
     return { ok: false, message: 'URL webhook phải bắt đầu bằng https:// theo yêu cầu của Zalo' };
   }
+
+  // Tự động lưu webhookUrl vào CSDL
+  await setSetting('zalo.webhookUrl', cleanUrl, { group: 'zalo' });
+
   // Nếu có secretToken truyền lên và khác '********', lưu vào DB luôn để đồng bộ
   if (secretToken && secretToken.trim() && secretToken !== '********') {
     await setSetting('zalo.webhookSecret', secretToken.trim(), { group: 'zalo', isSecret: true });
   }
-  const result = await setZaloWebhook(cleanUrl, secretToken === '********' ? undefined : secretToken);
+
+  // Nếu có botToken truyền lên và khác '********', lưu vào DB luôn
+  if (botToken && botToken.trim() && botToken !== '********') {
+    await setSetting('zalo.botToken', botToken.trim(), { group: 'zalo', isSecret: true });
+  }
+
+  const result = await setZaloWebhook(
+    cleanUrl,
+    secretToken === '********' ? undefined : secretToken,
+    botToken === '********' ? undefined : botToken,
+  );
+
   if (!result.ok) {
     return { ok: false, message: `Đăng ký Webhook thất bại: ${result.error}` };
   }
-  return { ok: true, message: 'Đã đăng ký Webhook thành công với Zalo Bot Platform!', info: result.data };
+
+  // Lấy thông tin webhook mới nhất từ Zalo
+  const infoRes = await getZaloWebhookInfo(botToken === '********' ? undefined : botToken);
+
+  revalidatePath('/settings/integrations');
+  return {
+    ok: true,
+    message: 'Đã đăng ký Webhook thành công với Zalo Bot Platform!',
+    info: infoRes.ok ? infoRes.data : result.data,
+  };
 }
 
-export async function getZaloWebhookInfoAction(): Promise<Result & { info?: unknown }> {
+export async function testZaloWebhookPingAction(botToken?: string): Promise<Result & { data?: unknown }> {
   await requirePermission('FEATURE_SETTING_ZALO');
-  const result = await getZaloWebhookInfo();
+  const result = await testZaloWebhook(botToken === '********' ? undefined : botToken);
+  if (!result.ok) {
+    return { ok: false, message: `Zalo test Webhook thất bại: ${result.error}` };
+  }
+  return { ok: true, message: 'Zalo đã gửi request test thành công tới Webhook của bạn!', data: result.data };
+}
+
+export async function getZaloWebhookInfoAction(botToken?: string): Promise<Result & { info?: unknown }> {
+  await requirePermission('FEATURE_SETTING_ZALO');
+  const result = await getZaloWebhookInfo(botToken === '********' ? undefined : botToken);
   if (!result.ok) {
     return { ok: false, message: `Không lấy được thông tin Webhook: ${result.error}` };
   }
   return { ok: true, message: 'Thành công', info: result.data };
 }
 
-export async function deleteZaloWebhookAction(): Promise<Result> {
+export async function deleteZaloWebhookAction(botToken?: string): Promise<Result> {
   await requirePermission('FEATURE_SETTING_ZALO');
-  const result = await deleteZaloWebhook();
+  const result = await deleteZaloWebhook(botToken === '********' ? undefined : botToken);
   if (!result.ok) {
     return { ok: false, message: `Hủy Webhook thất bại: ${result.error}` };
   }
+  revalidatePath('/settings/integrations');
   return { ok: true, message: 'Đã hủy Webhook thành công' };
 }
 

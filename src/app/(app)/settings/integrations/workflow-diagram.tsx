@@ -335,9 +335,6 @@ export function ZaloWorkflowDiagram({
                 </Badge>
               )}
             </div>
-            <div className="hint" style={{ fontSize: 11.5 }}>
-              Kéo thả các khối tự do • Dây nối tự uốn lượn • Click để mở popup cấu hình
-            </div>
           </div>
         </div>
 

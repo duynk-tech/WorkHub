@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertTriangle, Bot, MessageCircle, RefreshCw, Check, Save,
   Wrench, Play, Edit2, Code, Globe, X, Layers, Settings, Sparkles, Eye, EyeOff,
   SlidersHorizontal, Wand2, FileText, Flame, Cpu, CheckCheck, Clock, RotateCcw,
-  HelpCircle, MessageSquare,
+  MessageSquare, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
@@ -24,7 +24,7 @@ import {
 import {
   saveSettingsAction, testZaloBotAction, registerZaloWebhookAction, getZaloWebhookInfoAction,
   saveCustomToolAction, deleteCustomToolAction, toggleCustomToolAction, testCustomToolAction,
-  fetchLlmModelsAction, testAiAgentAction,
+  fetchLlmModelsAction, testAiAgentAction, testZaloWebhookPingAction, deleteZaloWebhookAction,
 } from '@/server/modules/settings/actions';
 import { PRESET_LLM_MODELS, type LlmModelItem } from '@/lib/llm-models';
 import {
@@ -113,18 +113,25 @@ export function IntegrationScreen({
   const [zaloWebhookLoading, setZaloWebhookLoading] = useState(false);
   const [savingZalo, setSavingZalo] = useState(false);
 
-  type ZaloConfigTab = 'prompt' | 'model' | 'tools' | 'playground' | 'bot' | 'webhook';
-  const isInitialModalOpen = ['config', 'zalo', 'bot', 'webhook', 'gemini', 'prompt', 'model', 'tools', 'playground'].includes(initialModal);
+  type ZaloConfigTab = 'prompt' | 'tools' | 'playground' | 'connection';
+  const isInitialModalOpen = ['config', 'zalo', 'bot', 'webhook', 'gemini', 'prompt', 'model', 'tools', 'playground', 'connection'].includes(initialModal);
   const [zaloConfigModalOpen, setZaloConfigModalOpen] = useState(isInitialModalOpen);
   const [zaloConfigTab, setZaloConfigTab] = useState<ZaloConfigTab>(() => {
     const raw = initialSubtab || initialModal;
-    if (raw === 'gemini') return 'model';
-    if (['prompt', 'model', 'tools', 'playground', 'bot', 'webhook'].includes(raw)) return raw as ZaloConfigTab;
-    return 'prompt';
+    if (raw === 'prompt' || raw === 'model' || raw === 'gemini') return 'prompt';
+    if (raw === 'tools') return 'tools';
+    if (raw === 'playground') return 'playground';
+    return 'connection';
   });
 
-  const openZaloConfigModal = (initialTab: ZaloConfigTab | 'gemini' = 'prompt') => {
-    setZaloConfigTab(initialTab === 'gemini' ? 'model' : initialTab);
+  const openZaloConfigModal = (initialTab: ZaloConfigTab | 'model' | 'gemini' | 'bot' | 'webhook' | 'zalo' = 'connection') => {
+    if (initialTab === 'model' || initialTab === 'gemini') {
+      setZaloConfigTab('prompt');
+    } else if (initialTab === 'bot' || initialTab === 'webhook' || initialTab === 'zalo' || initialTab === 'connection') {
+      setZaloConfigTab('connection');
+    } else {
+      setZaloConfigTab(initialTab);
+    }
     setZaloConfigModalOpen(true);
   };
 
@@ -143,6 +150,17 @@ export function IntegrationScreen({
     timestamp: Date;
     result: AiAgentTestResult;
   }>>([]);
+
+  // Zalo Inbound Logs Pagination & Detail Modal State
+  const [selectedZaloLog, setSelectedZaloLog] = useState<any | null>(null);
+  const [showRawPayload, setShowRawPayload] = useState(false);
+  const [zaloLogPage, setZaloLogPage] = useState(1);
+  const [zaloLogPageSize, setZaloLogPageSize] = useState(10);
+  const totalZaloLogPages = Math.max(1, Math.ceil(((zaloLogs as any[]) || []).length / zaloLogPageSize));
+  const paginatedZaloLogs = ((zaloLogs as any[]) || []).slice(
+    (zaloLogPage - 1) * zaloLogPageSize,
+    zaloLogPage * zaloLogPageSize,
+  );
 
   const insertPromptVariable = (varTag: string) => {
     const tagToInsert = `{{${varTag}}}`;
@@ -262,25 +280,44 @@ export function IntegrationScreen({
   const saveZaloConfig = () => {
     setSavingZalo(true);
     startTransition(async () => {
-      const payload = {
-        'zalo.enabled': zaloValues['zalo.enabled'],
-        'zalo.botToken': zaloValues['zalo.botToken'],
-        'zalo.webhookSecret': zaloValues['zalo.webhookSecret'],
-        'ai.geminiApiKey': zaloValues['ai.geminiApiKey'],
-        'ai.baseUrl': zaloValues['ai.baseUrl'] ?? '',
-        'ai.model': zaloValues['ai.model'] || 'gemini-1.5-flash',
-        'ai.systemPrompt': zaloValues['ai.systemPrompt'] ?? '',
-        'ai.temperature': zaloValues['ai.temperature'] !== undefined ? String(zaloValues['ai.temperature']) : '0.2',
-        'ai.maxIterations': zaloValues['ai.maxIterations'] !== undefined ? String(zaloValues['ai.maxIterations']) : '5',
-      };
-      const res = await saveSettingsAction('zalo', payload);
-      setSavingZalo(false);
-      if (res.ok) {
-        toast.success(res.message);
-        setZaloConfigModalOpen(false);
-        router.refresh();
-      } else {
-        toast.error(res.message);
+      try {
+        const webhookUrl = zaloWebhookInput?.trim() || '';
+        const botToken = zaloValues['zalo.botToken']?.trim() || '';
+        const webhookSecret = zaloValues['zalo.webhookSecret']?.trim() || '';
+        const payload = {
+          'zalo.enabled': zaloValues['zalo.enabled'],
+          'zalo.botToken': botToken,
+          'zalo.webhookSecret': webhookSecret,
+          'zalo.webhookUrl': webhookUrl,
+          'ai.geminiApiKey': zaloValues['ai.geminiApiKey'],
+          'ai.baseUrl': zaloValues['ai.baseUrl'] ?? '',
+          'ai.model': zaloValues['ai.model'] || 'gemini-1.5-flash',
+          'ai.systemPrompt': zaloValues['ai.systemPrompt'] ?? '',
+          'ai.temperature': zaloValues['ai.temperature'] !== undefined ? String(zaloValues['ai.temperature']) : '0.2',
+          'ai.maxIterations': zaloValues['ai.maxIterations'] !== undefined ? String(zaloValues['ai.maxIterations']) : '5',
+        };
+        const res = await saveSettingsAction('zalo', payload);
+        if (res.ok) {
+          if (payload['zalo.enabled'] && webhookUrl && botToken) {
+            const regRes = await registerZaloWebhookAction(webhookUrl, webhookSecret, botToken);
+            if (regRes.ok) {
+              toast.success(`${res.message} & Đã kích hoạt Webhook thành công với Zalo!`);
+              handleCheckZaloWebhook();
+            } else {
+              toast.warning(`${res.message}, nhưng kích hoạt Webhook Zalo thất bại: ${regRes.message}`);
+            }
+          } else {
+            toast.success(res.message);
+          }
+          setZaloConfigModalOpen(false);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
+      } catch (e: any) {
+        toast.error(e.message || 'Lỗi khi lưu cấu hình');
+      } finally {
+        setSavingZalo(false);
       }
     });
   };
@@ -289,13 +326,22 @@ export function IntegrationScreen({
     if (!zaloWebhookInput.trim()) return;
     setZaloWebhookLoading(true);
     startTransition(async () => {
-      const res = await registerZaloWebhookAction(zaloWebhookInput.trim(), zaloValues['zalo.webhookSecret']);
-      setZaloWebhookLoading(false);
-      if (res.ok) {
-        toast.success(res.message);
-        handleCheckZaloWebhook();
-      } else {
-        toast.error(res.message);
+      try {
+        const res = await registerZaloWebhookAction(
+          zaloWebhookInput.trim(),
+          zaloValues['zalo.webhookSecret'],
+          zaloValues['zalo.botToken']
+        );
+        if (res.ok) {
+          toast.success(res.message);
+          handleCheckZaloWebhook();
+        } else {
+          toast.error(res.message);
+        }
+      } catch (e: any) {
+        toast.error(e.message || 'Lỗi đăng ký Webhook');
+      } finally {
+        setZaloWebhookLoading(false);
       }
     });
   };
@@ -303,13 +349,56 @@ export function IntegrationScreen({
   const handleCheckZaloWebhook = () => {
     setZaloWebhookLoading(true);
     startTransition(async () => {
-      const res = await getZaloWebhookInfoAction();
-      setZaloWebhookLoading(false);
-      if (res.ok) {
-        setZaloWebhookInfo(res.info ?? null);
-        toast.success('Đã lấy thông tin Webhook từ Zalo');
-      } else {
-        toast.error(res.message);
+      try {
+        const res = await getZaloWebhookInfoAction(zaloValues['zalo.botToken']);
+        if (res.ok) {
+          setZaloWebhookInfo(res.info ?? null);
+          toast.success('Đã lấy thông tin Webhook từ Zalo');
+        } else {
+          toast.error(res.message);
+        }
+      } catch (e: any) {
+        toast.error(e.message || 'Lỗi kiểm tra Webhook');
+      } finally {
+        setZaloWebhookLoading(false);
+      }
+    });
+  };
+
+  const [zaloPingLoading, setZaloPingLoading] = useState(false);
+  const handleTestZaloWebhookPing = () => {
+    setZaloPingLoading(true);
+    startTransition(async () => {
+      try {
+        const res = await testZaloWebhookPingAction(zaloValues['zalo.botToken']);
+        if (res.ok) {
+          toast.success(res.message);
+        } else {
+          toast.error(res.message);
+        }
+      } catch (e: any) {
+        toast.error(e.message || 'Lỗi kiểm tra gửi ping Webhook');
+      } finally {
+        setZaloPingLoading(false);
+      }
+    });
+  };
+
+  const handleDeleteZaloWebhook = () => {
+    setZaloWebhookLoading(true);
+    startTransition(async () => {
+      try {
+        const res = await deleteZaloWebhookAction(zaloValues['zalo.botToken']);
+        if (res.ok) {
+          toast.success(res.message);
+          setZaloWebhookInfo(null);
+        } else {
+          toast.error(res.message);
+        }
+      } catch (e: any) {
+        toast.error(e.message || 'Lỗi xóa Webhook');
+      } finally {
+        setZaloWebhookLoading(false);
       }
     });
   };
@@ -829,44 +918,327 @@ export function IntegrationScreen({
                         <th>Nội dung nhận</th>
                         <th>Phản hồi của Bot / AI</th>
                         <th style={{ whiteSpace: 'nowrap' }}>Trạng thái</th>
+                        <th style={{ width: 80, textAlign: 'right' }}></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {zaloLogs.map((log: any) => (
-                        <tr key={log.id}>
-                          <td className="hint" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
-                            {fmtDateTime(log.createdAt)}
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                            {log.zaloUserId || '—'}
-                          </td>
-                          <td style={{ maxWidth: 280, wordBreak: 'break-word', fontSize: 13 }}>
-                            {log.text || '—'}
-                          </td>
-                          <td style={{ maxWidth: 350, wordBreak: 'break-word', fontSize: 13 }}>
-                            {log.response ? (
-                              <span style={{ color: log.handled ? 'inherit' : 'var(--danger)' }}>
-                                {log.response}
-                              </span>
-                            ) : (
-                              <span className="text-faint">Chưa có phản hồi</span>
-                            )}
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {log.handled ? (
-                              <Badge tone="success"><CheckCircle2 size={11} /> Đã xử lý</Badge>
-                            ) : (
-                              <Badge tone="danger"><AlertTriangle size={11} /> Lỗi</Badge>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {paginatedZaloLogs.map((log: any) => {
+                        const cleanText = (log.text || '').replace(/\s+/g, ' ').trim();
+                        const shortText = cleanText.length > 45 ? cleanText.slice(0, 45) + '...' : cleanText;
+                        const cleanResponse = (log.response || '').replace(/\s+/g, ' ').trim();
+                        const shortResponse = cleanResponse.length > 65 ? cleanResponse.slice(0, 65) + '...' : cleanResponse;
+
+                        return (
+                          <tr
+                            key={log.id}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => {
+                              setSelectedZaloLog(log);
+                              setShowRawPayload(false);
+                            }}
+                          >
+                            <td className="hint" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
+                              {fmtDateTime(log.createdAt)}
+                            </td>
+                            <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                              {log.zaloUserId ? (
+                                <span title={log.zaloUserId}>
+                                  {log.zaloUserId.length > 14 ? `${log.zaloUserId.slice(0, 12)}...` : log.zaloUserId}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td style={{ verticalAlign: 'middle' }}>
+                              <div
+                                style={{
+                                  maxWidth: 220,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  fontSize: 13,
+                                }}
+                                title={cleanText}
+                              >
+                                {shortText || '—'}
+                              </div>
+                            </td>
+                            <td style={{ verticalAlign: 'middle' }}>
+                              <div
+                                style={{
+                                  maxWidth: 320,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  fontSize: 13,
+                                  color: log.handled ? 'inherit' : 'var(--danger)',
+                                }}
+                                title={cleanResponse}
+                              >
+                                {shortResponse || <span className="text-faint">Chưa có phản hồi</span>}
+                              </div>
+                            </td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              {log.handled ? (
+                                <Badge tone="success"><CheckCircle2 size={11} /> Đã xử lý</Badge>
+                              ) : (
+                                <Badge tone="danger"><AlertTriangle size={11} /> Lỗi</Badge>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                iconOnly
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedZaloLog(log);
+                                  setShowRawPayload(false);
+                                }}
+                                title="Xem chi tiết"
+                              >
+                                <Eye size={13} />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
             </CardBody>
+            {/* Pagination Controls */}
+            {zaloLogs && zaloLogs.length > 0 && (
+              <div
+                className="row-between"
+                style={{
+                  padding: '10px 16px',
+                  borderTop: '1px solid var(--border-subtle)',
+                  background: 'var(--surface-sunken)',
+                  borderBottomLeftRadius: 'var(--radius-lg)',
+                  borderBottomRightRadius: 'var(--radius-lg)',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                }}
+              >
+                <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+                  <span className="hint" style={{ fontSize: 12 }}>
+                    Hiển thị <strong>{Math.min((zaloLogPage - 1) * zaloLogPageSize + 1, zaloLogs.length)}</strong> -{' '}
+                    <strong>{Math.min(zaloLogPage * zaloLogPageSize, zaloLogs.length)}</strong> trên tổng{' '}
+                    <strong>{zaloLogs.length}</strong> sự kiện
+                  </span>
+                  <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                    <span className="hint" style={{ fontSize: 11.5 }}>Số dòng:</span>
+                    <Select
+                      value={String(zaloLogPageSize)}
+                      onChange={(e) => {
+                        setZaloLogPageSize(Number(e.target.value));
+                        setZaloLogPage(1);
+                      }}
+                      style={{ height: 26, fontSize: 11.5, padding: '2px 6px' }}
+                    >
+                      <option value="5">5 / trang</option>
+                      <option value="10">10 / trang</option>
+                      <option value="20">20 / trang</option>
+                      <option value="50">50 / trang</option>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={zaloLogPage <= 1}
+                    onClick={() => setZaloLogPage((p) => Math.max(1, p - 1))}
+                    style={{ height: 28, fontSize: 12 }}
+                  >
+                    <ChevronLeft size={13} /> Trước
+                  </Button>
+                  <span className="hint" style={{ fontSize: 12, padding: '0 4px' }}>
+                    Trang {zaloLogPage} / {totalZaloLogPages}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={zaloLogPage >= totalZaloLogPages}
+                    onClick={() => setZaloLogPage((p) => Math.min(totalZaloLogPages, p + 1))}
+                    style={{ height: 28, fontSize: 12 }}
+                  >
+                    Sau <ChevronRight size={13} />
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
+
+          {/* Modal Chi tiết Nhật ký Webhook Zalo */}
+          <Modal
+            open={Boolean(selectedZaloLog)}
+            onClose={() => setSelectedZaloLog(null)}
+            title={
+              <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                <MessageSquare size={17} color="var(--brand)" />
+                <span>Chi tiết Nhật ký Webhook Zalo</span>
+                {selectedZaloLog?.handled ? (
+                  <Badge tone="success"><CheckCircle2 size={11} /> Đã xử lý</Badge>
+                ) : (
+                  <Badge tone="danger"><AlertTriangle size={11} /> Lỗi</Badge>
+                )}
+              </div>
+            }
+            size="lg"
+            footer={
+              <div className="row-between" style={{ width: '100%' }}>
+                <div className="hint" style={{ fontSize: 12 }}>
+                  ID: #{selectedZaloLog?.id}
+                </div>
+                <Button variant="secondary" size="sm" onClick={() => setSelectedZaloLog(null)}>
+                  Đóng
+                </Button>
+              </div>
+            }
+          >
+            {selectedZaloLog && (
+              <div className="stack" style={{ gap: 14 }}>
+                {/* Metadata info */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, background: 'var(--surface-sunken)', padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <div>
+                    <div className="hint" style={{ fontSize: 11.5 }}>Thời gian nhận</div>
+                    <div style={{ fontSize: 13, fontWeight: 550, marginTop: 2 }}>{fmtDateTime(selectedZaloLog.createdAt)}</div>
+                  </div>
+                  <div>
+                    <div className="hint" style={{ fontSize: 11.5 }}>Zalo User ID</div>
+                    <code style={{ fontSize: 12.5, fontFamily: 'var(--font-mono)', color: 'var(--brand)', display: 'inline-block', marginTop: 2 }}>
+                      {selectedZaloLog.zaloUserId || '—'}
+                    </code>
+                  </div>
+                  {selectedZaloLog.messageId && (
+                    <div>
+                      <div className="hint" style={{ fontSize: 11.5 }}>Message ID</div>
+                      <code style={{ fontSize: 12, fontFamily: 'var(--font-mono)', display: 'inline-block', marginTop: 2 }}>
+                        {selectedZaloLog.messageId}
+                      </code>
+                    </div>
+                  )}
+                </div>
+
+                {/* User text */}
+                <div>
+                  <div className="row-between" style={{ marginBottom: 6 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <MessageCircle size={14} color="var(--brand)" />
+                      <span>Nội dung tin nhắn nhận được:</span>
+                    </label>
+                    {selectedZaloLog.text && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedZaloLog.text || '');
+                          toast.success('Đã sao chép tin nhắn!');
+                        }}
+                      >
+                        <Copy size={12} /> Chép
+                      </Button>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      background: 'var(--surface-card)',
+                      border: '1px solid var(--border-base)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '10px 14px',
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {selectedZaloLog.text || <span className="text-faint">(Không có nội dung văn bản)</span>}
+                  </div>
+                </div>
+
+                {/* Bot / AI response */}
+                <div>
+                  <div className="row-between" style={{ marginBottom: 6 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Bot size={14} color="#8b5cf6" />
+                      <span>Phản hồi của Bot / AI:</span>
+                    </label>
+                    {selectedZaloLog.response && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedZaloLog.response || '');
+                          toast.success('Đã sao chép câu phản hồi!');
+                        }}
+                      >
+                        <Copy size={12} /> Chép
+                      </Button>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      background: 'var(--surface-card)',
+                      border: `1px solid ${selectedZaloLog.handled ? 'var(--border-base)' : 'var(--danger-border, #fca5a5)'}`,
+                      borderRadius: 'var(--radius-md)',
+                      padding: '12px 14px',
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      color: selectedZaloLog.handled ? 'var(--text-normal)' : 'var(--danger)',
+                    }}
+                  >
+                    {selectedZaloLog.response || <span className="text-faint">(Chưa có phản hồi)</span>}
+                  </div>
+                </div>
+
+                {/* Raw Payload JSON */}
+                {selectedZaloLog.payloadJson && (
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <div
+                      className="row-between"
+                      style={{
+                        padding: '8px 12px',
+                        background: 'var(--surface-sunken)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 550,
+                      }}
+                      onClick={() => setShowRawPayload(!showRawPayload)}
+                    >
+                      <span className="row" style={{ gap: 6, alignItems: 'center' }}>
+                        <Code size={13} />
+                        Dữ liệu thô từ Zalo (Raw Payload JSON)
+                      </span>
+                      <span className="hint" style={{ fontSize: 11 }}>
+                        {showRawPayload ? 'Thu gọn ▲' : 'Xem JSON ▼'}
+                      </span>
+                    </div>
+                    {showRawPayload && (
+                      <pre
+                        style={{
+                          margin: 0,
+                          padding: 12,
+                          background: 'var(--surface-card)',
+                          fontSize: 11.5,
+                          fontFamily: 'var(--font-mono)',
+                          maxHeight: 220,
+                          overflowY: 'auto',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {JSON.stringify(selectedZaloLog.payloadJson, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </Modal>
         </div>
       )}
 
@@ -979,7 +1351,6 @@ export function IntegrationScreen({
           <div className="row" style={{ gap: 8, alignItems: 'center' }}>
             <Sparkles size={18} color="var(--brand)" />
             <span>AI Agent Studio & Trợ lý Zalo</span>
-            <Badge tone="brand">n8n Style</Badge>
           </div>
         }
         description="Thiết kế trợ lý AI thông minh: tùy biến System Prompt, nạp mẫu preset, điều chỉnh tham số mô hình, quản lý công cụ và kiểm thử tương tác thực tế"
@@ -1014,21 +1385,21 @@ export function IntegrationScreen({
           <div className="tabs" style={{ marginBottom: 4, overflowX: 'auto', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
             <div
               className="tab"
+              data-active={zaloConfigTab === 'connection'}
+              onClick={() => setZaloConfigTab('connection')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plug size={13} />
+              1. Kết nối Zalo & Webhook
+            </div>
+            <div
+              className="tab"
               data-active={zaloConfigTab === 'prompt'}
               onClick={() => setZaloConfigTab('prompt')}
               style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
               <Wand2 size={13} />
-              1. Prompt & Persona
-            </div>
-            <div
-              className="tab"
-              data-active={zaloConfigTab === 'model'}
-              onClick={() => setZaloConfigTab('model')}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              <SlidersHorizontal size={13} />
-              2. Mô hình & Tham số
+              2. Prompt & Mô hình
             </div>
             <div
               className="tab"
@@ -1048,27 +1419,204 @@ export function IntegrationScreen({
               <Play size={13} />
               4. Thử nghiệm Agent
             </div>
-            <div
-              className="tab"
-              data-active={zaloConfigTab === 'bot'}
-              onClick={() => setZaloConfigTab('bot')}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              <MessageCircle size={13} />
-              5. Kết nối Zalo
-            </div>
-            <div
-              className="tab"
-              data-active={zaloConfigTab === 'webhook'}
-              onClick={() => setZaloConfigTab('webhook')}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              <Webhook size={13} />
-              6. Webhook
-            </div>
           </div>
 
-          {/* TAB 1: SYSTEM PROMPT & PERSONA */}
+          {/* TAB 1: KẾT NỐI ZALO & WEBHOOK */}
+          {zaloConfigTab === 'connection' && (
+            <div className="stack" style={{ gap: 14 }}>
+              {/* Card 1: Kích hoạt Zalo AI Bot */}
+              <label
+                className="row"
+                style={{
+                  gap: 12,
+                  background: 'var(--surface-sunken)',
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <Switch
+                  checked={Boolean(zaloValues['zalo.enabled'])}
+                  onChange={(e) => setZalo('zalo.enabled', e.target.checked)}
+                />
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 560 }}>Kích hoạt Zalo AI Bot</div>
+                  <div className="hint">Nhân sự nhắn tin qua Zalo sẽ được AI trợ lý trả lời và gọi MCP tools tự động</div>
+                </div>
+              </label>
+
+              {/* Card 2: Thông tin Bot & Webhook Security */}
+              <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Plug size={15} color="var(--brand)" />
+                  <span>Xác thực Bot & Webhook Secret</span>
+                </div>
+
+                <div className="stack" style={{ gap: 12 }}>
+                  <Field label="Bot token" hint="Lấy từ Zalo Bot Manager (dạng bot_id:secret_key)" required>
+                    <Input
+                      type="password"
+                      value={zaloValues['zalo.botToken'] ?? ''}
+                      onChange={(e) => setZalo('zalo.botToken', e.target.value)}
+                      placeholder="123456789:abcdef..."
+                    />
+                  </Field>
+
+                  <Field label="Webhook secret" hint="Dùng để xác thực request gửi từ Zalo Bot tới WorkHub (hỗ trợ tự động tạo bí mật an toàn)">
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <div style={{ flex: 1 }}>
+                        <Input
+                          type={showZaloSecret ? 'text' : 'password'}
+                          value={zaloValues['zalo.webhookSecret'] ?? ''}
+                          onChange={(e) => setZalo('zalo.webhookSecret', e.target.value)}
+                          placeholder="whsec_... hoặc nhập secret tùy chọn"
+                          style={{ fontFamily: showZaloSecret ? 'var(--font-mono)' : undefined, fontSize: 13 }}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        iconOnly
+                        onClick={() => setShowZaloSecret(!showZaloSecret)}
+                        title={showZaloSecret ? 'Ẩn secret' : 'Hiện secret'}
+                      >
+                        {showZaloSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </Button>
+                      {Boolean(zaloValues['zalo.webhookSecret']) && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          iconOnly
+                          onClick={() => {
+                            navigator.clipboard.writeText(zaloValues['zalo.webhookSecret']);
+                            setCopiedZaloSecret(true);
+                            toast.success('Đã sao chép Webhook Secret!');
+                            setTimeout(() => setCopiedZaloSecret(false), 2000);
+                          }}
+                          title="Sao chép Webhook Secret"
+                        >
+                          {copiedZaloSecret ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          const newSecret = generateWebhookSecret();
+                          setZalo('zalo.webhookSecret', newSecret);
+                          setShowZaloSecret(true);
+                          toast.success('Đã tự động tạo Webhook Secret mới!');
+                        }}
+                        title="Tự động tạo Webhook Secret ngẫu nhiên có độ bảo mật cao"
+                        style={{ whiteSpace: 'nowrap', flexShrink: 0, gap: 5 }}
+                      >
+                        <Sparkles size={13} color="var(--brand)" />
+                        Tự động tạo
+                      </Button>
+                    </div>
+                  </Field>
+                </div>
+              </div>
+
+              {/* Card 3: Đăng ký & Kiểm tra Webhook với Zalo */}
+              <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+                <div className="row-between" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Webhook size={15} color="var(--brand)" />
+                      <span>Đăng ký Webhook URL với Zalo Bot</span>
+                    </div>
+                    <div className="hint" style={{ marginTop: 2 }}>
+                      WorkHub sẽ gọi API Zalo Bot Platform để đăng ký URL nhận tin nhắn tự động
+                    </div>
+                  </div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      loading={zaloWebhookLoading}
+                      onClick={handleCheckZaloWebhook}
+                      disabled={!zaloValues['zalo.botToken']}
+                      title="Gọi Zalo API kiểm tra URL webhook hiện đang đăng ký và số tin nhắn chờ"
+                    >
+                      <RefreshCw size={13} /> Kiểm tra trạng thái
+                    </Button>
+                    {zaloWebhookInfo?.url && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        style={{ color: 'var(--danger)' }}
+                        loading={zaloWebhookLoading}
+                        onClick={handleDeleteZaloWebhook}
+                        title="Xóa URL webhook đã đăng ký khỏi Zalo Bot"
+                      >
+                        <Trash2 size={13} /> Hủy Webhook
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                  <Input
+                    value={zaloWebhookInput}
+                    onChange={(e) => setZaloWebhookInput(e.target.value)}
+                    placeholder="https://your-domain.com/api/zalo"
+                    style={{ flex: 1, minWidth: 260, fontFamily: 'var(--font-mono)', fontSize: 12.5 }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={zaloWebhookLoading}
+                    onClick={handleRegisterZaloWebhook}
+                    disabled={!zaloValues['zalo.botToken'] || !zaloWebhookInput.trim()}
+                    title="Đăng ký ngay URL này với Zalo Bot Platform"
+                  >
+                    <Check size={14} /> Đăng ký Webhook
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={zaloPingLoading}
+                    onClick={handleTestZaloWebhookPing}
+                    disabled={!zaloValues['zalo.botToken']}
+                    title="Yêu cầu Zalo Bot Platform gửi một request thử nghiệm tới Webhook URL (testWebhook)"
+                  >
+                    <Terminal size={13} /> Bắn thử Webhook (testWebhook)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => copy(zaloWebhookInput)}
+                    title="Sao chép URL Webhook"
+                  >
+                    <Copy size={13} /> Chép
+                  </Button>
+                </div>
+
+                {zaloWebhookInfo && (
+                  <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--surface-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-base)', fontSize: 12 }}>
+                    <div className="row" style={{ gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600 }}>URL đang kích hoạt trên Zalo:</span>
+                      <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand)' }}>{zaloWebhookInfo.url || '(Chưa đăng ký)'}</code>
+                    </div>
+                    {zaloWebhookInfo.pending_update_count !== undefined && (
+                      <div className="hint">Tin nhắn đang chờ xử lý trên Zalo: <strong>{zaloWebhookInfo.pending_update_count}</strong></div>
+                    )}
+                    {zaloWebhookInfo.last_error_message && (
+                      <div style={{ color: 'var(--danger)', marginTop: 4 }}>
+                        Lỗi gần nhất từ Zalo: {zaloWebhookInfo.last_error_message}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: SYSTEM PROMPT & PERSONA */}
           {zaloConfigTab === 'prompt' && (
             <div className="stack" style={{ gap: 14 }}>
               {/* Presets and Actions Header */}
@@ -1261,12 +1809,17 @@ export function IntegrationScreen({
                   </pre>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* TAB 2: MÔ HÌNH & THAM SỐ (MODEL & HYPERPARAMETERS) */}
-          {zaloConfigTab === 'model' && (
-            <div className="stack" style={{ gap: 14 }}>
+              <Divider style={{ margin: '8px 0' }} />
+
+              {/* MÔ HÌNH & THAM SỐ (MODEL & HYPERPARAMETERS) */}
+              <div style={{ fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Cpu size={15} color="var(--brand)" />
+                <span>Mô hình AI & Tham số suy luận (LLM Hyperparameters)</span>
+              </div>
+              <div className="hint" style={{ fontSize: 12 }}>
+                Cấu hình API Key, chọn mô hình (khuyên dùng gemini-2.5-flash) và tinh chỉnh độ sáng tạo, số bước gọi công cụ
+              </div>
               <Field
                 label="API Key (Google Gemini / LLM Provider)"
                 hint="Dùng miễn phí từ Google AI Studio (aistudio.google.com), OpenRouter hoặc nhà cung cấp LLM tương thích"
@@ -1811,160 +2364,6 @@ export function IntegrationScreen({
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: KẾT NỐI ZALO BOT */}
-          {zaloConfigTab === 'bot' && (
-            <div className="stack" style={{ gap: 14 }}>
-              <label
-                className="row"
-                style={{
-                  gap: 12,
-                  background: 'var(--surface-sunken)',
-                  padding: '12px 14px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <Switch
-                  checked={Boolean(zaloValues['zalo.enabled'])}
-                  onChange={(e) => setZalo('zalo.enabled', e.target.checked)}
-                />
-                <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 560 }}>Kích hoạt Zalo AI Bot</div>
-                  <div className="hint">Nhân sự nhắn tin qua Zalo sẽ được AI trợ lý trả lời và gọi MCP tools tự động</div>
-                </div>
-              </label>
-
-              <Field label="Bot token" hint="Lấy từ Zalo Bot Manager (dạng bot_id:secret_key)" required>
-                <Input
-                  type="password"
-                  value={zaloValues['zalo.botToken'] ?? ''}
-                  onChange={(e) => setZalo('zalo.botToken', e.target.value)}
-                  placeholder="123456789:abcdef..."
-                />
-              </Field>
-
-              <Field label="Webhook secret" hint="Dùng để bảo mật request từ Zalo (hỗ trợ chế độ tự động tạo ngẫu nhiên)">
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <div style={{ flex: 1 }}>
-                    <Input
-                      type={showZaloSecret ? 'text' : 'password'}
-                      value={zaloValues['zalo.webhookSecret'] ?? ''}
-                      onChange={(e) => setZalo('zalo.webhookSecret', e.target.value)}
-                      placeholder="whsec_... hoặc nhập secret tùy chọn"
-                      style={{ fontFamily: showZaloSecret ? 'var(--font-mono)' : undefined, fontSize: 13 }}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    iconOnly
-                    onClick={() => setShowZaloSecret(!showZaloSecret)}
-                    title={showZaloSecret ? 'Ẩn secret' : 'Hiện secret'}
-                  >
-                    {showZaloSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </Button>
-                  {Boolean(zaloValues['zalo.webhookSecret']) && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      iconOnly
-                      onClick={() => {
-                        navigator.clipboard.writeText(zaloValues['zalo.webhookSecret']);
-                        setCopiedZaloSecret(true);
-                        toast.success('Đã sao chép Webhook Secret!');
-                        setTimeout(() => setCopiedZaloSecret(false), 2000);
-                      }}
-                      title="Sao chép Webhook Secret"
-                    >
-                      {copiedZaloSecret ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      const newSecret = generateWebhookSecret();
-                      setZalo('zalo.webhookSecret', newSecret);
-                      setShowZaloSecret(true);
-                      toast.success('Đã tự động tạo Webhook Secret mới!');
-                    }}
-                    title="Tự động tạo Webhook Secret ngẫu nhiên có độ bảo mật cao"
-                    style={{ whiteSpace: 'nowrap', flexShrink: 0, gap: 5 }}
-                  >
-                    <Sparkles size={13} color="var(--brand)" />
-                    Tự động tạo
-                  </Button>
-                </div>
-              </Field>
-            </div>
-          )}
-
-          {/* TAB 6: ĐĂNG KÝ WEBHOOK */}
-          {zaloConfigTab === 'webhook' && (
-            <div className="stack" style={{ gap: 14 }}>
-              <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 14 }}>
-                <div className="row-between" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: 13.5 }}>Đăng ký Webhook Zalo Bot</span>
-                    <div className="hint" style={{ marginTop: 2 }}>
-                      WorkHub tự động gọi API Zalo Bot Platform để đăng ký URL nhận tin nhắn, không cần cấu hình thủ công
-                    </div>
-                  </div>
-                  <div className="row" style={{ gap: 6 }}>
-                    <Button size="sm" variant="ghost" loading={zaloWebhookLoading} onClick={handleCheckZaloWebhook}>
-                      <RefreshCw size={13} /> Kiểm tra trạng thái
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                  <Input
-                    value={zaloWebhookInput}
-                    onChange={(e) => setZaloWebhookInput(e.target.value)}
-                    placeholder="https://your-domain.com/api/zalo"
-                    style={{ flex: 1, minWidth: 260, fontFamily: 'var(--font-mono)', fontSize: 12.5 }}
-                  />
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    loading={zaloWebhookLoading}
-                    onClick={handleRegisterZaloWebhook}
-                    disabled={!zaloValues['zalo.botToken']}
-                  >
-                    <Check size={14} /> Đăng ký Webhook
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => copy(zaloWebhookInput)}
-                  >
-                    <Copy size={13} /> Chép
-                  </Button>
-                </div>
-
-                {zaloWebhookInfo && (
-                  <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--surface-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-base)', fontSize: 12 }}>
-                    <div className="row" style={{ gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 600 }}>URL đang kích hoạt trên Zalo:</span>
-                      <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--brand)' }}>{zaloWebhookInfo.url || '(Chưa đăng ký)'}</code>
-                    </div>
-                    {zaloWebhookInfo.pending_update_count !== undefined && (
-                      <div className="hint">Tin nhắn đang chờ xử lý trên Zalo: {zaloWebhookInfo.pending_update_count}</div>
-                    )}
-                    {zaloWebhookInfo.last_error_message && (
-                      <div style={{ color: 'var(--danger)', marginTop: 4 }}>
-                        Lỗi gần nhất từ Zalo: {zaloWebhookInfo.last_error_message}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

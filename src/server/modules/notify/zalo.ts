@@ -16,8 +16,11 @@ export interface SendResult {
   data?: unknown;
 }
 
-async function callBot(method: string, payload: unknown): Promise<SendResult> {
-  const rawToken = await getSetting<string>('zalo.botToken', '');
+async function callBot(method: string, payload: unknown, explicitToken?: string): Promise<SendResult> {
+  const rawToken =
+    explicitToken && explicitToken.trim() && explicitToken !== '********'
+      ? explicitToken
+      : await getSetting<string>('zalo.botToken', '');
   if (!rawToken || !rawToken.trim()) {
     return { ok: false, error: 'Chưa cấu hình Zalo Bot token trong Cài đặt hệ thống' };
   }
@@ -259,26 +262,34 @@ export async function sendZaloMessage(
   return lastResult;
 }
 
-export async function getBotInfo(): Promise<SendResult & { name?: string }> {
-  const result = await callBot('getMe', {});
+export async function getBotInfo(explicitToken?: string): Promise<SendResult & { name?: string }> {
+  const result = await callBot('getMe', {}, explicitToken);
   return result;
 }
 
-export async function setZaloWebhook(url: string, explicitSecret?: string): Promise<SendResult> {
+export async function setZaloWebhook(
+  url: string,
+  explicitSecret?: string,
+  explicitToken?: string,
+): Promise<SendResult> {
   const secret = explicitSecret !== undefined ? explicitSecret : await getSetting<string>('zalo.webhookSecret', '');
   const payload: Record<string, unknown> = { url };
-  if (secret && secret.trim()) {
+  if (secret && secret.trim() && secret !== '********') {
     payload.secret_token = secret.trim();
   }
-  return callBot('setWebhook', payload);
+  return callBot('setWebhook', payload, explicitToken);
 }
 
-export async function getZaloWebhookInfo(): Promise<SendResult> {
-  return callBot('getWebhookInfo', {});
+export async function testZaloWebhook(explicitToken?: string): Promise<SendResult> {
+  return callBot('testWebhook', {}, explicitToken);
 }
 
-export async function deleteZaloWebhook(): Promise<SendResult> {
-  return callBot('deleteWebhook', {});
+export async function getZaloWebhookInfo(explicitToken?: string): Promise<SendResult> {
+  return callBot('getWebhookInfo', {}, explicitToken);
+}
+
+export async function deleteZaloWebhook(explicitToken?: string): Promise<SendResult> {
+  return callBot('deleteWebhook', {}, explicitToken);
 }
 
 /**

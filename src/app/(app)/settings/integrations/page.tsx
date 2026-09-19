@@ -38,7 +38,7 @@ export default async function IntegrationsPage({
     getCustomTools(),
     prisma.zaloInboundLog.findMany({
       orderBy: { createdAt: 'desc' },
-      take: 30,
+      take: 100,
     }),
   ]);
 

@@ -142,27 +142,90 @@ interface ChatMessage {
   }>;
 }
 
-/** Gọi API LLM thông qua endpoint OpenAI compatibility (Google Gemini, OpenRouter, Claude proxy, OpenAI) */
-async function callGeminiApi(apiKey: string, body: unknown) {
-  const baseUrl = (await getSetting<string>('ai.baseUrl', '')) || process.env.AI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai';
+/**
+ * Danh sách model dự phòng khi model chính bị 503 (High Demand / Overloaded)
+ */
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro'];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Gọi API LLM thông qua endpoint OpenAI compatibility kèm Exponential Backoff Retry & Model Fallback */
+async function callGeminiApi(
+  apiKey: string,
+  body: Record<string, any>,
+  options?: { allowFallback?: boolean },
+) {
+  const baseUrl =
+    (await getSetting<string>('ai.baseUrl', '')) ||
+    process.env.AI_BASE_URL ||
+    'https://generativelanguage.googleapis.com/v1beta/openai';
   const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
-  const completionsUrl = cleanBaseUrl.endsWith('/chat/completions') ? cleanBaseUrl : `${cleanBaseUrl}/chat/completions`;
+  const completionsUrl = cleanBaseUrl.endsWith('/chat/completions')
+    ? cleanBaseUrl
+    : `${cleanBaseUrl}/chat/completions`;
 
-  const res = await fetch(completionsUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const maxRetries = 3;
+  let attempt = 0;
+  let currentBody = { ...body };
+  const originalModel = currentBody.model || 'gemini-1.5-flash';
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`LLM API error (${res.status}): ${errorText.slice(0, 300)}`);
+  while (attempt <= maxRetries) {
+    try {
+      const res = await fetch(completionsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(currentBody),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (res.ok) {
+        return await res.json();
+      }
+
+      const errorText = await res.text();
+      const isRetryable = res.status === 503 || res.status === 429 || res.status === 500;
+
+      if (isRetryable && attempt < maxRetries) {
+        attempt++;
+        // Exponential backoff: 1s, 2.5s, 4.5s kèm jitter
+        const delay = Math.round(1000 * Math.pow(1.8, attempt - 1) + Math.random() * 500);
+        console.warn(
+          `[LLM API] Gặp lỗi ${res.status} ("${errorText.slice(0, 120)}"). Đang tự động thử lại lần ${attempt}/${maxRetries} sau ${delay}ms...`,
+        );
+        await sleep(delay);
+        continue;
+      }
+
+      // Nếu đã thử lại nhiều lần trên model chính mà vẫn bị 503, tự động chuyển sang model fallback
+      if (options?.allowFallback !== false && isRetryable && res.status === 503) {
+        const nextFallback = FALLBACK_MODELS.find((m) => m !== originalModel);
+        if (nextFallback && currentBody.model !== nextFallback) {
+          console.warn(
+            `[LLM API] Model "${originalModel}" bị quá tải 503 liên tục. Đang tự động fallback sang model "${nextFallback}"...`,
+          );
+          currentBody = { ...currentBody, model: nextFallback };
+          attempt = 0; // reset retry counter cho model fallback
+          options = { allowFallback: false }; // chỉ fallback 1 lần duy nhất
+          await sleep(1000);
+          continue;
+        }
+      }
+
+      throw new Error(`LLM API error (${res.status}): ${errorText.slice(0, 300)}`);
+    } catch (err: any) {
+      if (attempt < maxRetries && (err.name === 'TimeoutError' || err.message?.includes('fetch failed'))) {
+        attempt++;
+        const delay = 1500 * attempt;
+        console.warn(`[LLM API Network Error] ${err.message}. Đang thử lại lần ${attempt}/${maxRetries}...`);
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
   }
-
-  return await res.json();
 }
 
 /**
@@ -257,76 +320,120 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
   ];
 
   let iterations = 0;
+  let forceStopTools = false;
+  const startTime = Date.now();
+  const maxExecutionTimeMs = 25000; // Giới hạn tổng thời gian 25s
 
-  while (iterations < maxIterations) {
-    iterations++;
+  try {
+    while (iterations < maxIterations) {
+      iterations++;
 
-    const payload = {
-      model: selectedModel,
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-      temperature,
-    };
+      // Nếu sắp hết thời gian thực thi hoặc ở bước gần cuối, ép dừng gọi tool để AI sinh câu trả lời
+      if (Date.now() - startTime > maxExecutionTimeMs || iterations >= maxIterations) {
+        forceStopTools = true;
+      }
 
-    const data = await callGeminiApi(apiKey, payload);
-    const choice = data.choices?.[0];
-    if (!choice) {
-      return 'Xin lỗi, không nhận được phản hồi từ AI.';
-    }
+      const payload = {
+        model: selectedModel,
+        messages,
+        tools: tools.length > 0 && !forceStopTools ? tools : undefined,
+        temperature,
+      };
 
-    const assistantMsg = choice.message as ChatMessage;
-    messages.push(assistantMsg);
+      const data = await callGeminiApi(apiKey, payload);
+      const choice = data.choices?.[0];
+      if (!choice) {
+        return 'Xin lỗi, không nhận được phản hồi từ AI.';
+      }
 
-    // Nếu AI yêu cầu gọi Tool
-    if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-      for (const call of assistantMsg.tool_calls) {
-        const toolName = call.function.name;
-        let toolArgs: Record<string, unknown> = {};
-        try {
-          toolArgs = JSON.parse(call.function.arguments || '{}');
-        } catch {
-          toolArgs = {};
-        }
+      const assistantMsg = choice.message as ChatMessage;
+      messages.push(assistantMsg);
 
-        let toolResultStr = '';
-        const customTool = customToolsMap.get(toolName);
-        const mcpTool = TOOLS_BY_NAME.get(toolName);
-
-        if (customTool) {
+      // Nếu AI yêu cầu gọi Tool
+      if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
+        let hasInvalidTool = false;
+        for (const call of assistantMsg.tool_calls) {
+          const toolName = call.function.name;
+          let toolArgs: Record<string, unknown> = {};
           try {
-            const res = await executeCustomTool(customTool, toolArgs);
-            toolResultStr = JSON.stringify(res);
-          } catch (err) {
-            toolResultStr = `Lỗi khi thực thi Custom Tool "${toolName}": ${err instanceof Error ? err.message : String(err)}`;
+            toolArgs = JSON.parse(call.function.arguments || '{}');
+          } catch {
+            toolArgs = {};
           }
-        } else if (mcpTool) {
-          if (mcpTool.permission && !can(ctx, mcpTool.permission)) {
-            toolResultStr = `Lỗi: Bạn không có quyền "${mcpTool.permission}" để thực hiện công cụ này.`;
-          } else {
+
+          let toolResultStr = '';
+          const customTool = customToolsMap.get(toolName);
+          const mcpTool = TOOLS_BY_NAME.get(toolName);
+
+          if (customTool) {
             try {
-              const res = await mcpTool.handler(toolArgs, identity);
+              const res = await executeCustomTool(customTool, toolArgs);
               toolResultStr = JSON.stringify(res);
             } catch (err) {
-              toolResultStr = `Lỗi khi thực thi: ${err instanceof Error ? err.message : String(err)}`;
+              toolResultStr = `Lỗi khi thực thi Custom Tool "${toolName}": ${err instanceof Error ? err.message : String(err)}`;
             }
+          } else if (mcpTool) {
+            if (mcpTool.permission && !can(ctx, mcpTool.permission)) {
+              toolResultStr = `Lỗi: Bạn không có quyền "${mcpTool.permission}" để thực hiện công cụ này.`;
+            } else {
+              try {
+                const res = await mcpTool.handler(toolArgs, identity);
+                toolResultStr = JSON.stringify(res);
+              } catch (err) {
+                toolResultStr = `Lỗi khi thực thi: ${err instanceof Error ? err.message : String(err)}`;
+              }
+            }
+          } else {
+            hasInvalidTool = true;
+            toolResultStr = `Lỗi: Công cụ "${toolName}" không tồn tại trong hệ thống. Hãy dừng gọi công cụ và trả lời trực tiếp cho người dùng.`;
           }
-        } else {
-          toolResultStr = `Lỗi: Công cụ "${toolName}" không tồn tại.`;
+
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: toolResultStr,
+          });
         }
 
-        messages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: toolResultStr,
-        });
+        // Nếu model gọi công cụ không tồn tại hoặc đã sắp hết bước, ở vòng tiếp theo ép buộc trả lời bằng văn bản
+        if (hasInvalidTool || iterations >= maxIterations - 1) {
+          forceStopTools = true;
+        }
+
+        continue;
       }
-      continue;
+
+      return assistantMsg.content || 'Đã xử lý xong yêu cầu của bạn.';
     }
 
-    return assistantMsg.content || 'Đã xử lý xong yêu cầu của bạn.';
-  }
+    // Nếu sau maxIterations vẫn chưa có nội dung trả lời, thử gọi 1 lần cuối không tool để tóm tắt
+    try {
+      const finalPayload = {
+        model: selectedModel,
+        messages,
+        temperature,
+      };
+      const finalData = await callGeminiApi(apiKey, finalPayload);
+      const finalChoice = finalData.choices?.[0];
+      if (finalChoice?.message?.content) {
+        return finalChoice.message.content;
+      }
+    } catch {
+      // bỏ qua lỗi lượt cuối
+    }
 
-  return 'Yêu cầu của bạn mất quá nhiều bước xử lý, vui lòng thử lại câu hỏi cụ thể hơn.';
+    return 'Xin lỗi, yêu cầu này cần thêm thông tin hoặc nằm ngoài phạm vi các công cụ nội bộ của WorkHub (công việc, chấm công, nghỉ phép). Bạn vui lòng đặt câu hỏi cụ thể hơn nhé!';
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[Zalo AI Query Error]:', errMsg);
+    if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE')) {
+      return '⚠️ Máy chủ AI của Google hiện đang có lượng truy cập tăng đột biến. Hệ thống đã tự động thử lại nhưng chưa nhận được phản hồi. Bạn vui lòng gửi lại câu hỏi sau ít giây nhé!';
+    }
+    if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RATE_LIMIT')) {
+      return '⚠️ Hạn mức gọi AI tạm thời bị giới hạn (Rate Limit). Vui lòng thử lại sau 1 phút.';
+    }
+    return `⚠️ Đã có lỗi xảy ra khi kết nối với trợ lý AI: ${errMsg.slice(0, 150)}`;
+  }
 }
 
 /**
@@ -445,15 +552,21 @@ export async function runAiAgentTest(
 
   const steps: AiAgentTestStep[] = [];
   let iterations = 0;
+  let forceStopTools = false;
+  const maxExecutionTimeMs = 25000;
 
   try {
     while (iterations < maxIterations) {
       iterations++;
 
+      if (Date.now() - startTime > maxExecutionTimeMs || iterations >= maxIterations) {
+        forceStopTools = true;
+      }
+
       const payload = {
         model: selectedModel,
         messages,
-        tools: tools.length > 0 ? tools : undefined,
+        tools: tools.length > 0 && !forceStopTools ? tools : undefined,
         temperature,
       };
 
@@ -474,6 +587,7 @@ export async function runAiAgentTest(
       messages.push(assistantMsg);
 
       if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
+        let hasInvalidTool = false;
         for (const call of assistantMsg.tool_calls) {
           const stepStart = Date.now();
           const toolName = call.function.name;
@@ -511,7 +625,8 @@ export async function runAiAgentTest(
               }
             }
           } else {
-            toolResultRaw = { error: `Công cụ "${toolName}" không tồn tại` };
+            hasInvalidTool = true;
+            toolResultRaw = { error: `Công cụ "${toolName}" không tồn tại trong hệ thống. Hãy dừng gọi công cụ và trả lời người dùng.` };
             toolResultStr = JSON.stringify(toolResultRaw);
           }
 
@@ -528,6 +643,11 @@ export async function runAiAgentTest(
             content: toolResultStr,
           });
         }
+
+        if (hasInvalidTool || iterations >= maxIterations - 1) {
+          forceStopTools = true;
+        }
+
         continue;
       }
 
@@ -541,9 +661,32 @@ export async function runAiAgentTest(
       };
     }
 
+    // Nếu sau maxIterations vẫn chưa có reply, thử gọi 1 lần cuối không tool
+    try {
+      const finalPayload = {
+        model: selectedModel,
+        messages,
+        temperature,
+      };
+      const finalData = await callGeminiApi(apiKey, finalPayload);
+      const finalChoice = finalData.choices?.[0];
+      if (finalChoice?.message?.content) {
+        return {
+          ok: true,
+          reply: finalChoice.message.content,
+          model: selectedModel,
+          temperature,
+          durationMs: Date.now() - startTime,
+          steps,
+        };
+      }
+    } catch {
+      // ignore
+    }
+
     return {
-      ok: false,
-      reply: `Đã vượt quá số bước lặp suy luận tối đa (${maxIterations} bước).`,
+      ok: true,
+      reply: 'Yêu cầu này cần thêm thông tin hoặc nằm ngoài phạm vi các công cụ nội bộ của WorkHub (công việc, chấm công, nghỉ phép). Bạn vui lòng đặt câu hỏi cụ thể hơn nhé!',
       model: selectedModel,
       temperature,
       durationMs: Date.now() - startTime,
