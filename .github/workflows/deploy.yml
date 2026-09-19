@@ -20,8 +20,6 @@ jobs:
     steps:
       - name: Update Code & Rebuild Docker
         run: |
-          set -ex
-          exec > >(tee /tmp/workhub-deploy.log) 2>&1
           echo "🚀 [1/4] Bắt đầu triển khai trên máy: $(hostname)"
           cd /Users/Projects/work-hub
 
