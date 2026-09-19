@@ -84,7 +84,7 @@ export function SettingsScreen({
     if (!webhookInputUrl.trim()) return;
     setWebhookLoading(true);
     startTransition(async () => {
-      const res = await registerZaloWebhookAction(webhookInputUrl.trim());
+      const res = await registerZaloWebhookAction(webhookInputUrl.trim(), values['zalo.webhookSecret']);
       setWebhookLoading(false);
       if (res.ok) {
         toast.success(res.message);

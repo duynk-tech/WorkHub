@@ -194,7 +194,7 @@ export function IntegrationScreen({
     if (!zaloWebhookInput.trim()) return;
     setZaloWebhookLoading(true);
     startTransition(async () => {
-      const res = await registerZaloWebhookAction(zaloWebhookInput.trim());
+      const res = await registerZaloWebhookAction(zaloWebhookInput.trim(), zaloValues['zalo.webhookSecret']);
       setZaloWebhookLoading(false);
       if (res.ok) {
         toast.success(res.message);

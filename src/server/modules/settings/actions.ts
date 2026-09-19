@@ -45,23 +45,34 @@ export async function saveSettingsAction(group: string, values: Record<string, u
   return { ok: true, message: 'Đã lưu cấu hình' };
 }
 
-export async function testZaloBotAction(): Promise<Result> {
+export async function testZaloBotAction(targetChatId?: string): Promise<Result> {
   const ctx = await requirePermission('FEATURE_SETTING_ZALO');
   const info = await getBotInfo();
   if (!info.ok) return { ok: false, message: `Không kết nối được Zalo Bot: ${info.error}` };
 
-  const employee = await prisma.employee.findUnique({ where: { id: ctx.employeeId }, select: { zaloUserId: true } });
-  if (!employee?.zaloUserId) {
-    return { ok: true, message: 'Kết nối bot thành công. Hãy liên kết Zalo cá nhân để nhận tin nhắn thử.' };
+  const botData = (info.data ?? {}) as Record<string, unknown>;
+  const botName = String(botData.first_name ?? botData.name ?? botData.username ?? 'Zalo Bot');
+
+  let recipientId = targetChatId?.trim();
+  if (!recipientId && ctx.employeeId) {
+    const employee = await prisma.employee.findUnique({ where: { id: ctx.employeeId }, select: { zaloUserId: true } });
+    recipientId = employee?.zaloUserId || undefined;
+  }
+
+  if (!recipientId) {
+    return {
+      ok: true,
+      message: `Kết nối bot "${botName}" thành công! Hãy liên kết Zalo cá nhân tại mục Hồ sơ cá nhân để nhận tin nhắn thử nghiệm.`,
+    };
   }
 
   const send = await sendZaloMessage(
-    employee.zaloUserId,
-    `🔔 **Tin nhắn thử từ ${process.env.APP_NAME || 'WorkHub'}**\n\nNếu bạn nhận được tin này, cấu hình *Zalo Bot* đã hoạt động và hỗ trợ **Markdown** thành công!`,
+    recipientId,
+    `🔔 **Tin nhắn thử từ ${process.env.APP_NAME || 'WorkHub'}**\n\nNếu bạn nhận được tin này, cấu hình bot **${botName}** đã hoạt động và hỗ trợ **Markdown** thành công!`,
   );
   return send.ok
-    ? { ok: true, message: 'Đã gửi tin nhắn thử tới Zalo của bạn' }
-    : { ok: false, message: `Gửi tin thử thất bại: ${send.error}` };
+    ? { ok: true, message: `Đã gửi tin nhắn thử nghiệm thành công tới Zalo (${recipientId}) qua bot "${botName}"` }
+    : { ok: false, message: `Kết nối bot "${botName}" thành công nhưng gửi tin thử thất bại: ${send.error}` };
 }
 
 export async function flushOutboxAction(): Promise<Result> {
@@ -151,13 +162,17 @@ export async function saveLeaveTypeAction(id: number | null, data: {
   }
 }
 
-export async function registerZaloWebhookAction(webhookUrl: string): Promise<Result & { info?: unknown }> {
+export async function registerZaloWebhookAction(webhookUrl: string, secretToken?: string): Promise<Result & { info?: unknown }> {
   await requirePermission('FEATURE_SETTING_ZALO');
   const cleanUrl = webhookUrl.trim();
   if (!cleanUrl.startsWith('https://')) {
     return { ok: false, message: 'URL webhook phải bắt đầu bằng https:// theo yêu cầu của Zalo' };
   }
-  const result = await setZaloWebhook(cleanUrl);
+  // Nếu có secretToken truyền lên và khác '********', lưu vào DB luôn để đồng bộ
+  if (secretToken && secretToken.trim() && secretToken !== '********') {
+    await setSetting('zalo.webhookSecret', secretToken.trim(), { group: 'zalo', isSecret: true });
+  }
+  const result = await setZaloWebhook(cleanUrl, secretToken === '********' ? undefined : secretToken);
   if (!result.ok) {
     return { ok: false, message: `Đăng ký Webhook thất bại: ${result.error}` };
   }
