@@ -54,6 +54,9 @@ fi
 echo "⚙️ Đang cấu hình runner với repo $REPO_URL..."
 ./config.sh --url "$REPO_URL" --token "$TOKEN" --name "$(hostname)-workhub-runner" --unattended --replace
 
+# Đảm bảo PATH chứa đường dẫn tới docker và git cho launchd service
+echo "PATH=/Users/duynguyen/.docker/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> "$RUNNER_DIR/.env"
+
 # 5. Cài đặt và khởi chạy runner dưới dạng macOS service (chạy nền)
 echo "🚀 Đang cài đặt runner service (chạy nền tự động)..."
 ./svc.sh install
