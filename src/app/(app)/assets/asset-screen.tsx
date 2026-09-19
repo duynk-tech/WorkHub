@@ -118,23 +118,25 @@ export function AssetScreen({
     id: number;
     top: number;
     right: number;
-    openUpwards?: boolean;
   } | null>(null);
 
   useEffect(() => {
     if (!menuState) return;
-    const handleClickOutside = () => setMenuState(null);
-    const handleScroll = () => setMenuState(null);
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.asset-action-menu') || target?.closest('.asset-action-btn')) {
+        return;
+      }
+      setMenuState(null);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMenuState(null);
     };
-    window.addEventListener('click', handleClickOutside);
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.removeEventListener('click', handleClickOutside);
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [menuState]);
 
@@ -145,13 +147,21 @@ export function AssetScreen({
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    const dropdownHeight = 330;
-    const openUpwards = rect.bottom + dropdownHeight > window.innerHeight && rect.top > dropdownHeight;
+    const menuHeight = 350;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let top: number;
+    if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+      top = Math.max(10, rect.top - menuHeight - 4);
+    } else {
+      top = Math.min(window.innerHeight - menuHeight - 10, rect.bottom + 4);
+    }
+
     setMenuState({
       id: item.id,
-      top: openUpwards ? rect.top - 6 : rect.bottom + 6,
+      top,
       right: Math.max(12, window.innerWidth - rect.right),
-      openUpwards,
     });
   };
 
@@ -571,7 +581,7 @@ export function AssetScreen({
 
                           <button
                             type="button"
-                            className="btn btn-secondary btn-sm"
+                            className="btn btn-secondary btn-sm asset-action-btn"
                             style={{
                               padding: '4px 7px',
                               display: 'inline-flex',
@@ -584,7 +594,7 @@ export function AssetScreen({
                             title="Mở menu thao tác..."
                             aria-label="Menu thao tác"
                           >
-                            <MoreHorizontal style={{ width: 16, height: 16 }} />
+                            <MoreHorizontal style={{ width: 16, height: 16, pointerEvents: 'none' }} />
                           </button>
                         </div>
                       </td>
@@ -603,19 +613,20 @@ export function AssetScreen({
         if (!item) return null;
         return createPortal(
           <div
-            className="dropdown"
+            className="dropdown asset-action-menu"
             style={{
               position: 'fixed',
-              top: menuState.openUpwards ? undefined : menuState.top,
-              bottom: menuState.openUpwards ? (window.innerHeight - menuState.top) : undefined,
+              top: menuState.top,
+              bottom: 'auto',
               right: menuState.right,
               width: 230,
+              maxHeight: 'calc(100vh - 20px)',
+              overflowY: 'auto',
               zIndex: 9999,
               boxShadow: 'var(--shadow-xl, 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1))',
               border: '1px solid var(--border-base, #cbd5e1)',
               background: 'var(--surface-card, #ffffff)',
               borderRadius: 'var(--radius-lg, 8px)',
-              overflow: 'hidden',
             }}
             onClick={(e) => e.stopPropagation()}
           >
