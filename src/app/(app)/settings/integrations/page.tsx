@@ -19,7 +19,7 @@ export default async function IntegrationsPage({
   const initialModal = sp.modal ?? '';
   const initialSubtab = sp.subtab ?? '';
 
-  const [clients, webhooks, users, recentCalls, settings, customTools] = await Promise.all([
+  const [clients, webhooks, users, recentCalls, settings, customTools, zaloLogs] = await Promise.all([
     prisma.mcpClient.findMany({
       orderBy: { createdAt: 'desc' },
       include: { actAsUser: { select: { username: true, employee: { select: { fullName: true } } } } },
@@ -36,6 +36,10 @@ export default async function IntegrationsPage({
     }),
     getSettings(),
     getCustomTools(),
+    prisma.zaloInboundLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+    }),
   ]);
 
   return (
@@ -48,6 +52,7 @@ export default async function IntegrationsPage({
       users={users.map((u) => ({ id: u.id, employeeId: u.employeeId, username: u.username, fullName: u.employee.fullName }))}
       tools={MCP_TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, mutating: Boolean(t.mutating) }))}
       recentCalls={JSON.parse(JSON.stringify(recentCalls))}
+      zaloLogs={JSON.parse(JSON.stringify(zaloLogs))}
       mcpUrl={`${process.env.APP_URL || 'http://localhost:3000'}/api/mcp`}
       zaloWebhookUrl={`${process.env.APP_URL || 'http://localhost:3000'}/api/zalo`}
       settings={settings}

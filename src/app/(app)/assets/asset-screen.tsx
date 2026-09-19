@@ -30,6 +30,8 @@ import {
   Wrench,
   AlertTriangle,
   Trash2,
+  Package,
+  Building2,
 } from 'lucide-react';
 import { Button, Card, Input, Select, Badge } from '@/components/ui';
 import { ConfirmDialog } from '@/components/ui/modal';
@@ -385,14 +387,14 @@ export function AssetScreen({
                     onChange={handleSelectAll}
                   />
                 </th>
-                <th style={{ padding: '10px 14px', minWidth: 150 }}>Mã tài sản</th>
+                <th style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>Mã tài sản</th>
                 <th style={{ padding: '10px 14px', minWidth: 220 }}>Tên thiết bị</th>
-                <th style={{ padding: '10px 14px', minWidth: 140 }}>Phân loại</th>
+                <th style={{ padding: '10px 14px', minWidth: 130, whiteSpace: 'nowrap' }}>Phân loại</th>
                 <th style={{ padding: '10px 14px', minWidth: 200 }}>Cấu hình tóm tắt</th>
-                <th style={{ padding: '10px 14px', minWidth: 170 }}>Người sử dụng</th>
-                <th style={{ padding: '10px 14px', minWidth: 140 }}>Trạng thái</th>
-                <th style={{ padding: '10px 14px', minWidth: 130 }}>Hạn bảo hành</th>
-                <th style={{ padding: '10px 14px', width: 120, textAlign: 'right' }}>Thao tác</th>
+                <th style={{ padding: '10px 14px', minWidth: 170, whiteSpace: 'nowrap' }}>Người sử dụng</th>
+                <th style={{ padding: '10px 14px', minWidth: 140, whiteSpace: 'nowrap' }}>Trạng thái</th>
+                <th style={{ padding: '10px 14px', minWidth: 130, whiteSpace: 'nowrap' }}>Hạn bảo hành</th>
+                <th style={{ padding: '10px 14px', width: 120, textAlign: 'right', whiteSpace: 'nowrap' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -430,8 +432,8 @@ export function AssetScreen({
                       </td>
 
                       {/* Mã tài sản & QR Code icon */}
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                           <button
                             type="button"
                             onClick={() => handlePrintSingle(item)}
@@ -442,6 +444,8 @@ export function AssetScreen({
                               padding: 2,
                               cursor: 'pointer',
                               color: 'var(--primary, #0284c7)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
                             }}
                           >
                             <QrCode style={{ width: 16, height: 16 }} />
@@ -453,6 +457,7 @@ export function AssetScreen({
                               fontFamily: 'monospace',
                               color: 'var(--primary, #0284c7)',
                               textDecoration: 'none',
+                              whiteSpace: 'nowrap',
                             }}
                           >
                             {item.assetCode}
@@ -536,13 +541,59 @@ export function AssetScreen({
                             </div>
                           </div>
                         ) : item.currentDepartment ? (
-                          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                            🏢 {item.currentDepartment.name}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div
+                              style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: '50%',
+                                background: 'rgba(99, 102, 241, 0.1)',
+                                color: 'var(--brand, #6366f1)',
+                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Building2 size={13} />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-base)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.currentDepartment.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                Dùng chung phòng ban
+                              </div>
+                            </div>
+                          </div>
                         ) : (
-                          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>
-                            📦 Trong kho
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div
+                              style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: '50%',
+                                background: 'var(--surface-sunken, #f1f5f9)',
+                                color: 'var(--text-muted, #64748b)',
+                                border: '1px solid var(--border-subtle, #e2e8f0)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Package size={13} />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted, #64748b)' }}>
+                                Trong kho
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)' }}>
+                                Chưa cấp phát
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </td>
 

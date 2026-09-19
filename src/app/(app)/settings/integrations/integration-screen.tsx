@@ -55,7 +55,7 @@ export function IntegrationScreen({
   initialTab = 'mcp',
   initialModal = '',
   initialSubtab = '',
-  clients, webhooks, users, tools, recentCalls, mcpUrl, zaloWebhookUrl, settings = {}, customTools = [], canManage, canManageZalo,
+  clients, webhooks, users, tools, recentCalls, zaloLogs = [], mcpUrl, zaloWebhookUrl, settings = {}, customTools = [], canManage, canManageZalo,
 }: {
   initialTab?: string;
   initialModal?: string;
@@ -64,6 +64,7 @@ export function IntegrationScreen({
   users: { id: number; employeeId?: number; username: string; fullName: string }[];
   tools: { name: string; title: string; description: string; mutating: boolean }[];
   recentCalls: any[];
+  zaloLogs?: any[];
   mcpUrl: string;
   zaloWebhookUrl: string;
   settings?: Record<string, any>;
@@ -788,6 +789,84 @@ export function IntegrationScreen({
             onTestZalo={handleTestZalo}
             onViewMcpTools={() => openZaloConfigModal('tools')}
           />
+
+          {/* Bảng Nhật ký Webhook Zalo (Inbound Logs) */}
+          <Card>
+            <CardHeader className="row-between">
+              <div>
+                <CardTitle>Nhật ký Webhook Zalo gần đây</CardTitle>
+                <div className="card-subtitle">
+                  Theo dõi thời gian thực các tin nhắn và sự kiện webhook nhận được từ Zalo Bot
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  startTransition(() => {
+                    router.refresh();
+                  });
+                }}
+                loading={pending}
+              >
+                <RotateCcw size={13} /> Làm mới
+              </Button>
+            </CardHeader>
+            <CardBody style={{ padding: (zaloLogs || []).length ? 0 : undefined }}>
+              {(!zaloLogs || zaloLogs.length === 0) ? (
+                <EmptyState
+                  icon={<MessageCircle size={20} />}
+                  title="Chưa có tin nhắn nào gửi tới"
+                  description="Khi có người dùng nhắn tin cho Zalo Bot hoặc test qua webhook, nhật ký sẽ hiển thị tại đây."
+                />
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table table-compact">
+                    <thead>
+                      <tr>
+                        <th style={{ whiteSpace: 'nowrap' }}>Thời gian</th>
+                        <th style={{ whiteSpace: 'nowrap' }}>Zalo User ID</th>
+                        <th>Nội dung nhận</th>
+                        <th>Phản hồi của Bot / AI</th>
+                        <th style={{ whiteSpace: 'nowrap' }}>Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zaloLogs.map((log: any) => (
+                        <tr key={log.id}>
+                          <td className="hint" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
+                            {fmtDateTime(log.createdAt)}
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                            {log.zaloUserId || '—'}
+                          </td>
+                          <td style={{ maxWidth: 280, wordBreak: 'break-word', fontSize: 13 }}>
+                            {log.text || '—'}
+                          </td>
+                          <td style={{ maxWidth: 350, wordBreak: 'break-word', fontSize: 13 }}>
+                            {log.response ? (
+                              <span style={{ color: log.handled ? 'inherit' : 'var(--danger)' }}>
+                                {log.response}
+                              </span>
+                            ) : (
+                              <span className="text-faint">Chưa có phản hồi</span>
+                            )}
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {log.handled ? (
+                              <Badge tone="success"><CheckCircle2 size={11} /> Đã xử lý</Badge>
+                            ) : (
+                              <Badge tone="danger"><AlertTriangle size={11} /> Lỗi</Badge>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardBody>
+          </Card>
         </div>
       )}
 
@@ -932,53 +1011,59 @@ export function IntegrationScreen({
       >
         <div className="stack" style={{ gap: 16 }}>
           {/* Modal Tabs (n8n AI Agent Studio style) */}
-          <div className="tabs" style={{ marginBottom: 4, overflowX: 'auto', flexWrap: 'nowrap' }}>
+          <div className="tabs" style={{ marginBottom: 4, overflowX: 'auto', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
             <div
               className="tab"
               data-active={zaloConfigTab === 'prompt'}
               onClick={() => setZaloConfigTab('prompt')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Wand2 size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              <Wand2 size={13} />
               1. Prompt & Persona
             </div>
             <div
               className="tab"
               data-active={zaloConfigTab === 'model'}
               onClick={() => setZaloConfigTab('model')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <SlidersHorizontal size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              <SlidersHorizontal size={13} />
               2. Mô hình & Tham số
             </div>
             <div
               className="tab"
               data-active={zaloConfigTab === 'tools'}
               onClick={() => setZaloConfigTab('tools')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Wrench size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              <Wrench size={13} />
               3. Công cụ ({tools.length + customToolsList.length})
             </div>
             <div
               className="tab"
               data-active={zaloConfigTab === 'playground'}
               onClick={() => setZaloConfigTab('playground')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Play size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              <Play size={13} />
               4. Thử nghiệm Agent
             </div>
             <div
               className="tab"
               data-active={zaloConfigTab === 'bot'}
               onClick={() => setZaloConfigTab('bot')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <MessageCircle size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              <MessageCircle size={13} />
               5. Kết nối Zalo
             </div>
             <div
               className="tab"
               data-active={zaloConfigTab === 'webhook'}
               onClick={() => setZaloConfigTab('webhook')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              <Webhook size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: -1 }} />
+              <Webhook size={13} />
               6. Webhook
             </div>
           </div>

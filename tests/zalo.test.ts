@@ -127,4 +127,36 @@ describe('Zalo Webhook Payload Extraction', () => {
     expect(String(senderId)).toBe('987654321');
     expect(rawText).toBe('/checkin');
   });
+
+  it('trích xuất chính xác payload dạng mảng Zalo Bot Platform (message.text.received)', async () => {
+    const { extractZaloMessages } = await import('@/app/api/zalo/route');
+    const payload = [
+      {
+        event_name: 'message.text.received',
+        message: {
+          date: 1789811177313,
+          chat: {
+            chat_type: 'PRIVATE',
+            id: 'b22fe4ed3da3d4fd8db2',
+          },
+          message_id: 'c6469c561d3b7c62252d',
+          from: {
+            id: 'b22fe4ed3da3d4fd8db2',
+            is_bot: false,
+            display_name: 'Thu An',
+          },
+          text: 'Lịch cúp điện khu vực thị trấn cần giuộc Long An',
+        },
+      },
+    ];
+
+    const messages = extractZaloMessages(payload);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].senderId).toBe('b22fe4ed3da3d4fd8db2');
+    expect(messages[0].text).toBe('Lịch cúp điện khu vực thị trấn cần giuộc Long An');
+    expect(messages[0].messageId).toBe('c6469c561d3b7c62252d');
+    expect(messages[0].displayName).toBe('Thu An');
+    expect(messages[0].eventName).toBe('message.text.received');
+  });
 });
+
