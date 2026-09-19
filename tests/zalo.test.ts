@@ -108,7 +108,7 @@ describe('Zalo Webhook Payload Extraction', () => {
     };
 
     const messageObj = typeof body.message === 'object' && body.message !== null ? body.message : undefined;
-    const senderId = messageObj?.chat?.id ?? body.sender?.id;
+    const senderId = (messageObj as any)?.chat?.id ?? body.sender?.id;
     const rawText = messageObj?.text ?? '';
 
     expect(String(senderId)).toBe('zalo_oa_sender_789');

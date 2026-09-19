@@ -22,8 +22,27 @@ export function Sidebar({
   sections, appName, badges, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
 }: Props) {
   const pathname = usePathname();
+  const [hoveredTooltip, setHoveredTooltip] = useState<{ top: number; text: string } | null>(null);
 
-  useEffect(() => { onCloseMobile(); }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    onCloseMobile();
+    setHoveredTooltip(null);
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setHoveredTooltip(null);
+  }, [collapsed]);
+
+  const showTooltip = (e: React.MouseEvent<HTMLElement>, text: string) => {
+    if (!collapsed) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHoveredTooltip({
+      top: rect.top + rect.height / 2,
+      text,
+    });
+  };
+
+  const hideTooltip = () => setHoveredTooltip(null);
 
   const isActive = (href: string) =>
     href === '/settings' ? pathname === '/settings' : pathname === href || pathname.startsWith(`${href}/`);
@@ -37,15 +56,16 @@ export function Sidebar({
           {collapsed ? (
             <button
               type="button"
-              className="sidebar-brand-btn tooltip-host"
+              className="sidebar-brand-btn"
               onClick={onToggleCollapsed}
+              onMouseEnter={(e) => showTooltip(e, 'Mở rộng menu')}
+              onMouseLeave={hideTooltip}
               aria-label="Mở rộng menu"
             >
               <span className="login-logo">
                 <span className="logo-letter">W</span>
                 <PanelLeft className="logo-expand-icon" size={18} />
               </span>
-              <span className="tooltip">Mở rộng menu</span>
             </button>
           ) : (
             <>
@@ -68,7 +88,7 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="sidebar-nav scrollbar-none">
+        <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
           {sections.map((section, i) => (
             <div key={i} style={{ marginBottom: 2 }}>
               {section.title && !collapsed && <div className="nav-section">{section.title}</div>}
@@ -76,21 +96,19 @@ export function Sidebar({
               {section.items.map((item) => {
                 const Icon = NAV_ICONS[item.icon];
                 const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
+                const labelWithCount = `${item.label}${count > 0 ? ` (${count})` : ''}`;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={cn('nav-item', collapsed && 'tooltip-host')}
+                    className="nav-item"
                     data-active={isActive(item.href)}
+                    onMouseEnter={(e) => showTooltip(e, labelWithCount)}
+                    onMouseLeave={hideTooltip}
                   >
                     {Icon && <Icon />}
                     {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
                     {!collapsed && count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
-                    {collapsed && (
-                      <span className="tooltip">
-                        {item.label}{count > 0 ? ` (${count})` : ''}
-                      </span>
-                    )}
                     {collapsed && count > 0 && <span className="nav-badge-dot" />}
                   </Link>
                 );
@@ -102,17 +120,26 @@ export function Sidebar({
         <div className="sidebar-footer">
           <button
             type="button"
-            className={cn('sidebar-toggle-btn', collapsed && 'tooltip-host')}
+            className="sidebar-toggle-btn"
             onClick={onToggleCollapsed}
+            onMouseEnter={(e) => showTooltip(e, collapsed ? 'Mở rộng menu' : 'Thu gọn menu')}
+            onMouseLeave={hideTooltip}
             aria-label={collapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
           >
             {collapsed ? <PanelLeft /> : <PanelLeftClose />}
             {!collapsed && <span>Thu gọn</span>}
-            {collapsed && (
-              <span className="tooltip">Mở rộng menu</span>
-            )}
           </button>
         </div>
+
+        {/* Tooltip nổi ngoài container cuộn, không bị che khuất và cho phép sidebar cuộn tự do */}
+        {collapsed && hoveredTooltip && (
+          <div
+            className="sidebar-floating-tooltip"
+            style={{ top: hoveredTooltip.top }}
+          >
+            {hoveredTooltip.text}
+          </div>
+        )}
       </aside>
     </>
   );
