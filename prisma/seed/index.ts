@@ -59,7 +59,7 @@ async function ensureAdmin() {
   if (existingAdmin) return;
 
   const username = process.env.SEED_ADMIN_USERNAME || 'admin';
-  const password = process.env.SEED_ADMIN_PASSWORD || 'Admin@123';
+  const password = process.env.SEED_ADMIN_PASSWORD || 'Workhub@123';
   const fullName = process.env.SEED_ADMIN_NAME || 'Quản trị hệ thống';
 
   let employee = await prisma.employee.findUnique({ where: { code: 'ADMIN' } });
