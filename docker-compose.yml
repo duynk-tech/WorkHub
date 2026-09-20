@@ -9,12 +9,13 @@ services:
       - "127.0.0.1:3001:3000"
     environment:
       - DATABASE_URL=mysql://workhub:workhub_secret_pw@db:3306/workhub
-      - APP_URL=https://work-hub.sunny-tech.io.vn
+      - APP_URL=https://work-hub.sunny.io.vn
       - APP_NAME=WorkHub
       - AUTH_SECRET=change-this-to-a-secure-random-secret-key-32-chars
       - APP_ENCRYPTION_KEY=ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=
       - CRON_SECRET=production-cron-secret
       - TZ=Asia/Ho_Chi_Minh
+      - SEED_DEMO=true
     networks:
       - default
       - server

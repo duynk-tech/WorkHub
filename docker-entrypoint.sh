@@ -8,8 +8,9 @@ until echo "SELECT 1;" | npx prisma db execute --url "$DATABASE_URL" --stdin >/d
 done
 echo "✓ MySQL đã sẵn sàng"
 
-echo "→ Áp dụng migration…"
-npx prisma migrate deploy || npx prisma db push --accept-data-loss
+echo "→ Áp dụng migration & đồng bộ schema…"
+npx prisma migrate deploy || true
+npx prisma db push --skip-generate
 
 echo "→ Nạp dữ liệu khởi tạo…"
 npx tsx prisma/seed/index.ts
