@@ -25,6 +25,7 @@ import {
   saveSettingsAction, testZaloBotAction, registerZaloWebhookAction, getZaloWebhookInfoAction,
   saveCustomToolAction, deleteCustomToolAction, toggleCustomToolAction, testCustomToolAction,
   fetchLlmModelsAction, testAiAgentAction, testZaloWebhookPingAction, deleteZaloWebhookAction,
+  clearZaloInboundLogsAction, deleteZaloInboundLogAction,
 } from '@/server/modules/settings/actions';
 import { PRESET_LLM_MODELS, type LlmModelItem } from '@/lib/llm-models';
 import {
@@ -156,10 +157,15 @@ export function IntegrationScreen({
   const [showRawPayload, setShowRawPayload] = useState(false);
   const [zaloLogPage, setZaloLogPage] = useState(1);
   const [zaloLogPageSize, setZaloLogPageSize] = useState(10);
+  const [confirmClearZaloLogs, setConfirmClearZaloLogs] = useState(false);
+  const [clearingZaloLogs, setClearingZaloLogs] = useState(false);
+  const [deletingZaloLogId, setDeletingZaloLogId] = useState<number | null>(null);
+
   const totalZaloLogPages = Math.max(1, Math.ceil(((zaloLogs as any[]) || []).length / zaloLogPageSize));
+  const safePage = Math.min(Math.max(1, zaloLogPage), totalZaloLogPages);
   const paginatedZaloLogs = ((zaloLogs as any[]) || []).slice(
-    (zaloLogPage - 1) * zaloLogPageSize,
-    zaloLogPage * zaloLogPageSize,
+    (safePage - 1) * zaloLogPageSize,
+    safePage * zaloLogPageSize,
   );
 
   const insertPromptVariable = (varTag: string) => {
@@ -408,6 +414,44 @@ export function IntegrationScreen({
       const res = await testZaloBotAction();
       res.ok ? toast.success(res.message) : toast.error(res.message);
     });
+  };
+
+  const handleClearZaloLogs = async () => {
+    setClearingZaloLogs(true);
+    try {
+      const res = await clearZaloInboundLogsAction();
+      if (res.ok) {
+        toast.success(res.message);
+        setConfirmClearZaloLogs(false);
+        setZaloLogPage(1);
+        router.refresh();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Lỗi khi xóa nhật ký');
+    } finally {
+      setClearingZaloLogs(false);
+    }
+  };
+
+  const handleDeleteSingleZaloLog = async (id: number) => {
+    if (!confirm('Bạn có chắc muốn xóa bản ghi nhật ký này?')) return;
+    setDeletingZaloLogId(id);
+    try {
+      const res = await deleteZaloInboundLogAction(id);
+      if (res.ok) {
+        toast.success(res.message);
+        if (selectedZaloLog?.id === id) setSelectedZaloLog(null);
+        router.refresh();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Lỗi khi xóa bản ghi');
+    } finally {
+      setDeletingZaloLogId(null);
+    }
   };
 
   const handleNewTool = () => {
@@ -691,6 +735,8 @@ export function IntegrationScreen({
     mcpServers: { workhub: { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${key}` } } },
   }, null, 2);
 
+  const openApiUrl = mcpUrl.replace(/\/api\/mcp\/?$/, '/api/openapi.json');
+
   return (
     <div className="stack">
       <PageHeader
@@ -726,6 +772,90 @@ export function IntegrationScreen({
               </div>
             </div>
           </Alert>
+
+          {/* Hướng dẫn kết nối ChatGPT & Trợ lý AI */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles size={16} style={{ color: 'var(--brand)' }} />
+                  Kết nối ChatGPT & Trợ lý AI
+                </CardTitle>
+                <div className="card-subtitle">
+                  WorkHub hỗ trợ cả 2 chuẩn kết nối: Remote MCP (OAuth 2.1 PKCE + Dynamic Client Registration) và Custom GPT Actions (OpenAPI 3.0 REST)
+                </div>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+                {/* 1. Remote MCP */}
+                <div style={{
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 16,
+                  background: 'var(--surface-card)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}>
+                  <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                    <Plug size={16} style={{ color: 'var(--brand)' }} />
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>1. Remote MCP (ChatGPT Connectors / Developer Mode)</span>
+                  </div>
+                  <div className="hint" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                    Dành cho tính năng Developer Mode / Connectors của ChatGPT. Hỗ trợ tự động <b>OAuth 2.1 PKCE</b> và <b>Dynamic Client Registration (RFC 7591)</b>.
+                  </div>
+                  <div className="stack" style={{ gap: 6, marginTop: 4 }}>
+                    <div className="hint" style={{ fontSize: 11.5, fontWeight: 500 }}>MCP Server URL:</div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <code style={{ flex: 1, fontSize: 11.5, fontFamily: 'var(--font-mono)', background: 'var(--surface-sunken)', padding: '6px 10px', borderRadius: 6, overflowX: 'auto' }}>
+                        {mcpUrl}
+                      </code>
+                      <Button size="sm" variant="secondary" onClick={() => copy(mcpUrl, 'Đã sao chép MCP URL')}>
+                        <Copy size={13} /> Chép
+                      </Button>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 4 }}>
+                    💡 Khi ChatGPT kết nối, nó sẽ tự gửi yêu cầu đăng ký client (DCR) và chuyển hướng người dùng đến màn hình xác nhận quyền (Consent Screen).
+                  </div>
+                </div>
+
+                {/* 2. Custom GPT Actions */}
+                <div style={{
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 16,
+                  background: 'var(--surface-card)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}>
+                  <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                    <Globe size={16} style={{ color: 'var(--brand)' }} />
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>2. Custom GPT Actions (OpenAPI 3.0 REST)</span>
+                  </div>
+                  <div className="hint" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                    Dành cho Custom GPTs (GPT Store). Nhập trực tiếp schema OpenAPI và gọi các công cụ WorkHub qua REST API.
+                  </div>
+                  <div className="stack" style={{ gap: 6, marginTop: 4 }}>
+                    <div className="hint" style={{ fontSize: 11.5, fontWeight: 500 }}>OpenAPI Schema URL:</div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <code style={{ flex: 1, fontSize: 11.5, fontFamily: 'var(--font-mono)', background: 'var(--surface-sunken)', padding: '6px 10px', borderRadius: 6, overflowX: 'auto' }}>
+                        {openApiUrl}
+                      </code>
+                      <Button size="sm" variant="secondary" onClick={() => copy(openApiUrl, 'Đã sao chép OpenAPI URL')}>
+                        <Copy size={13} /> Chép
+                      </Button>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 4 }}>
+                    🔑 Trong Custom GPT: Chọn <b>Import from URL</b> → Chọn Auth: <b>API Key</b> → Auth Type: <b>Bearer</b> → Nhập MCP API Key đã tạo bên dưới.
+                  </div>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
           {newKey && (
             <Card>
               <CardBody>
@@ -888,18 +1018,32 @@ export function IntegrationScreen({
                   Theo dõi thời gian thực các tin nhắn và sự kiện webhook nhận được từ Zalo Bot
                 </div>
               </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  startTransition(() => {
-                    router.refresh();
-                  });
-                }}
-                loading={pending}
-              >
-                <RotateCcw size={13} /> Làm mới
-              </Button>
+              <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                {canManageZalo && (zaloLogs || []).length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    style={{ color: 'var(--danger)', gap: 5 }}
+                    onClick={() => setConfirmClearZaloLogs(true)}
+                    disabled={clearingZaloLogs}
+                    title="Xóa toàn bộ nhật ký sự kiện webhook Zalo"
+                  >
+                    <Trash2 size={13} /> Xóa nhật ký
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    startTransition(() => {
+                      router.refresh();
+                    });
+                  }}
+                  loading={pending}
+                >
+                  <RotateCcw size={13} /> Làm mới
+                </Button>
+              </div>
             </CardHeader>
             <CardBody style={{ padding: (zaloLogs || []).length ? 0 : undefined }}>
               {(!zaloLogs || zaloLogs.length === 0) ? (
@@ -984,19 +1128,37 @@ export function IntegrationScreen({
                               )}
                             </td>
                             <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                iconOnly
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedZaloLog(log);
-                                  setShowRawPayload(false);
-                                }}
-                                title="Xem chi tiết"
-                              >
-                                <Eye size={13} />
-                              </Button>
+                              <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  iconOnly
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedZaloLog(log);
+                                    setShowRawPayload(false);
+                                  }}
+                                  title="Xem chi tiết"
+                                >
+                                  <Eye size={13} />
+                                </Button>
+                                {canManageZalo && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    iconOnly
+                                    style={{ color: 'var(--danger)' }}
+                                    loading={deletingZaloLogId === log.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteSingleZaloLog(log.id);
+                                    }}
+                                    title="Xóa bản ghi này"
+                                  >
+                                    <Trash2 size={13} />
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1011,58 +1173,66 @@ export function IntegrationScreen({
               <div
                 className="row-between"
                 style={{
-                  padding: '10px 16px',
+                  padding: '8px 16px',
                   borderTop: '1px solid var(--border-subtle)',
                   background: 'var(--surface-sunken)',
                   borderBottomLeftRadius: 'var(--radius-lg)',
                   borderBottomRightRadius: 'var(--radius-lg)',
                   flexWrap: 'wrap',
-                  gap: 10,
+                  gap: 12,
                 }}
               >
-                <div className="row" style={{ gap: 12, alignItems: 'center' }}>
-                  <span className="hint" style={{ fontSize: 12 }}>
-                    Hiển thị <strong>{Math.min((zaloLogPage - 1) * zaloLogPageSize + 1, zaloLogs.length)}</strong> -{' '}
-                    <strong>{Math.min(zaloLogPage * zaloLogPageSize, zaloLogs.length)}</strong> trên tổng{' '}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <span className="hint" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                    Hiển thị <strong>{zaloLogs.length === 0 ? 0 : (safePage - 1) * zaloLogPageSize + 1}</strong> -{' '}
+                    <strong>{Math.min(safePage * zaloLogPageSize, zaloLogs.length)}</strong> trên tổng{' '}
                     <strong>{zaloLogs.length}</strong> sự kiện
                   </span>
-                  <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                    <span className="hint" style={{ fontSize: 11.5 }}>Số dòng:</span>
-                    <Select
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    <span className="hint" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>Số dòng:</span>
+                    <select
+                      className="select input-sm"
                       value={String(zaloLogPageSize)}
                       onChange={(e) => {
                         setZaloLogPageSize(Number(e.target.value));
                         setZaloLogPage(1);
                       }}
-                      style={{ height: 26, fontSize: 11.5, padding: '2px 6px' }}
+                      style={{
+                        width: 95,
+                        minWidth: 95,
+                        height: 28,
+                        fontSize: 12,
+                        padding: '0 24px 0 8px',
+                        flexShrink: 0,
+                      }}
                     >
                       <option value="5">5 / trang</option>
                       <option value="10">10 / trang</option>
                       <option value="20">20 / trang</option>
                       <option value="50">50 / trang</option>
-                    </Select>
+                    </select>
                   </div>
                 </div>
 
-                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, whiteSpace: 'nowrap' }}>
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={zaloLogPage <= 1}
+                    disabled={safePage <= 1}
                     onClick={() => setZaloLogPage((p) => Math.max(1, p - 1))}
-                    style={{ height: 28, fontSize: 12 }}
+                    style={{ height: 28, fontSize: 12, padding: '0 10px' }}
                   >
                     <ChevronLeft size={13} /> Trước
                   </Button>
-                  <span className="hint" style={{ fontSize: 12, padding: '0 4px' }}>
-                    Trang {zaloLogPage} / {totalZaloLogPages}
+                  <span className="hint" style={{ fontSize: 12, padding: '0 4px', whiteSpace: 'nowrap' }}>
+                    Trang {safePage} / {totalZaloLogPages}
                   </span>
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={zaloLogPage >= totalZaloLogPages}
+                    disabled={safePage >= totalZaloLogPages}
                     onClick={() => setZaloLogPage((p) => Math.min(totalZaloLogPages, p + 1))}
-                    style={{ height: 28, fontSize: 12 }}
+                    style={{ height: 28, fontSize: 12, padding: '0 10px' }}
                   >
                     Sau <ChevronRight size={13} />
                   </Button>
@@ -2556,6 +2726,17 @@ export function IntegrationScreen({
         title="Xóa MCP client"
         confirmText="Xóa"
         message={<>Xóa client <b>{confirmDeleteClient?.name}</b>? API key sẽ ngừng hoạt động ngay lập tức.</>}
+      />
+
+      <ConfirmDialog
+        open={confirmClearZaloLogs}
+        onClose={() => setConfirmClearZaloLogs(false)}
+        onConfirm={handleClearZaloLogs}
+        loading={clearingZaloLogs}
+        danger
+        title="Xóa nhật ký Webhook Zalo"
+        confirmText="Xóa tất cả"
+        message="Toàn bộ lịch sử các sự kiện và tin nhắn webhook Zalo đã lưu sẽ bị xóa vĩnh viễn khỏi hệ thống. Bạn có chắc chắn muốn tiếp tục?"
       />
 
       {/* Modal Custom Tool Builder */}

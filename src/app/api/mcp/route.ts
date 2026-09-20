@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { authenticateMcp, logMcpCall, type McpIdentity } from '@/server/mcp/auth';
-import { MCP_TOOLS, TOOLS_BY_NAME } from '@/server/mcp/tools';
+import { MCP_TOOLS, TOOLS_BY_NAME, checkToolAccess } from '@/server/mcp/tools';
 import { can } from '@/server/auth/context';
+import { getAppUrl } from '@/lib/mcp-oauth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -18,22 +19,6 @@ interface JsonRpcRequest {
 
 const ok = (id: unknown, result: unknown) => ({ jsonrpc: '2.0', id, result });
 const err = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
-
-/** Kiểm tra client được phép gọi công cụ này không (scope + chế độ chỉ đọc + quyền của người đại diện). */
-function checkToolAccess(identity: McpIdentity, toolName: string): string | null {
-  const tool = TOOLS_BY_NAME.get(toolName);
-  if (!tool) return `Không có công cụ "${toolName}"`;
-  if (identity.scopes.length > 0 && !identity.scopes.includes(toolName)) {
-    return `Công cụ "${toolName}" không nằm trong phạm vi của API key này`;
-  }
-  if (tool.mutating && identity.readOnly) {
-    return `API key này ở chế độ chỉ đọc, không thể gọi "${toolName}"`;
-  }
-  if (tool.permission && !can(identity.ctx, tool.permission)) {
-    return `Tài khoản đại diện (${identity.ctx.fullName}) không có quyền ${tool.permission}`;
-  }
-  return null;
-}
 
 function toolDescriptor(identity: McpIdentity) {
   return MCP_TOOLS
@@ -122,14 +107,30 @@ async function handleRpc(body: JsonRpcRequest, identity: McpIdentity) {
   }
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
   const auth = await authenticateMcp(req.headers.get('authorization'), ip);
+  const appUrl = getAppUrl(req);
 
   if (!auth.ok) {
     return NextResponse.json(err(null, -32001, auth.error), {
       status: 401,
-      headers: { 'WWW-Authenticate': 'Bearer realm="workhub-mcp"' },
+      headers: {
+        'WWW-Authenticate': `Bearer realm="workhub-mcp", resource_metadata="${appUrl}/.well-known/oauth-protected-resource"`,
+        'Access-Control-Allow-Origin': '*',
+      },
     });
   }
 
@@ -137,7 +138,10 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(err(null, -32700, 'JSON không hợp lệ'), { status: 400 });
+    return NextResponse.json(err(null, -32700, 'JSON không hợp lệ'), {
+      status: 400,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    });
   }
 
   // Hỗ trợ batch request theo chuẩn JSON-RPC 2.0
@@ -147,33 +151,49 @@ export async function POST(req: NextRequest) {
       const res = await handleRpc(item, auth.identity);
       if (res) results.push(res);
     }
-    return results.length ? NextResponse.json(results) : new NextResponse(null, { status: 202 });
+    return results.length
+      ? NextResponse.json(results, { headers: { 'Access-Control-Allow-Origin': '*' } })
+      : new NextResponse(null, { status: 202, headers: { 'Access-Control-Allow-Origin': '*' } });
   }
 
   const result = await handleRpc(body, auth.identity);
-  if (!result) return new NextResponse(null, { status: 202 });
-  return NextResponse.json(result);
+  if (!result) return new NextResponse(null, { status: 202, headers: { 'Access-Control-Allow-Origin': '*' } });
+  return NextResponse.json(result, { headers: { 'Access-Control-Allow-Origin': '*' } });
 }
 
 /** Mô tả endpoint cho người tích hợp. */
 export async function GET(req: NextRequest) {
   const auth = await authenticateMcp(req.headers.get('authorization'));
+  const appUrl = getAppUrl(req);
+
   if (!auth.ok) {
     return NextResponse.json(
       {
         service: SERVER_INFO,
         transport: 'Streamable HTTP (JSON-RPC 2.0 over POST)',
-        authentication: 'Authorization: Bearer <MCP API key>',
-        hint: 'Tạo API key trong Cấu hình → Tích hợp & MCP',
+        authentication: 'Authorization: Bearer <MCP API key or OAuth Token>',
+        oauth_metadata: `${appUrl}/.well-known/oauth-protected-resource`,
+        hint: 'Tạo API key trong Cấu hình → Tích hợp & MCP hoặc kết nối OAuth 2.1',
       },
-      { status: 401 },
+      {
+        status: 401,
+        headers: {
+          'WWW-Authenticate': `Bearer realm="workhub-mcp", resource_metadata="${appUrl}/.well-known/oauth-protected-resource"`,
+          'Access-Control-Allow-Origin': '*',
+        },
+      },
     );
   }
-  return NextResponse.json({
-    service: SERVER_INFO,
-    client: auth.identity.clientName,
-    actingAs: auth.identity.ctx.fullName,
-    readOnly: auth.identity.readOnly,
-    tools: toolDescriptor(auth.identity).map((t) => ({ name: t.name, title: t.title })),
-  });
+  return NextResponse.json(
+    {
+      service: SERVER_INFO,
+      client: auth.identity.clientName,
+      actingAs: auth.identity.ctx.fullName,
+      readOnly: auth.identity.readOnly,
+      tools: toolDescriptor(auth.identity).map((t) => ({ name: t.name, title: t.title })),
+    },
+    {
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    },
+  );
 }

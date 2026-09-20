@@ -65,7 +65,7 @@ export async function buildAuthContextForEmployee(employeeId: number): Promise<A
       zaloLinked: Boolean(emp.zaloUserId),
       roleCodes: [],
       roleNames: [],
-      permissions: new Set(['MENU_TASKS', 'MENU_LEAVES', 'FEATURE_ATTENDANCE_CHECKIN']),
+      permissions: new Set(['MENU_TASKS', 'FEATURE_TASK_CREATE', 'MENU_LEAVES', 'FEATURE_LEAVE_REQUEST', 'FEATURE_ATTENDANCE_CHECKIN']),
       dataScope: 'SELF',
       customDeptIds: [],
       isAdmin: false,

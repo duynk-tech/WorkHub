@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requirePermission } from '@/server/auth/context';
+import { requireAuth, requirePermission, can } from '@/server/auth/context';
 import { setSetting, getSetting } from './service';
 import {
   getBotInfo,
@@ -242,6 +242,34 @@ export async function deleteZaloWebhookAction(botToken?: string): Promise<Result
   }
   revalidatePath('/settings/integrations');
   return { ok: true, message: 'Đã hủy Webhook thành công' };
+}
+
+export async function clearZaloInboundLogsAction(): Promise<Result> {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_MCP_MANAGE') && !can(ctx, 'FEATURE_SETTING_ZALO') && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn không có quyền xóa nhật ký Webhook Zalo' };
+  }
+  try {
+    await prisma.zaloInboundLog.deleteMany({});
+    revalidatePath('/settings/integrations');
+    return { ok: true, message: 'Đã xóa toàn bộ nhật ký Webhook Zalo' };
+  } catch (err: any) {
+    return { ok: false, message: `Lỗi khi xóa nhật ký: ${err.message}` };
+  }
+}
+
+export async function deleteZaloInboundLogAction(id: number): Promise<Result> {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_MCP_MANAGE') && !can(ctx, 'FEATURE_SETTING_ZALO') && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn không có quyền xóa nhật ký Webhook Zalo' };
+  }
+  try {
+    await prisma.zaloInboundLog.delete({ where: { id } });
+    revalidatePath('/settings/integrations');
+    return { ok: true, message: 'Đã xóa bản ghi nhật ký' };
+  } catch (err: any) {
+    return { ok: false, message: `Lỗi khi xóa bản ghi: ${err.message}` };
+  }
 }
 
 export async function getCustomToolsAction(): Promise<CustomAgentTool[]> {

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requirePermission, can } from '@/server/auth/context';
+import { requireAuth, requirePermission, can, type AuthContext } from '@/server/auth/context';
 import { startWorkflow, actOnApproval, cancelWorkflow } from '@/server/modules/workflow/engine';
 import { notify } from '@/server/modules/notify/service';
 import { dateOnly, fmtDate } from '@/lib/date';
@@ -46,8 +46,16 @@ export async function previewLeaveDaysAction(startDate: string, endDate: string,
   }
 }
 
-export async function submitLeaveAction(id: number | null, raw: unknown): Promise<Result> {
-  const ctx = await requirePermission('FEATURE_LEAVE_REQUEST');
+export async function submitLeaveAction(id: number | null, raw: unknown, ctxOverride?: AuthContext): Promise<Result> {
+  let ctx: AuthContext;
+  if (ctxOverride) {
+    if (!can(ctxOverride, 'FEATURE_LEAVE_REQUEST') && !ctxOverride.isAdmin) {
+      return { ok: false, message: 'Bạn không có quyền nộp đơn nghỉ phép (FEATURE_LEAVE_REQUEST)' };
+    }
+    ctx = ctxOverride;
+  } else {
+    ctx = await requirePermission('FEATURE_LEAVE_REQUEST');
+  }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ' };
   const d = parsed.data;
@@ -179,8 +187,12 @@ export async function submitLeaveAction(id: number | null, raw: unknown): Promis
       }).catch((err) => console.error('[Webhook leave.submitted Error]:', err));
     }
 
-    revalidatePath('/leaves');
-    revalidatePath('/approvals');
+    try {
+      revalidatePath('/leaves');
+      revalidatePath('/approvals');
+    } catch {
+      // Bỏ qua lỗi revalidate khi chạy ngoài request context (MCP / Webhook)
+    }
     return {
       ok: true,
       message: d.submit ? `Đã nộp đơn ${result.request.code} (${formatDays(totalDays)} ngày)` : 'Đã lưu nháp đơn nghỉ phép',

@@ -8,6 +8,7 @@ import { getDepartmentTree, flattenTree } from '@/server/modules/org/department-
 import { visibleEmployeeIds } from '@/server/auth/scope';
 import { getMonthlySheet } from '@/server/modules/attendance/service';
 import { actOnApproval } from '@/server/modules/workflow/engine';
+import { can } from '@/server/auth/context';
 import type { McpIdentity } from './auth';
 
 export interface McpTool {
@@ -384,8 +385,16 @@ export const MCP_TOOLS: McpTool[] = [
     },
     handler: async (args, identity) => {
       const a = args as { leaveTypeCode: string; startDate: string; endDate: string; reason: string };
-      const leaveType = await prisma.leaveType.findUnique({ where: { code: a.leaveTypeCode.toUpperCase() } });
-      if (!leaveType) throw new Error(`Không có loại nghỉ phép "${a.leaveTypeCode}"`);
+      let leaveType = await prisma.leaveType.findUnique({ where: { code: a.leaveTypeCode.toUpperCase() } });
+      if (!leaveType) {
+        const allTypes = await prisma.leaveType.findMany({ where: { isActive: true } });
+        const term = a.leaveTypeCode.trim().toLowerCase();
+        leaveType = allTypes.find((t) => t.code.toLowerCase() === term || t.name.toLowerCase().includes(term)) ?? null;
+        if (!leaveType) {
+          const list = allTypes.map((t) => `${t.code} (${t.name})`).join(', ');
+          throw new Error(`Không tìm thấy loại nghỉ phép "${a.leaveTypeCode}". Các loại nghỉ hợp lệ: ${list}`);
+        }
+      }
 
       const preview = await calculateLeaveDays(identity.ctx.employeeId, new Date(a.startDate), new Date(a.endDate), 'FULL_DAY');
 
@@ -395,7 +404,7 @@ export const MCP_TOOLS: McpTool[] = [
         durationType: 'FULL_DAY', reason: a.reason,
         handoverToId: null, handoverNote: '', contactDuringLeave: '',
         attachmentUrl: '', attachmentName: '', submit: true,
-      });
+      }, identity.ctx);
       if (!result.ok) throw new Error(result.message);
 
       return { message: result.message, totalDays: preview.totalDays };
@@ -562,3 +571,19 @@ export const MCP_TOOLS: McpTool[] = [
 ];
 
 export const TOOLS_BY_NAME = new Map(MCP_TOOLS.map((t) => [t.name, t]));
+
+/** Kiểm tra client được phép gọi công cụ này không (scope + chế độ chỉ đọc + quyền của người đại diện). */
+export function checkToolAccess(identity: McpIdentity, toolName: string): string | null {
+  const tool = TOOLS_BY_NAME.get(toolName);
+  if (!tool) return `Không có công cụ "${toolName}"`;
+  if (identity.scopes.length > 0 && !identity.scopes.includes(toolName)) {
+    return `Công cụ "${toolName}" không nằm trong phạm vi của API key này`;
+  }
+  if (tool.mutating && identity.readOnly) {
+    return `API key này ở chế độ chỉ đọc, không thể gọi "${toolName}"`;
+  }
+  if (tool.permission && !can(identity.ctx, tool.permission)) {
+    return `Tài khoản đại diện (${identity.ctx.fullName}) không có quyền ${tool.permission}`;
+  }
+  return null;
+}
