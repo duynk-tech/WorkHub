@@ -16,7 +16,19 @@ const STEPS = [
   { key: 'admin', title: 'Tài khoản quản trị', icon: ShieldCheck },
 ];
 
-export function InstallWizard({ databaseOk, databaseError, appName }: { databaseOk: boolean; databaseError?: string; appName: string }) {
+export function InstallWizard({
+  databaseOk,
+  databaseError,
+  appName,
+  logoUrl,
+  logoText,
+}: {
+  databaseOk: boolean;
+  databaseError?: string;
+  appName: string;
+  logoUrl?: string | null;
+  logoText?: string;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -50,7 +62,16 @@ export function InstallWizard({ databaseOk, databaseError, appName }: { database
 
       <div style={{ width: '100%', maxWidth: 560 }}>
         <div className="row" style={{ gap: 11, justifyContent: 'center', marginBottom: 22 }}>
-          <span className="login-logo">W</span>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={appName}
+              className="login-logo"
+              style={{ objectFit: 'contain', padding: 2 }}
+            />
+          ) : (
+            <span className="login-logo">{logoText || appName.slice(0, 1).toUpperCase() || 'W'}</span>
+          )}
           <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-strong)' }}>{appName}</span>
         </div>
 

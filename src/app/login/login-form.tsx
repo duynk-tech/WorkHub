@@ -13,7 +13,14 @@ const HIGHLIGHTS = [
   { icon: GitBranch, title: 'Phân quyền theo cây', desc: 'Phạm vi dữ liệu bám theo cấu trúc phòng ban phân cấp' },
 ];
 
-export function LoginForm({ appName, next }: { appName: string; next?: string }) {
+export function LoginForm({
+  appName, logoUrl, logoText, next,
+}: {
+  appName: string;
+  logoUrl?: string | null;
+  logoText?: string;
+  next?: string;
+}) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(loginAction, {});
   const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -25,6 +32,8 @@ export function LoginForm({ appName, next }: { appName: string; next?: string })
     }
   }, [state.error]);
 
+  const displayLogoLetter = logoText?.trim() || appName.slice(0, 1).toUpperCase() || 'W';
+
   return (
     <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' }} className="login-shell">
       <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 2 }}><ThemeToggle /></div>
@@ -34,7 +43,13 @@ export function LoginForm({ appName, next }: { appName: string; next?: string })
         <aside className="login-hero">
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', gap: 40 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="login-logo">W</div>
+              <div className="login-logo" style={{ overflow: 'hidden' }}>
+                {logoUrl ? (
+                  <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  displayLogoLetter
+                )}
+              </div>
               <span style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>{appName}</span>
             </div>
 
@@ -69,7 +84,13 @@ export function LoginForm({ appName, next }: { appName: string; next?: string })
         <main className="login-panel">
           <div style={{ width: '100%', maxWidth: 380 }}>
             <div className="login-logo-mobile">
-              <div className="login-logo" style={{ width: 40, height: 40, fontSize: 18 }}>W</div>
+              <div className="login-logo" style={{ width: 40, height: 40, fontSize: 18, overflow: 'hidden' }}>
+                {logoUrl ? (
+                  <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  displayLogoLetter
+                )}
+              </div>
               <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-strong)' }}>{appName}</span>
             </div>
 

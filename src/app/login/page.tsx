@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getAuthContext } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { LoginForm } from './login-form';
+import { getAppBranding } from '@/server/modules/settings/branding';
 
 export const metadata = { title: 'Đăng nhập' };
 
@@ -15,6 +16,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const userCount = await prisma.user.count().catch(() => -1);
   if (userCount === 0) redirect('/install');
 
-  const appName = process.env.APP_NAME || 'WorkHub';
-  return <LoginForm appName={appName} next={next} />;
+  const branding = await getAppBranding();
+  return (
+    <LoginForm
+      appName={branding.name}
+      logoUrl={branding.logoUrl}
+      logoText={branding.logoText}
+      next={next}
+    />
+  );
 }

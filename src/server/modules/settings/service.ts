@@ -3,7 +3,7 @@ import { encryptSecret, decryptSecret } from '@/lib/crypto';
 
 /** Đọc một cấu hình hệ thống, trả về giá trị mặc định nếu chưa có. */
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
-  const row = await prisma.systemSetting.findUnique({ where: { key } });
+  const row = await prisma.systemSetting.findUnique({ where: { key } }).catch(() => null);
   if (!row) return fallback;
   const value = row.valueJson as T;
   if (row.isSecret && typeof value === 'string') {
@@ -14,7 +14,7 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
 
 /** Đọc cả nhóm cấu hình. Secret chỉ trả về dấu sao để không lộ giá trị ra client. */
 export async function getSettings(group?: string): Promise<Record<string, unknown>> {
-  const rows = await prisma.systemSetting.findMany({ where: group ? { groupName: group } : undefined });
+  const rows = await prisma.systemSetting.findMany({ where: group ? { groupName: group } : undefined }).catch(() => []);
   const out: Record<string, unknown> = {};
   for (const row of rows) {
     out[row.key] = row.isSecret ? (row.valueJson ? '********' : '') : row.valueJson;

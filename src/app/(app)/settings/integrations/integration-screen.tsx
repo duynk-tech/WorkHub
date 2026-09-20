@@ -990,6 +990,7 @@ export function IntegrationScreen({
             maxIterations={parseInt(zaloValues['ai.maxIterations'] ?? '5', 10)}
             hasCustomPrompt={Boolean(zaloValues['ai.systemPrompt']?.trim())}
             canManage={canManageZalo}
+            appName={settings['app.name'] || 'WorkHub'}
             onNewTool={handleNewTool}
             onEditTool={handleEditTool}
             onTestTool={(tool) => {
@@ -1973,7 +1974,7 @@ export function IntegrationScreen({
                       user_role: 'Trưởng phòng (Quản trị)',
                       data_scope: 'DEPT_TREE',
                       current_date: new Date().toLocaleDateString('vi-VN'),
-                      company_name: 'WorkHub',
+                      company_name: zaloValues['app.name'] || settings['app.name'] || 'WorkHub',
                       tools_list: ['list_tasks', 'get_leave_balance', 'check_in', 'list_employees', ...customToolsList.map((t) => t.name)].join(', '),
                     })}
                   </pre>

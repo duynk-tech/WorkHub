@@ -5,6 +5,7 @@ import { findEmployeeByZaloId } from '@/server/modules/zalo/link';
 import { handleZaloAiQuery } from '@/server/modules/zalo/ai-agent';
 import { sendZaloMessage } from '@/server/modules/notify/zalo';
 import { getSetting } from '@/server/modules/settings/service';
+import { getAppBranding } from '@/server/modules/settings/branding';
 import { safeEqual } from '@/lib/crypto';
 
 export const dynamic = 'force-dynamic';
@@ -111,9 +112,10 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const branding = await getAppBranding();
   return NextResponse.json({
     status: 'online',
-    service: 'WorkHub Zalo Bot Webhook',
+    service: `${branding.name} Zalo Bot Webhook`,
     botEnabled: enabled,
   });
 }
@@ -229,9 +231,10 @@ export async function POST(req: NextRequest) {
         const employee = await findEmployeeByZaloId(zaloUserId);
 
         if (!employee) {
+          const branding = await getAppBranding();
           const notLinkedReply =
-            `👋 Xin chào${displayName ? ` ${displayName}` : ''}! Tài khoản Zalo của bạn chưa được liên kết với hệ thống WorkHub.\n\n` +
-            'Hãy đăng nhập vào WorkHub trên web, vào mục "Hồ sơ cá nhân" để lấy mã liên kết, sau đó nhắn cho mình theo cú pháp:\n' +
+            `👋 Xin chào${displayName ? ` ${displayName}` : ''}! Tài khoản Zalo của bạn chưa được liên kết với hệ thống ${branding.name}.\n\n` +
+            `Hãy đăng nhập vào ${branding.name} trên web, vào mục "Hồ sơ cá nhân" để lấy mã liên kết, sau đó nhắn cho mình theo cú pháp:\n` +
             '/lienket <mã>';
           const sendRes = await sendZaloMessage(zaloUserId, notLinkedReply);
           if (!sendRes.ok) {

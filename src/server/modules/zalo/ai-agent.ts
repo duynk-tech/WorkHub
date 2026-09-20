@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSetting } from '@/server/modules/settings/service';
+import { getAppBranding } from '@/server/modules/settings/branding';
 import { MCP_TOOLS, TOOLS_BY_NAME } from '@/server/mcp/tools';
 import type { McpIdentity } from '@/server/mcp/auth';
 import { can, type AuthContext } from '@/server/auth/context';
@@ -299,6 +300,7 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
   const tools = [...mcpGeminiTools, ...customGeminiTools];
 
   // Render System Prompt tùy chỉnh với các biến ngữ cảnh
+  const branding = await getAppBranding();
   const customTemplate = await getSetting<string>('ai.systemPrompt', '');
   const allToolNames = tools.map((t) => t.function.name).join(', ');
   const promptVars: Record<string, string> = {
@@ -308,7 +310,7 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
     user_role: ctx.isAdmin ? 'Toàn quyền quản trị (ADMIN)' : (ctx.roleNames.join(', ') || 'Nhân viên'),
     data_scope: ctx.dataScope,
     current_date: fmtDate(new Date()),
-    company_name: process.env.APP_NAME || 'WorkHub',
+    company_name: branding.name,
     tools_list: allToolNames || 'Không có',
   };
 
@@ -435,7 +437,7 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
       // bỏ qua lỗi lượt cuối
     }
 
-    return 'Xin lỗi, yêu cầu này cần thêm thông tin hoặc nằm ngoài phạm vi các công cụ nội bộ của WorkHub (công việc, chấm công, nghỉ phép). Bạn vui lòng đặt câu hỏi cụ thể hơn nhé!';
+    return `Xin lỗi, yêu cầu này cần thêm thông tin hoặc nằm ngoài phạm vi các công cụ nội bộ của ${branding.name} (công việc, chấm công, nghỉ phép). Bạn vui lòng đặt câu hỏi cụ thể hơn nhé!`;
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error('[Zalo AI Query Error]:', errMsg);
@@ -543,6 +545,7 @@ export async function runAiAgentTest(
   });
 
   const tools = [...mcpGeminiTools, ...customGeminiTools];
+  const branding = await getAppBranding();
   const customTemplate = await getSetting<string>('ai.systemPrompt', '');
   const allToolNames = tools.map((t) => t.function.name).join(', ');
   const promptVars: Record<string, string> = {
@@ -552,7 +555,7 @@ export async function runAiAgentTest(
     user_role: ctx.isAdmin ? 'Toàn quyền quản trị (ADMIN)' : (ctx.roleNames.join(', ') || 'Nhân viên'),
     data_scope: ctx.dataScope,
     current_date: fmtDate(new Date()),
-    company_name: process.env.APP_NAME || 'WorkHub',
+    company_name: branding.name,
     tools_list: allToolNames || 'Không có',
   };
 
@@ -712,7 +715,7 @@ export async function runAiAgentTest(
 
     return {
       ok: true,
-      reply: 'Yêu cầu này cần thêm thông tin hoặc nằm ngoài phạm vi các công cụ nội bộ của WorkHub (công việc, chấm công, nghỉ phép). Bạn vui lòng đặt câu hỏi cụ thể hơn nhé!',
+      reply: `Yêu cầu này cần thêm thông tin hoặc nằm ngoài phạm vi các công cụ nội bộ của ${branding.name} (công việc, chấm công, nghỉ phép). Bạn vui lòng đặt câu hỏi cụ thể hơn nhé!`,
       model: selectedModel,
       temperature,
       durationMs: Date.now() - startTime,

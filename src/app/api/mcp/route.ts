@@ -3,6 +3,7 @@ import { authenticateMcp, logMcpCall, type McpIdentity } from '@/server/mcp/auth
 import { MCP_TOOLS, TOOLS_BY_NAME, checkToolAccess } from '@/server/mcp/tools';
 import { can } from '@/server/auth/context';
 import { getAppUrl } from '@/lib/mcp-oauth';
+import { getAppBranding } from '@/server/modules/settings/branding';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -38,15 +39,17 @@ async function handleRpc(body: JsonRpcRequest, identity: McpIdentity) {
   const { id, method, params } = body;
 
   switch (method) {
-    case 'initialize':
+    case 'initialize': {
+      const branding = await getAppBranding();
       return ok(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: SERVER_INFO,
+        serverInfo: { name: 'workhub-mcp', title: branding.name, version: '1.0.0' },
         instructions:
-          `Máy chủ MCP của hệ thống WorkHub (quản lý công việc, nghỉ phép, chấm công). ` +
+          `Máy chủ MCP của hệ thống ${branding.name} (quản lý công việc, nghỉ phép, chấm công). ` +
           `Mọi truy vấn chạy dưới danh tính "${identity.ctx.fullName}" với phạm vi dữ liệu của tài khoản đó.`,
       });
+    }
 
     case 'notifications/initialized':
       return null; // notification, không cần phản hồi

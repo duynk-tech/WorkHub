@@ -6,9 +6,11 @@ import { Sidebar } from './sidebar';
 import { Topbar, type TopbarUser, type TopbarNotification } from './topbar';
 
 export function AppShell({
-  appName, sections, badges, user, notifications, unreadCount, children,
+  appName, logoUrl, logoText, sections, badges, user, notifications, unreadCount, children,
 }: {
   appName: string;
+  logoUrl?: string | null;
+  logoText?: string;
   sections: NavSection[];
   badges: Record<string, number>;
   user: TopbarUser;
@@ -36,6 +38,8 @@ export function AppShell({
       <Sidebar
         sections={sections}
         appName={appName}
+        logoUrl={logoUrl}
+        logoText={logoText}
         badges={badges}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}

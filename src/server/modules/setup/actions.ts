@@ -76,6 +76,7 @@ export async function runInstallAction(payload: InstallPayload): Promise<Install
 
     await setSetting('company.name', payload.companyName || 'Công ty của bạn', { group: 'general' });
     await setSetting('company.shortName', payload.companyShortName || 'WorkHub', { group: 'general' });
+    await setSetting('app.name', payload.companyShortName || 'WorkHub', { group: 'general' });
 
     const adminRole = await prisma.role.findUnique({ where: { code: 'ADMIN' } });
     if (!adminRole) return { ok: false, message: 'Không tìm thấy vai trò quản trị sau khi nạp dữ liệu' };

@@ -142,31 +142,213 @@ export function SettingsScreen({
       </div>
 
       {tab === 'general' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Thông tin công ty</CardTitle>
-            <Button variant="primary" size="sm" loading={pending}
-              onClick={() => save('general', ['company.name', 'company.shortName', 'company.address', 'company.taxCode'])}>
-              <Save /> Lưu
-            </Button>
-          </CardHeader>
-          <CardBody>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <Field label="Tên công ty" className="span-2">
-                <Input value={values['company.name'] ?? ''} onChange={(e) => set('company.name', e.target.value)} />
-              </Field>
-              <Field label="Tên viết tắt">
-                <Input value={values['company.shortName'] ?? ''} onChange={(e) => set('company.shortName', e.target.value)} />
-              </Field>
-              <Field label="Mã số thuế">
-                <Input value={values['company.taxCode'] ?? ''} onChange={(e) => set('company.taxCode', e.target.value)} />
-              </Field>
-              <Field label="Địa chỉ" className="span-2">
-                <Input value={values['company.address'] ?? ''} onChange={(e) => set('company.address', e.target.value)} />
-              </Field>
-            </div>
-          </CardBody>
-        </Card>
+        <div className="stack" style={{ gap: 16 }}>
+          {/* Card Thương hiệu & Giao diện */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Thương hiệu & Giao diện</CardTitle>
+                <div className="card-subtitle">
+                  Tùy chỉnh tên ứng dụng, logo hiển thị trên sidebar, trang đăng nhập và các thông báo
+                </div>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={pending}
+                onClick={() => save('general', ['app.name', 'app.logoText', 'app.logoUrl', 'app.description'])}
+              >
+                <Save /> Lưu thương hiệu
+              </Button>
+            </CardHeader>
+            <CardBody>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <Field label="Tên ứng dụng (App Name)" hint="Hiển thị trên thanh menu Sidebar, trang Đăng nhập và các báo cáo" required>
+                  <Input
+                    value={values['app.name'] ?? ''}
+                    placeholder="WorkHub"
+                    onChange={(e) => set('app.name', e.target.value)}
+                  />
+                </Field>
+
+                <Field label="Ký tự đại diện Logo (Monogram)" hint="Chữ cái hiển thị trên logo khi thu gọn menu hoặc chưa có ảnh logo (ví dụ: W, S, WH)">
+                  <Input
+                    value={values['app.logoText'] ?? ''}
+                    placeholder="W"
+                    maxLength={4}
+                    onChange={(e) => set('app.logoText', e.target.value)}
+                  />
+                </Field>
+
+                <Field
+                  label="Đường dẫn ảnh Logo (Logo URL)"
+                  hint="Đường dẫn ảnh logo (URL https://... hoặc /logo.png). Nếu để trống sẽ dùng chữ cái đại diện."
+                  className="span-2"
+                >
+                  <Input
+                    value={values['app.logoUrl'] ?? ''}
+                    placeholder="https://example.com/logo.png hoặc /icon.png"
+                    onChange={(e) => set('app.logoUrl', e.target.value)}
+                  />
+                </Field>
+
+                <Field
+                  label="Khẩu hiệu / Mô tả ngắn"
+                  hint="Hiển thị dưới tên hệ thống hoặc trong mô tả AI"
+                  className="span-2"
+                >
+                  <Input
+                    value={values['app.description'] ?? ''}
+                    placeholder="Hệ thống quản lý công việc, nghỉ phép và chấm công"
+                    onChange={(e) => set('app.description', e.target.value)}
+                  />
+                </Field>
+
+                {/* Xem trước trực tiếp (Live Preview) */}
+                <div
+                  className="span-2"
+                  style={{
+                    padding: 16,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12 }}>
+                    XEM TRƯỚC GIAO DIỆN (LIVE PREVIEW)
+                  </div>
+                  <div className="row" style={{ gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Preview Sidebar Expanded */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div className="hint" style={{ fontSize: 11.5 }}>Sidebar mở rộng:</div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 14px',
+                          background: 'var(--surface-card)',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div className="login-logo" style={{ width: 32, height: 32, borderRadius: 8, fontSize: 14, overflow: 'hidden' }}>
+                          {values['app.logoUrl']?.trim() ? (
+                            <img
+                              src={values['app.logoUrl'].trim()}
+                              alt="Logo preview"
+                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
+                          )}
+                        </div>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)', letterSpacing: '-0.02em' }}>
+                          {values['app.name']?.trim() || 'WorkHub'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Preview Sidebar Collapsed */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div className="hint" style={{ fontSize: 11.5 }}>Sidebar thu gọn:</div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 48,
+                          height: 48,
+                          background: 'var(--surface-card)',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div className="login-logo" style={{ width: 36, height: 36, borderRadius: 9, fontSize: 16, overflow: 'hidden' }}>
+                          {values['app.logoUrl']?.trim() ? (
+                            <img
+                              src={values['app.logoUrl'].trim()}
+                              alt="Logo preview"
+                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                            />
+                          ) : (
+                            values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Preview Login badge */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div className="hint" style={{ fontSize: 11.5 }}>Trang đăng nhập:</div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '10px 16px',
+                          background: 'var(--surface-card)',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div className="login-logo" style={{ width: 40, height: 40, borderRadius: 10, fontSize: 18, overflow: 'hidden' }}>
+                          {values['app.logoUrl']?.trim() ? (
+                            <img
+                              src={values['app.logoUrl'].trim()}
+                              alt="Logo preview"
+                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                            />
+                          ) : (
+                            values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
+                            {values['app.name']?.trim() || 'WorkHub'}
+                          </div>
+                          <div className="hint" style={{ fontSize: 12 }}>
+                            {values['app.description']?.trim() || 'Đăng nhập vào hệ thống'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Card Thông tin công ty */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Thông tin công ty</CardTitle>
+              <Button variant="primary" size="sm" loading={pending}
+                onClick={() => save('general', ['company.name', 'company.shortName', 'company.address', 'company.taxCode'])}>
+                <Save /> Lưu
+              </Button>
+            </CardHeader>
+            <CardBody>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Field label="Tên công ty" className="span-2">
+                  <Input value={values['company.name'] ?? ''} onChange={(e) => set('company.name', e.target.value)} />
+                </Field>
+                <Field label="Tên viết tắt">
+                  <Input value={values['company.shortName'] ?? ''} onChange={(e) => set('company.shortName', e.target.value)} />
+                </Field>
+                <Field label="Mã số thuế">
+                  <Input value={values['company.taxCode'] ?? ''} onChange={(e) => set('company.taxCode', e.target.value)} />
+                </Field>
+                <Field label="Địa chỉ" className="span-2">
+                  <Input value={values['company.address'] ?? ''} onChange={(e) => set('company.address', e.target.value)} />
+                </Field>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
       )}
 
       {tab === 'zalo' && (

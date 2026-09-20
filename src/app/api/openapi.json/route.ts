@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { MCP_TOOLS } from '@/server/mcp/tools';
 import { getAppUrl } from '@/lib/mcp-oauth';
+import { getAppBranding } from '@/server/modules/settings/branding';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,7 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   const appUrl = getAppUrl(req);
+  const branding = await getAppBranding();
 
   const paths: Record<string, unknown> = {};
 
@@ -34,7 +36,7 @@ export async function GET(req: NextRequest) {
         operationId: tool.name,
         summary: tool.title,
         description: tool.description,
-        tags: ['WorkHub Tools'],
+        tags: [`${branding.name} Tools`],
         security: [{ ApiKeyAuth: [] }],
         requestBody: {
           required: hasRequired,
@@ -80,7 +82,7 @@ export async function GET(req: NextRequest) {
   const openApiSpec = {
     openapi: '3.0.3',
     info: {
-      title: 'WorkHub API (Custom GPT Actions & MCP REST)',
+      title: `${branding.name} API (Custom GPT Actions & MCP REST)`,
       version: '1.0.0',
       description:
         'REST API tương thích OpenAPI 3.0 dành cho ChatGPT Custom GPT Actions, n8n, Zapier và các công cụ AI khác. ' +
@@ -89,7 +91,7 @@ export async function GET(req: NextRequest) {
     servers: [
       {
         url: appUrl,
-        description: 'Máy chủ WorkHub hiện tại',
+        description: `Máy chủ ${branding.name} hiện tại`,
       },
     ],
     paths,
@@ -99,7 +101,7 @@ export async function GET(req: NextRequest) {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'API Key',
-          description: 'Bearer API key do WorkHub cấp (whmcp_...) hoặc OAuth Access Token (mcp_tok_...)',
+          description: `Bearer API key do ${branding.name} cấp (whmcp_...) hoặc OAuth Access Token (mcp_tok_...)`,
         },
       },
     },

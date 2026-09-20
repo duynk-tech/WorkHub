@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
 import { setSetting, getSetting } from './service';
+import { getAppBranding } from './branding';
 import {
   getBotInfo,
   sendZaloMessage,
@@ -51,6 +52,7 @@ export async function saveSettingsAction(group: string, values: Record<string, u
 
   revalidatePath('/settings');
   revalidatePath('/settings/integrations');
+  revalidatePath('/', 'layout');
   return { ok: true, message: 'Đã lưu cấu hình' };
 }
 
@@ -75,9 +77,10 @@ export async function testZaloBotAction(targetChatId?: string): Promise<Result> 
     };
   }
 
+  const branding = await getAppBranding();
   const send = await sendZaloMessage(
     recipientId,
-    `🔔 **Tin nhắn thử từ ${process.env.APP_NAME || 'WorkHub'}**\n\nNếu bạn nhận được tin này, cấu hình bot **${botName}** đã hoạt động và hỗ trợ **Markdown** thành công!`,
+    `🔔 **Tin nhắn thử từ ${branding.name}**\n\nNếu bạn nhận được tin này, cấu hình bot **${botName}** đã hoạt động và hỗ trợ **Markdown** thành công!`,
   );
   return send.ok
     ? { ok: true, message: `Đã gửi tin nhắn thử nghiệm thành công tới Zalo (${recipientId}) qua bot "${botName}"` }

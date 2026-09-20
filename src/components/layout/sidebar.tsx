@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils';
 interface Props {
   sections: NavSection[];
   appName: string;
+  logoUrl?: string | null;
+  logoText?: string;
   badges: Record<string, number>;
   mobileOpen: boolean;
   onCloseMobile: () => void;
@@ -19,10 +21,21 @@ interface Props {
 }
 
 export function Sidebar({
-  sections, appName, badges, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
+  sections, appName, logoUrl, logoText, badges, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
 }: Props) {
   const pathname = usePathname();
   const [hoveredTooltip, setHoveredTooltip] = useState<{ top: number; text: string } | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Trên mobile/drawer, không bao giờ ở chế độ thu gọn icon-only
+  const isEffectiveCollapsed = collapsed && !mobileOpen && !isMobile;
 
   useEffect(() => {
     onCloseMobile();
@@ -31,10 +44,10 @@ export function Sidebar({
 
   useEffect(() => {
     setHoveredTooltip(null);
-  }, [collapsed]);
+  }, [isEffectiveCollapsed]);
 
   const showTooltip = (e: React.MouseEvent<HTMLElement>, text: string) => {
-    if (!collapsed) return;
+    if (!isEffectiveCollapsed) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setHoveredTooltip({
       top: rect.top + rect.height / 2,
@@ -47,13 +60,15 @@ export function Sidebar({
   const isActive = (href: string) =>
     href === '/settings' ? pathname === '/settings' : pathname === href || pathname.startsWith(`${href}/`);
 
+  const displayLogoLetter = logoText?.trim() || appName.slice(0, 1).toUpperCase() || 'W';
+
   return (
     <>
       {mobileOpen && <div className="sidebar-backdrop" onClick={onCloseMobile} />}
 
-      <aside className={cn('sidebar', collapsed && 'sidebar-collapsed', mobileOpen && 'sidebar-mobile-open')}>
+      <aside className={cn('sidebar', isEffectiveCollapsed && 'sidebar-collapsed', mobileOpen && 'sidebar-mobile-open')}>
         <div className="sidebar-head">
-          {collapsed ? (
+          {isEffectiveCollapsed ? (
             <button
               type="button"
               className="sidebar-brand-btn"
@@ -62,15 +77,27 @@ export function Sidebar({
               onMouseLeave={hideTooltip}
               aria-label="Mở rộng menu"
             >
-              <span className="login-logo">
-                <span className="logo-letter">W</span>
+              <span className="login-logo" style={{ overflow: 'hidden' }}>
+                <span className="logo-letter">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  ) : (
+                    displayLogoLetter
+                  )}
+                </span>
                 <PanelLeft className="logo-expand-icon" size={18} />
               </span>
             </button>
           ) : (
             <>
               <Link href="/dashboard" className="sidebar-brand">
-                <span className="login-logo">W</span>
+                <span className="login-logo" style={{ overflow: 'hidden' }}>
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  ) : (
+                    displayLogoLetter
+                  )}
+                </span>
                 <span className="sidebar-brand-text">{appName}</span>
               </Link>
               <button
@@ -91,8 +118,8 @@ export function Sidebar({
         <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
           {sections.map((section, i) => (
             <div key={i} style={{ marginBottom: 2 }}>
-              {section.title && !collapsed && <div className="nav-section">{section.title}</div>}
-              {section.title && collapsed && <div className="nav-section-divider" />}
+              {section.title && !isEffectiveCollapsed && <div className="nav-section">{section.title}</div>}
+              {section.title && isEffectiveCollapsed && <div className="nav-section-divider" />}
               {section.items.map((item) => {
                 const Icon = NAV_ICONS[item.icon];
                 const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
@@ -107,9 +134,9 @@ export function Sidebar({
                     onMouseLeave={hideTooltip}
                   >
                     {Icon && <Icon />}
-                    {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
-                    {!collapsed && count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
-                    {collapsed && count > 0 && <span className="nav-badge-dot" />}
+                    {!isEffectiveCollapsed && <span style={{ flex: 1 }}>{item.label}</span>}
+                    {!isEffectiveCollapsed && count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
+                    {isEffectiveCollapsed && count > 0 && <span className="nav-badge-dot" />}
                   </Link>
                 );
               })}
@@ -122,17 +149,17 @@ export function Sidebar({
             type="button"
             className="sidebar-toggle-btn"
             onClick={onToggleCollapsed}
-            onMouseEnter={(e) => showTooltip(e, collapsed ? 'Mở rộng menu' : 'Thu gọn menu')}
+            onMouseEnter={(e) => showTooltip(e, isEffectiveCollapsed ? 'Mở rộng menu' : 'Thu gọn menu')}
             onMouseLeave={hideTooltip}
-            aria-label={collapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+            aria-label={isEffectiveCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
           >
-            {collapsed ? <PanelLeft /> : <PanelLeftClose />}
-            {!collapsed && <span>Thu gọn</span>}
+            {isEffectiveCollapsed ? <PanelLeft /> : <PanelLeftClose />}
+            {!isEffectiveCollapsed && <span>Thu gọn</span>}
           </button>
         </div>
 
         {/* Tooltip nổi ngoài container cuộn, không bị che khuất và cho phép sidebar cuộn tự do */}
-        {collapsed && hoveredTooltip && (
+        {isEffectiveCollapsed && hoveredTooltip && (
           <div
             className="sidebar-floating-tooltip"
             style={{ top: hoveredTooltip.top }}

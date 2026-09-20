@@ -5,9 +5,10 @@ import { approveOAuthConsent } from './actions';
 import { ShieldCheck, Bot, Sparkles, Check, ArrowRight, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { getAppBranding } from '@/server/modules/settings/branding';
 
 export const metadata = {
-  title: 'Ủy quyền ứng dụng (OAuth 2.1) - WorkHub',
+  title: 'Ủy quyền ứng dụng (OAuth 2.1)',
 };
 
 export default async function OAuthAuthorizePage({
@@ -43,8 +44,11 @@ export default async function OAuthAuthorizePage({
     redirect(`/login?next=${encodeURIComponent(currentUrl)}`);
   }
 
-  // Lấy thông tin client
-  const client = await getOAuthClient(clientId);
+  // Lấy thông tin client và branding
+  const [client, branding] = await Promise.all([
+    getOAuthClient(clientId),
+    getAppBranding(),
+  ]);
   const clientName = client?.clientName || 'ChatGPT / AI Assistant';
 
   // URL hủy ủy quyền
@@ -85,9 +89,14 @@ export default async function OAuthAuthorizePage({
                 justifyContent: 'center',
                 fontSize: 20,
                 fontWeight: 700,
+                overflow: 'hidden',
               }}
             >
-              W
+              {branding.logoUrl ? (
+                <img src={branding.logoUrl} alt={branding.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                branding.logoText || 'W'
+              )}
             </div>
             <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
             <div
@@ -109,7 +118,7 @@ export default async function OAuthAuthorizePage({
             Ủy quyền ứng dụng
           </h2>
           <p className="hint" style={{ margin: 0, fontSize: 13 }}>
-            <strong>{clientName}</strong> muốn kết nối tới tài khoản WorkHub của bạn qua giao thức MCP
+            <strong>{clientName}</strong> muốn kết nối tới tài khoản {branding.name} của bạn qua giao thức MCP
           </p>
         </div>
 

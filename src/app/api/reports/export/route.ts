@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import ExcelJS from 'exceljs';
 import { requireAuth, can } from '@/server/auth/context';
 import { attendanceReport, taskReport, leaveReport } from '@/server/modules/report/service';
+import { getAppBranding } from '@/server/modules/settings/branding';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,8 +19,9 @@ export async function GET(req: NextRequest) {
   const to = req.nextUrl.searchParams.get('to') ?? new Date().toISOString().slice(0, 10);
   const year = Number(req.nextUrl.searchParams.get('year') ?? new Date().getFullYear());
 
+  const branding = await getAppBranding();
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = process.env.APP_NAME || 'WorkHub';
+  workbook.creator = branding.name;
   workbook.created = new Date();
 
   const styleHeader = (sheet: ExcelJS.Worksheet) => {

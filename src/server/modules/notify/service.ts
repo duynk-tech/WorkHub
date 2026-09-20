@@ -1,6 +1,7 @@
 import type { NotifyChannel } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getSetting } from '@/server/modules/settings/service';
+import { getAppBranding } from '@/server/modules/settings/branding';
 import { processOutbox } from './zalo';
 
 /** Thay {{biến}} trong mẫu thông báo. Biến thiếu trả về chuỗi rỗng. */
@@ -62,6 +63,7 @@ export async function notify(input: NotifyInput): Promise<number> {
   });
 
   const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const branding = await getAppBranding();
   const zaloEnabled = await getSetting<boolean>('zalo.enabled', false);
   const channels = input.channels ?? ['IN_APP', 'ZALO'];
   const baseTime = input.sendAfter ?? new Date();
@@ -72,7 +74,7 @@ export async function notify(input: NotifyInput): Promise<number> {
     const vars = {
       ...input.vars,
       name: emp.fullName,
-      appName: process.env.APP_NAME || 'WorkHub',
+      appName: branding.name,
       link: input.linkPath ? `${appUrl}${input.linkPath}` : appUrl,
     };
     const body = renderTemplate(template.bodyTemplate, vars);

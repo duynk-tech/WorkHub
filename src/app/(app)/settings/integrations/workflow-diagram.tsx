@@ -69,6 +69,7 @@ interface WorkflowDiagramProps {
   maxIterations?: number;
   hasCustomPrompt?: boolean;
   canManage: boolean;
+  appName?: string;
   onNewTool: () => void;
   onEditTool: (tool: CustomAgentTool) => void;
   onTestTool: (tool: CustomAgentTool) => void;
@@ -91,6 +92,7 @@ export function ZaloWorkflowDiagram({
   maxIterations = 5,
   hasCustomPrompt = false,
   canManage,
+  appName = 'WorkHub',
   onNewTool,
   onEditTool,
   onTestTool,
@@ -719,7 +721,7 @@ export function ZaloWorkflowDiagram({
               </div>
 
               <div style={{ padding: '8px 10px' }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600 }}>Trợ lý AI WorkHub</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>Trợ lý AI {appName}</div>
                 <div className="hint" style={{ fontSize: 11, marginTop: 1 }}>
                   Phân tích câu hỏi và gọi công cụ
                 </div>
@@ -856,7 +858,7 @@ export function ZaloWorkflowDiagram({
               </div>
 
               <div style={{ padding: '8px 10px' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>WorkHub Core Tools</div>
+                <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appName} Core Tools</div>
                 <div className="hint" style={{ fontSize: 10.5, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   Nghỉ phép, Công việc, Điểm danh...
                 </div>
