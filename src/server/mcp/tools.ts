@@ -27,6 +27,21 @@ const str = (description: string) => ({ type: 'string', description });
 const num = (description: string) => ({ type: 'number', description });
 const bool = (description: string) => ({ type: 'boolean', description });
 
+export function parseDateInput(val?: string | null): string {
+  if (!val) return '';
+  const trimmed = String(val).trim();
+  const dmyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return trimmed;
+}
+
+export function toBool(val: unknown): boolean {
+  return val === true || val === 'true' || val === 1 || val === '1';
+}
+
 export const MCP_TOOLS: McpTool[] = [
   {
     name: 'search_employees',
@@ -108,9 +123,12 @@ export const MCP_TOOLS: McpTool[] = [
         assigneeId = emp?.id ?? -1;
       }
 
+      const isOverdue = a.overdue !== undefined ? toBool(a.overdue) : undefined;
+      const isOnlyMine = a.onlyMine !== undefined ? toBool(a.onlyMine) : undefined;
+
       const result = await listTasks(identity.ctx, {
         search: a.query, status: a.status ? [a.status] : [],
-        assigneeId, overdue: a.overdue, onlyMine: a.onlyMine,
+        assigneeId, overdue: isOverdue, onlyMine: isOnlyMine,
         pageSize: Math.min(50, Number(a.limit ?? 20)),
       });
 
@@ -189,6 +207,8 @@ export const MCP_TOOLS: McpTool[] = [
         assigneeId = emp.id;
       }
 
+      const dueDateParsed = a.dueDate ? parseDateInput(a.dueDate) : null;
+
       const task = await prisma.task.create({
         data: {
           code: await generateTaskCode(),
@@ -198,7 +218,7 @@ export const MCP_TOOLS: McpTool[] = [
           assigneeId,
           departmentId: identity.ctx.departmentId,
           priority: (a.priority ?? 'MEDIUM') as never,
-          dueDate: a.dueDate ? new Date(a.dueDate) : null,
+          dueDate: dueDateParsed ? new Date(dueDateParsed) : null,
           source: 'MCP',
         },
       });
@@ -238,7 +258,7 @@ export const MCP_TOOLS: McpTool[] = [
         where: { id: task.id },
         data: {
           status: a.status as never,
-          progress: a.progress ?? (a.status === 'DONE' ? 100 : task.progress),
+          progress: a.progress !== undefined ? Number(a.progress) : (a.status === 'DONE' ? 100 : task.progress),
           completedAt: a.status === 'DONE' ? new Date() : null,
         },
       });
@@ -310,8 +330,11 @@ export const MCP_TOOLS: McpTool[] = [
         employeeId = emp?.id ?? -1;
       }
 
+      const fromParsed = a.from ? parseDateInput(a.from) : undefined;
+      const toParsed = a.to ? parseDateInput(a.to) : undefined;
+
       const result = await listLeaveRequests(identity.ctx, {
-        status: a.status, from: a.from, to: a.to, employeeId,
+        status: a.status, from: fromParsed, to: toParsed, employeeId,
         pageSize: Math.min(50, Number(a.limit ?? 20)),
       });
 
@@ -334,7 +357,8 @@ export const MCP_TOOLS: McpTool[] = [
     inputSchema: { type: 'object', properties: { date: str('Ngày YYYY-MM-DD, mặc định hôm nay') } },
     handler: async (args, identity) => {
       const a = args as { date?: string };
-      const date = dateOnly(a.date ? new Date(a.date) : new Date());
+      const parsedDate = a.date ? parseDateInput(a.date) : '';
+      const date = dateOnly(parsedDate ? new Date(parsedDate) : new Date());
       const scopeIds = await visibleEmployeeIds(identity.ctx);
 
       const days = await prisma.leaveRequestDay.findMany({
@@ -396,11 +420,14 @@ export const MCP_TOOLS: McpTool[] = [
         }
       }
 
-      const preview = await calculateLeaveDays(identity.ctx.employeeId, new Date(a.startDate), new Date(a.endDate), 'FULL_DAY');
+      const startDate = parseDateInput(a.startDate);
+      const endDate = parseDateInput(a.endDate);
+
+      const preview = await calculateLeaveDays(identity.ctx.employeeId, new Date(startDate), new Date(endDate), 'FULL_DAY');
 
       const { submitLeaveAction } = await import('@/server/modules/leave/actions');
       const result = await submitLeaveAction(null, {
-        leaveTypeId: leaveType.id, startDate: a.startDate, endDate: a.endDate,
+        leaveTypeId: leaveType.id, startDate, endDate,
         durationType: 'FULL_DAY', reason: a.reason,
         handoverToId: null, handoverNote: '', contactDuringLeave: '',
         attachmentUrl: '', attachmentName: '', submit: true,

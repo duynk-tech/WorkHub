@@ -290,7 +290,7 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
         parameters: {
           type: 'object',
           properties,
-          required,
+          ...(required.length > 0 ? { required } : {}),
         },
       },
     };
@@ -333,12 +333,18 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
         forceStopTools = true;
       }
 
-      const payload = {
+      const payload: Record<string, any> = {
         model: selectedModel,
         messages,
-        tools: tools.length > 0 && !forceStopTools ? tools : undefined,
         temperature,
       };
+
+      if (tools.length > 0) {
+        payload.tools = tools;
+        if (forceStopTools) {
+          payload.tool_choice = 'none';
+        }
+      }
 
       const data = await callGeminiApi(apiKey, payload);
       const choice = data.choices?.[0];
@@ -347,12 +353,19 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
       }
 
       const assistantMsg = choice.message as ChatMessage;
+      if (assistantMsg.content === undefined) {
+        assistantMsg.content = '';
+      }
       messages.push(assistantMsg);
 
       // Nếu AI yêu cầu gọi Tool
       if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
         let hasInvalidTool = false;
-        for (const call of assistantMsg.tool_calls) {
+        for (let i = 0; i < assistantMsg.tool_calls.length; i++) {
+          const call = assistantMsg.tool_calls[i];
+          if (!call.id) {
+            call.id = `call_${call.function?.name || 'tool'}_${i}_${Date.now()}`;
+          }
           const toolName = call.function.name;
           let toolArgs: Record<string, unknown> = {};
           try {
@@ -523,7 +536,7 @@ export async function runAiAgentTest(
         parameters: {
           type: 'object',
           properties,
-          required,
+          ...(required.length > 0 ? { required } : {}),
         },
       },
     };
@@ -563,12 +576,18 @@ export async function runAiAgentTest(
         forceStopTools = true;
       }
 
-      const payload = {
+      const payload: Record<string, any> = {
         model: selectedModel,
         messages,
-        tools: tools.length > 0 && !forceStopTools ? tools : undefined,
         temperature,
       };
+
+      if (tools.length > 0) {
+        payload.tools = tools;
+        if (forceStopTools) {
+          payload.tool_choice = 'none';
+        }
+      }
 
       const data = await callGeminiApi(apiKey, payload);
       const choice = data.choices?.[0];
@@ -584,11 +603,18 @@ export async function runAiAgentTest(
       }
 
       const assistantMsg = choice.message as ChatMessage;
+      if (assistantMsg.content === undefined) {
+        assistantMsg.content = '';
+      }
       messages.push(assistantMsg);
 
       if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
         let hasInvalidTool = false;
-        for (const call of assistantMsg.tool_calls) {
+        for (let i = 0; i < assistantMsg.tool_calls.length; i++) {
+          const call = assistantMsg.tool_calls[i];
+          if (!call.id) {
+            call.id = `call_${call.function?.name || 'tool'}_${i}_${Date.now()}`;
+          }
           const stepStart = Date.now();
           const toolName = call.function.name;
           let toolArgs: Record<string, unknown> = {};
