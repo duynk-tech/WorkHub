@@ -77,9 +77,6 @@ export function SparePartOrderModal({
   const [exchangeRate, setExchangeRate] = useState<number>(
     pricingConfig?.defaultExchangeRateEur ?? 32500
   );
-  const [shippingFee, setShippingFee] = useState<number>(
-    pricingConfig?.defaultShippingFee ?? 3500000
-  );
   const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>(
     warehouses[0]?.id || ''
   );
@@ -140,11 +137,14 @@ export function SparePartOrderModal({
   useEffect(() => {
     if (pricingConfig) {
       setItems((prev) =>
-        prev.map((it) => ({
-          ...it,
-          shippingFee: it.shippingFee !== undefined ? it.shippingFee : (pricingConfig.defaultShippingFee ?? 3500000),
-          otherFee: it.otherFee !== undefined ? it.otherFee : (pricingConfig.defaultCustomsFee ?? 1000000),
-        }))
+        prev.map((it) => {
+          const qty = Number(it.quantity) || 1;
+          return {
+            ...it,
+            shippingFee: it.shippingFee !== undefined ? it.shippingFee : (pricingConfig.defaultShippingFee ?? 3500000) * qty,
+            otherFee: it.otherFee !== undefined ? it.otherFee : (pricingConfig.defaultCustomsFee ?? 1000000) * qty,
+          };
+        })
       );
     }
   }, [pricingConfig?.defaultShippingFee, pricingConfig?.defaultCustomsFee]);
@@ -182,8 +182,11 @@ export function SparePartOrderModal({
         delete current.sellingPrice;
       }
       if (field === 'quantity') {
-        const part = spareParts.find((p) => p.id === Number(current.itemId));
+        const prevQty = Math.max(1, Number(next[index].quantity) || 1);
         const qty = Math.max(1, Number(val) || 1);
+        current.quantity = qty;
+
+        const part = spareParts.find((p) => p.id === Number(current.itemId));
         const eur = current.unitPriceEur !== undefined ? Number(current.unitPriceEur) : Number(part?.priceEur || 0);
         const rateNum = Number(exchangeRate) || 32500;
         const unitCost = eur > 0
@@ -194,10 +197,21 @@ export function SparePartOrderModal({
         const baseSelling = unitCost > 0
           ? calculateSellingPriceFromMargin(unitCost, mPercent, pMethod)
           : 0;
-        const ship = current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee;
-        const other = current.otherFee !== undefined ? current.otherFee : defaultCustomsFee;
-        const freightPerUnit = Math.round(ship / qty);
-        const otherFeePerUnit = Math.round(other / qty);
+
+        // Cước vận chuyển và phí khác tính theo số lượng (cước định mức cấu hình theo đơn vị mỗi cái)
+        const unitShip = current.shippingFee !== undefined && prevQty > 0
+          ? Math.round(current.shippingFee / prevQty)
+          : defaultShippingFee;
+        const unitOther = current.otherFee !== undefined && prevQty > 0
+          ? Math.round(current.otherFee / prevQty)
+          : defaultCustomsFee;
+
+        // Tự động nhân theo số lượng mới: số lượng x2 = cước x2 (ví dụ 2 cái = 7tr)
+        current.shippingFee = unitShip * qty;
+        current.otherFee = unitOther * qty;
+
+        const freightPerUnit = unitShip;
+        const otherFeePerUnit = unitOther;
         const newSellingPrice = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
         if (newSellingPrice > 0) {
           current.sellingPrice = newSellingPrice;
@@ -225,8 +239,8 @@ export function SparePartOrderModal({
       const baseSelling = unitCost > 0
         ? calculateSellingPriceFromMargin(unitCost, mPercent, pMethod)
         : 0;
-      const ship = field === 'shippingFee' ? val : (current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee);
-      const other = field === 'otherFee' ? val : (current.otherFee !== undefined ? current.otherFee : defaultCustomsFee);
+      const ship = field === 'shippingFee' ? val : (current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee * qty);
+      const other = field === 'otherFee' ? val : (current.otherFee !== undefined ? current.otherFee : defaultCustomsFee * qty);
       const freightPerUnit = Math.round(ship / qty);
       const otherFeePerUnit = Math.round(other / qty);
       const newSellingPrice = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
@@ -265,10 +279,10 @@ export function SparePartOrderModal({
       const unitCost = priceVnd;
       const lineShipping = it.shippingFee !== undefined
         ? Math.max(0, Number(it.shippingFee) || 0)
-        : (pricingConfig?.defaultShippingFee ?? 3500000);
+        : (pricingConfig?.defaultShippingFee ?? 3500000) * qty;
       const lineOther = it.otherFee !== undefined
         ? Math.max(0, Number(it.otherFee) || 0)
-        : (pricingConfig?.defaultCustomsFee ?? 1000000);
+        : (pricingConfig?.defaultCustomsFee ?? 1000000) * qty;
 
       const freightPerUnit = qty > 0 ? Math.round(lineShipping / qty) : 0;
       const otherFeePerUnit = qty > 0 ? Math.round(lineOther / qty) : 0;
@@ -838,9 +852,9 @@ export function SparePartOrderModal({
                                     <PriceInput
                                       sizeSm
                                       currency="VND"
-                                      value={it.shippingFee !== undefined ? it.shippingFee : defaultShippingFee}
+                                      value={it.shippingFee !== undefined ? it.shippingFee : defaultShippingFee * it.quantity}
                                       onChange={(val) => handleFeeChange(idx, 'shippingFee', val ?? 0)}
-                                      placeholder="3.500.000"
+                                      placeholder={(defaultShippingFee * (it.quantity || 1)).toLocaleString('vi-VN')}
                                       style={{ width: '100%', fontWeight: 600 }}
                                     />
                                     <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -855,9 +869,9 @@ export function SparePartOrderModal({
                                     <PriceInput
                                       sizeSm
                                       currency="VND"
-                                      value={it.otherFee !== undefined ? it.otherFee : defaultCustomsFee}
+                                      value={it.otherFee !== undefined ? it.otherFee : defaultCustomsFee * it.quantity}
                                       onChange={(val) => handleFeeChange(idx, 'otherFee', val ?? 0)}
-                                      placeholder="1.000.000"
+                                      placeholder={(defaultCustomsFee * (it.quantity || 1)).toLocaleString('vi-VN')}
                                       style={{ width: '100%', fontWeight: 600 }}
                                     />
                                     <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
