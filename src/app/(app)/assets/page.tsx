@@ -1,9 +1,10 @@
 import { requireAuth, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
+import { getCompanyInfo } from '@/server/modules/settings/branding';
 import { listAssets, getAssetMetrics } from '@/server/modules/asset/service';
 import { AssetScreen } from './asset-screen';
 
-export const metadata = { title: 'Quản lý thiết bị' };
+export const metadata = { title: 'Thiết bị & Tài sản IT' };
 export const dynamic = 'force-dynamic';
 
 export default async function AssetsPage({
@@ -21,7 +22,7 @@ export default async function AssetsPage({
     departmentId: sp.dept ? Number(sp.dept) : undefined,
   };
 
-  const [assets, metrics, departments, employees] = await Promise.all([
+  const [assets, metrics, departments, employees, company] = await Promise.all([
     listAssets(filter),
     getAssetMetrics(),
     prisma.department.findMany({
@@ -40,10 +41,12 @@ export default async function AssetsPage({
       },
       orderBy: { fullName: 'asc' },
     }),
+    getCompanyInfo(),
   ]);
 
   return (
     <AssetScreen
+      company={company}
       assets={JSON.parse(JSON.stringify(assets))}
       metrics={metrics}
       departments={departments}

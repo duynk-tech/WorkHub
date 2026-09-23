@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Check, X, Ban, CalendarDays, User, Phone, Paperclip, Clock,
+  ArrowLeft, Check, X, Ban, Trash2, CalendarDays, User, Phone, Paperclip, Clock,
   CircleDot, MessageSquare, Building2, Wallet, ArrowRightLeft,
 } from 'lucide-react';
 import {
@@ -16,11 +16,11 @@ import { LeaveStatusBadge, ApprovalStatusBadge } from '@/components/domain/task-
 import { LEAVE_DURATION, APPROVER_TYPE, STEP_MODE } from '@/lib/enums';
 import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
-import { approveLeaveAction, cancelLeaveAction } from '@/server/modules/leave/actions';
+import { approveLeaveAction, cancelLeaveAction, deleteLeaveAction } from '@/server/modules/leave/actions';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function LeaveDetail({
-  request, balanceRemaining, myPendingTaskId, isOwner, canApprove, canForceClose,
+  request, balanceRemaining, myPendingTaskId, isOwner, canApprove, canForceClose, canDelete = false,
 }: {
   request: any;
   balanceRemaining: number;
@@ -28,6 +28,7 @@ export function LeaveDetail({
   isOwner: boolean;
   canApprove: boolean;
   canForceClose: boolean;
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -35,6 +36,7 @@ export function LeaveDetail({
   const [decisionModal, setDecisionModal] = useState<'APPROVE' | 'REJECT' | null>(null);
   const [comment, setComment] = useState('');
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const act = (decision: 'APPROVE' | 'REJECT') => {
     if (!myPendingTaskId) return;
@@ -42,6 +44,14 @@ export function LeaveDetail({
       const res = await approveLeaveAction(myPendingTaskId, decision, comment);
       if (res.ok) { toast.success(res.message); setDecisionModal(null); setComment(''); router.refresh(); }
       else toast.error(res.message);
+    });
+  };
+
+  const doDelete = () => {
+    startTransition(async () => {
+      const res = await deleteLeaveAction(request.id);
+      if (res.ok) { toast.success(res.message); router.push('/leaves'); }
+      else { toast.error(res.message); setConfirmDelete(false); }
     });
   };
 
@@ -61,6 +71,8 @@ export function LeaveDetail({
   }
   const currentStep = request.workflow?.currentStepOrder ?? 0;
   const canCancel = (isOwner && ['DRAFT', 'PENDING'].includes(request.status)) || (canForceClose && request.status !== 'CANCELLED');
+  // Đơn đã duyệt phải hủy trước để hoàn quỹ phép và bảng công, rồi mới xóa được
+  const canDeleteNow = canDelete && request.status !== 'APPROVED';
 
   return (
     <div className="stack">
@@ -86,6 +98,15 @@ export function LeaveDetail({
           )}
           {canCancel && (
             <Button variant="secondary" onClick={() => setConfirmCancel(true)}><Ban /> Hủy đơn</Button>
+          )}
+          {canDeleteNow && (
+            <Button
+              variant="danger-soft"
+              onClick={() => setConfirmDelete(true)}
+              title="Xóa vĩnh viễn đơn chưa duyệt — dùng để dọn đơn nhập nhầm hoặc đơn rác"
+            >
+              <Trash2 /> Xóa đơn
+            </Button>
           )}
         </div>
       </div>
@@ -328,6 +349,24 @@ export function LeaveDetail({
           />
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={doDelete}
+        loading={pending}
+        danger
+        title="Xóa đơn nghỉ phép"
+        confirmText="Xóa vĩnh viễn"
+        cancelText="Đóng"
+        message={
+          <>
+            Xóa hẳn đơn <b>{request.code}</b> của {request.employee.fullName}? Đơn sẽ biến mất khỏi
+            hệ thống và không khôi phục được — khác với hủy đơn, vốn giữ lại dấu vết.
+            {request.status === 'PENDING' && ' Quỹ phép đang giữ chỗ sẽ được hoàn lại.'}
+          </>
+        }
+      />
 
       <ConfirmDialog
         open={confirmCancel}

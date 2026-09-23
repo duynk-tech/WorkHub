@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { CalendarDays, Info, AlertTriangle, Send, Save } from 'lucide-react';
-import { Button, Field, Input, Select, Textarea, Badge, Alert } from '@/components/ui';
+import { Button, Field, Input, Select, SearchableSelect, Textarea, Badge, Alert } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { LEAVE_DURATION } from '@/lib/enums';
@@ -90,9 +90,17 @@ export function LeaveRequestModal({ open, onClose, leaveTypes, employees, remain
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="Loại nghỉ phép" required className="span-2" hint={selectedType?.description}>
-          <Select value={form.leaveTypeId} onChange={(e) => setForm((f) => ({ ...f, leaveTypeId: Number(e.target.value) }))}>
-            {leaveTypes.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isPaid ? '' : ' (không lương)'}</option>)}
-          </Select>
+          <SearchableSelect
+            value={String(form.leaveTypeId ?? '')}
+            onChange={(val) => setForm((f) => ({ ...f, leaveTypeId: Number(val) }))}
+            options={leaveTypes.map((t) => ({
+              value: String(t.id),
+              label: t.name,
+              subLabel: t.isPaid ? undefined : 'không lương',
+            }))}
+            placeholder="— Chọn loại nghỉ —"
+            searchPlaceholder="Tìm loại nghỉ…"
+          />
         </Field>
 
         <Field label="Từ ngày" required>
@@ -135,10 +143,16 @@ export function LeaveRequestModal({ open, onClose, leaveTypes, employees, remain
         </Field>
 
         <Field label="Bàn giao công việc cho" hint="Người này cũng nhận thông báo khi đơn được duyệt">
-          <Select value={form.handoverToId ?? ''} onChange={(e) => setForm((f) => ({ ...f, handoverToId: e.target.value ? Number(e.target.value) : null }))}>
-            <option value="">— Không bàn giao —</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-          </Select>
+          <SearchableSelect
+            value={form.handoverToId ? String(form.handoverToId) : ''}
+            onChange={(val) => setForm((f) => ({ ...f, handoverToId: val ? Number(val) : null }))}
+            options={[
+              { value: '', label: '— Không bàn giao —' },
+              ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+            ]}
+            placeholder="— Không bàn giao —"
+            searchPlaceholder="Tìm nhân sự…"
+          />
         </Field>
 
         <Field label="Liên hệ khi cần" hint="Số điện thoại trong thời gian nghỉ">

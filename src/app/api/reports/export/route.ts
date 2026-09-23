@@ -24,11 +24,16 @@ export async function GET(req: NextRequest) {
   workbook.creator = branding.name;
   workbook.created = new Date();
 
+  // Tô từng ô có tên cột, không tô cả dòng: đặt fill lên row sẽ loang sang các
+  // cột trống bên phải, nhìn như bảng còn cột mà thực ra không có dữ liệu
   const styleHeader = (sheet: ExcelJS.Worksheet) => {
     const header = sheet.getRow(1);
-    header.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2447EB' } };
-    header.alignment = { vertical: 'middle', horizontal: 'center' };
+    for (let col = 1; col <= sheet.columns.length; col += 1) {
+      const cell = header.getCell(col);
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2447EB' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    }
     header.height = 22;
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
   };

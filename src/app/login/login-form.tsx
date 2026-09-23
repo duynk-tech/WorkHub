@@ -14,11 +14,12 @@ const HIGHLIGHTS = [
 ];
 
 export function LoginForm({
-  appName, logoUrl, logoText, next,
+  appName, logoUrl, logoText, appDescription, next,
 }: {
   appName: string;
   logoUrl?: string | null;
   logoText?: string;
+  appDescription?: string;
   next?: string;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(loginAction, {});
@@ -42,23 +43,42 @@ export function LoginForm({
         {/* Cột thương hiệu */}
         <aside className="login-hero">
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', gap: 40 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="login-logo" style={{ overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                className={`login-logo ${logoUrl ? 'has-image' : ''}`}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  ...(logoUrl
+                    ? {
+                        background: '#ffffff',
+                        padding: 6,
+                        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.25)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }
+                    : {}),
+                }}
+              >
                 {logoUrl ? (
                   <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 ) : (
                   displayLogoLetter
                 )}
               </div>
-              <span style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>{appName}</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{appName}</span>
             </div>
 
             <div>
-              <h2 style={{ color: '#fff', fontSize: 27, lineHeight: 1.25, marginBottom: 12, fontWeight: 680 }}>
-                Công việc, nghỉ phép và chấm công<br />trong một hệ thống
+              <h2 style={{ color: '#fff', fontSize: 28, lineHeight: 1.25, marginBottom: 14, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                {appDescription ? appDescription : 'Công việc, nghỉ phép và chấm công trong một hệ thống'}
               </h2>
-              <p style={{ color: 'rgba(255,255,255,0.72)', fontSize: 14, maxWidth: 400 }}>
-                Quản lý phòng ban phân cấp, quy trình duyệt linh hoạt và thông báo tức thời qua Zalo.
+              <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, maxWidth: 440, lineHeight: 1.55 }}>
+                {appName} — Quản lý phòng ban phân cấp, quy trình duyệt linh hoạt và thông báo tức thời qua Zalo.
               </p>
 
               <div style={{ display: 'grid', gap: 14, marginTop: 30 }}>
@@ -74,8 +94,8 @@ export function LoginForm({
               </div>
             </div>
 
-            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
-              © {new Date().getFullYear()} {appName}
+            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+              © {new Date().getFullYear()} {appName}. Tất cả quyền được bảo lưu.
             </div>
           </div>
         </aside>
@@ -84,18 +104,38 @@ export function LoginForm({
         <main className="login-panel">
           <div style={{ width: '100%', maxWidth: 380 }}>
             <div className="login-logo-mobile">
-              <div className="login-logo" style={{ width: 40, height: 40, fontSize: 18, overflow: 'hidden' }}>
+              <div
+                className={`login-logo ${logoUrl ? 'has-image' : ''}`}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  ...(logoUrl
+                    ? {
+                        background: 'var(--surface-card, #ffffff)',
+                        padding: 6,
+                        border: '1px solid var(--border-base)',
+                        boxShadow: 'var(--shadow-sm)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }
+                    : {}),
+                }}
+              >
                 {logoUrl ? (
                   <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 ) : (
                   displayLogoLetter
                 )}
               </div>
-              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-strong)' }}>{appName}</span>
+              <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-strong)' }}>{appName}</span>
             </div>
 
             <h1 style={{ fontSize: 23, marginBottom: 6 }}>Đăng nhập</h1>
-            <p className="page-desc" style={{ marginBottom: 24 }}>Nhập tài khoản được cấp để vào hệ thống</p>
+            <p className="page-desc" style={{ marginBottom: 24 }}>Đăng nhập vào hệ thống {appName}</p>
 
             {state.error && (
               <div className="alert alert-danger" style={{ marginBottom: 16 }}>

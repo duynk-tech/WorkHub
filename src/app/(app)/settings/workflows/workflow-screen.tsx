@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertTriangle, Star, Copy,
 } from 'lucide-react';
 import {
-  Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Textarea,
+  Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, SearchableSelect, Textarea,
   Checkbox, Switch, EmptyState, PageHeader, Divider, Alert, Avatar,
 } from '@/components/ui';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
@@ -458,28 +458,49 @@ export function WorkflowScreen({
 
                 {step.approverType === 'ROLE' && (
                   <Field label="Vai trò">
-                    <Select sizeSm value={step.roleId ?? ''} onChange={(e) => updateStep(i, { roleId: e.target.value ? Number(e.target.value) : null })}>
-                      <option value="">— Chọn vai trò —</option>
-                      {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </Select>
+                    <SearchableSelect
+                      sizeSm
+                      value={step.roleId ? String(step.roleId) : ''}
+                      onChange={(val) => updateStep(i, { roleId: val ? Number(val) : null })}
+                      options={[
+                        { value: '', label: '— Chọn vai trò —' },
+                        ...roles.map((r) => ({ value: String(r.id), label: r.name })),
+                      ]}
+                      placeholder="— Chọn vai trò —"
+                      searchPlaceholder="Tìm vai trò…"
+                    />
                   </Field>
                 )}
 
                 {step.approverType === 'POSITION_RANK' && (
                   <Field label="Chức danh tối thiểu">
-                    <Select sizeSm value={step.positionRank ?? ''} onChange={(e) => updateStep(i, { positionRank: e.target.value ? Number(e.target.value) : null })}>
-                      <option value="">— Chọn cấp bậc —</option>
-                      {positions.map((p) => <option key={p.id} value={p.rankLevel}>{p.name} (cấp {p.rankLevel})</option>)}
-                    </Select>
+                    <SearchableSelect
+                      sizeSm
+                      value={step.positionRank ? String(step.positionRank) : ''}
+                      onChange={(val) => updateStep(i, { positionRank: val ? Number(val) : null })}
+                      options={[
+                        { value: '', label: '— Chọn cấp bậc —' },
+                        ...positions.map((p) => ({ value: String(p.rankLevel), label: p.name, subLabel: `cấp ${p.rankLevel}` })),
+                      ]}
+                      placeholder="— Chọn cấp bậc —"
+                      searchPlaceholder="Tìm chức danh…"
+                    />
                   </Field>
                 )}
 
                 {step.approverType === 'SPECIFIC_USER' && (
                   <Field label="Người duyệt cụ thể">
-                    <Select sizeSm value={step.specificEmployeeId ?? ''} onChange={(e) => updateStep(i, { specificEmployeeId: e.target.value ? Number(e.target.value) : null })}>
-                      <option value="">— Chọn nhân sự —</option>
-                      {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-                    </Select>
+                    <SearchableSelect
+                      sizeSm
+                      value={step.specificEmployeeId ? String(step.specificEmployeeId) : ''}
+                      onChange={(val) => updateStep(i, { specificEmployeeId: val ? Number(val) : null })}
+                      options={[
+                        { value: '', label: '— Chọn nhân sự —' },
+                        ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+                      ]}
+                      placeholder="— Chọn nhân sự —"
+                      searchPlaceholder="Tìm nhân sự…"
+                    />
                   </Field>
                 )}
 
@@ -560,17 +581,25 @@ export function WorkflowScreen({
       >
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
           <Field label="Người nộp đơn giả định">
-            <Select value={simInput.requesterId} onChange={(e) => setSimInput((s) => ({ ...s, requesterId: Number(e.target.value) }))}>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
-            </Select>
+            <SearchableSelect
+              value={String(simInput.requesterId ?? '')}
+              onChange={(val) => setSimInput((s) => ({ ...s, requesterId: Number(val) }))}
+              options={employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code }))}
+              placeholder="— Chọn nhân sự —"
+              searchPlaceholder="Tìm nhân sự…"
+            />
           </Field>
           <Field label="Số ngày nghỉ">
             <Input type="number" step="0.5" value={simInput.totalDays} onChange={(e) => setSimInput((s) => ({ ...s, totalDays: Number(e.target.value) }))} />
           </Field>
           <Field label="Loại nghỉ">
-            <Select value={simInput.leaveTypeCode} onChange={(e) => setSimInput((s) => ({ ...s, leaveTypeCode: e.target.value }))}>
-              {leaveTypes.map((t) => <option key={t.id} value={t.code}>{t.name}</option>)}
-            </Select>
+            <SearchableSelect
+              value={simInput.leaveTypeCode}
+              onChange={(val) => setSimInput((s) => ({ ...s, leaveTypeCode: val }))}
+              options={leaveTypes.map((t) => ({ value: t.code, label: t.name, subLabel: t.code }))}
+              placeholder="— Chọn loại nghỉ —"
+              searchPlaceholder="Tìm loại nghỉ…"
+            />
           </Field>
         </div>
 

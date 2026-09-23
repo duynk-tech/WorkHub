@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { Plus, X } from 'lucide-react';
-import { Button, Field, Input, Select, Textarea, Checkbox, Badge } from '@/components/ui';
+import { Button, Field, Input, Select, SearchableSelect, Textarea, Checkbox, Badge } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
@@ -108,28 +108,43 @@ export function TaskFormModal({
         </Field>
 
         <Field label="Người thực hiện" hint={canAssign ? undefined : 'Bạn chỉ được tạo việc cho chính mình'}>
-          <Select
-            value={form.assigneeId ?? ''}
+          <SearchableSelect
+            value={form.assigneeId ? String(form.assigneeId) : ''}
             disabled={!canAssign}
-            onChange={(e) => setForm((f) => ({ ...f, assigneeId: e.target.value ? Number(e.target.value) : null }))}
-          >
-            <option value="">— Chưa giao —</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
-          </Select>
+            onChange={(val) => setForm((f) => ({ ...f, assigneeId: val ? Number(val) : null }))}
+            options={[
+              { value: '', label: '— Chưa giao —' },
+              ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+            ]}
+            placeholder="— Chưa giao —"
+            searchPlaceholder="Tìm nhân sự…"
+          />
         </Field>
 
         <Field label="Người nghiệm thu">
-          <Select value={form.reviewerId ?? ''} onChange={(e) => setForm((f) => ({ ...f, reviewerId: e.target.value ? Number(e.target.value) : null }))}>
-            <option value="">— Không yêu cầu —</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-          </Select>
+          <SearchableSelect
+            value={form.reviewerId ? String(form.reviewerId) : ''}
+            onChange={(val) => setForm((f) => ({ ...f, reviewerId: val ? Number(val) : null }))}
+            options={[
+              { value: '', label: '— Không yêu cầu —' },
+              ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+            ]}
+            placeholder="— Không yêu cầu —"
+            searchPlaceholder="Tìm nhân sự…"
+          />
         </Field>
 
         <Field label="Phòng ban phụ trách">
-          <Select value={form.departmentId ?? ''} onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value ? Number(e.target.value) : null }))}>
-            <option value="">— Theo phòng ban của bạn —</option>
-            {departments.map((d) => <option key={d.id} value={d.id}>{'　'.repeat(d.level - 1)}{d.name}</option>)}
-          </Select>
+          <SearchableSelect
+            value={form.departmentId ? String(form.departmentId) : ''}
+            onChange={(val) => setForm((f) => ({ ...f, departmentId: val ? Number(val) : null }))}
+            options={[
+              { value: '', label: '— Theo phòng ban của bạn —' },
+              ...departments.map((d) => ({ value: String(d.id), label: `${'　'.repeat(d.level - 1)}${d.name}` })),
+            ]}
+            placeholder="— Theo phòng ban của bạn —"
+            searchPlaceholder="Tìm phòng ban…"
+          />
         </Field>
 
         <Field label="Mức ưu tiên">

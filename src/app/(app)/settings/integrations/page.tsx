@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { MCP_TOOLS } from '@/server/mcp/tools';
 import { getSettings } from '@/server/modules/settings/service';
 import { getCustomTools } from '@/server/modules/zalo/custom-tools';
+import { getDisabledMcpModules } from '@/server/mcp/module-config';
 import { IntegrationScreen } from './integration-screen';
 
 export const metadata = { title: 'Tích hợp & MCP' };
@@ -19,7 +20,7 @@ export default async function IntegrationsPage({
   const initialModal = sp.modal ?? '';
   const initialSubtab = sp.subtab ?? '';
 
-  const [clients, webhooks, users, recentCalls, settings, customTools, zaloLogs] = await Promise.all([
+  const [clients, webhooks, users, recentCalls, settings, customTools, zaloLogs, disabledModules] = await Promise.all([
     prisma.mcpClient.findMany({
       orderBy: { createdAt: 'desc' },
       include: { actAsUser: { select: { username: true, employee: { select: { fullName: true } } } } },
@@ -40,6 +41,7 @@ export default async function IntegrationsPage({
       orderBy: { createdAt: 'desc' },
       take: 100,
     }),
+    getDisabledMcpModules(),
   ]);
 
   return (
@@ -50,7 +52,11 @@ export default async function IntegrationsPage({
       clients={JSON.parse(JSON.stringify(clients))}
       webhooks={JSON.parse(JSON.stringify(webhooks))}
       users={users.map((u) => ({ id: u.id, employeeId: u.employeeId, username: u.username, fullName: u.employee.fullName }))}
-      tools={MCP_TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, mutating: Boolean(t.mutating) }))}
+      tools={MCP_TOOLS.map((t) => ({
+        name: t.name, module: t.module, title: t.title,
+        description: t.description, mutating: Boolean(t.mutating),
+      }))}
+      disabledModules={disabledModules}
       recentCalls={JSON.parse(JSON.stringify(recentCalls))}
       zaloLogs={JSON.parse(JSON.stringify(zaloLogs))}
       mcpUrl={`${process.env.APP_URL || 'http://localhost:3000'}/api/mcp`}

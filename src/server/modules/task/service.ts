@@ -29,6 +29,12 @@ export interface TaskFilter {
   overdue?: boolean;
   dueFrom?: string;
   dueTo?: string;
+  /** Trường ngày dùng để lọc: ngày đến hạn, ngày bắt đầu, ngày tạo hay ngày hoàn thành. */
+  dateField?: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  /** Chỉ lấy việc chưa đặt giá trị cho trường ngày đang chọn. */
+  noDate?: boolean;
   page?: number;
   pageSize?: number;
   sort?: string;
@@ -50,10 +56,15 @@ export async function taskScopeWhere(ctx: AuthContext): Promise<Prisma.TaskWhere
   return { OR: or };
 }
 
-export async function listTasks(ctx: AuthContext, filter: TaskFilter) {
-  const page = Math.max(1, filter.page ?? 1);
-  const pageSize = Math.min(100, filter.pageSize ?? 20);
+/**
+ * Việc đã đóng sổ: không còn ai phải làm gì nữa.
+ * Tách riêng để màn hình mặc định chỉ hiện việc đang chạy, việc cũ đưa sang tab lưu trữ.
+ */
+export const CLOSED_TASK_STATUSES = ['DONE', 'CANCELLED'] as const;
+export const OPEN_TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'REVIEW', 'BLOCKED'] as const;
 
+/** Dựng điều kiện lọc dùng chung cho danh sách và cho số đếm của các tab. */
+async function buildTaskWhere(ctx: AuthContext, filter: TaskFilter) {
   const where: Prisma.TaskWhereInput = { AND: [await taskScopeWhere(ctx)] };
   const and = where.AND as Prisma.TaskWhereInput[];
 
@@ -70,6 +81,23 @@ export async function listTasks(ctx: AuthContext, filter: TaskFilter) {
   if (filter.dueFrom) and.push({ dueDate: { gte: new Date(filter.dueFrom) } });
   if (filter.dueTo) and.push({ dueDate: { lte: new Date(`${filter.dueTo}T23:59:59`) } });
 
+  // Lọc theo trường ngày người dùng chọn; chỉ nhận đúng 4 cột ngày đã khai báo
+  const dateField = (['dueDate', 'startDate', 'createdAt', 'completedAt'] as const).find(
+    (f) => f === filter.dateField,
+  );
+  if (dateField) {
+    if (filter.noDate) {
+      and.push({ [dateField]: null } as Prisma.TaskWhereInput);
+    } else if (filter.dateFrom || filter.dateTo) {
+      and.push({
+        [dateField]: {
+          ...(filter.dateFrom ? { gte: new Date(`${filter.dateFrom}T00:00:00`) } : {}),
+          ...(filter.dateTo ? { lte: new Date(`${filter.dateTo}T23:59:59.999`) } : {}),
+        },
+      } as Prisma.TaskWhereInput);
+    }
+  }
+
   if (filter.departmentId) {
     const dept = await prisma.department.findUnique({ where: { id: filter.departmentId }, select: { path: true } });
     if (dept) {
@@ -77,6 +105,32 @@ export async function listTasks(ctx: AuthContext, filter: TaskFilter) {
       and.push({ departmentId: { in: branch.map((d) => d.id) } });
     }
   }
+
+  return where;
+}
+
+/**
+ * Số việc đang làm / đã đóng, dùng cho nhãn các tab.
+ * Đếm theo đúng bộ lọc đang áp dụng nhưng bỏ qua trạng thái, để hai con số luôn
+ * cộng lại bằng tổng của tab "Tất cả".
+ */
+export async function countTaskScopes(ctx: AuthContext, filter: TaskFilter) {
+  const where = await buildTaskWhere(ctx, { ...filter, status: [] });
+  const and = where.AND as Prisma.TaskWhereInput[];
+
+  const [open, closed] = await Promise.all([
+    prisma.task.count({ where: { AND: [...and, { status: { in: OPEN_TASK_STATUSES as never } }] } }),
+    prisma.task.count({ where: { AND: [...and, { status: { in: CLOSED_TASK_STATUSES as never } }] } }),
+  ]);
+
+  return { open, closed, all: open + closed };
+}
+
+export async function listTasks(ctx: AuthContext, filter: TaskFilter) {
+  const page = Math.max(1, filter.page ?? 1);
+  const pageSize = Math.min(100, filter.pageSize ?? 20);
+
+  const where = await buildTaskWhere(ctx, filter);
 
   const orderBy: Prisma.TaskOrderByWithRelationInput[] =
     filter.sort === 'priority' ? [{ priority: 'desc' }, { dueDate: 'asc' }]
@@ -102,6 +156,39 @@ export async function listTasks(ctx: AuthContext, filter: TaskFilter) {
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
     statusCounts: Object.fromEntries(statusGroups.map((g) => [g.status, g._count._all])),
   };
+}
+
+/**
+ * Dữ liệu xuất Excel của màn Công việc.
+ *
+ * Dùng chung buildTaskWhere với danh sách nên file tải về đúng bằng những gì
+ * người dùng đang nhìn thấy: cùng bộ lọc, cùng phạm vi dữ liệu theo phân quyền.
+ * Không phân trang nhưng có trần để một cú bấm không kéo cả trăm nghìn dòng.
+ */
+export const TASK_EXPORT_LIMIT = 5000;
+
+export async function exportTasks(ctx: AuthContext, filter: TaskFilter) {
+  const where = await buildTaskWhere(ctx, filter);
+
+  const rows = await prisma.task.findMany({
+    where,
+    orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }],
+    take: TASK_EXPORT_LIMIT,
+    select: {
+      code: true, title: true, status: true, priority: true, progress: true,
+      startDate: true, dueDate: true, completedAt: true,
+      estimateHours: true, actualHours: true, tags: true, createdAt: true,
+      department: { select: { name: true } },
+      assignee: { select: { fullName: true, code: true } },
+      creator: { select: { fullName: true } },
+      reviewer: { select: { fullName: true } },
+      parentTask: { select: { code: true } },
+      _count: { select: { comments: true, subTasks: true, checklist: true } },
+    },
+  });
+
+  const total = await prisma.task.count({ where });
+  return { rows, total, truncated: total > rows.length };
 }
 
 /** Dữ liệu cho bảng Kanban — lấy tối đa N việc mỗi cột. */

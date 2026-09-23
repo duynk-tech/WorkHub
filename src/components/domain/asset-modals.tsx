@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Modal } from '@/components/ui/modal';
-import { Button, Field, Input, Select, Textarea } from '@/components/ui';
+import { Button, Field, Input, Select, SearchableSelect, Textarea } from '@/components/ui';
 import { generateQrSvg, generateQrDataUrl } from '@/lib/qrcode';
 import {
   ASSET_CATEGORIES,
@@ -358,25 +358,33 @@ export function AssignAssetModal({
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Field label="Nhân sự nhận bàn giao">
-          <Select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-            <option value="">-- Chọn nhân sự --</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.fullName} ({emp.code}) {emp.department?.name ? `- ${emp.department.name}` : ''}
-              </option>
-            ))}
-          </Select>
+          <SearchableSelect
+            value={employeeId}
+            onChange={(val) => setEmployeeId(val)}
+            options={[
+              { value: '', label: '-- Chọn nhân sự --' },
+              ...employees.map((emp) => ({
+                value: String(emp.id),
+                label: emp.fullName,
+                subLabel: [emp.code, emp.department?.name].filter(Boolean).join(' · '),
+              })),
+            ]}
+            placeholder="-- Chọn nhân sự --"
+            searchPlaceholder="Tìm nhân sự…"
+          />
         </Field>
 
         <Field label="Phòng ban sử dụng (hoặc phòng của nhân sự)">
-          <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-            <option value="">-- Chọn phòng ban --</option>
-            {departments.map((dept) => (
-              <option key={dept.id} value={dept.id}>
-                {dept.name}
-              </option>
-            ))}
-          </Select>
+          <SearchableSelect
+            value={departmentId}
+            onChange={(val) => setDepartmentId(val)}
+            options={[
+              { value: '', label: '-- Chọn phòng ban --' },
+              ...departments.map((dept) => ({ value: String(dept.id), label: dept.name })),
+            ]}
+            placeholder="-- Chọn phòng ban --"
+            searchPlaceholder="Tìm phòng ban…"
+          />
         </Field>
 
         <Field label="Tình trạng máy lúc bàn giao *">
@@ -878,11 +886,17 @@ export function AssetPrintStickerModal({
   open,
   onClose,
   assets,
+  company,
 }: {
   open: boolean;
   onClose: () => void;
   assets: any[];
+  /** Thông tin công ty lấy từ Cấu hình hệ thống — tem dán tài sản phải mang tên thật của đơn vị. */
+  company?: { name?: string; shortName?: string; phone?: string };
 }) {
+  const brandName = (company?.shortName || company?.name || '').trim();
+  const stickerTitle = brandName ? `${brandName} · TÀI SẢN` : 'TEM TÀI SẢN';
+  const hotline = company?.phone?.trim();
   const handlePrint = () => {
     window.print();
   };
@@ -892,7 +906,7 @@ export function AssetPrintStickerModal({
       open={open}
       onClose={onClose}
       title={`In tem nhãn QR code dán máy (${assets.length} thiết bị)`}
-      description="Chuẩn nhãn decal nhiệt dán thiết bị (60mm x 35mm), quét mã để tra cứu nhanh"
+      description="Chuẩn nhãn nhiệt dán thiết bị (60mm x 35mm), quét mã để tra cứu nhanh"
       size="lg"
       footer={
         <>
@@ -930,7 +944,7 @@ export function AssetPrintStickerModal({
 
       <div style={{ background: 'var(--surface-subtle, #f8fafc)', padding: 16, borderRadius: 8, marginBottom: 16 }}>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-          💡 <strong>Mẹo in tem:</strong> Máy in tem nhãn decal nhiệt (50x30mm hoặc 60x40mm) hoặc in trên giấy decal dán A4. Mỗi tem bao gồm Logo công ty, Mã tài sản, Tên máy, Serial number, Cấu hình tóm tắt và Mã QR vector chuẩn sắc nét.
+          💡 <strong>Mẹo in tem:</strong> Máy in tem nhãn nhiệt (50x30mm hoặc 60x40mm) hoặc in trên giấy dán A4. Mỗi tem bao gồm Logo công ty, Mã tài sản, Tên máy, Serial number, Cấu hình tóm tắt và Mã QR vector chuẩn sắc nét.
         </p>
       </div>
 
@@ -974,11 +988,13 @@ export function AssetPrintStickerModal({
               {/* Header tem */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid #0f172a', paddingBottom: 4, marginBottom: 6 }}>
                 <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                  WORKHUB ASSET
+                  {stickerTitle}
                 </span>
-                <span style={{ fontSize: 9, color: '#475569', fontWeight: 600 }}>
-                  HOTLINE: IT-SUPPORT
-                </span>
+                {hotline && (
+                  <span style={{ fontSize: 9, color: '#475569', fontWeight: 600 }}>
+                    HOTLINE: {hotline}
+                  </span>
+                )}
               </div>
 
               {/* Body tem */}
@@ -1008,7 +1024,7 @@ export function AssetPrintStickerModal({
               {/* Footer tem */}
               <div style={{ marginTop: 6, paddingTop: 4, borderTop: '1px dashed #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 8.5, color: '#64748b' }}>
-                  {item.brand || 'WorkHub Device'}
+                  {item.brand || brandName || 'Thiết bị nội bộ'}
                 </span>
                 <span style={{ fontSize: 8.5, fontWeight: 600, color: '#0f172a' }}>
                   Quét mã xem hồ sơ máy

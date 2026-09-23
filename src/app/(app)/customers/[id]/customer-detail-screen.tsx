@@ -1,0 +1,1621 @@
+'use client';
+
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  Building2,
+  Phone,
+  Mail,
+  MapPin,
+  Utensils,
+  ShoppingBag,
+  Wrench,
+  Plus,
+  Edit2,
+  Trash2,
+  ExternalLink,
+  Calendar,
+  AlertTriangle,
+  Package,
+  FileText,
+  Clock,
+  CheckCircle2,
+  Truck,
+  PackageCheck,
+  Wallet,
+  Undo2,
+  Printer,
+  ShoppingCart,
+} from 'lucide-react';
+import { Card, Button, Badge, ConfirmDialog } from '@/components/ui';
+import { useToast } from '@/components/ui/toast';
+import { CustomerModal, CustomerLocationModal } from '@/components/domain/customer-modals';
+import {
+  CustomerQuotationModal,
+  CustomerQuotationPrintModal,
+} from '@/components/domain/customer-quotation-modal';
+import {
+  OrderFulfillmentModal,
+  type FulfillmentMode,
+} from '@/components/domain/order-fulfillment-modal';
+import { CustomerPaymentModal } from '@/components/domain/customer-payment-modal';
+import { PaymentVoucherModal } from '@/components/domain/payment-voucher-modal';
+import { CustomerReturnModal } from '@/components/domain/customer-return-modal';
+import { EquipmentHandoverModal } from '@/components/domain/equipment-modals';
+import {
+  deleteCustomerPaymentAction,
+  deleteCustomerQuotationAction,
+  convertQuotationToOrderAction,
+} from '@/server/modules/customer/actions';
+import {
+  CUSTOMER_STATUSES,
+  ORDER_TYPES,
+  ORDER_STATUSES,
+  QUOTATION_STATUSES,
+  PAYMENT_METHODS,
+} from '@/server/modules/customer/types';
+import {
+  EQUIPMENT_STATUSES,
+  EQUIPMENT_CATEGORIES,
+  TICKET_PRIORITIES,
+  TICKET_STATUSES,
+} from '@/server/modules/equipment/types';
+
+export function CustomerDetailScreen({
+  customer,
+  canManage,
+  companyInfo,
+  spareParts = [],
+  stockMachines = [],
+  warehouses = [],
+  pricingConfig,
+}: {
+  customer: any;
+  canManage: boolean;
+  companyInfo?: any;
+  spareParts?: any[];
+  stockMachines?: any[];
+  warehouses?: any[];
+  pricingConfig?: any;
+}) {
+  const router = useRouter();
+  const toast = useToast();
+
+  const [activeTab, setActiveTab] = useState<
+    'machines' | 'quotations' | 'orders' | 'payments' | 'locations' | 'tickets'
+  >('machines');
+  const [printPayment, setPrintPayment] = useState<any>(null);
+  const [createQuotationOpen, setCreateQuotationOpen] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState<any>(null);
+  const [printingQuotation, setPrintingQuotation] = useState<any>(null);
+  const [fulfillment, setFulfillment] = useState<{ order: any; mode: FulfillmentMode } | null>(null);
+  const [paymentOrderId, setPaymentOrderId] = useState<number | 'GENERAL' | null>(null);
+  const [returnOrder, setReturnOrder] = useState<any>(null);
+  const [editCustomerModalOpen, setEditCustomerModalOpen] = useState(false);
+  const [createLocationModalOpen, setCreateLocationModalOpen] = useState(false);
+  const [handoverEquipment, setHandoverEquipment] = useState<any | null>(null);
+
+  const statusInfo = CUSTOMER_STATUSES[customer.status] || { label: customer.status, color: '#64748b', bg: '#f1f5f9' };
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: React.ReactNode;
+    confirmText?: string;
+    danger?: boolean;
+    onConfirm: () => void | Promise<void>;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+
+  const handleDeleteQuotation = (quotationId: number) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Xóa báo giá',
+      message: 'Bạn có chắc chắn muốn xóa báo giá này? Thao tác này không thể hoàn tác.',
+      confirmText: 'Xóa vĩnh viễn',
+      danger: true,
+      onConfirm: async () => {
+        const res = await deleteCustomerQuotationAction(quotationId, customer.id);
+        if (res.ok) {
+          toast.success(res.message);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
+      },
+    });
+  };
+
+  const handleConvertQuotation = (q: any) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Chốt đơn hàng từ báo giá',
+      message: `Chốt báo giá ${q.quoteCode} thành đơn hàng chính thức cho khách hàng?`,
+      confirmText: 'Chốt đơn ngay',
+      danger: false,
+      onConfirm: async () => {
+        const res = await convertQuotationToOrderAction(q.id, customer.id);
+        if (res.ok) {
+          toast.success(res.message);
+          setActiveTab('orders');
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
+      },
+    });
+  };
+
+  /** Công nợ: phải thu, đã thu, còn nợ, quá hạn. */
+  const debt = (customer.orders || []).reduce(
+    (acc: any, o: any) => {
+      if (o.status === 'CANCELLED') return acc;
+      const total = Number(o.totalAmount || 0);
+      const paid = Number(o.paidAmount || 0);
+      const returned = Math.min(total, Number(o.returnedAmount || 0));
+      const remaining = Math.max(0, total - returned - paid);
+      acc.billed += total;
+      acc.returned += returned;
+      acc.paid += Math.min(paid, total);
+      acc.outstanding += remaining;
+      if (remaining > 0 && o.dueDate && new Date(o.dueDate) < new Date(new Date().toDateString())) {
+        acc.overdue += remaining;
+        acc.overdueOrders += 1;
+      }
+      return acc;
+    },
+    { billed: 0, returned: 0, paid: 0, outstanding: 0, overdue: 0, overdueOrders: 0 },
+  );
+
+  const handleDeletePayment = (paymentId: number) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Xóa phiếu thu',
+      message: 'Bạn có chắc chắn muốn xóa phiếu thu này? Công nợ của đơn hàng sẽ được hoàn lại tương ứng.',
+      confirmText: 'Xóa phiếu thu',
+      danger: true,
+      onConfirm: async () => {
+        const res = await deleteCustomerPaymentAction(paymentId, customer.id);
+        if (res.ok) {
+          toast.success(res.message);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
+      },
+    });
+  };
+
+  const totalSpent = (customer.orders || []).reduce(
+    (sum: number, o: any) => (o.status !== 'CANCELLED' ? sum + Number(o.totalAmount || 0) : sum),
+    0,
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 50 }}>
+      {/* 1. Navigation Back & Quick Breadcrumb */}
+      <div>
+        <Link
+          href="/customers"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 13,
+            color: 'var(--text-muted)',
+            textDecoration: 'none',
+            fontWeight: 500,
+          }}
+          className="hover:text-blue-600"
+        >
+          <ArrowLeft size={16} /> Quay lại danh sách Khách hàng
+        </Link>
+      </div>
+
+      {/* 2. Customer Profile Header Card */}
+      <Card style={{ padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 'var(--radius-lg)',
+                background: '#eff6ff',
+                color: '#2563eb',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Building2 size={28} />
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+                  {customer.name}
+                </h1>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-xs)',
+                    background: '#eff6ff',
+                    color: '#2563eb',
+                    border: '1px solid #bfdbfe',
+                  }}
+                >
+                  {customer.code}
+                </span>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    background: statusInfo.bg,
+                    color: statusInfo.color,
+                  }}
+                >
+                  {statusInfo.label}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 8, fontSize: 13, color: 'var(--text-muted)' }}>
+                {customer.contactName && (
+                  <div>
+                    Người đại diện: <strong style={{ color: 'var(--text-strong)' }}>{customer.contactName}</strong>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Phone size={13} /> {customer.phone}
+                </div>
+                {customer.email && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Mail size={13} /> {customer.email}
+                  </div>
+                )}
+                {customer.address && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <MapPin size={13} /> {customer.address}
+                  </div>
+                )}
+              </div>
+
+              {customer.notes && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12.5,
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: 'var(--text-base)' }}>Ghi chú:</span> {customer.notes}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {canManage && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button variant="secondary" onClick={() => setEditCustomerModalOpen(true)}>
+                <Edit2 size={14} style={{ marginRight: 6 }} /> Sửa thông tin
+              </Button>
+              {/* Lập và sửa đơn bán đã chuyển hẳn sang màn Bán hàng — một nghiệp
+                  vụ chỉ nên có một chỗ làm, hồ sơ khách giữ vai trò tra cứu */}
+              <Link href={`/sales?customerId=${customer.id}`} className="btn btn-secondary">
+                <ShoppingCart size={14} style={{ marginRight: 6 }} /> Bán Hàng
+              </Link>
+
+              <Button variant="secondary" onClick={() => setCreateQuotationOpen(true)}>
+                <FileText size={14} style={{ marginRight: 6 }} /> Lập báo giá
+              </Button>
+
+              {debt.outstanding > 0 && (
+                <Button variant="secondary" onClick={() => setPaymentOrderId('GENERAL')}>
+                  <Wallet size={14} style={{ marginRight: 6 }} /> Ghi nhận thanh toán
+                </Button>
+              )}
+
+              {/* Hai con số tiền đặt ngay cạnh nút; các chỉ số đếm đã có trên tab */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 18,
+                  marginLeft: 'auto',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Công nợ phải thu</div>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 800,
+                      color:
+                        debt.outstanding > 0 ? (debt.overdue > 0 ? '#dc2626' : '#d97706') : '#16a34a',
+                    }}
+                  >
+                    {new Intl.NumberFormat('vi-VN').format(debt.outstanding)} ₫
+                    {debt.overdue > 0 && (
+                      <span style={{ fontSize: 11, fontWeight: 600 }}> · {debt.overdueOrders} đơn quá hạn</span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Tổng giá trị giao dịch</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--brand)' }}>
+                    {new Intl.NumberFormat('vi-VN').format(totalSpent)} ₫
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+      </Card>
+
+      {/* 3. Navigation Tabs */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-base)', paddingBottom: 0 }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('machines')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: activeTab === 'machines' ? 700 : 500,
+            color: activeTab === 'machines' ? 'var(--brand)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'machines' ? '2px solid var(--brand)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <Utensils size={16} /> Thiết bị & Máy móc ({customer.machines?.length || 0})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('quotations')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: activeTab === 'quotations' ? 700 : 500,
+            color: activeTab === 'quotations' ? 'var(--brand)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'quotations' ? '2px solid var(--brand)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <FileText size={16} /> Báo giá ({customer.quotations?.length || 0})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('orders')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: activeTab === 'orders' ? 700 : 500,
+            color: activeTab === 'orders' ? 'var(--brand)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'orders' ? '2px solid var(--brand)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <ShoppingBag size={16} /> Lịch sử đơn hàng ({customer.orders?.length || 0})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('payments')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: activeTab === 'payments' ? 700 : 500,
+            color: activeTab === 'payments' ? 'var(--brand)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'payments' ? '2px solid var(--brand)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <Wallet size={16} /> Công nợ & Thanh toán ({customer.payments?.length || 0})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('locations')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: activeTab === 'locations' ? 700 : 500,
+            color: activeTab === 'locations' ? 'var(--brand)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'locations' ? '2px solid var(--brand)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <MapPin size={16} /> Điểm lắp đặt / Chi nhánh ({customer.locations?.length || 0})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('tickets')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 13.5,
+            fontWeight: activeTab === 'tickets' ? 700 : 500,
+            color: activeTab === 'tickets' ? 'var(--brand)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'tickets' ? '2px solid var(--brand)' : '2px solid transparent',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <Wrench size={16} /> Lịch sử Sửa chữa & Sự cố ({customer.tickets?.length || 0})
+        </button>
+      </div>
+
+      {/* 4. Tab Contents */}
+
+      {/* ── TAB 1: THIẾT BỊ & MÁY MÓC ── */}
+      {activeTab === 'machines' && (
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-sunken)', borderBottom: '1px solid var(--border-base)', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>
+                  <th style={{ padding: '12px 14px', width: 130 }}>Mã máy</th>
+                  <th style={{ padding: '12px 14px' }}>Tên thiết bị</th>
+                  <th style={{ padding: '12px 14px' }}>Điểm đặt máy</th>
+                  <th style={{ padding: '12px 14px' }}>Hình thức</th>
+                  <th style={{ padding: '12px 14px' }}>Trạng thái</th>
+                  <th style={{ padding: '12px 14px' }}>Hạn bảo hành</th>
+                  <th style={{ padding: '12px 14px', width: 80, textAlign: 'right' }}>Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customer.machines?.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Khách hàng này chưa được gán thiết bị nào
+                    </td>
+                  </tr>
+                ) : (
+                  customer.machines.map((m: any) => (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border-base)' }} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td style={{ padding: '12px 14px' }}>
+                        <Link
+                          href={`/equipment/${m.id}`}
+                          style={{
+                            fontFamily: 'monospace',
+                            fontWeight: 700,
+                            color: 'var(--brand)',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          {m.machineCode}
+                        </Link>
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{m.name}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                          S/N: <span style={{ fontFamily: 'monospace' }}>{m.serialNumber}</span>
+                          {m.brand && ` • ${m.brand}`}
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {m.location ? (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-strong)', fontWeight: 500 }}>
+                            <MapPin size={13} color="#0284c7" />
+                            {m.location.name}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Chưa gán điểm đặt</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: m.ownershipType === 'SOLD' ? '#dcfce7' : m.ownershipType === 'RENTAL' ? '#e0f2fe' : '#fef3c7',
+                            color: m.ownershipType === 'SOLD' ? '#15803d' : m.ownershipType === 'RENTAL' ? '#0369a1' : '#b45309',
+                          }}
+                        >
+                          {m.ownershipType === 'SOLD' ? 'Đã bán' : m.ownershipType === 'RENTAL' ? 'Cho thuê' : 'Ký gửi'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: m.status === 'OPERATING' ? '#f0fdf4' : m.status === 'BREAKDOWN' ? '#fee2e2' : '#fef3c7',
+                            color: m.status === 'OPERATING' ? '#16a34a' : m.status === 'BREAKDOWN' ? '#dc2626' : '#d97706',
+                          }}
+                        >
+                          {m.status === 'OPERATING' ? 'Đang chạy tốt' : m.status === 'BREAKDOWN' ? 'Báo sự cố' : 'Bảo dưỡng'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: 12.5 }}>
+                        {m.warrantyExpiresAt ? new Date(m.warrantyExpiresAt).toLocaleDateString('vi-VN') : '—'}
+                      </td>
+                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setHandoverEquipment({
+                                ...m,
+                                customer: { name: customer.name, phone: customer.phone, address: customer.address },
+                                location: m.location,
+                              })
+                            }
+                            title="In phiếu bàn giao / Phiếu giao nhận"
+                            style={{ padding: '4px 8px', height: 'auto' }}
+                          >
+                            <FileText size={14} color="#2563eb" />
+                          </Button>
+                          <Link
+                            href={`/equipment/${m.id}`}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: 'var(--surface-sunken)',
+                              color: 'var(--text-strong)',
+                              textDecoration: 'none',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                            }}
+                            title="Xem hồ sơ máy"
+                          >
+                            <ExternalLink size={14} />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* ── TAB: BÁO GIÁ ── */}
+      {activeTab === 'quotations' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {customer.quotations?.length === 0 ? (
+            <Card style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              Chưa có báo giá nào cho khách hàng này
+            </Card>
+          ) : (
+            customer.quotations.map((q: any) => {
+              const stInfo = QUOTATION_STATUSES[q.status] || {
+                label: q.status,
+                color: '#64748b',
+                bg: '#f1f5f9',
+              };
+              const convertedOrder = q.orders?.[0];
+              const expired =
+                q.validUntil && new Date(q.validUntil) < new Date() && q.status !== 'ACCEPTED';
+
+              return (
+                <Card key={q.id} style={{ padding: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
+                          Báo giá: {q.quoteCode}
+                        </span>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: stInfo.bg,
+                            color: stInfo.color,
+                          }}
+                        >
+                          {stInfo.label}
+                        </span>
+                        {expired && (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              background: '#fef3c7',
+                              color: '#d97706',
+                            }}
+                          >
+                            Quá hạn hiệu lực
+                          </span>
+                        )}
+                        {convertedOrder && (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              background: '#ecfdf5',
+                              color: '#047857',
+                            }}
+                          >
+                            Đã chốt thành đơn {convertedOrder.orderCode}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12.5, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Calendar size={13} /> Ngày báo giá: {new Date(q.quoteDate).toLocaleDateString('vi-VN')}
+                        </span>
+                        {q.validUntil && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Clock size={13} /> Hiệu lực đến: {new Date(q.validUntil).toLocaleDateString('vi-VN')}
+                          </span>
+                        )}
+                        {q.location && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <MapPin size={13} /> {q.location.name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Tổng thanh toán{Number(q.vatRate) > 0 ? ` (gồm VAT ${Number(q.vatRate)}%)` : ''}
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--brand)' }}>
+                          {new Intl.NumberFormat('vi-VN').format(Number(q.totalAmount || 0))} ₫
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => setPrintingQuotation(q)}
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'var(--surface-sunken)',
+                            color: 'var(--brand)',
+                            border: 'none',
+                            cursor: 'pointer',
+                          }}
+                          title="In báo giá"
+                        >
+                          <FileText size={14} />
+                        </button>
+
+                        {canManage && !convertedOrder && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleConvertQuotation(q)}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: '#ecfdf5',
+                                color: '#047857',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                              title="Khách đã chốt — tạo đơn hàng từ báo giá này"
+                            >
+                              <CheckCircle2 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingQuotation(q)}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--surface-sunken)',
+                                color: 'var(--text-strong)',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                              title="Sửa báo giá"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteQuotation(q.id)}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--surface-sunken)',
+                                color: 'var(--danger)',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                              title="Xóa báo giá"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 14, borderTop: '1px solid var(--border-base)', paddingTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
+                      Hàng hóa / dịch vụ đã báo giá:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {q.items?.map((it: any) => (
+                        <div
+                          key={it.id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: 12.5,
+                            padding: '4px 8px',
+                            borderRadius: 'var(--radius-xs)',
+                            background: 'var(--surface-sunken)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
+                            <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
+                            {Number(it.discountVnd) > 0 && (
+                              <span style={{ color: 'var(--danger)', fontSize: 11.5 }}>
+                                CK {new Intl.NumberFormat('vi-VN').format(Number(it.discountVnd))} ₫
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                            {new Intl.NumberFormat('vi-VN').format(Number(it.totalPrice || 0))} ₫
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 2: LỊCH SỬ MUA MÁY & ĐƠN HÀNG ── */}
+      {activeTab === 'orders' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {customer.orders?.length === 0 ? (
+            <Card style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              Chưa có đơn hàng hoặc lịch sử mua máy nào cho khách hàng này
+            </Card>
+          ) : (
+            customer.orders.map((o: any) => {
+              const typeInfo = ORDER_TYPES[o.orderType] || { label: o.orderType, color: '#64748b', bg: '#f1f5f9' };
+              const stInfo = ORDER_STATUSES[o.status] || { label: o.status, color: '#64748b', bg: '#f1f5f9' };
+
+              return (
+                <Card key={o.id} style={{ padding: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
+                          Đơn hàng: {o.orderCode}
+                        </span>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: typeInfo.bg,
+                            color: typeInfo.color,
+                            border: `1px solid ${typeInfo.color}35`,
+                          }}
+                        >
+                          {typeInfo.label}
+                        </span>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: stInfo.bg,
+                            color: stInfo.color,
+                            border: `1px solid ${stInfo.color}35`,
+                          }}
+                        >
+                          {stInfo.label}
+                        </span>
+
+                        {o.stockIssuedAt && (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              background: '#dcfce7',
+                              color: '#15803d',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <PackageCheck size={11} /> Đã xuất kho
+                          </span>
+                        )}
+
+                        {o.location && (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              background: '#ecfdf5',
+                              color: '#047857',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <MapPin size={11} /> {o.location.name}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Calendar size={13} /> Ngày đặt: {new Date(o.orderDate).toLocaleDateString('vi-VN')}
+                        </span>
+                        {o.deliveryDate && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Clock size={13} /> Bàn giao: {new Date(o.deliveryDate).toLocaleDateString('vi-VN')}
+                          </span>
+                        )}
+                      </div>
+
+                      {o.notes && (
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 6 }}>
+                          Ghi chú: {o.notes}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Khách phải trả</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--brand)' }}>
+                          {new Intl.NumberFormat('vi-VN').format(Number(o.totalAmount || 0))} ₫
+                        </div>
+                        {(() => {
+                          const total = o.status === 'CANCELLED' ? 0 : Number(o.totalAmount || 0);
+                          const paid = Number(o.paidAmount || 0);
+                          const returned = Math.min(total, Number(o.returnedAmount || 0));
+                          const remaining = Math.max(0, total - returned - paid);
+                          const overdue =
+                            remaining > 0 &&
+                            o.dueDate &&
+                            new Date(o.dueDate) < new Date(new Date().toDateString());
+                          if (total <= 0) return null;
+                          return (
+                            <div style={{ fontSize: 11.5, marginTop: 3 }}>
+                              {remaining === 0 ? (
+                                <span style={{ color: '#15803d', fontWeight: 700 }}>Đã thu đủ</span>
+                              ) : (
+                                <span style={{ color: overdue ? '#dc2626' : '#d97706', fontWeight: 700 }}>
+                                  Còn nợ {new Intl.NumberFormat('vi-VN').format(remaining)} ₫
+                                  {paid > 0 && ` (đã thu ${new Intl.NumberFormat('vi-VN').format(paid)})`}
+                                  {overdue && ' · QUÁ HẠN'}
+                                </span>
+                              )}
+                              {returned > 0 && (
+                                <span style={{ color: '#7c3aed' }}>
+                                  {' '}
+                                  · đã trả lại {new Intl.NumberFormat('vi-VN').format(returned)} ₫
+                                </span>
+                              )}
+                              {o.dueDate && (
+                                <span style={{ color: 'var(--text-muted)' }}>
+                                  {' '}
+                                  · hạn {new Date(o.dueDate).toLocaleDateString('vi-VN')}
+                                </span>
+                              )}
+                              {o.invoiceNo && (
+                                <span style={{ color: 'var(--text-muted)' }}>
+                                  {' '}
+                                  · HĐ {o.invoiceSerial ? `${o.invoiceSerial}-` : ''}
+                                  {o.invoiceNo}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {(Number(o.shippingFee) > 0 || Number(o.vatAmount) > 0) && (
+                          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                            Hàng {new Intl.NumberFormat('vi-VN').format(Number(o.goodsAmount || 0))}
+                            {Number(o.shippingFee) > 0 &&
+                              ` · Cước ${new Intl.NumberFormat('vi-VN').format(Number(o.shippingFee))}`}
+                            {Number(o.vatAmount) > 0 &&
+                              ` · VAT ${Number(o.vatRate)}% ${new Intl.NumberFormat('vi-VN').format(Number(o.vatAmount))}`}
+                          </div>
+                        )}
+                      </div>
+
+                      {canManage && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {Number(o.totalAmount || 0) > Number(o.paidAmount || 0) &&
+                            o.status !== 'CANCELLED' && (
+                              <button
+                                type="button"
+                                onClick={() => setPaymentOrderId(o.id)}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: '#fef3c7',
+                                  color: '#b45309',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                }}
+                                title="Ghi nhận khách thanh toán cho đơn này"
+                              >
+                                <Wallet size={14} />
+                              </button>
+                            )}
+
+                          {o.status !== 'CANCELLED' && (o.items || []).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setReturnOrder(o)}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: '#f5f3ff',
+                                color: '#7c3aed',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                              title="Khách trả hàng"
+                            >
+                              <Undo2 size={14} />
+                            </button>
+                          )}
+
+                          {o.items?.some((it: any) => it.itemType === 'SPARE_PART') && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setFulfillment({ order: o, mode: 'SUPPLIER' })}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: '#ede9fe',
+                                  color: '#6d28d9',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                }}
+                                title="Đặt hàng nhà cung cấp cho linh kiện trong đơn"
+                              >
+                                <Truck size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFulfillment({ order: o, mode: 'ISSUE' })}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: o.stockIssuedAt ? '#dcfce7' : '#e0f2fe',
+                                  color: o.stockIssuedAt ? '#15803d' : '#0369a1',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                }}
+                                title={
+                                  o.stockIssuedAt
+                                    ? `Đã xuất kho ngày ${new Date(o.stockIssuedAt).toLocaleDateString('vi-VN')}`
+                                    : 'Xuất kho giao khách (trừ tồn kho)'
+                                }
+                              >
+                                <PackageCheck size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Chi tiết sản phẩm */}
+                  <div style={{ marginTop: 14, borderTop: '1px solid var(--border-base)', paddingTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
+                      Chi tiết sản phẩm / máy móc:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {o.items?.map((it: any) => (
+                        <div
+                          key={it.id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: 12.5,
+                            padding: '4px 8px',
+                            borderRadius: 'var(--radius-xs)',
+                            background: 'var(--surface-sunken)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span
+                              style={{
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                background: it.itemType === 'EQUIPMENT' ? '#e0f2fe' : '#ede9fe',
+                                color: it.itemType === 'EQUIPMENT' ? '#0369a1' : '#6d28d9',
+                              }}
+                            >
+                              {it.itemType === 'EQUIPMENT' ? 'Máy móc' : it.itemType === 'SPARE_PART' ? 'Linh kiện' : 'Dịch vụ'}
+                            </span>
+                            <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
+                            <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
+                          </div>
+
+                          <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                            {new Intl.NumberFormat('vi-VN').format(Number(it.totalPrice || 0))} ₫
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: CÔNG NỢ & THANH TOÁN ── */}
+      {activeTab === 'payments' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+            {[
+              { label: 'Tổng phải thu', value: debt.billed, color: 'var(--text-strong)' },
+              { label: 'Đã thu', value: debt.paid, color: '#16a34a' },
+              { label: 'Còn nợ', value: debt.outstanding, color: debt.outstanding > 0 ? '#d97706' : '#16a34a' },
+              { label: `Quá hạn (${debt.overdueOrders} đơn)`, value: debt.overdue, color: '#dc2626' },
+            ].map((c) => (
+              <Card key={c.label} style={{ padding: 14 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.label}</div>
+                <div style={{ fontSize: 19, fontWeight: 800, color: c.color, marginTop: 2 }}>
+                  {new Intl.NumberFormat('vi-VN').format(c.value)} ₫
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '14px 16px',
+              }}
+            >
+              <strong style={{ fontSize: 13.5, color: 'var(--text-strong)' }}>Lịch sử thu tiền</strong>
+              {canManage && (
+                <Button variant="primary" size="sm" onClick={() => setPaymentOrderId('GENERAL')}>
+                  <Wallet size={14} style={{ marginRight: 6 }} /> Ghi nhận thanh toán
+                </Button>
+              )}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr
+                    style={{
+                      background: 'var(--surface-sunken)',
+                      borderTop: '1px solid var(--border-base)',
+                      borderBottom: '1px solid var(--border-base)',
+                      color: 'var(--text-muted)',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                    }}
+                  >
+                    <th style={{ padding: '10px 14px', textAlign: 'left', whiteSpace: 'nowrap' }}>Mã phiếu thu</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', whiteSpace: 'nowrap' }}>Ngày thu</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', whiteSpace: 'nowrap' }}>Thu cho đơn</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', whiteSpace: 'nowrap' }}>Hình thức</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', width: '100%' }}>Chứng từ / Ghi chú</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>Số tiền</th>
+                    {canManage && <th style={{ padding: '10px 14px' }} />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(customer.payments || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={canManage ? 7 : 6} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                        Chưa ghi nhận khoản thanh toán nào
+                      </td>
+                    </tr>
+                  ) : (
+                    customer.payments.map((p: any) => (
+                      <tr key={p.id} style={{ borderBottom: '1px solid var(--border-base)' }}>
+                        <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {p.paymentCode}
+                        </td>
+                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                          {new Date(p.paidAt).toLocaleDateString('vi-VN')}
+                        </td>
+                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', color: 'var(--brand)' }}>
+                          {p.order?.orderCode || 'Thu chung'}
+                        </td>
+                        <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                          {PAYMENT_METHODS[p.method]?.label || p.method}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>
+                          {[p.reference, p.note].filter(Boolean).join(' · ') || '—'}
+                        </td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#16a34a', whiteSpace: 'nowrap' }}>
+                          {new Intl.NumberFormat('vi-VN').format(Number(p.amount))} ₫
+                        </td>
+                        {canManage && (
+                          <td style={{ padding: '10px 14px', display: 'flex', gap: 5 }}>
+                            <button
+                              type="button"
+                              onClick={() => setPrintPayment(p)}
+                              style={{
+                                padding: '4px 7px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--surface-sunken)',
+                                color: 'var(--brand)',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                              title="In phiếu thu"
+                            >
+                              <Printer size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayment(p.id)}
+                              style={{
+                                padding: '4px 7px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--surface-sunken)',
+                                color: 'var(--danger)',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                              title="Xóa phiếu thu"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── TAB 3: ĐIỂM LẮP ĐẶT / CHI NHÁNH ── */}
+      {activeTab === 'locations' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {canManage && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setCreateLocationModalOpen(true)}
+              >
+                <Plus size={14} style={{ marginRight: 6 }} /> Thêm điểm đặt / Chi nhánh
+              </Button>
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+            {customer.locations?.length === 0 ? (
+              <Card style={{ gridColumn: '1 / -1', padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                Chưa có điểm lắp đặt hoặc chi nhánh nào được khai báo
+              </Card>
+            ) : (
+            customer.locations.map((loc: any) => (
+              <Card key={loc.id} style={{ padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 'var(--radius-sm)', background: '#e0f2fe', color: '#0284c7', display: 'grid', placeItems: 'center' }}>
+                    <MapPin size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-strong)' }}>
+                      {loc.name}
+                    </h3>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {loc.address}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-base)', fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {loc.managerName && (
+                    <div>
+                      Quản lý: <strong style={{ color: 'var(--text-strong)' }}>{loc.managerName}</strong>
+                    </div>
+                  )}
+                  {loc.phone && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>
+                      <Phone size={12} /> {loc.phone}
+                    </div>
+                  )}
+                </div>
+
+                {/* Máy tại điểm này */}
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border-base)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
+                    Máy đang lắp tại chi nhánh ({loc.machines?.length || 0}):
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {loc.machines?.length === 0 ? (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Chưa có máy tại điểm này</span>
+                    ) : (
+                      loc.machines.map((m: any) => (
+                        <Link
+                          key={m.id}
+                          href={`/equipment/${m.id}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '6px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'var(--surface-sunken)',
+                            border: '1px solid var(--border-base)',
+                            textDecoration: 'none',
+                            color: 'inherit',
+                          }}
+                          title={EQUIPMENT_CATEGORIES[m.category]?.label}
+                        >
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                fontSize: 12.5,
+                                fontWeight: 600,
+                                color: 'var(--text-strong)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {m.name}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                                color: 'var(--brand)',
+                                marginTop: 1,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {m.machineCode}
+                              {m.serialNumber && (
+                                <span style={{ color: 'var(--text-muted)' }}> · S/N: {m.serialNumber}</span>
+                              )}
+                            </div>
+                          </div>
+                          {EQUIPMENT_STATUSES[m.status] && (
+                            <Badge tone={EQUIPMENT_STATUSES[m.status].badgeTone} style={{ flexShrink: 0 }}>
+                              {EQUIPMENT_STATUSES[m.status].label}
+                            </Badge>
+                          )}
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 4: LỊCH SỬ SỬA CHỮA & SỰ CỐ ── */}
+      {activeTab === 'tickets' && (
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 940, borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-sunken)', borderBottom: '1px solid var(--border-base)', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>
+                  <th style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>Mã sự cố</th>
+                  <th style={{ padding: '12px 14px', width: '100%', minWidth: 300 }}>Nội dung sự cố</th>
+                  <th style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>Thiết bị</th>
+                  <th style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>Mức độ</th>
+                  <th style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>Trạng thái</th>
+                  <th style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>Kỹ thuật viên</th>
+                  <th style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>Thời gian</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customer.tickets?.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Không có sự cố hoặc lịch sử sửa chữa nào cho khách hàng này
+                    </td>
+                  </tr>
+                ) : (
+                  customer.tickets.map((t: any) => (
+                    <tr key={t.id} style={{ borderBottom: '1px solid var(--border-base)' }} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontWeight: 700, color: '#dc2626', whiteSpace: 'nowrap' }}>
+                        {t.ticketCode}
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{t.title}</div>
+                        {t.description && (
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {t.description}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        {t.equipment ? (
+                          <Link
+                            href={`/equipment/${t.equipment.id}`}
+                            style={{
+                              fontFamily: 'monospace',
+                              fontWeight: 600,
+                              color: 'var(--brand)',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            {t.equipment.machineCode}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: TICKET_PRIORITIES[t.priority]?.bg || '#f1f5f9',
+                            color: TICKET_PRIORITIES[t.priority]?.color || '#475569',
+                          }}
+                        >
+                          {TICKET_PRIORITIES[t.priority]?.label || 'Không xác định'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            background: TICKET_STATUSES[t.status]?.bg || '#f1f5f9',
+                            color: TICKET_STATUSES[t.status]?.color || '#475569',
+                          }}
+                        >
+                          {TICKET_STATUSES[t.status]?.label || 'Không xác định'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>
+                        {t.assignedTo?.fullName || 'Chưa gán'}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {new Date(t.createdAt).toLocaleDateString('vi-VN')}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Modals */}
+      {editCustomerModalOpen && (
+        <CustomerModal
+          open={editCustomerModalOpen}
+          customer={customer}
+          onClose={() => setEditCustomerModalOpen(false)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {fulfillment && (
+        <OrderFulfillmentModal
+          open={Boolean(fulfillment)}
+          order={fulfillment.order}
+          mode={fulfillment.mode}
+          customerId={customer.id}
+          warehouses={warehouses}
+          onClose={() => setFulfillment(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {returnOrder && (
+        <CustomerReturnModal
+          open={Boolean(returnOrder)}
+          order={returnOrder}
+          customerId={customer.id}
+          warehouses={warehouses}
+          onClose={() => setReturnOrder(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {printPayment && (
+        <PaymentVoucherModal
+          open={Boolean(printPayment)}
+          onClose={() => setPrintPayment(null)}
+          direction="IN"
+          payment={printPayment}
+          partnerName={customer.name}
+          partnerAddress={customer.address}
+          company={companyInfo}
+        />
+      )}
+
+      {paymentOrderId !== null && (
+        <CustomerPaymentModal
+          open={paymentOrderId !== null}
+          customerId={customer.id}
+          customerName={customer.name}
+          orders={customer.orders || []}
+          defaultOrderId={paymentOrderId === 'GENERAL' ? undefined : paymentOrderId}
+          onClose={() => setPaymentOrderId(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {createQuotationOpen && (
+        <CustomerQuotationModal
+          open={createQuotationOpen}
+          customerId={customer.id}
+          customerName={customer.name}
+          locations={customer.locations}
+          machines={customer.machines || []}
+          stockMachines={stockMachines}
+          spareParts={spareParts}
+          pricingConfig={pricingConfig}
+          onClose={() => setCreateQuotationOpen(false)}
+          onSuccess={() => {
+            setActiveTab('quotations');
+            router.refresh();
+          }}
+        />
+      )}
+
+      {editingQuotation && (
+        <CustomerQuotationModal
+          open={Boolean(editingQuotation)}
+          customerId={customer.id}
+          customerName={customer.name}
+          locations={customer.locations}
+          machines={customer.machines || []}
+          stockMachines={stockMachines}
+          spareParts={spareParts}
+          pricingConfig={pricingConfig}
+          quotation={editingQuotation}
+          onClose={() => setEditingQuotation(null)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {printingQuotation && (
+        <CustomerQuotationPrintModal
+          open={Boolean(printingQuotation)}
+          quotation={printingQuotation}
+          customer={customer}
+          companyInfo={companyInfo}
+          onClose={() => setPrintingQuotation(null)}
+        />
+      )}
+
+      {createLocationModalOpen && (
+        <CustomerLocationModal
+          open={createLocationModalOpen}
+          customerId={customer.id}
+          customerName={customer.name}
+          onClose={() => setCreateLocationModalOpen(false)}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+
+      {handoverEquipment && (
+        <EquipmentHandoverModal
+          open={Boolean(handoverEquipment)}
+          equipment={handoverEquipment}
+          companyInfo={companyInfo}
+          onClose={() => setHandoverEquipment(null)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        danger={confirmDialog.danger}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+        onConfirm={async () => {
+          const fn = confirmDialog.onConfirm;
+          setConfirmDialog((prev) => ({ ...prev, open: false }));
+          await fn();
+        }}
+      />
+    </div>
+  );
+}

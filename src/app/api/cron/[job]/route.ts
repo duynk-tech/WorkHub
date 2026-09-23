@@ -11,12 +11,17 @@ export const maxDuration = 60;
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ job: string }> }) {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const provided = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
-      ?? req.nextUrl.searchParams.get('secret') ?? '';
-    if (!provided || !safeEqual(provided, secret)) {
-      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
-    }
+  if (!secret || secret.trim().length < 8) {
+    return NextResponse.json(
+      { ok: false, error: 'CRON_SECRET chưa được cấu hình an toàn trên máy chủ' },
+      { status: 500 }
+    );
+  }
+
+  const provided = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+    ?? req.nextUrl.searchParams.get('secret') ?? '';
+  if (!provided || !safeEqual(provided.trim(), secret.trim())) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
   const { job } = await params;

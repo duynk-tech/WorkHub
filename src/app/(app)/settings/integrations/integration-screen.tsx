@@ -10,10 +10,11 @@ import {
   MessageSquare, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
-  Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
+  Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, SearchableSelect, Switch,
   Checkbox, EmptyState, PageHeader, Alert, Divider, Textarea,
 } from '@/components/ui';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
+import { MCP_MODULES, DISABLED_MCP_MODULES_KEY, type McpModuleKey } from '@/server/mcp/modules';
 import { useToast } from '@/components/ui/toast';
 import { fmtDateTime, fmtRelative } from '@/lib/date';
 import { generateWebhookSecret } from '@/lib/utils';
@@ -57,13 +58,15 @@ export function IntegrationScreen({
   initialModal = '',
   initialSubtab = '',
   clients, webhooks, users, tools, recentCalls, zaloLogs = [], mcpUrl, zaloWebhookUrl, settings = {}, customTools = [], canManage, canManageZalo,
+  disabledModules = [],
 }: {
   initialTab?: string;
   initialModal?: string;
   initialSubtab?: string;
   clients: any[]; webhooks: any[];
   users: { id: number; employeeId?: number; username: string; fullName: string }[];
-  tools: { name: string; title: string; description: string; mutating: boolean }[];
+  tools: { name: string; module: McpModuleKey; title: string; description: string; mutating: boolean }[];
+  disabledModules?: McpModuleKey[];
   recentCalls: any[];
   zaloLogs?: any[];
   mcpUrl: string;
@@ -79,6 +82,20 @@ export function IntegrationScreen({
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
+
+  /** Phân hệ MCP đang tắt; lưu danh sách TẮT nên phân hệ mới thêm sẽ tự bật. */
+  const [offModules, setOffModules] = useState<McpModuleKey[]>(disabledModules);
+
+  const toggleModule = (key: McpModuleKey, on: boolean) =>
+    setOffModules((prev) => (on ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  const saveModules = () => {
+    startTransition(async () => {
+      const res = await saveSettingsAction('mcp', { [DISABLED_MCP_MODULES_KEY]: offModules });
+      res.ok ? toast.success('Đã lưu phân hệ MCP') : toast.error(res.message);
+      router.refresh();
+    });
+  };
 
   const initialValidTab: IntegrationTab = VALID_TABS.includes(initialTab as IntegrationTab)
     ? (initialTab as IntegrationTab)
@@ -159,6 +176,7 @@ export function IntegrationScreen({
   const [zaloLogPageSize, setZaloLogPageSize] = useState(10);
   const [confirmClearZaloLogs, setConfirmClearZaloLogs] = useState(false);
   const [clearingZaloLogs, setClearingZaloLogs] = useState(false);
+  const [confirmDeleteLogId, setConfirmDeleteLogId] = useState<number | null>(null);
   const [deletingZaloLogId, setDeletingZaloLogId] = useState<number | null>(null);
 
   const totalZaloLogPages = Math.max(1, Math.ceil(((zaloLogs as any[]) || []).length / zaloLogPageSize));
@@ -435,14 +453,16 @@ export function IntegrationScreen({
     }
   };
 
-  const handleDeleteSingleZaloLog = async (id: number) => {
-    if (!confirm('Bạn có chắc muốn xóa bản ghi nhật ký này?')) return;
+  const confirmDeleteSingleZaloLog = async () => {
+    if (confirmDeleteLogId == null) return;
+    const id = confirmDeleteLogId;
     setDeletingZaloLogId(id);
     try {
       const res = await deleteZaloInboundLogAction(id);
       if (res.ok) {
         toast.success(res.message);
         if (selectedZaloLog?.id === id) setSelectedZaloLog(null);
+        setConfirmDeleteLogId(null);
         router.refresh();
       } else {
         toast.error(res.message);
@@ -954,23 +974,76 @@ export function IntegrationScreen({
           <Card>
             <CardHeader>
               <div>
-                <CardTitle>Công cụ MCP khả dụng ({tools.length})</CardTitle>
-                <div className="card-subtitle">Trợ lý AI có thể gọi các công cụ này để đọc và thao tác dữ liệu</div>
+                <CardTitle>
+                  Công cụ MCP khả dụng ({tools.filter((t) => !offModules.includes(t.module)).length}/{tools.length})
+                </CardTitle>
+                <div className="card-subtitle">
+                  Tắt phân hệ không dùng để trợ lý không biết tới nghiệp vụ đó — công cụ bị gỡ khỏi
+                  MCP, OpenAPI và trợ lý Zalo, thay vì gọi rồi báo lỗi
+                </div>
               </div>
+              {canManage && (
+                <Button variant="primary" size="sm" loading={pending} onClick={saveModules}>
+                  <Save size={14} style={{ marginRight: 6 }} /> Lưu phân hệ
+                </Button>
+              )}
             </CardHeader>
-            <CardBody>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
-                {tools.map((t) => (
-                  <div key={t.name} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-                    <div className="row" style={{ gap: 7, marginBottom: 4 }}>
-                      <code style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--brand)' }}>{t.name}</code>
-                      <Badge tone={t.mutating ? 'warning' : 'info'}>{t.mutating ? 'Ghi' : 'Đọc'}</Badge>
+            <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {(Object.keys(MCP_MODULES) as McpModuleKey[]).map((key) => {
+                const mod = MCP_MODULES[key];
+                const items = tools.filter((t) => t.module === key);
+                if (items.length === 0) return null;
+                const on = !offModules.includes(key);
+
+                return (
+                  <div key={key}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        paddingBottom: 8,
+                        marginBottom: 10,
+                        borderBottom: '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: on ? 'var(--text-strong)' : 'var(--text-muted)' }}>
+                          {mod.label}{' '}
+                          <span style={{ fontWeight: 500, color: 'var(--text-faint)' }}>({items.length} công cụ)</span>
+                        </div>
+                        <div className="hint">{mod.description}</div>
+                      </div>
+                      <Switch
+                        checked={on}
+                        disabled={!canManage}
+                        onChange={(e) => toggleModule(key, e.target.checked)}
+                      />
                     </div>
-                    <div style={{ fontSize: 12.5, fontWeight: 560, color: 'var(--text-strong)' }}>{t.title}</div>
-                    <div className="hint">{t.description}</div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                        gap: 10,
+                        opacity: on ? 1 : 0.45,
+                      }}
+                    >
+                      {items.map((t) => (
+                        <div key={t.name} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+                          <div className="row" style={{ gap: 7, marginBottom: 4 }}>
+                            <code style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--brand)' }}>{t.name}</code>
+                            <Badge tone={t.mutating ? 'warning' : 'info'}>{t.mutating ? 'Ghi' : 'Đọc'}</Badge>
+                          </div>
+                          <div style={{ fontSize: 12.5, fontWeight: 560, color: 'var(--text-strong)' }}>{t.title}</div>
+                          <div className="hint">{t.description}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </CardBody>
           </Card>
         </div>
@@ -1152,7 +1225,7 @@ export function IntegrationScreen({
                                     loading={deletingZaloLogId === log.id}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleDeleteSingleZaloLog(log.id);
+                                      setConfirmDeleteLogId(log.id);
                                     }}
                                     title="Xóa bản ghi này"
                                   >
@@ -1359,7 +1432,7 @@ export function IntegrationScreen({
                       lineHeight: 1.6,
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
-                      color: selectedZaloLog.handled ? 'var(--text-normal)' : 'var(--danger)',
+                      color: selectedZaloLog.handled ? 'var(--text)' : 'var(--danger)',
                     }}
                   >
                     {selectedZaloLog.response || <span className="text-faint">(Chưa có phản hồi)</span>}
@@ -1890,7 +1963,7 @@ export function IntegrationScreen({
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border-base)',
                     background: 'var(--surface-card)',
-                    color: 'var(--text-normal)',
+                    color: 'var(--text)',
                     resize: 'vertical',
                     outline: 'none',
                   }}
@@ -2315,18 +2388,22 @@ export function IntegrationScreen({
               <div className="row-between" style={{ flexWrap: 'wrap', gap: 10, background: 'var(--surface-sunken)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                 <div className="row" style={{ gap: 8, alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600 }}>Ngữ cảnh nhân sự thử nghiệm:</span>
-                  <Select
-                    style={{ fontSize: 12, height: 32, minWidth: 220 }}
+                  <SearchableSelect
+                    sizeSm
+                    style={{ minWidth: 250 }}
                     value={playgroundEmployeeId}
-                    onChange={(e) => setPlaygroundEmployeeId(e.target.value)}
-                  >
-                    <option value="">Tự động (Dùng tài khoản đang đăng nhập)</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={String(u.employeeId || u.id)}>
-                        {u.fullName} (@{u.username})
-                      </option>
-                    ))}
-                  </Select>
+                    onChange={(val) => setPlaygroundEmployeeId(val)}
+                    options={[
+                      { value: '', label: 'Tự động (Dùng tài khoản đang đăng nhập)' },
+                      ...users.map((u) => ({
+                        value: String(u.employeeId || u.id),
+                        label: u.fullName,
+                        subLabel: `@${u.username}`,
+                      })),
+                    ]}
+                    placeholder="Tự động (Dùng tài khoản đang đăng nhập)"
+                    searchPlaceholder="Tìm tài khoản…"
+                  />
                 </div>
                 <Badge tone="info">
                   Model: {zaloValues['ai.model'] || 'gemini-1.5-flash'} | Temp: {zaloValues['ai.temperature'] ?? '0.2'}
@@ -2562,9 +2639,13 @@ export function IntegrationScreen({
             <Input value={clientForm.name} onChange={(e) => setClientForm((f) => ({ ...f, name: e.target.value }))} />
           </Field>
           <Field label="Chạy dưới danh tính" required hint="Quyền và phạm vi dữ liệu lấy theo tài khoản này">
-            <Select value={clientForm.actAsUserId} onChange={(e) => setClientForm((f) => ({ ...f, actAsUserId: Number(e.target.value) }))}>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.fullName} (@{u.username})</option>)}
-            </Select>
+            <SearchableSelect
+              value={String(clientForm.actAsUserId ?? '')}
+              onChange={(val) => setClientForm((f) => ({ ...f, actAsUserId: Number(val) }))}
+              options={users.map((u) => ({ value: String(u.id), label: u.fullName, subLabel: `@${u.username}` }))}
+              placeholder="— Chọn tài khoản —"
+              searchPlaceholder="Tìm tài khoản…"
+            />
           </Field>
           <Field label="Giới hạn gọi / phút">
             <Input type="number" value={clientForm.rateLimitPerMin} onChange={(e) => setClientForm((f) => ({ ...f, rateLimitPerMin: Number(e.target.value) }))} />
@@ -2738,6 +2819,17 @@ export function IntegrationScreen({
         title="Xóa nhật ký Webhook Zalo"
         confirmText="Xóa tất cả"
         message="Toàn bộ lịch sử các sự kiện và tin nhắn webhook Zalo đã lưu sẽ bị xóa vĩnh viễn khỏi hệ thống. Bạn có chắc chắn muốn tiếp tục?"
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteLogId !== null}
+        onClose={() => setConfirmDeleteLogId(null)}
+        onConfirm={confirmDeleteSingleZaloLog}
+        loading={deletingZaloLogId !== null}
+        danger
+        title="Xóa bản ghi nhật ký"
+        confirmText="Xóa bản ghi"
+        message="Bạn có chắc chắn muốn xóa bản ghi nhật ký Zalo này khỏi hệ thống?"
       />
 
       {/* Modal Custom Tool Builder */}

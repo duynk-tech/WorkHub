@@ -1,0 +1,1504 @@
+'use client';
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Button, Field, Input, PriceInput, SearchableSelect } from '@/components/ui';
+import { useToast } from '@/components/ui/toast';
+import {
+  ORDER_STATUSES,
+  VOLUME_DISCOUNT_TIERS,
+  calculateSellingPriceFromMargin,
+  type SparePartPricingConfig,
+} from '@/server/modules/spare-parts/types';
+import {
+  createSparePartOrderAction,
+  updateSparePartOrderStatusAction,
+} from '@/server/modules/spare-parts/actions';
+import {
+  Package,
+  Plus,
+  Trash2,
+  Calculator,
+  Plane,
+  Truck,
+  CheckCircle2,
+  Calendar,
+  X,
+  Building,
+  Info,
+  ShieldCheck,
+  ArrowRight,
+  FileDown,
+  ChevronDown,
+  ChevronUp,
+  SlidersHorizontal,
+  RefreshCw,
+} from 'lucide-react';
+import { SparePartQuotationModal } from './spare-part-quotation-modal';
+import type { CompanyInfo } from '@/server/modules/settings/branding';
+
+interface SparePartOrderModalProps {
+  open: boolean;
+  onClose: () => void;
+  spareParts: any[];
+  warehouses: any[];
+  customers?: any[];
+  equipments?: any[];
+  pricingConfig?: SparePartPricingConfig;
+  companyInfo?: CompanyInfo;
+  onSuccess?: () => void;
+}
+
+export function SparePartOrderModal({
+  open,
+  onClose,
+  spareParts,
+  warehouses,
+  customers = [],
+  equipments = [],
+  pricingConfig,
+  companyInfo,
+  onSuccess,
+}: SparePartOrderModalProps) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(false);
+  const [quotationOpen, setQuotationOpen] = useState(false);
+  const [showDiscountTooltip, setShowDiscountTooltip] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Portals need a browser document. Waiting until hydration also keeps the
+  // server and client's initial markup aligned.
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const [supplier, setSupplier] = useState('Selmi (Ý)');
+  const [currency, setCurrency] = useState('EUR');
+  const [exchangeRate, setExchangeRate] = useState<number>(
+    pricingConfig?.defaultExchangeRateEur ?? 32500
+  );
+  const [shippingFee, setShippingFee] = useState<number>(
+    pricingConfig?.defaultShippingFee ?? 3500000
+  );
+  const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>(
+    warehouses[0]?.id || ''
+  );
+  const [customerId, setCustomerId] = useState<number | ''>('');
+  const [equipmentId, setEquipmentId] = useState<number | ''>('');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [etaDate, setEtaDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [vatRate, setVatRate] = useState<number>(
+    pricingConfig?.defaultVatRate ?? 8
+  );
+
+  useEffect(() => {
+    if (pricingConfig?.defaultVatRate !== undefined) {
+      setVatRate(pricingConfig.defaultVatRate);
+    }
+  }, [pricingConfig?.defaultVatRate]);
+
+  const defaultShippingFee = pricingConfig?.defaultShippingFee ?? 3500000;
+  const defaultCustomsFee = pricingConfig?.defaultCustomsFee ?? 1000000;
+
+  const [expandedIndices, setExpandedIndices] = useState<number[]>([]);
+
+  const toggleDetail = (index: number) => {
+    setExpandedIndices((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+    );
+  };
+
+  const machineItems = useMemo(
+    () => spareParts.filter((p) => p.category === 'EQUIPMENT' || p.category === 'MACHINE'),
+    [spareParts],
+  );
+  const partItems = useMemo(
+    () => spareParts.filter((p) => p.category !== 'EQUIPMENT' && p.category !== 'MACHINE'),
+    [spareParts],
+  );
+
+  const [items, setItems] = useState<
+    Array<{
+      itemId: number | '';
+      quantity: number;
+      unitPriceEur: number;
+      sellingPrice?: number;
+      shippingFee?: number;
+      otherFee?: number;
+    }>
+  >([
+    {
+      itemId: spareParts.find((p) => p.supplyType === 'ON_ORDER')?.id || spareParts[0]?.id || '',
+      quantity: 1,
+      unitPriceEur: Number(spareParts[0]?.priceEur || 100),
+      shippingFee: defaultShippingFee,
+      otherFee: defaultCustomsFee,
+    },
+  ]);
+
+  useEffect(() => {
+    if (pricingConfig) {
+      setItems((prev) =>
+        prev.map((it) => ({
+          ...it,
+          shippingFee: it.shippingFee !== undefined ? it.shippingFee : (pricingConfig.defaultShippingFee ?? 3500000),
+          otherFee: it.otherFee !== undefined ? it.otherFee : (pricingConfig.defaultCustomsFee ?? 1000000),
+        }))
+      );
+    }
+  }, [pricingConfig?.defaultShippingFee, pricingConfig?.defaultCustomsFee]);
+
+  const handleAddItem = () => {
+    setItems((prev) => [
+      ...prev,
+      {
+        itemId: spareParts[0]?.id || '',
+        quantity: 1,
+        unitPriceEur: Number(spareParts[0]?.priceEur || 50),
+        shippingFee: pricingConfig?.defaultShippingFee ?? 3500000,
+        otherFee: pricingConfig?.defaultCustomsFee ?? 1000000,
+      },
+    ]);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    if (items.length <= 1) return;
+    setItems((prev) => prev.filter((_, i) => i !== index));
+    setExpandedIndices((prev) =>
+      prev.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i))
+    );
+  };
+
+  const handleItemChange = (index: number, field: string, val: any) => {
+    setItems((prev) => {
+      const next = [...prev];
+      const current = { ...next[index], [field]: val };
+      if (field === 'itemId') {
+        const found = spareParts.find((p) => p.id === Number(val));
+        if (found && found.priceEur) {
+          current.unitPriceEur = Number(found.priceEur);
+        }
+        delete current.sellingPrice;
+      }
+      if (field === 'quantity') {
+        const part = spareParts.find((p) => p.id === Number(current.itemId));
+        const qty = Math.max(1, Number(val) || 1);
+        const eur = current.unitPriceEur !== undefined ? Number(current.unitPriceEur) : Number(part?.priceEur || 0);
+        const rateNum = Number(exchangeRate) || 32500;
+        const unitCost = eur > 0
+          ? Math.round(eur * rateNum)
+          : Number(part?.avgCost || part?.costPrice || 0);
+        const mPercent = pricingConfig?.defaultMarginPercent ?? 30;
+        const pMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
+        const baseSelling = unitCost > 0
+          ? calculateSellingPriceFromMargin(unitCost, mPercent, pMethod)
+          : 0;
+        const ship = current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee;
+        const other = current.otherFee !== undefined ? current.otherFee : defaultCustomsFee;
+        const freightPerUnit = Math.round(ship / qty);
+        const otherFeePerUnit = Math.round(other / qty);
+        const newSellingPrice = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
+        if (newSellingPrice > 0) {
+          current.sellingPrice = newSellingPrice;
+        }
+      }
+      next[index] = current;
+      return next;
+    });
+  };
+
+  /** Khi sửa cước phí hoặc phí khác ở phần chi tiết dòng hàng: tự động tính lại đơn giá bán */
+  const handleFeeChange = (index: number, field: 'shippingFee' | 'otherFee', val: number) => {
+    setItems((prev) => {
+      const next = [...prev];
+      const current = { ...next[index], [field]: val };
+      const part = spareParts.find((p) => p.id === Number(current.itemId));
+      const qty = Math.max(1, Number(current.quantity) || 1);
+      const eur = current.unitPriceEur !== undefined ? Number(current.unitPriceEur) : Number(part?.priceEur || 0);
+      const rateNum = Number(exchangeRate) || 32500;
+      const unitCost = eur > 0
+        ? Math.round(eur * rateNum)
+        : Number(part?.avgCost || part?.costPrice || 0);
+      const mPercent = pricingConfig?.defaultMarginPercent ?? 30;
+      const pMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
+      const baseSelling = unitCost > 0
+        ? calculateSellingPriceFromMargin(unitCost, mPercent, pMethod)
+        : 0;
+      const ship = field === 'shippingFee' ? val : (current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee);
+      const other = field === 'otherFee' ? val : (current.otherFee !== undefined ? current.otherFee : defaultCustomsFee);
+      const freightPerUnit = Math.round(ship / qty);
+      const otherFeePerUnit = Math.round(other / qty);
+      const newSellingPrice = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
+      if (newSellingPrice > 0) {
+        current.sellingPrice = newSellingPrice;
+      }
+      next[index] = current;
+      return next;
+    });
+  };
+
+  // Live calculation based on order pricing formulas
+  const calculation = useMemo(() => {
+    const totalQty = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+
+    let discountRate = 0;
+    const tiers = pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS;
+    for (const tier of tiers) {
+      if (totalQty >= tier.min && totalQty <= tier.max) {
+        discountRate = tier.rate;
+        break;
+      }
+    }
+
+    const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
+    const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
+
+    const calculatedItems = items.map((it) => {
+      const qty = Number(it.quantity) || 0;
+      const eur = Number(it.unitPriceEur) || 0;
+      const priceVnd = Math.round(eur * exchangeRate);
+      const subtotal = priceVnd * qty;
+      const discount = Math.round(subtotal * discountRate);
+      const finalPrice = subtotal - discount;
+
+      const unitCost = priceVnd;
+      const lineShipping = it.shippingFee !== undefined
+        ? Math.max(0, Number(it.shippingFee) || 0)
+        : (pricingConfig?.defaultShippingFee ?? 3500000);
+      const lineOther = it.otherFee !== undefined
+        ? Math.max(0, Number(it.otherFee) || 0)
+        : (pricingConfig?.defaultCustomsFee ?? 1000000);
+
+      const freightPerUnit = qty > 0 ? Math.round(lineShipping / qty) : 0;
+      const otherFeePerUnit = qty > 0 ? Math.round(lineOther / qty) : 0;
+
+      /**
+       * Giá bán đề xuất theo quy tắc:
+       * Margin (từ giá vốn gốc) + Phí vận chuyển + Phí khác.
+       */
+      const baseSellingPerUnit =
+        unitCost > 0
+          ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod)
+          : 0;
+
+      const formulaSellingPerUnit =
+        baseSellingPerUnit > 0
+          ? baseSellingPerUnit + freightPerUnit + otherFeePerUnit
+          : 0;
+
+      // Ưu tiên đơn giá bán đã nhập; nếu chưa nhập thì tự tính theo công thức
+      const sellingPerUnit =
+        it.sellingPrice !== undefined && it.sellingPrice > 0
+          ? Number(it.sellingPrice)
+          : formulaSellingPerUnit;
+
+      const sellingSubtotal = qty * sellingPerUnit;
+
+      return {
+        ...it,
+        eur,
+        priceVnd,
+        subtotal,
+        discount,
+        finalPrice,
+        unitCost,
+        shippingFee: lineShipping,
+        otherFee: lineOther,
+        freightPerUnit,
+        otherFeePerUnit,
+        baseSellingPerUnit,
+        formulaSellingPerUnit,
+        sellingPerUnit,
+        sellingSubtotal,
+      };
+    });
+
+    const subtotalVnd = calculatedItems.reduce((sum, it) => sum + it.subtotal, 0);
+    const discountVnd = calculatedItems.reduce((sum, it) => sum + it.discount, 0);
+
+    // Tổng cước VC và phí khác của toàn đơn:
+    const totalShippingFee = calculatedItems.reduce((sum, it) => sum + it.shippingFee, 0);
+    const totalOtherFee = calculatedItems.reduce((sum, it) => sum + it.otherFee, 0);
+
+    // Tổng tiền hàng bán trước chiết khấu:
+    const grossSellingTotalVnd = calculatedItems.reduce(
+      (sum, it) => sum + it.sellingSubtotal,
+      0
+    );
+
+    // Chiết khấu bán hàng theo tỷ lệ discountRate trên tổng tiền hàng:
+    const sellingDiscountVnd = Math.round(grossSellingTotalVnd * discountRate);
+
+    // Tiền hàng bán sau chiết khấu (Tổng cộng thanh toán trước VAT):
+    const finalSellingTotalVnd = grossSellingTotalVnd - sellingDiscountVnd;
+
+    // Thuế VAT:
+    const vatPercentNum = Math.max(0, Number(vatRate) || 0);
+    const vatAmountVnd = Math.round((finalSellingTotalVnd * vatPercentNum) / 100);
+    const finalSellingTotalWithVatVnd = finalSellingTotalVnd + vatAmountVnd;
+
+    const totalVnd = subtotalVnd - discountVnd + totalShippingFee + totalOtherFee;
+
+    return {
+      totalQty,
+      discountRate,
+      subtotalVnd,
+      discountVnd,
+      totalShippingFee,
+      totalOtherFee,
+      totalVnd,
+      grossSellingTotalVnd,
+      sellingDiscountVnd,
+      sellingTotalVnd: finalSellingTotalVnd,
+      vatPercentNum,
+      vatAmountVnd,
+      finalSellingTotalWithVatVnd,
+      calculatedItems,
+    };
+  }, [items, exchangeRate, pricingConfig, vatRate]);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const validItems = items.filter((it) => it.itemId && Number(it.quantity) > 0);
+    if (validItems.length === 0) {
+      toast.error('Vui lòng chọn ít nhất một linh kiện hợp lệ');
+      return;
+    }
+
+    const trimmedNotes = notes.trim();
+    const vatRateNum = Math.max(0, Number(vatRate) || 0);
+    const notesWithVat = vatRateNum > 0
+      ? (trimmedNotes ? `${trimmedNotes} [VAT: ${vatRateNum}%]` : `[VAT: ${vatRateNum}%]`)
+      : trimmedNotes;
+
+    setLoading(true);
+    try {
+      const res = await createSparePartOrderAction({
+        supplier,
+        currency,
+        exchangeRate: Number(exchangeRate),
+        shippingFee: calculation.totalShippingFee,
+        customsFee: calculation.totalOtherFee,
+        targetWarehouseId: targetWarehouseId ? Number(targetWarehouseId) : null,
+        customerId: customerId ? Number(customerId) : null,
+        equipmentId: equipmentId ? Number(equipmentId) : null,
+        trackingNumber: trackingNumber.trim() || null,
+        etaDate: etaDate || null,
+        notes: notesWithVat || null,
+        items: validItems.map((it) => ({
+          itemId: Number(it.itemId),
+          quantity: Number(it.quantity),
+          unitPriceEur: Number(it.unitPriceEur),
+        })),
+      });
+
+      if (res.ok) {
+        toast.success(res.message);
+        onSuccess?.();
+        onClose();
+      } else {
+        toast.error(res.message || 'Lỗi khi tạo đơn hàng order');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Có lỗi xảy ra');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectedCustomer = customers.find((c) => c.id === Number(customerId));
+  const selectedEquipment = equipments.find((e) => e.id === Number(equipmentId));
+
+  const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
+  const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
+
+  const previewOrder = {
+    orderCode: `NHAP-${new Date().getFullYear()}`,
+    supplier,
+    currency,
+    exchangeRate,
+    shippingFee: calculation.totalShippingFee,
+    customsFee: calculation.totalOtherFee,
+    discountRate: calculation.discountRate,
+    discountVnd: calculation.sellingDiscountVnd,
+    subtotalVnd: calculation.grossSellingTotalVnd,
+    vatRate: calculation.vatPercentNum,
+    vatAmountVnd: calculation.vatAmountVnd,
+    totalVnd: calculation.finalSellingTotalWithVatVnd,
+    customer: selectedCustomer,
+    equipment: selectedEquipment,
+    notes,
+    items: calculation.calculatedItems.map((cIt) => {
+      const found = spareParts.find((p) => p.id === Number(cIt.itemId));
+      return {
+        id: cIt.itemId,
+        quantity: cIt.quantity,
+        unitPriceEur: cIt.unitPriceEur,
+        unitPriceVnd: cIt.priceVnd,
+        sellingPriceVnd: cIt.sellingPerUnit,
+        subtotalVnd: cIt.sellingSubtotal,
+        shippingFee: cIt.shippingFee,
+        customsFee: cIt.otherFee,
+        item: found || { name: 'Linh kiện', itemCode: 'FK' },
+      };
+    }),
+  };
+
+  if (!mounted) return null;
+
+  /**
+   * Vẽ qua portal ra thẳng body như Modal dùng chung.
+   *
+   * Đặt trong cây nội dung thì position:fixed bám vào thẻ cha có stacking context
+   * chứ không bám viewport: popup bị lọt xuống dưới thanh tiêu đề và canh lệch.
+   * Ra body thì phủ kín cả header lẫn sidebar và canh giữa đều trên dưới.
+   */
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 500,
+        background: quotationOpen ? 'transparent' : 'rgba(0, 0, 0, 0.55)',
+        backdropFilter: quotationOpen ? 'none' : 'blur(3px)',
+        pointerEvents: quotationOpen ? 'none' : 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          display: quotationOpen ? 'none' : 'flex',
+          background: 'var(--surface-card)',
+          borderRadius: 16,
+          width: '100%',
+          maxWidth: 'min(1160px, 95vw)',
+          maxHeight: '92vh',
+          flexDirection: 'column',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          border: '1px solid var(--border-base, #e2e8f0)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border-base, #e2e8f0)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--surface-sunken, #f8fafc)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: '#f5f3ff',
+                color: '#7c3aed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Plane size={20} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+                Tạo Đơn Hàng Order
+              </h2>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                Áp dụng công thức tính giá theo số lượng, chiết khấu & cước nhập khẩu
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              padding: 6,
+              borderRadius: 6,
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <form onSubmit={handleSubmit} style={{ overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Thông tin nhà cung cấp & tỉ giá */}
+          <div
+            style={{
+              display: 'grid',
+              /* Cố định 4 cột thay vì auto-fit: nhãn dài ngắn khác nhau nhưng các ô
+                 vẫn thẳng hàng, không bị đẩy lệch khi một nhãn xuống hai dòng */
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: 12,
+              alignItems: 'start',
+              padding: 14,
+              background: 'var(--surface-sunken, #f8fafc)',
+              borderRadius: 10,
+              border: '1px solid var(--border-base, #e2e8f0)',
+            }}
+            className="po-header-grid"
+          >
+            <Field label="Nhà cung cấp" required>
+              <Input
+                value={supplier}
+                onChange={(e) => setSupplier(e.target.value)}
+                placeholder="VD: Selmi (Ý), Taylor..."
+                required
+              />
+            </Field>
+
+            <Field label="Kho nhập dự kiến" required>
+              <SearchableSelect
+                value={String(targetWarehouseId ?? '')}
+                onChange={(val) => setTargetWarehouseId(val ? Number(val) : '')}
+                options={warehouses.map((w) => ({ value: String(w.id), label: w.name, subLabel: w.code }))}
+                placeholder="-- Chọn kho --"
+                searchPlaceholder="Tìm kho…"
+              />
+            </Field>
+
+            <Field label="Tỉ giá EUR / VND" required>
+              <PriceInput
+                currency="VND"
+                suffix="₫/€"
+                value={exchangeRate}
+                onChange={(val) => setExchangeRate(val || 32500)}
+                placeholder="32,500"
+                required
+              />
+            </Field>
+
+            <Field label="Ngày về kho (ETA)">
+              <Input
+                type="date"
+                value={etaDate}
+                onChange={(e) => setEtaDate(e.target.value)}
+              />
+            </Field>
+
+            {customers.length > 0 && (
+              <Field label="Khách nhận báo giá" className="span-2">
+                <SearchableSelect
+                  value={String(customerId ?? '')}
+                  onChange={(val) => setCustomerId(val ? Number(val) : '')}
+                  options={[
+                    { value: '', label: '-- Không gán khách cụ thể --' },
+                    ...customers.map((c) => ({
+                      value: String(c.id),
+                      label: c.name,
+                      subLabel: c.phone || undefined,
+                    })),
+                  ]}
+                  placeholder="-- Không gán khách cụ thể --"
+                  searchPlaceholder="Tìm khách hàng…"
+                />
+              </Field>
+            )}
+
+            {equipments.length > 0 && (
+              <Field label="Máy móc áp dụng" className="span-2">
+                <SearchableSelect
+                  value={String(equipmentId ?? '')}
+                  onChange={(val) => setEquipmentId(val ? Number(val) : '')}
+                  options={[
+                    { value: '', label: '-- Không gán máy cụ thể --' },
+                    ...equipments.map((eq) => ({
+                      value: String(eq.id),
+                      label: eq.name,
+                      subLabel: eq.machineCode,
+                      keywords: eq.machineCode,
+                    })),
+                  ]}
+                  placeholder="-- Không gán máy cụ thể --"
+                  searchPlaceholder="Tìm máy…"
+                />
+              </Field>
+            )}
+          </div>
+
+          {/* Bảng danh sách mặt hàng cần order (Máy móc & Phụ tùng) */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <h3 style={{ fontSize: 13.5, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Package size={15} color="#7c3aed" /> Danh sách đặt hàng ({items.length} mặt hàng)
+              </h3>
+              <Button type="button" size="sm" variant="secondary" onClick={handleAddItem}>
+                <Plus size={13} /> Thêm mặt hàng
+              </Button>
+            </div>
+
+            <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 10, overflow: 'visible', position: 'relative' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', width: '46%' }}>
+                      Mặt hàng (Máy móc / Phụ tùng)
+                    </th>
+                    <th style={{ padding: '8px 6px', textAlign: 'center', width: '12%' }}>
+                      Số lượng
+                    </th>
+                    <th style={{ padding: '8px 8px', textAlign: 'right', width: '20%' }} title="Đơn giá bán">
+                      Đơn giá bán (₫)
+                    </th>
+                    <th
+                      style={{ padding: '8px 12px', textAlign: 'right', width: '18%' }}
+                      title="Số lượng × đơn giá bán"
+                    >
+                      Thành tiền (VND)
+                    </th>
+                    <th style={{ padding: '8px 4px', width: '4%' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => {
+                    const calc = calculation.calculatedItems[idx];
+                    const selectedPart = spareParts.find((p) => p.id === Number(it.itemId));
+                    const isMachine = selectedPart?.category === 'EQUIPMENT' || selectedPart?.category === 'MACHINE';
+                    const isDetailOpen = Boolean(expandedIndices.includes(idx));
+
+                    return (
+                      <React.Fragment key={idx}>
+                        <tr
+                          style={{
+                            borderBottom: isDetailOpen ? 'none' : '1px solid var(--border-base, #e2e8f0)',
+                            background: isDetailOpen ? '#f8fafc' : undefined,
+                          }}
+                        >
+                          <td style={{ padding: '8px 12px' }}>
+                            <select
+                              className="select"
+                              value={it.itemId}
+                              onChange={(e) => handleItemChange(idx, 'itemId', Number(e.target.value))}
+                              style={{ width: '100%' }}
+                            >
+                              {machineItems.length > 0 && (
+                                <optgroup label="🏭 Máy móc nguyên chiếc & Cụm máy">
+                                  {machineItems.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      [MÁY] [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              <optgroup label="🔧 Linh kiện & Phụ tùng thay thế">
+                                {partItems.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+
+                            {/* Toolbar nhỏ dưới dropdown: Tag loại hàng + Nút mở rộng chi tiết cước phí */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, fontSize: 11 }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                {isMachine ? (
+                                  <span style={{ padding: '1px 6px', borderRadius: 4, background: '#f0fdfa', color: '#0f766e', fontWeight: 600, fontSize: 10.5 }}>
+                                    🏭 Máy móc
+                                  </span>
+                                ) : (
+                                  <span style={{ padding: '1px 6px', borderRadius: 4, background: '#eff6ff', color: '#2563eb', fontWeight: 600, fontSize: 10.5 }}>
+                                    🔧 Phụ tùng
+                                  </span>
+                                )}
+                                {selectedPart?.priceEur && (
+                                  <span style={{ color: 'var(--text-muted)' }}>
+                                    Gốc: €{Number(selectedPart.priceEur).toLocaleString('vi-VN')}
+                                  </span>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => toggleDetail(idx)}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  padding: '2px 8px',
+                                  fontSize: 11,
+                                  borderRadius: 4,
+                                  border: isDetailOpen ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                                  background: isDetailOpen ? '#f5f3ff' : '#fff',
+                                  color: isDetailOpen ? '#7c3aed' : 'var(--text-base, #475569)',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                title="Click để điều chỉnh cước phí, phí khác và tính lại giá bán"
+                              >
+                                <SlidersHorizontal size={11} />
+                                {isDetailOpen ? 'Đóng chi tiết' : 'Chi tiết cước & phí'}
+                                {isDetailOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                              </button>
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '8px 6px', textAlign: 'center', verticalAlign: 'top' }}>
+                            <div style={{ paddingTop: 2 }}>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={it.quantity}
+                                onChange={(e) => handleItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
+                                style={{ width: 75, textAlign: 'center', margin: '0 auto' }}
+                              />
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '8px 8px', textAlign: 'right', verticalAlign: 'top' }}>
+                            <div style={{ paddingTop: 2 }}>
+                              <PriceInput
+                                sizeSm
+                                currency="VND"
+                                placeholder={calc && calc.formulaSellingPerUnit > 0 ? calc.formulaSellingPerUnit.toLocaleString('vi-VN') : '0'}
+                                value={it.sellingPrice !== undefined ? it.sellingPrice : (calc?.sellingPerUnit || 0)}
+                                onChange={(val) => handleItemChange(idx, 'sellingPrice', val ?? 0)}
+                                style={{ width: 140, textAlign: 'right', marginLeft: 'auto', fontWeight: 700, color: '#0f9960' }}
+                              />
+                              {calc && it.sellingPrice !== undefined && it.sellingPrice !== calc.formulaSellingPerUnit && (
+                                <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>
+                                  Đang chỉnh tay (Gốc: {calc.formulaSellingPerUnit.toLocaleString('vi-VN')}₫)
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                            <div style={{ paddingTop: 6 }}>
+                              {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '8px 4px', textAlign: 'center', verticalAlign: 'top' }}>
+                            <div style={{ paddingTop: 6 }}>
+                              {items.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveItem(idx)}
+                                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: 4 }}
+                                  title="Xóa dòng"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Hàng mở rộng khi Click Chi tiết cước & phí */}
+                        {isDetailOpen && (
+                          <tr style={{ background: '#f8fafc', borderBottom: '2px solid var(--border-base, #cbd5e1)' }}>
+                            <td colSpan={5} style={{ padding: '4px 12px 14px 12px' }}>
+                              <div
+                                style={{
+                                  background: '#ffffff',
+                                  border: '1px solid #ddd6fe',
+                                  borderRadius: 8,
+                                  padding: '12px 14px',
+                                  boxShadow: '0 2px 8px -2px rgba(124, 58, 237, 0.08)',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, borderBottom: '1px solid #f1f5f9', paddingBottom: 6 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--text-strong)' }}>
+                                    <SlidersHorizontal size={14} color="#7c3aed" />
+                                    <span>
+                                      Điều chỉnh cước & phí riêng cho {isMachine ? 'máy móc' : 'phụ tùng'}:{' '}
+                                      <strong style={{ color: '#7c3aed' }}>{selectedPart?.name}</strong>
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    Sửa cước/phí sẽ tự động tính lại đơn giá bán theo công thức Margin
+                                  </span>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.1fr 1.6fr', gap: 14, alignItems: 'center' }}>
+                                  <div>
+                                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 3 }}>
+                                      🚚 Cước vận chuyển ({it.quantity > 1 ? `tổng ${it.quantity} cái` : '1 cái'}) (₫)
+                                    </label>
+                                    <PriceInput
+                                      sizeSm
+                                      currency="VND"
+                                      value={it.shippingFee !== undefined ? it.shippingFee : defaultShippingFee}
+                                      onChange={(val) => handleFeeChange(idx, 'shippingFee', val ?? 0)}
+                                      placeholder="3.500.000"
+                                      style={{ width: '100%', fontWeight: 600 }}
+                                    />
+                                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                                      Phân bổ: <strong>{calc ? Math.round(calc.freightPerUnit).toLocaleString('vi-VN') : 0} ₫</strong> / {selectedPart?.unit || 'cái'}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 3 }}>
+                                      📋 Phí khác ({it.quantity > 1 ? `tổng ${it.quantity} cái` : '1 cái'}) (₫)
+                                    </label>
+                                    <PriceInput
+                                      sizeSm
+                                      currency="VND"
+                                      value={it.otherFee !== undefined ? it.otherFee : defaultCustomsFee}
+                                      onChange={(val) => handleFeeChange(idx, 'otherFee', val ?? 0)}
+                                      placeholder="1.000.000"
+                                      style={{ width: '100%', fontWeight: 600 }}
+                                    />
+                                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                                      Phân bổ: <strong>{calc ? Math.round(calc.otherFeePerUnit).toLocaleString('vi-VN') : 0} ₫</strong> / {selectedPart?.unit || 'cái'}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 6, padding: '8px 10px' }}>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                      <span>Giá Margin (vốn {calc?.unitCost ? calc.unitCost.toLocaleString('vi-VN') : 0}₫):</span>
+                                      <strong>{calc?.baseSellingPerUnit ? calc.baseSellingPerUnit.toLocaleString('vi-VN') : 0} ₫</strong>
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                      <span>+ Cước VC & Phí khác:</span>
+                                      <span style={{ color: '#0f766e', fontWeight: 600 }}>
+                                        +{calc ? (calc.freightPerUnit + calc.otherFeePerUnit).toLocaleString('vi-VN') : 0} ₫
+                                      </span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: 4 }}>
+                                      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#7c3aed' }}>
+                                        Giá bán tính lại:
+                                      </span>
+                                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ fontSize: 13, fontWeight: 800, color: '#0f9960' }}>
+                                          {calc?.formulaSellingPerUnit ? calc.formulaSellingPerUnit.toLocaleString('vi-VN') : 0} ₫
+                                        </span>
+                                        {it.sellingPrice !== undefined && it.sellingPrice !== calc?.formulaSellingPerUnit && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (calc) {
+                                                handleItemChange(idx, 'sellingPrice', calc.formulaSellingPerUnit);
+                                              }
+                                            }}
+                                            style={{
+                                              padding: '1px 6px',
+                                              fontSize: 10.5,
+                                              background: '#f5f3ff',
+                                              color: '#7c3aed',
+                                              border: '1px solid #ddd6fe',
+                                              borderRadius: 4,
+                                              cursor: 'pointer',
+                                              fontWeight: 600,
+                                            }}
+                                            title="Bấm để áp dụng giá tính lại này vào đơn giá bán"
+                                          >
+                                            Áp dụng
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  {/* 1. Tổng tiền hàng */}
+                  <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 600 }}>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-strong)' }}>
+                      Tổng tiền hàng:
+                    </td>
+                    <td style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)' }}>
+                      {calculation.totalQty} cái
+                    </td>
+                    <td></td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
+                      {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫
+                    </td>
+                    <td></td>
+                  </tr>
+
+                  {/* 2. Dòng chiết khấu: luôn hiển thị, nếu 0 thì để 0 đ; hover vào hiện tooltip chính sách chiết khấu */}
+                  <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)', position: 'relative', zIndex: 100 }}>
+                    <td
+                      colSpan={3}
+                      style={{
+                        padding: '7px 10px',
+                        textAlign: 'right',
+                        color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
+                        fontWeight: 600,
+                        position: 'relative',
+                        zIndex: 100,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          position: 'relative',
+                          cursor: 'help',
+                          zIndex: 1000,
+                        }}
+                        onMouseEnter={() => setShowDiscountTooltip(true)}
+                        onMouseLeave={() => setShowDiscountTooltip(false)}
+                        onClick={() => setShowDiscountTooltip((prev) => !prev)}
+                      >
+                        <span
+                          style={{
+                            borderBottom: '1px dashed currentColor',
+                            paddingBottom: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          Chiết khấu ({(calculation.discountRate * 100).toFixed(0)}%):
+                          <Info size={13} style={{ opacity: 0.8 }} />
+                        </span>
+
+                        {showDiscountTooltip && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: 'calc(100% + 10px)',
+                              right: 0,
+                              zIndex: 99999,
+                              background: 'var(--surface-card, #ffffff)',
+                              color: 'var(--text-base, #1e293b)',
+                              border: '1px solid var(--border-base, #94a3b8)',
+                              borderRadius: 8,
+                              boxShadow: '0 20px 40px -4px rgba(0, 0, 0, 0.28), 0 10px 18px -4px rgba(0, 0, 0, 0.16)',
+                              padding: '10px 14px',
+                              width: 250,
+                              textAlign: 'left',
+                              fontSize: 12,
+                              fontWeight: 400,
+                              lineHeight: 1.5,
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                color: 'var(--text-strong, #0f172a)',
+                                marginBottom: 6,
+                                fontSize: 12,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                borderBottom: '1px solid var(--border-subtle, #f1f5f9)',
+                                paddingBottom: 4,
+                              }}
+                            >
+                              <Info size={13} color="#2563eb" /> Chiết khấu theo số lượng:
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              {(pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS).map((tier, idx) => {
+                                const isMatch =
+                                  calculation.totalQty >= tier.min && calculation.totalQty <= tier.max;
+                                const tierLabel =
+                                  tier.min === tier.max
+                                    ? `${tier.min} cái`
+                                    : tier.max >= 99999
+                                    ? `≥ ${tier.min} cái`
+                                    : `${tier.min} – ${tier.max} cái`;
+                                const rateLabel = `${(tier.rate * 100).toFixed(0)}%`;
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      background: isMatch ? '#f0fdf4' : 'transparent',
+                                      color: isMatch ? '#15803d' : 'var(--text-muted, #64748b)',
+                                      fontWeight: isMatch ? 700 : 400,
+                                    }}
+                                  >
+                                    <span>• {tierLabel}:</span>
+                                    <span>
+                                      {rateLabel} {isMatch && '✓'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 6,
+                                paddingTop: 4,
+                                borderTop: '1px dashed var(--border-base, #e2e8f0)',
+                                fontSize: 11,
+                                color: 'var(--text-muted, #64748b)',
+                              }}
+                            >
+                              Tổng đơn: <strong>{calculation.totalQty} cái</strong>{' '}
+                              {calculation.discountRate > 0
+                                ? `(giảm ${(calculation.discountRate * 100).toFixed(0)}%)`
+                                : '(chưa áp dụng chiết khấu)'}
+                            </div>
+                            {/* Arrow pointing down */}
+                            <div
+                              style={{
+                                position: 'absolute',
+                                bottom: -6,
+                                right: 18,
+                                width: 10,
+                                height: 10,
+                                background: 'inherit',
+                                borderRight: '1px solid var(--border-base, #94a3b8)',
+                                borderBottom: '1px solid var(--border-base, #94a3b8)',
+                                transform: 'rotate(45deg)',
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td
+                      style={{
+                        padding: '7px 10px',
+                        textAlign: 'right',
+                        fontWeight: 700,
+                        color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
+                      }}
+                    >
+                      {calculation.discountRate > 0
+                        ? `-${calculation.sellingDiscountVnd.toLocaleString('vi-VN')} ₫`
+                        : '0 ₫'}
+                    </td>
+                    <td></td>
+                  </tr>
+
+                  {/* 3. Tiền hàng sau chiết khấu (chỉ hiển thị khi có chiết khấu > 0) */}
+                  {calculation.discountRate > 0 && (
+                    <tr style={{ background: '#f8fafc', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                      <td
+                        colSpan={3}
+                        style={{
+                          padding: '7px 10px',
+                          textAlign: 'right',
+                          fontWeight: 600,
+                          color: 'var(--text-strong)',
+                        }}
+                      >
+                        Tiền hàng sau chiết khấu:
+                      </td>
+                      <td
+                        style={{
+                          padding: '7px 10px',
+                          textAlign: 'right',
+                          fontWeight: 700,
+                          color: 'var(--text-strong)',
+                        }}
+                      >
+                        {calculation.sellingTotalVnd.toLocaleString('vi-VN')} ₫
+                      </td>
+                      <td></td>
+                    </tr>
+                  )}
+
+                  {/* 4. Thuế VAT */}
+                  <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                    <td
+                      colSpan={3}
+                      style={{
+                        padding: '6px 10px',
+                        textAlign: 'right',
+                        fontWeight: 600,
+                        color: 'var(--text-strong)',
+                      }}
+                    >
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                        <span>Thuế VAT:</span>
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          {[0, 8, 10].map((rate) => {
+                            const isSelected = Number(vatRate) === rate;
+                            return (
+                              <button
+                                key={rate}
+                                type="button"
+                                onClick={() => setVatRate(rate)}
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: 11,
+                                  borderRadius: 4,
+                                  border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                                  background: isSelected ? '#f5f3ff' : '#fff',
+                                  color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
+                                  fontWeight: isSelected ? 700 : 500,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            value={vatRate}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setVatRate(val === '' ? (0 as any) : Number(val));
+                            }}
+                            style={{
+                              width: 44,
+                              padding: '2px 4px',
+                              fontSize: 11,
+                              textAlign: 'center',
+                              border: '1px solid var(--border-base, #cbd5e1)',
+                              borderRadius: 4,
+                              background: 'var(--surface-card, #fff)',
+                              color: 'var(--text-strong, #0f172a)',
+                            }}
+                          />
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td
+                      style={{
+                        padding: '6px 10px',
+                        textAlign: 'right',
+                        fontWeight: 700,
+                        color: calculation.vatAmountVnd > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {calculation.vatAmountVnd > 0
+                        ? `+${calculation.vatAmountVnd.toLocaleString('vi-VN')} ₫`
+                        : '0 ₫'}
+                    </td>
+                    <td></td>
+                  </tr>
+
+                  {/* 5. Tổng cộng thanh toán */}
+                  <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
+                    <td
+                      colSpan={3}
+                      style={{
+                        padding: '10px',
+                        textAlign: 'right',
+                        textTransform: 'uppercase',
+                        color: 'var(--text-strong)',
+                        fontSize: 13,
+                      }}
+                    >
+                      TỔNG CỘNG THANH TOÁN (VND){calculation.vatPercentNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
+                      {calculation.finalSellingTotalWithVatVnd.toLocaleString('vi-VN')} ₫
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Ghi chú & Mã vận đơn tracking */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                Mã vận đơn quốc tế (nếu có)
+              </label>
+              <Input
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                placeholder="VD: DHL-94827104"
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                Ghi chú đơn hàng
+              </label>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Đặt hàng theo đợt bảo dưỡng Q3, phụ tùng máy Selmi..."
+              />
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setQuotationOpen(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #ddd6fe', color: '#6d28d9' }}
+            >
+              <FileDown size={15} /> Xuất Phiếu Báo Giá KH (A4 / PDF)
+            </Button>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
+                Hủy
+              </Button>
+              <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
+                <Plane size={14} style={{ marginRight: 6 }} /> Xác nhận
+              </Button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {quotationOpen && (
+        <SparePartQuotationModal
+          open={quotationOpen}
+          onClose={() => setQuotationOpen(false)}
+          order={previewOrder}
+          companyInfo={companyInfo}
+          pricingConfig={pricingConfig}
+        />
+      )}
+    </div>,
+    document.body
+  );
+}
+
+interface OrderStatusModalProps {
+  open: boolean;
+  onClose: () => void;
+  order: any;
+  onSuccess?: () => void;
+}
+
+export function OrderStatusModal({
+  open,
+  onClose,
+  order,
+  onSuccess,
+}: OrderStatusModalProps) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState(order?.status || 'REQUESTED');
+  const [trackingNumber, setTrackingNumber] = useState(order?.trackingNumber || '');
+  const [etaDate, setEtaDate] = useState(
+    order?.etaDate ? new Date(order.etaDate).toISOString().split('T')[0] : ''
+  );
+  const [notes, setNotes] = useState(order?.notes || '');
+  const [inspectionNote, setInspectionNote] = useState(order?.inspectionNote || '');
+
+  if (!open || !order) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const res = await updateSparePartOrderStatusAction(order.id, {
+        status,
+        trackingNumber: trackingNumber.trim() || null,
+        etaDate: etaDate || null,
+        notes: notes.trim() || null,
+        inspectionNote: inspectionNote.trim() || null,
+      });
+
+      if (res.ok) {
+        toast.success(res.message);
+        onSuccess?.();
+        onClose();
+      } else {
+        toast.error(res.message || 'Lỗi khi cập nhật trạng thái');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Có lỗi xảy ra');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 500,
+        background: 'rgba(0, 0, 0, 0.55)',
+        backdropFilter: 'blur(3px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--surface-card)',
+          borderRadius: 14,
+          width: '100%',
+          maxWidth: 560,
+          boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25)',
+          border: '1px solid var(--border-base, #e2e8f0)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            padding: '14px 18px',
+            borderBottom: '1px solid var(--border-base, #e2e8f0)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--surface-sunken, #f8fafc)',
+          }}
+        >
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+              Cập nhật Tiến trình Đơn hàng {order.orderCode}
+            </h3>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+              Nhà cung cấp: {order.supplier} • {order.items?.length || 0} mặt hàng
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+              Trạng thái Quá trình Nhập khẩu
+            </label>
+            <select
+              className="select"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              style={{ width: '100%', fontSize: 13, fontWeight: 600 }}
+            >
+              {Object.entries(ORDER_STATUSES).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+
+            {status === 'ARRIVED_WAREHOUSE' && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 12px',
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 8,
+                  color: '#15803d',
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <CheckCircle2 size={15} />
+                <span>
+                  Hàng đã về nhưng <strong>chưa vào tồn kho</strong>. Chuyển tiếp sang{' '}
+                  <strong>Đang kiểm hàng</strong> rồi <strong>Đã nhập kho</strong> để ghi tồn.
+                </span>
+              </div>
+            )}
+
+            {status === 'STOCKED' && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 12px',
+                  background: '#f0fdfa',
+                  border: '1px solid #99f6e4',
+                  borderRadius: 8,
+                  color: '#0f766e',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <CheckCircle2 size={15} />
+                  <span>
+                    Xác nhận kiểm hàng xong — hệ thống sẽ <strong>sinh phiếu nhập kho</strong> và tăng tồn kho.
+                  </span>
+                </div>
+                <Input
+                  placeholder="Kết quả kiểm hàng (VD: Đủ số lượng, không móp méo)"
+                  value={inspectionNote}
+                  onChange={(e) => setInspectionNote(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+              Mã vận đơn quốc tế (Airway / Tracking)
+            </label>
+            <Input
+              value={trackingNumber}
+              onChange={(e) => setTrackingNumber(e.target.value)}
+              placeholder="VD: DHL-39482910"
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+              Ngày dự kiến về kho (ETA)
+            </label>
+            <Input
+              type="date"
+              value={etaDate}
+              onChange={(e) => setEtaDate(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+              Ghi chú cập nhật
+            </label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Đang qua hải quan Nội Bài..."
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
+              Đóng
+            </Button>
+            <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
+              Cập nhật trạng thái
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

@@ -22,6 +22,7 @@ const HELP_TEXT = `🤖 Các lệnh khả dụng:
 /duyet <mã> no <lý do>      — Từ chối đơn
 /checkin       — Chấm công vào
 /checkout      — Chấm công ra
+/reset         — Làm mới ngữ cảnh trò chuyện AI (bắt đầu chủ đề mới)
 /help          — Xem lại danh sách lệnh`;
 
 export interface CommandResult {
@@ -243,9 +244,18 @@ export async function handleZaloCommand(zaloUserId: string, text: string): Promi
       };
     }
 
+    case 'reset':
+    case 'new':
+    case 'clear': {
+      return {
+        handled: true,
+        reply: '🔄 Đã làm mới ngữ cảnh trò chuyện. Bạn có thể bắt đầu chủ đề mới!',
+      };
+    }
+
     default: {
       try {
-        const aiReply = await handleZaloAiQuery(employee.id, raw);
+        const aiReply = await handleZaloAiQuery(employee.id, raw, zaloUserId);
         return { handled: true, reply: aiReply };
       } catch {
         return {

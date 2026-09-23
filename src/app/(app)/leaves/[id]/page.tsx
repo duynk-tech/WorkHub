@@ -22,6 +22,7 @@ export default async function LeaveDetailPage({ params }: { params: Promise<{ id
       isOwner={request.employeeId === ctx.employeeId}
       canApprove={can(ctx, 'FEATURE_LEAVE_APPROVE')}
       canForceClose={can(ctx, 'FEATURE_LEAVE_FORCE_CLOSE')}
+      canDelete={ctx.isAdmin || can(ctx, 'FEATURE_LEAVE_FORCE_CLOSE')}
     />
   );
 }

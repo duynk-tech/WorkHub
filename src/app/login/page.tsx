@@ -22,6 +22,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       appName={branding.name}
       logoUrl={branding.logoUrl}
       logoText={branding.logoText}
+      appDescription={branding.description}
       next={next}
     />
   );

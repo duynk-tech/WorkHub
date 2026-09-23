@@ -6,7 +6,7 @@ import {
   Upload, RefreshCw, Pencil, Clock, CalendarCheck, AlertTriangle, Plane, Download, FileSpreadsheet,
 } from 'lucide-react';
 import {
-  Button, Card, CardBody, CardHeader, CardTitle, Badge, Avatar, EmptyState, Select, Input,
+  Button, Card, CardBody, CardHeader, CardTitle, Badge, Avatar, EmptyState, Select, SearchableSelect, Input,
   Field, PageHeader, StatCard, Alert, Textarea,
 } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
@@ -164,10 +164,17 @@ export function AttendanceScreen({ sheet, myRecord, departments, month, selected
             <Field label="">
               <Input type="month" sizeSm value={month} onChange={(e) => setParam('month', e.target.value)} style={{ width: 160 }} />
             </Field>
-            <Select sizeSm style={{ width: 'auto', minWidth: 180 }} value={selectedDept} onChange={(e) => setParam('dept', e.target.value)}>
-              <option value="">Tất cả phòng ban</option>
-              {departments.map((d) => <option key={d.id} value={d.id}>{'　'.repeat(d.level - 1)}{d.name}</option>)}
-            </Select>
+            <SearchableSelect
+              sizeSm style={{ width: 'auto', minWidth: 190 }}
+              value={String(selectedDept ?? '')}
+              onChange={(val) => setParam('dept', val)}
+              options={[
+                { value: '', label: 'Tất cả phòng ban' },
+                ...departments.map((d) => ({ value: String(d.id), label: `${'　'.repeat(d.level - 1)}${d.name}` })),
+              ]}
+              placeholder="Tất cả phòng ban"
+              searchPlaceholder="Tìm phòng ban…"
+            />
             <div className="row" style={{ gap: 9, marginLeft: 'auto', flexWrap: 'wrap' }}>
               {Object.entries(SHORT_STATUS).map(([k, v]) => (
                 <span key={k} className="hint row" style={{ gap: 4 }}>

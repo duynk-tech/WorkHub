@@ -148,46 +148,199 @@ export async function seedDemoEmployees(
 
 export async function seedDemoTasks(prisma: PrismaClient, employees: Map<string, number>) {
   const now = new Date();
+  const year = now.getFullYear();
   const day = (offset: number) => new Date(now.getTime() + offset * 86400000);
 
   const samples = [
-    { title: 'Hoàn thiện module báo cáo doanh thu quý', assignee: 'NV005', creator: 'NV004', dept: 'P_DEV', priority: 'HIGH', status: 'IN_PROGRESS', due: 3, progress: 60 },
-    { title: 'Kiểm thử hồi quy phiên bản 2.4', assignee: 'NV007', creator: 'NV003', dept: 'P_QC', priority: 'MEDIUM', status: 'TODO', due: 5, progress: 0 },
-    { title: 'Nâng cấp máy chủ ứng dụng lên Ubuntu 24.04', assignee: 'NV008', creator: 'NV003', dept: 'P_IT', priority: 'URGENT', status: 'IN_PROGRESS', due: -1, progress: 40 },
-    { title: 'Chuẩn bị hợp đồng khách hàng ABC', assignee: 'NV011', creator: 'NV010', dept: 'P_KD1', priority: 'HIGH', status: 'REVIEW', due: 1, progress: 90 },
-    { title: 'Lập kế hoạch truyền thông tháng tới', assignee: 'NV012', creator: 'NV009', dept: 'P_MKT', priority: 'MEDIUM', status: 'TODO', due: 7, progress: 0 },
-    { title: 'Tổng hợp bảng công tháng trước', assignee: 'NV014', creator: 'NV002', dept: 'P_HR', priority: 'HIGH', status: 'DONE', due: -3, progress: 100 },
-    { title: 'Sửa lỗi hiển thị biểu đồ trên Safari', assignee: 'NV006', creator: 'NV004', dept: 'P_DEV', priority: 'LOW', status: 'TODO', due: 10, progress: 0 },
-    { title: 'Rà soát chi phí vận hành quý', assignee: 'NV013', creator: 'NV001', dept: 'P_KT', priority: 'MEDIUM', status: 'IN_PROGRESS', due: 4, progress: 25 },
+    {
+      code: `TSK-${year}-0001`,
+      title: 'Hoàn thiện module báo cáo doanh thu quý & công nợ khách hàng',
+      assignee: 'NV005',
+      creator: 'NV004',
+      dept: 'P_DEV',
+      priority: 'HIGH',
+      status: 'IN_PROGRESS',
+      due: 3,
+      progress: 65,
+      checklists: [
+        { content: 'Thiết kế query tổng hợp doanh thu 6 tháng', isDone: true },
+        { content: 'Bổ sung biểu đồ phân tích theo chuỗi F&B', isDone: true },
+        { content: 'Xử lý công nợ quá hạn và cảnh báo SLA', isDone: false },
+      ],
+    },
+    {
+      code: `TSK-${year}-0002`,
+      title: 'Kiểm định chất lượng định kỳ máy pha La Marzocco tại Phúc Long Landmark 81',
+      assignee: 'NV005',
+      creator: 'NV003',
+      dept: 'KHOI_KT',
+      priority: 'URGENT',
+      status: 'IN_PROGRESS',
+      due: 1,
+      progress: 40,
+      checklists: [
+        { content: 'Đo áp suất lò hơi và nhiệt độ họng chiết xuất', isDone: true },
+        { content: 'Thay thế gioăng cao su silicone chịu nhiệt 8.5mm', isDone: false },
+        { content: 'Lấy mẫu kiểm tra chất lượng nước qua lọc RO', isDone: false },
+      ],
+    },
+    {
+      code: `TSK-${year}-0003`,
+      title: 'Nâng cấp máy chủ cơ sở dữ liệu ứng dụng & bảo mật',
+      assignee: 'NV008',
+      creator: 'NV003',
+      dept: 'P_IT',
+      priority: 'URGENT',
+      status: 'IN_PROGRESS',
+      due: -1,
+      progress: 75,
+      checklists: [
+        { content: 'Sao lưu snapshot dữ liệu toàn hệ thống', isDone: true },
+        { content: 'Cập nhật bản vá bảo mật hạt nhân Ubuntu', isDone: true },
+        { content: 'Cấu hình cảnh báo tài nguyên qua Zalo Bot', isDone: false },
+      ],
+    },
+    {
+      code: `TSK-${year}-0004`,
+      title: 'Soạn thảo hợp đồng cho thuê 03 máy làm kem Taylor C708 chuỗi Gogi House',
+      assignee: 'NV011',
+      creator: 'NV010',
+      dept: 'P_KD1',
+      priority: 'HIGH',
+      status: 'REVIEW',
+      due: 2,
+      progress: 90,
+      checklists: [
+        { content: 'Thống nhất điều khoản đặt cọc và SLA bảo dưỡng định kỳ', isDone: true },
+        { content: 'Phòng Pháp chế & Kế toán rà soát hợp đồng', isDone: true },
+        { content: 'Chờ đại diện Golden Gate ký kết số hóa', isDone: false },
+      ],
+    },
+    {
+      code: `TSK-${year}-0005`,
+      title: 'Lập chiến dịch quảng bá linh kiện máy pha F&B chính hãng quý 4',
+      assignee: 'NV012',
+      creator: 'NV009',
+      dept: 'P_MKT',
+      priority: 'MEDIUM',
+      status: 'TODO',
+      due: 7,
+      progress: 10,
+      checklists: [
+        { content: 'Lên danh mục linh kiện tiêu hao cần đẩy mạnh', isDone: true },
+        { content: 'Thiết kế brochure giới thiệu dịch vụ cứu hộ 2h', isDone: false },
+      ],
+    },
+    {
+      code: `TSK-${year}-0006`,
+      title: 'Tổng hợp bảng công & phụ cấp trực kỹ thuật hiện trường tháng trước',
+      assignee: 'NV014',
+      creator: 'NV002',
+      dept: 'P_HR',
+      priority: 'HIGH',
+      status: 'DONE',
+      due: -3,
+      progress: 100,
+      checklists: [
+        { content: 'Đối soát dữ liệu GPS check-in kỹ thuật viên', isDone: true },
+        { content: 'Tính toán giờ làm thêm ca đêm (OT)', isDone: true },
+        { content: 'Gửi bảng xác nhận cho Trưởng khối Kỹ thuật', isDone: true },
+      ],
+    },
+    {
+      code: `TSK-${year}-0007`,
+      title: 'Tối ưu tốc độ tải danh mục tồn kho 2 miền Bắc - Nam',
+      assignee: 'NV006',
+      creator: 'NV004',
+      dept: 'P_DEV',
+      priority: 'MEDIUM',
+      status: 'TODO',
+      due: 6,
+      progress: 0,
+      checklists: [
+        { content: 'Đánh index các cột khóa ngoại kho & phụ tùng', isDone: false },
+        { content: 'Cache kết quả lọc theo chủng loại máy F&B', isDone: false },
+      ],
+    },
+    {
+      code: `TSK-${year}-0008`,
+      title: 'Rà soát chi phí nhập khẩu lô hàng phụ tùng Selmi & Unox tháng 9',
+      assignee: 'NV013',
+      creator: 'NV001',
+      dept: 'P_KT',
+      priority: 'MEDIUM',
+      status: 'DONE',
+      due: -1,
+      progress: 100,
+      checklists: [
+        { content: 'Khớp số liệu tờ khai hải quan và invoice quốc tế', isDone: true },
+        { content: 'Hạch toán phân bổ chi phí vận chuyển đường biển', isDone: true },
+      ],
+    },
   ];
-
-  const count = await prisma.task.count();
-  if (count > 0) return 0;
 
   const depts = await prisma.department.findMany({ select: { id: true, code: true } });
   const deptByCode = new Map(depts.map((d) => [d.code, d.id]));
-  const year = new Date().getFullYear();
-  let seq = 0;
 
   for (const s of samples) {
-    seq++;
-    await prisma.task.create({
-      data: {
-        code: `TSK-${year}-${String(seq).padStart(4, '0')}`,
-        title: s.title,
-        description: null,
-        departmentId: deptByCode.get(s.dept),
-        creatorId: employees.get(s.creator)!,
-        assigneeId: employees.get(s.assignee)!,
-        status: s.status as never,
-        priority: s.priority as never,
-        startDate: day(-2),
-        dueDate: day(s.due),
-        progress: s.progress,
-        completedAt: s.status === 'DONE' ? day(s.due) : null,
-      },
-    });
+    const existing = await prisma.task.findUnique({ where: { code: s.code } });
+    const creatorId = employees.get(s.creator) || employees.values().next().value;
+    const assigneeId = employees.get(s.assignee) || creatorId;
+    if (!creatorId || !assigneeId) continue;
+
+    let taskId: number;
+    if (existing) {
+      await prisma.task.update({
+        where: { id: existing.id },
+        data: {
+          title: s.title,
+          priority: s.priority as never,
+          status: s.status as never,
+          progress: s.progress,
+          dueDate: day(s.due),
+        },
+      });
+      taskId = existing.id;
+    } else {
+      const created = await prisma.task.create({
+        data: {
+          code: s.code,
+          title: s.title,
+          description: `Công việc mẫu được phân công trực tiếp trong hệ thống quản trị vận hành WorkHub.`,
+          departmentId: deptByCode.get(s.dept) || null,
+          creatorId,
+          assigneeId,
+          status: s.status as never,
+          priority: s.priority as never,
+          startDate: day(-3),
+          dueDate: day(s.due),
+          progress: s.progress,
+          completedAt: s.status === 'DONE' ? day(s.due) : null,
+        },
+      });
+      taskId = created.id;
+    }
+
+    // Checklists con
+    for (let i = 0; i < s.checklists.length; i++) {
+      const c = s.checklists[i];
+      const existCheck = await prisma.taskChecklistItem.findFirst({
+        where: { taskId, content: c.content },
+      });
+      if (!existCheck) {
+        await prisma.taskChecklistItem.create({
+          data: {
+            taskId,
+            content: c.content,
+            isDone: c.isDone,
+            sortOrder: i + 1,
+            completedAt: c.isDone ? day(-1) : null,
+          },
+        });
+      }
+    }
   }
+
   return samples.length;
 }
 
@@ -458,4 +611,342 @@ export async function seedDemoAssets(prisma: PrismaClient, employees: Map<string
   });
 
   return 6;
+}
+
+/**
+ * Seed 30 ngày dữ liệu chấm công cho toàn bộ nhân sự demo:
+ * Đa dạng trường hợp (Đúng giờ, Đi muộn có đơn, Về sớm, Nghỉ phép năm, OT, T7/CN)
+ */
+export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<string, number>) {
+  const shift = await prisma.workShift.findUnique({ where: { code: 'ADMIN' } });
+  const shiftId = shift?.id ?? null;
+  const now = new Date();
+  let count = 0;
+
+  for (let dayOffset = 30; dayOffset >= 0; dayOffset--) {
+    const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
+    const dayOfWeek = targetDate.getDay(); // 0: CN, 6: T7
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    for (const [code, empId] of employees.entries()) {
+      if (isWeekend) {
+        // Cuối tuần: một số kỹ thuật viên trực OT hiện trường (NV005, NV008)
+        if (dayOfWeek === 6 && (code === 'NV005' || code === 'NV008') && dayOffset % 2 === 0) {
+          const inTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 8, 30);
+          const outTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 17, 30);
+          await prisma.attendanceRecord.upsert({
+            where: { employeeId_workDate: { employeeId: empId, workDate: targetDate } },
+            update: {},
+            create: {
+              employeeId: empId,
+              workDate: targetDate,
+              shiftId,
+              checkInAt: inTime,
+              checkOutAt: outTime,
+              source: 'WEB',
+              checkInLat: 10.776889,
+              checkInLng: 106.700806,
+              checkInAddress: 'Phúc Long Landmark 81, TP.HCM',
+              workedMinutes: 480,
+              otMinutes: 240,
+              status: 'PRESENT',
+              note: 'Trực cứu hộ kỹ thuật máy pha cafe cuối tuần',
+            },
+          });
+          count++;
+        }
+        continue;
+      }
+
+      // Ngày thường
+      // Random hóa trạng thái chấm công chân thực
+      const hash = (empId * 37 + dayOffset * 13) % 100;
+      let status: 'PRESENT' | 'LATE' | 'EARLY_LEAVE' | 'WFH' | 'LEAVE' = 'PRESENT';
+      let lateMinutes = 0;
+      let earlyLeaveMinutes = 0;
+      let otMinutes = 0;
+      let inHour = 7;
+      let inMin = 50 + (hash % 10); // 7:50 - 7:59
+      let outHour = 17;
+      let outMin = 30 + (hash % 20); // 17:30 - 17:50
+      let note: string | null = null;
+
+      if (hash < 6) {
+        // Đi muộn (có lý do kẹt xe hoặc hỗ trợ khách sớm)
+        status = 'LATE';
+        lateMinutes = 15 + (hash % 25);
+        inHour = 8;
+        inMin = lateMinutes;
+        note = 'Kẹt xe tuyến đường giờ cao điểm, đã gửi đơn giải trình';
+      } else if (hash < 10) {
+        // Về sớm (việc cá nhân / khám bệnh)
+        status = 'EARLY_LEAVE';
+        earlyLeaveMinutes = 30;
+        outHour = 17;
+        outMin = 0;
+        note = 'Xin về sớm 30 phút có việc gia đình';
+      } else if (hash < 14 && (code === 'NV004' || code === 'NV006')) {
+        // WFH
+        status = 'WFH';
+        note = 'Đăng ký làm việc tại nhà theo quy chế';
+      } else if (hash < 18) {
+        // OT ngày thường (NV005, NV007, NV008)
+        otMinutes = 90;
+        outHour = 19;
+        outMin = 0;
+        note = 'Tăng ca bảo trì hệ thống máy chủ và kiểm định';
+      }
+
+      const inTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), inHour, inMin);
+      const outTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), outHour, outMin);
+      const workedMinutes = Math.max(0, Math.round((outTime.getTime() - inTime.getTime()) / 60000) - 90);
+
+      await prisma.attendanceRecord.upsert({
+        where: { employeeId_workDate: { employeeId: empId, workDate: targetDate } },
+        update: {
+          shiftId,
+          checkInAt: inTime,
+          checkOutAt: outTime,
+          workedMinutes,
+          lateMinutes,
+          earlyLeaveMinutes,
+          otMinutes,
+          status: status as never,
+          note,
+        },
+        create: {
+          employeeId: empId,
+          workDate: targetDate,
+          shiftId,
+          checkInAt: inTime,
+          checkOutAt: outTime,
+          source: 'WEB',
+          checkInLat: 10.762622,
+          checkInLng: 106.660172,
+          checkInAddress: 'Văn phòng Công ty WorkHub',
+          workedMinutes,
+          lateMinutes,
+          earlyLeaveMinutes,
+          otMinutes,
+          status: status as never,
+          note,
+        },
+      });
+      count++;
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Seed các đơn nghỉ phép mẫu (Approved, Pending, Rejected) và liên kết quy trình duyệt
+ */
+export async function seedDemoLeaves(prisma: PrismaClient, employees: Map<string, number>) {
+  const year = new Date().getFullYear();
+  const annualType = await prisma.leaveType.findUnique({ where: { code: 'ANNUAL' } });
+  const sickType = await prisma.leaveType.findUnique({ where: { code: 'SICK' } });
+  const unpaidType = await prisma.leaveType.findUnique({ where: { code: 'UNPAID' } });
+
+  const empTung = employees.get('NV005'); // Vũ Thanh Tùng
+  const empAnh = employees.get('NV006'); // Đỗ Thị Mai Anh
+  const empVinh = employees.get('NV011'); // Lý Quang Vinh
+  const empBao = employees.get('NV004'); // Nguyễn Văn Bảo (Trưởng phòng)
+  const empHa = employees.get('NV002'); // Phạm Thị Hồng Hà (Trưởng phòng HR)
+  const defaultWorkflow = await prisma.workflowDefinition.findUnique({ where: { code: 'LEAVE_DEFAULT' } });
+
+  if (!empTung || !annualType || !defaultWorkflow) return 0;
+
+  // 1. Đơn ĐÃ DUYỆT (Approved) của NV005
+  const code1 = `LR-${year}-0001`;
+  let req1 = await prisma.leaveRequest.findUnique({ where: { code: code1 } });
+  if (!req1) {
+    const start1 = new Date(Date.UTC(year, 8, 10));
+    const end1 = new Date(Date.UTC(year, 8, 11));
+    req1 = await prisma.leaveRequest.create({
+      data: {
+        code: code1,
+        employeeId: empTung,
+        leaveTypeId: annualType.id,
+        startDate: start1,
+        endDate: end1,
+        durationType: 'FULL_DAY',
+        totalDays: 2,
+        reason: 'Nghỉ phép năm đưa gia đình đi du lịch Nha Trang',
+        handoverToId: empAnh || null,
+        handoverNote: 'Đã bàn giao tài liệu kỹ thuật bảo trì máy pha Phúc Long cho Mai Anh',
+        contactDuringLeave: '0909123456',
+        status: 'APPROVED',
+        submittedAt: new Date(Date.UTC(year, 8, 5, 8, 30)),
+        closedAt: new Date(Date.UTC(year, 8, 6, 14, 0)),
+        closingNote: 'Trưởng phòng Bảo duyệt đồng ý, HR đã trừ quỹ phép',
+      },
+    });
+
+    await prisma.leaveRequestDay.createMany({
+      data: [
+        { requestId: req1.id, date: start1, portion: 1 },
+        { requestId: req1.id, date: end1, portion: 1 },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  // 2. Đơn CHỜ DUYỆT (Pending) của NV006 -> Gửi cho Quản lý Bảo (NV004)
+  const code2 = `LR-${year}-0002`;
+  let req2 = await prisma.leaveRequest.findUnique({ where: { code: code2 } });
+  if (!req2 && empAnh && sickType) {
+    const start2 = new Date(Date.UTC(year, 8, 25));
+    const end2 = new Date(Date.UTC(year, 8, 25));
+    req2 = await prisma.leaveRequest.create({
+      data: {
+        code: code2,
+        employeeId: empAnh,
+        leaveTypeId: sickType.id,
+        startDate: start2,
+        endDate: end2,
+        durationType: 'FULL_DAY',
+        totalDays: 1,
+        reason: 'Khám sức khỏe răng miệng tại Bệnh viện Răng Hàm Mặt',
+        handoverToId: empTung,
+        handoverNote: 'Có tài liệu test trên Jira, Tùng theo dõi giúp',
+        contactDuringLeave: '0912345678',
+        status: 'PENDING',
+        submittedAt: new Date(),
+      },
+    });
+
+    await prisma.leaveRequestDay.createMany({
+      data: [{ requestId: req2.id, date: start2, portion: 1 }],
+      skipDuplicates: true,
+    });
+
+    // Tạo workflow instance & task chờ duyệt
+    const wfInstance = await prisma.workflowInstance.create({
+      data: {
+        definitionId: defaultWorkflow.id,
+        entityType: 'LEAVE',
+        entityId: req2.id,
+        requesterId: empAnh,
+        status: 'RUNNING',
+        currentStepOrder: 1,
+      },
+    });
+
+    await prisma.leaveRequest.update({
+      where: { id: req2.id },
+      data: { workflowInstanceId: wfInstance.id },
+    });
+
+    const step1 = await prisma.workflowStep.findFirst({
+      where: { definitionId: defaultWorkflow.id, stepOrder: 1 },
+    });
+
+    if (step1 && empBao) {
+      await prisma.approvalTask.create({
+        data: {
+          instanceId: wfInstance.id,
+          stepId: step1.id,
+          stepOrder: 1,
+          approverId: empBao,
+          status: 'PENDING',
+          dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+  }
+
+  // 3. Đơn TỪ CHỐI (Rejected) của NV011
+  const code3 = `LR-${year}-0003`;
+  let req3 = await prisma.leaveRequest.findUnique({ where: { code: code3 } });
+  if (!req3 && empVinh && unpaidType) {
+    const start3 = new Date(Date.UTC(year, 8, 15));
+    const end3 = new Date(Date.UTC(year, 8, 16));
+    req3 = await prisma.leaveRequest.create({
+      data: {
+        code: code3,
+        employeeId: empVinh,
+        leaveTypeId: unpaidType.id,
+        startDate: start3,
+        endDate: end3,
+        durationType: 'FULL_DAY',
+        totalDays: 2,
+        reason: 'Nghỉ giải quyết việc riêng gia đình',
+        status: 'REJECTED',
+        submittedAt: new Date(Date.UTC(year, 8, 12)),
+        closedAt: new Date(Date.UTC(year, 8, 13)),
+        closingNote: 'Trùng lịch ký kết hợp đồng quan trọng với Golden Gate, vui lòng dời lịch nghỉ',
+      },
+    });
+  }
+
+  return 3;
+}
+
+/**
+ * Đảm bảo tài khoản ADMIN cũng có 2 phiếu chờ duyệt trực tiếp trong /approvals
+ */
+export async function seedDemoAdminApprovals(prisma: PrismaClient, adminEmployeeId: number, employees: Map<string, number>) {
+  const defaultWorkflow = await prisma.workflowDefinition.findUnique({ where: { code: 'LEAVE_DEFAULT' } });
+  if (!defaultWorkflow) return;
+
+  const empKhang = employees.get('NV003'); // Lê Minh Khang (Giám đốc Khối KT) báo cáo trực tiếp ADMIN
+  const annualType = await prisma.leaveType.findUnique({ where: { code: 'ANNUAL' } });
+  const year = new Date().getFullYear();
+
+  if (empKhang && annualType) {
+    const codeAdmin1 = `LR-${year}-0004`;
+    let reqAdmin = await prisma.leaveRequest.findUnique({ where: { code: codeAdmin1 } });
+    if (!reqAdmin) {
+      const start = new Date(Date.now() + 2 * 86400000);
+      const end = new Date(Date.now() + 5 * 86400000);
+      reqAdmin = await prisma.leaveRequest.create({
+        data: {
+          code: codeAdmin1,
+          employeeId: empKhang,
+          leaveTypeId: annualType.id,
+          startDate: start,
+          endDate: end,
+          durationType: 'FULL_DAY',
+          totalDays: 4,
+          reason: 'Nghỉ phép thường niên cùng gia đình, đã bàn giao công việc điều phối kỹ thuật',
+          status: 'PENDING',
+          submittedAt: new Date(),
+        },
+      });
+
+      const wfInstance = await prisma.workflowInstance.create({
+        data: {
+          definitionId: defaultWorkflow.id,
+          entityType: 'LEAVE',
+          entityId: reqAdmin.id,
+          requesterId: empKhang,
+          status: 'RUNNING',
+          currentStepOrder: 1,
+        },
+      });
+
+      await prisma.leaveRequest.update({
+        where: { id: reqAdmin.id },
+        data: { workflowInstanceId: wfInstance.id },
+      });
+
+      const step1 = await prisma.workflowStep.findFirst({
+        where: { definitionId: defaultWorkflow.id, stepOrder: 1 },
+      });
+
+      if (step1) {
+        await prisma.approvalTask.create({
+          data: {
+            instanceId: wfInstance.id,
+            stepId: step1.id,
+            stepOrder: 1,
+            approverId: adminEmployeeId,
+            status: 'PENDING',
+            dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+    }
+  }
 }

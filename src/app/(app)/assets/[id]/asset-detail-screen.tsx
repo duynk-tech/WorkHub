@@ -28,8 +28,9 @@ import {
   ShieldCheck,
   DollarSign,
   Building,
+  FileText,
 } from 'lucide-react';
-import { Button, Card, Badge } from '@/components/ui';
+import { Button, Card, Badge, ConfirmDialog } from '@/components/ui';
 import {
   ASSET_CATEGORIES,
   ASSET_STATUSES,
@@ -47,6 +48,7 @@ import {
   LiquidationModal,
   AssetPrintStickerModal,
 } from '@/components/domain/asset-modals';
+import { AssetDocumentModal, type AssetDocumentType } from '@/components/domain/asset-document-modal';
 import { deleteAssetAction } from '@/server/modules/asset/actions';
 import { useToast } from '@/components/ui/toast';
 import { generateQrSvg } from '@/lib/qrcode';
@@ -82,8 +84,10 @@ export function AssetDetailScreen({
   canMaintenance,
   canLiquidate,
   canDelete,
+  companyInfo,
 }: {
   asset: any;
+  companyInfo?: { name?: string; address?: string; phone?: string; taxCode?: string };
   departments: { id: number; name: string; code: string }[];
   employees: { id: number; fullName: string; code: string; avatarUrl?: string | null; department?: { name: string } | null }[];
   canEdit?: boolean;
@@ -106,6 +110,8 @@ export function AssetDetailScreen({
   const [completeMaintenanceTarget, setCompleteMaintenanceTarget] = useState<any>(null);
   const [liquidationModalOpen, setLiquidationModalOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [assetDocType, setAssetDocType] = useState<AssetDocumentType | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const statusInfo = ASSET_STATUSES[asset.status] || {
@@ -118,13 +124,13 @@ export function AssetDetailScreen({
   const appUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
   const qrSvg = generateQrSvg(`${appUrl}/assets/${asset.id}`, { size: 140, margin: 1 });
 
-  const handleDelete = async () => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa thiết bị "${asset.name}" (${asset.assetCode})?`)) return;
+  const confirmDelete = async () => {
     setDeleting(true);
     const res = await deleteAssetAction(asset.id);
     setDeleting(false);
     if (res.ok) {
       toast.success(res.message);
+      setDeleteConfirmOpen(false);
       router.push('/assets');
     } else {
       toast.error(res.message);
@@ -259,6 +265,14 @@ export function AssetDetailScreen({
               <Printer style={{ width: 14, height: 14, marginRight: 6 }} /> In tem QR
             </Button>
 
+            <Button variant="secondary" size="sm" onClick={() => setAssetDocType('HANDOVER')}>
+              <FileText style={{ width: 14, height: 14, marginRight: 6 }} /> Biên bản bàn giao
+            </Button>
+
+            <Button variant="secondary" size="sm" onClick={() => setAssetDocType('RETURN')}>
+              <FileText style={{ width: 14, height: 14, marginRight: 6 }} /> Biên bản thu hồi
+            </Button>
+
             {canLiquidate && asset.status !== 'LIQUIDATED' && (
               <Button variant="secondary" size="sm" onClick={() => setLiquidationModalOpen(true)}>
                 <PackageCheck style={{ width: 14, height: 14, marginRight: 6 }} /> Thanh lý
@@ -275,7 +289,7 @@ export function AssetDetailScreen({
             )}
 
             {canDelete && (
-              <Button variant="ghost" size="sm" onClick={handleDelete} loading={deleting} style={{ color: '#ef4444' }}>
+              <Button variant="ghost" size="sm" onClick={() => setDeleteConfirmOpen(true)} loading={deleting} style={{ color: '#ef4444' }}>
                 <Trash2 style={{ width: 14, height: 14 }} />
               </Button>
             )}
@@ -1099,7 +1113,7 @@ export function AssetDetailScreen({
             <div>
               <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Mã QR Code & Tem nhãn dán thiết bị</h3>
               <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                Quét mã QR bằng điện thoại để xem nhanh hồ sơ máy hoặc in tem decal dán trực tiếp lên máy
+                Quét mã QR bằng điện thoại để xem nhanh hồ sơ máy hoặc in tem dán trực tiếp lên máy
               </p>
             </div>
             <Button variant="primary" onClick={() => setPrintModalOpen(true)}>
@@ -1108,7 +1122,7 @@ export function AssetDetailScreen({
           </div>
 
           <div style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Mô phỏng tem nhãn decal dán máy */}
+            {/* Mô phỏng tem nhãn dán máy */}
             <div
               style={{
                 border: '2.5px solid #0f172a',
@@ -1186,7 +1200,7 @@ export function AssetDetailScreen({
                 {`${appUrl}/assets/${asset.id}`}
               </div>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                Mã QR được tối ưu chuẩn vector SVG, in sắc nét kể cả trên máy in tem nhãn nhiệt mini khổ 50x30mm, 60x40mm hoặc in trên giấy A4 decal.
+                Mã QR được tối ưu chuẩn vector SVG, in sắc nét kể cả trên máy in tem nhãn nhiệt mini khổ 50x30mm, 60x40mm hoặc in trên giấy A4.
               </p>
             </div>
           </div>
@@ -1259,13 +1273,44 @@ export function AssetDetailScreen({
         />
       )}
 
+      {assetDocType && (
+
+        <AssetDocumentModal
+
+          open={Boolean(assetDocType)}
+
+          asset={asset}
+
+          docType={assetDocType}
+
+          companyInfo={companyInfo}
+
+          onClose={() => setAssetDocType(null)}
+
+        />
+
+      )}
+
+
       {printModalOpen && (
         <AssetPrintStickerModal
+          company={companyInfo}
           open={printModalOpen}
           assets={[asset]}
           onClose={() => setPrintModalOpen(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={confirmDelete}
+        title="Xóa thiết bị"
+        message={`Bạn có chắc chắn muốn xóa thiết bị "${asset.name}" (${asset.assetCode})? Thao tác này không thể hoàn tác.`}
+        confirmText="Xác nhận xóa"
+        danger
+        loading={deleting}
+      />
     </div>
   );
 }

@@ -93,3 +93,31 @@ describe('Định dạng Markdown cho Zalo Bot', () => {
     expect(formatMarkdownForZalo('')).toBe('');
   });
 });
+
+describe('Định dạng Số tiền & Giá cả (PriceInput)', () => {
+  it('định dạng số nguyên với dấu phân cách hàng nghìn', async () => {
+    const { formatNumberWithCommas } = await import('@/components/ui/price-input');
+    expect(formatNumberWithCommas(1000)).toBe('1,000');
+    expect(formatNumberWithCommas(3500000)).toBe('3,500,000');
+    expect(formatNumberWithCommas(1000000000)).toBe('1,000,000,000');
+    expect(formatNumberWithCommas(0)).toBe('0');
+    expect(formatNumberWithCommas(undefined)).toBe('');
+    expect(formatNumberWithCommas(null)).toBe('');
+  });
+
+  it('định dạng số thập phân cho ngoại tệ (EUR, USD)', async () => {
+    const { formatNumberWithCommas } = await import('@/components/ui/price-input');
+    expect(formatNumberWithCommas(104.5, true)).toBe('104.5');
+    expect(formatNumberWithCommas(1234.56, true)).toBe('1,234.56');
+    expect(formatNumberWithCommas(0.25, true)).toBe('0.25');
+  });
+
+  it('chuyển đổi số tiền lớn sang chữ gợi ý tiếng Việt (formatVndInWords)', async () => {
+    const { formatVndInWords } = await import('@/components/ui/price-input');
+    expect(formatVndInWords(3500000)).toBe('~ 3.5 triệu ₫');
+    expect(formatVndInWords(1000000)).toBe('~ 1 triệu ₫');
+    expect(formatVndInWords(2500000000)).toBe('~ 2.5 tỷ ₫');
+    expect(formatVndInWords(50000)).toBe('~ 50 nghìn ₫');
+    expect(formatVndInWords(0)).toBe('');
+  });
+});

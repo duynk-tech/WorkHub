@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Avatar, EmptyState, SearchInput,
-  Select, StatCard, PageHeader, Progress, Field, Input,
+  Select, SearchableSelect, StatCard, PageHeader, Progress, Field, Input,
 } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
@@ -158,15 +158,29 @@ export function LeaveScreen({
                   {Object.entries(LEAVE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </Select>
 
-                <Select sizeSm style={{ width: 'auto', minWidth: 160 }} value={filter.leaveTypeId ?? ''} onChange={(e) => setParam('type', e.target.value)}>
-                  <option value="">Mọi loại nghỉ</option>
-                  {leaveTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </Select>
+                <SearchableSelect
+                  sizeSm style={{ width: 'auto', minWidth: 170 }}
+                  value={filter.leaveTypeId ? String(filter.leaveTypeId) : ''}
+                  onChange={(val) => setParam('type', val)}
+                  options={[
+                    { value: '', label: 'Mọi loại nghỉ' },
+                    ...leaveTypes.map((t) => ({ value: String(t.id), label: t.name })),
+                  ]}
+                  placeholder="Mọi loại nghỉ"
+                  searchPlaceholder="Tìm loại nghỉ…"
+                />
 
-                <Select sizeSm style={{ width: 'auto', minWidth: 160 }} value={filter.departmentId ?? ''} onChange={(e) => setParam('dept', e.target.value)}>
-                  <option value="">Mọi phòng ban</option>
-                  {departments.map((d) => <option key={d.id} value={d.id}>{'　'.repeat(d.level - 1)}{d.name}</option>)}
-                </Select>
+                <SearchableSelect
+                  sizeSm style={{ width: 'auto', minWidth: 180 }}
+                  value={filter.departmentId ? String(filter.departmentId) : ''}
+                  onChange={(val) => setParam('dept', val)}
+                  options={[
+                    { value: '', label: 'Mọi phòng ban' },
+                    ...departments.map((d) => ({ value: String(d.id), label: `${'　'.repeat(d.level - 1)}${d.name}` })),
+                  ]}
+                  placeholder="Mọi phòng ban"
+                  searchPlaceholder="Tìm phòng ban…"
+                />
 
                 <Button size="sm" variant={filter.onlyMine ? 'soft' : 'secondary'} onClick={() => setParam('mine', filter.onlyMine ? '' : '1')}>
                   Đơn của tôi

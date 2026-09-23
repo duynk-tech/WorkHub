@@ -66,8 +66,8 @@ export function InstallWizard({
             <img
               src={logoUrl}
               alt={appName}
-              className="login-logo"
-              style={{ objectFit: 'contain', padding: 2 }}
+              className="login-logo has-image"
+              style={{ objectFit: 'contain', padding: 2, background: 'transparent', boxShadow: 'none' }}
             />
           ) : (
             <span className="login-logo">{logoText || appName.slice(0, 1).toUpperCase() || 'W'}</span>

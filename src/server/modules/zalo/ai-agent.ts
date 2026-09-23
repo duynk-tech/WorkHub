@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { getSetting } from '@/server/modules/settings/service';
 import { getAppBranding } from '@/server/modules/settings/branding';
-import { MCP_TOOLS, TOOLS_BY_NAME } from '@/server/mcp/tools';
+import { MCP_TOOLS, TOOLS_BY_NAME, hasToolPermission } from '@/server/mcp/tools';
+import { getDisabledMcpModules } from '@/server/mcp/module-config';
 import type { McpIdentity } from '@/server/mcp/auth';
 import { can, type AuthContext } from '@/server/auth/context';
 import { fmtDate } from '@/lib/date';
@@ -230,9 +231,76 @@ async function callGeminiApi(
 }
 
 /**
- * Xử lý tin nhắn tự nhiên từ Zalo bằng Gemini AI Agent kết hợp MCP Tools.
+ * Lấy lịch sử hội thoại gần nhất của người dùng Zalo trong phiên hiện tại.
+ * - Giới hạn trong vòng 2 giờ gần nhất
+ * - Bỏ qua các tin nhắn trước lệnh /reset, /new, /clear gần nhất
+ * - Lấy tối đa 6 lượt trao đổi gần nhất (12 tin nhắn: user và assistant)
+ * - Bỏ qua các lệnh slash command để giữ ngữ cảnh hội thoại tự nhiên thuần túy
  */
-export async function handleZaloAiQuery(employeeId: number, userPrompt: string): Promise<string> {
+export async function getRecentChatHistory(zaloUserId: string): Promise<ChatMessage[]> {
+  if (!zaloUserId) return [];
+
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    // Tìm mốc thời gian của lệnh reset/new gần nhất (nếu có) trong 2 giờ qua
+    const latestReset = await prisma.zaloInboundLog.findFirst({
+      where: {
+        zaloUserId,
+        text: { in: ['/reset', '/new', '/clear'] },
+        createdAt: { gte: twoHoursAgo },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+
+    const cutoffTime = latestReset ? latestReset.createdAt : twoHoursAgo;
+
+    // Lấy các tin nhắn đã xử lý thành công và có phản hồi sau mốc cutoff
+    const logs = await prisma.zaloInboundLog.findMany({
+      where: {
+        zaloUserId,
+        handled: true,
+        createdAt: { gt: cutoffTime },
+        text: { not: null },
+        response: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 12,
+      select: { text: true, response: true, createdAt: true },
+    });
+
+    // Lọc bỏ các slash command, giữ lại hội thoại tự nhiên
+    const conversationalLogs = logs.filter(
+      (l) => l.text && !l.text.trim().startsWith('/') && l.response && l.response.trim(),
+    );
+
+    // Lấy tối đa 6 lượt gần nhất và xếp theo thứ tự thời gian tăng dần (cũ đến mới)
+    const recent = conversationalLogs.slice(0, 6).reverse();
+
+    const history: ChatMessage[] = [];
+    for (const item of recent) {
+      if (item.text && item.response) {
+        history.push({ role: 'user', content: item.text.trim() });
+        history.push({ role: 'assistant', content: item.response.trim() });
+      }
+    }
+
+    return history;
+  } catch (error) {
+    console.error('[getRecentChatHistory error]:', error);
+    return [];
+  }
+}
+
+/**
+ * Xử lý tin nhắn tự nhiên từ Zalo bằng Gemini AI Agent kết hợp MCP Tools và Session Context.
+ */
+export async function handleZaloAiQuery(
+  employeeId: number,
+  userPrompt: string,
+  zaloUserId?: string,
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
   if (!apiKey) {
     return '⚠️ Chưa cấu hình GEMINI_API_KEY cho hệ thống. Quản trị viên vui lòng cấu hình trong Cài đặt hệ thống hoặc file .env.';
@@ -258,7 +326,10 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
   };
 
   // Lọc danh sách MCP tool theo quyền hạn của nhân sự
-  const allowedTools = MCP_TOOLS.filter((t) => !t.permission || can(ctx, t.permission));
+  const offModules = await getDisabledMcpModules();
+  const allowedTools = MCP_TOOLS.filter(
+    (t) => !offModules.includes(t.module) && hasToolPermission(ctx, t),
+  );
 
   const mcpGeminiTools = allowedTools.map((t) => ({
     type: 'function' as const,
@@ -316,8 +387,12 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
 
   const systemPrompt = renderSystemPrompt(customTemplate, promptVars);
 
+  // Tải lịch sử hội thoại gần nhất trong phiên (Session Context)
+  const history = zaloUserId ? await getRecentChatHistory(zaloUserId) : [];
+
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
+    ...history,
     { role: 'user', content: userPrompt },
   ];
 
@@ -458,6 +533,7 @@ export async function handleZaloAiQuery(employeeId: number, userPrompt: string):
 export async function runAiAgentTest(
   userPrompt: string,
   targetEmployeeId?: number,
+  history?: ChatMessage[],
 ): Promise<AiAgentTestResult> {
   const startTime = Date.now();
   const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
@@ -507,7 +583,10 @@ export async function runAiAgentTest(
     ctx,
   };
 
-  const allowedTools = MCP_TOOLS.filter((t) => !t.permission || can(ctx, t.permission));
+  const offModules = await getDisabledMcpModules();
+  const allowedTools = MCP_TOOLS.filter(
+    (t) => !offModules.includes(t.module) && hasToolPermission(ctx, t),
+  );
   const mcpGeminiTools = allowedTools.map((t) => ({
     type: 'function' as const,
     function: {
@@ -563,6 +642,7 @@ export async function runAiAgentTest(
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
+    ...(history || []),
     { role: 'user', content: userPrompt },
   ];
 

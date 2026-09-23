@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { MCP_TOOLS } from '@/server/mcp/tools';
+import { getDisabledMcpModules } from '@/server/mcp/module-config';
 import { getAppUrl } from '@/lib/mcp-oauth';
 import { getAppBranding } from '@/server/modules/settings/branding';
 
@@ -21,8 +22,11 @@ export async function GET(req: NextRequest) {
   const branding = await getAppBranding();
 
   const paths: Record<string, unknown> = {};
+  const disabledModules = await getDisabledMcpModules();
 
   for (const tool of MCP_TOOLS) {
+    if (disabledModules.includes(tool.module)) continue;
+
     const inputSchema = (tool.inputSchema ?? { type: 'object', properties: {} }) as {
       type?: string;
       properties?: Record<string, unknown>;

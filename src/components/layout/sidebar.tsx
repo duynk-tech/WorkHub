@@ -26,6 +26,7 @@ export function Sidebar({
   const pathname = usePathname();
   const [hoveredTooltip, setHoveredTooltip] = useState<{ top: number; text: string } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -40,6 +41,7 @@ export function Sidebar({
   useEffect(() => {
     onCloseMobile();
     setHoveredTooltip(null);
+    setPendingHref(null);
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -57,8 +59,10 @@ export function Sidebar({
 
   const hideTooltip = () => setHoveredTooltip(null);
 
-  const isActive = (href: string) =>
-    href === '/settings' ? pathname === '/settings' : pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = (href: string) => {
+    const current = pendingHref ?? pathname;
+    return href === '/settings' ? current === '/settings' : current === href || current.startsWith(`${href}/`);
+  };
 
   const displayLogoLetter = logoText?.trim() || appName.slice(0, 1).toUpperCase() || 'W';
 
@@ -66,7 +70,10 @@ export function Sidebar({
     <>
       {mobileOpen && <div className="sidebar-backdrop" onClick={onCloseMobile} />}
 
-      <aside className={cn('sidebar', isEffectiveCollapsed && 'sidebar-collapsed', mobileOpen && 'sidebar-mobile-open')}>
+      <aside
+        data-tour="sidebar-nav"
+        className={cn('sidebar', isEffectiveCollapsed && 'sidebar-collapsed', mobileOpen && 'sidebar-mobile-open')}
+      >
         <div className="sidebar-head">
           {isEffectiveCollapsed ? (
             <button
@@ -77,7 +84,13 @@ export function Sidebar({
               onMouseLeave={hideTooltip}
               aria-label="Mở rộng menu"
             >
-              <span className="login-logo" style={{ overflow: 'hidden' }}>
+              <span
+                className={`login-logo ${logoUrl ? 'has-image' : ''}`}
+                style={{
+                  overflow: 'hidden',
+                  ...(logoUrl ? { background: 'transparent', boxShadow: 'none' } : {}),
+                }}
+              >
                 <span className="logo-letter">
                   {logoUrl ? (
                     <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
@@ -85,13 +98,19 @@ export function Sidebar({
                     displayLogoLetter
                   )}
                 </span>
-                <PanelLeft className="logo-expand-icon" size={18} />
+                {!logoUrl && <PanelLeft className="logo-expand-icon" size={18} />}
               </span>
             </button>
           ) : (
             <>
               <Link href="/dashboard" className="sidebar-brand">
-                <span className="login-logo" style={{ overflow: 'hidden' }}>
+                <span
+                  className={`login-logo ${logoUrl ? 'has-image' : ''}`}
+                  style={{
+                    overflow: 'hidden',
+                    ...(logoUrl ? { background: 'transparent', boxShadow: 'none' } : {}),
+                  }}
+                >
                   {logoUrl ? (
                     <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                   ) : (
@@ -115,7 +134,7 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
+        <nav className="sidebar-nav scrollbar-none" data-tour="sidebar-nav" onScroll={hideTooltip}>
           {sections.map((section, i) => (
             <div key={i} style={{ marginBottom: 2 }}>
               {section.title && !isEffectiveCollapsed && <div className="nav-section">{section.title}</div>}
@@ -128,8 +147,14 @@ export function Sidebar({
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={true}
                     className="nav-item"
                     data-active={isActive(item.href)}
+                    onClick={() => {
+                      if (pathname !== item.href) {
+                        setPendingHref(item.href);
+                      }
+                    }}
                     onMouseEnter={(e) => showTooltip(e, labelWithCount)}
                     onMouseLeave={hideTooltip}
                   >

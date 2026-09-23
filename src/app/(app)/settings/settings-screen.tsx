@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useTransition, useEffect } from 'react';
+import { useState, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Save, MessageCircle, Send, Building2, CalendarDays, Clock, Plus, Trash2, Copy,
-  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff,
+  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
@@ -13,15 +13,155 @@ import {
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { fmtDate, workDaysToLabels, WORKDAY_LABELS } from '@/lib/date';
+import { REPORTS, REPORT_GROUPS, DISABLED_REPORTS_KEY } from '@/server/modules/report/registry';
 import { generateWebhookSecret } from '@/lib/utils';
 import {
   saveSettingsAction, testZaloBotAction, flushOutboxAction,
   saveHolidayAction, deleteHolidayAction, saveWorkShiftAction, saveLeaveTypeAction,
   registerZaloWebhookAction, getZaloWebhookInfoAction, deleteZaloWebhookAction,
+  resetDemoDataAction,
 } from '@/server/modules/settings/actions';
+import { PrintWatermark } from '@/components/domain/print-watermark';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type Tab = 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays';
+type Tab = 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports';
+
+function ImageUploadInput({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ảnh quá lớn (tối đa 5MB)');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Tải lên không thành công');
+      }
+
+      onChange(data.url);
+      toast.success('Đã tải ảnh lên máy chủ thành công');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Tải lên thất bại';
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+        <div style={{ flex: 1 }}>
+          <Input
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled || uploading}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={disabled || uploading}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          {uploading ? (
+            <>
+              <RefreshCw size={14} className="animate-spin" />
+              <span>Đang tải...</span>
+            </>
+          ) : (
+            <>
+              <Upload size={14} />
+              <span>Tải ảnh lên</span>
+            </>
+          )}
+        </Button>
+        {value ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange('')}
+            title="Xóa đường dẫn ảnh"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <Trash2 size={14} />
+          </Button>
+        ) : null}
+      </div>
+      {value ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 6,
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--surface-sunken)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={value}
+              alt="Preview"
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span>URL ảnh: </span>
+            <code style={{ fontSize: 11, background: 'var(--surface-sunken)', padding: '2px 6px', borderRadius: 4 }}>
+              {value}
+            </code>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function SettingsScreen({
   settings, holidays, shifts, leaveTypes, webhookUrl, permissions,
@@ -39,7 +179,7 @@ export function SettingsScreen({
   const toast = useToast();
   const [pending, startTransition] = useTransition();
 
-  const validTabs: Tab[] = ['general', 'zalo', 'leave', 'attendance', 'holidays'];
+  const validTabs: Tab[] = ['general', 'zalo', 'leave', 'attendance', 'holidays', 'reports'];
   const initialValidTab: Tab = validTabs.includes(initialTab as Tab) ? (initialTab as Tab) : 'general';
   const [tab, setTab] = useState<Tab>(initialValidTab);
 
@@ -75,6 +215,8 @@ export function SettingsScreen({
 
   const [shiftModal, setShiftModal] = useState<any | null>(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState<any | null>(null);
+  const [confirmResetModal, setConfirmResetModal] = useState<{ open: boolean; clean: boolean } | null>(null);
+  const [resettingData, setResettingData] = useState(false);
 
   const [webhookInputUrl, setWebhookInputUrl] = useState(webhookUrl);
   const [webhookInfo, setWebhookInfo] = useState<any | null>(null);
@@ -126,6 +268,7 @@ export function SettingsScreen({
     { key: 'leave', label: 'Nghỉ phép', icon: Plane, visible: permissions.leaveType || permissions.general },
     { key: 'attendance', label: 'Ca làm việc', icon: Clock, visible: permissions.shift || permissions.general },
     { key: 'holidays', label: 'Ngày lễ', icon: CalendarDays, visible: permissions.holiday },
+    { key: 'reports', label: 'Báo cáo', icon: BarChart3, visible: permissions.general },
   ];
 
   return (
@@ -181,14 +324,15 @@ export function SettingsScreen({
                 </Field>
 
                 <Field
-                  label="Đường dẫn ảnh Logo (Logo URL)"
-                  hint="Đường dẫn ảnh logo (URL https://... hoặc /logo.png). Nếu để trống sẽ dùng chữ cái đại diện."
+                  label="Ảnh Logo ứng dụng (Logo URL)"
+                  hint="Tải ảnh trực tiếp lên máy chủ hoặc nhập URL (VD: /uploads/... hoặc https://...). Tệp tải lên được lưu trong Docker volume persistent để không mất khi deploy lại."
                   className="span-2"
                 >
-                  <Input
+                  <ImageUploadInput
                     value={values['app.logoUrl'] ?? ''}
-                    placeholder="https://example.com/logo.png hoặc /icon.png"
-                    onChange={(e) => set('app.logoUrl', e.target.value)}
+                    placeholder="https://example.com/logo.png hoặc bấm nút tải ảnh từ máy tính"
+                    onChange={(val) => set('app.logoUrl', val)}
+                    disabled={!permissions.general}
                   />
                 </Field>
 
@@ -218,104 +362,141 @@ export function SettingsScreen({
                     XEM TRƯỚC GIAO DIỆN (LIVE PREVIEW)
                   </div>
                   <div className="row" style={{ gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {/* Preview Sidebar Expanded */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div className="hint" style={{ fontSize: 11.5 }}>Sidebar mở rộng:</div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '8px 14px',
-                          background: 'var(--surface-card)',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <div className="login-logo" style={{ width: 32, height: 32, borderRadius: 8, fontSize: 14, overflow: 'hidden' }}>
-                          {values['app.logoUrl']?.trim() ? (
-                            <img
-                              src={values['app.logoUrl'].trim()}
-                              alt="Logo preview"
-                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
-                          )}
-                        </div>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)', letterSpacing: '-0.02em' }}>
-                          {values['app.name']?.trim() || 'WorkHub'}
-                        </span>
-                      </div>
-                    </div>
+                      {(() => {
+                        const hasLogoImg = Boolean(values['app.logoUrl']?.trim());
+                        return (
+                          <>
+                            {/* Preview Sidebar Expanded */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div className="hint" style={{ fontSize: 11.5 }}>Sidebar mở rộng:</div>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 9,
+                                  padding: '8px 14px',
+                                  background: 'var(--surface-card)',
+                                  borderRadius: 'var(--radius-md)',
+                                  border: '1px solid var(--border-subtle)',
+                                }}
+                              >
+                                <div
+                                  className={`login-logo ${hasLogoImg ? 'has-image' : ''}`}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 8,
+                                    fontSize: 14,
+                                    overflow: 'hidden',
+                                    ...(hasLogoImg ? { background: 'transparent', boxShadow: 'none' } : {}),
+                                  }}
+                                >
+                                  {hasLogoImg ? (
+                                    <img
+                                      src={values['app.logoUrl'].trim()}
+                                      alt="Logo preview"
+                                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
+                                  )}
+                                </div>
+                                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)', letterSpacing: '-0.02em' }}>
+                                  {values['app.name']?.trim() || 'WorkHub'}
+                                </span>
+                              </div>
+                            </div>
 
-                    {/* Preview Sidebar Collapsed */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div className="hint" style={{ fontSize: 11.5 }}>Sidebar thu gọn:</div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: 48,
-                          height: 48,
-                          background: 'var(--surface-card)',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <div className="login-logo" style={{ width: 36, height: 36, borderRadius: 9, fontSize: 16, overflow: 'hidden' }}>
-                          {values['app.logoUrl']?.trim() ? (
-                            <img
-                              src={values['app.logoUrl'].trim()}
-                              alt="Logo preview"
-                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                            />
-                          ) : (
-                            values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                            {/* Preview Sidebar Collapsed */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div className="hint" style={{ fontSize: 11.5 }}>Sidebar thu gọn:</div>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 48,
+                                  height: 48,
+                                  background: 'var(--surface-card)',
+                                  borderRadius: 'var(--radius-md)',
+                                  border: '1px solid var(--border-subtle)',
+                                }}
+                              >
+                                <div
+                                  className={`login-logo ${hasLogoImg ? 'has-image' : ''}`}
+                                  style={{
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 9,
+                                    fontSize: 16,
+                                    overflow: 'hidden',
+                                    ...(hasLogoImg ? { background: 'transparent', boxShadow: 'none' } : {}),
+                                  }}
+                                >
+                                  {hasLogoImg ? (
+                                    <img
+                                      src={values['app.logoUrl'].trim()}
+                                      alt="Logo preview"
+                                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                    />
+                                  ) : (
+                                    values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
+                                  )}
+                                </div>
+                              </div>
+                            </div>
 
-                    {/* Preview Login badge */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div className="hint" style={{ fontSize: 11.5 }}>Trang đăng nhập:</div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '10px 16px',
-                          background: 'var(--surface-card)',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <div className="login-logo" style={{ width: 40, height: 40, borderRadius: 10, fontSize: 18, overflow: 'hidden' }}>
-                          {values['app.logoUrl']?.trim() ? (
-                            <img
-                              src={values['app.logoUrl'].trim()}
-                              alt="Logo preview"
-                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                            />
-                          ) : (
-                            values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
-                            {values['app.name']?.trim() || 'WorkHub'}
-                          </div>
-                          <div className="hint" style={{ fontSize: 12 }}>
-                            {values['app.description']?.trim() || 'Đăng nhập vào hệ thống'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                            {/* Preview Login badge */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              <div className="hint" style={{ fontSize: 11.5 }}>Trang đăng nhập:</div>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 10,
+                                  padding: '10px 16px',
+                                  background: 'var(--surface-card)',
+                                  borderRadius: 'var(--radius-md)',
+                                  border: '1px solid var(--border-subtle)',
+                                }}
+                              >
+                                <div
+                                  className={`login-logo ${hasLogoImg ? 'has-image' : ''}`}
+                                  style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 10,
+                                    fontSize: 18,
+                                    overflow: 'hidden',
+                                    ...(hasLogoImg ? { background: 'transparent', boxShadow: 'none' } : {}),
+                                  }}
+                                >
+                                  {hasLogoImg ? (
+                                    <img
+                                      src={values['app.logoUrl'].trim()}
+                                      alt="Logo preview"
+                                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                    />
+                                  ) : (
+                                    values['app.logoText']?.trim() || values['app.name']?.trim()?.slice(0, 1).toUpperCase() || 'W'
+                                  )}
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
+                                    {values['app.name']?.trim() || 'WorkHub'}
+                                  </div>
+                                  <div className="hint" style={{ fontSize: 12 }}>
+                                    {values['app.description']?.trim() || 'Đăng nhập vào hệ thống'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                   </div>
                 </div>
               </div>
@@ -327,7 +508,7 @@ export function SettingsScreen({
             <CardHeader>
               <CardTitle>Thông tin công ty</CardTitle>
               <Button variant="primary" size="sm" loading={pending}
-                onClick={() => save('general', ['company.name', 'company.shortName', 'company.address', 'company.taxCode'])}>
+                onClick={() => save('general', ['company.name', 'company.shortName', 'company.address', 'company.taxCode', 'company.phone'])}>
                 <Save /> Lưu
               </Button>
             </CardHeader>
@@ -342,9 +523,295 @@ export function SettingsScreen({
                 <Field label="Mã số thuế">
                   <Input value={values['company.taxCode'] ?? ''} onChange={(e) => set('company.taxCode', e.target.value)} />
                 </Field>
+                <Field
+                  label="Hotline hỗ trợ"
+                  hint="In trên tem QR dán máy tại khách và các biên bản — để trống thì tem sẽ ẩn dòng hotline"
+                >
+                  <Input
+                    value={values['company.phone'] ?? ''}
+                    onChange={(e) => set('company.phone', e.target.value)}
+                    placeholder="VD: 1900 1234 hoặc 0909 123 456"
+                  />
+                </Field>
                 <Field label="Địa chỉ" className="span-2">
                   <Input value={values['company.address'] ?? ''} onChange={(e) => set('company.address', e.target.value)} />
                 </Field>
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Card Cấu hình in ấn & Logo Watermark */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Cấu hình in ấn & Logo Watermark</CardTitle>
+                <div className="card-subtitle">
+                  Tự động chèn logo chìm (watermark) dưới nền của tất cả các phiếu in, bảng báo giá và biên bản A4
+                </div>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={pending}
+                onClick={() =>
+                  save('general', [
+                    'print.watermarkEnabled',
+                    'print.watermarkUrl',
+                    'print.watermarkOpacity',
+                  ])
+                }
+              >
+                <Save /> Lưu cấu hình in
+              </Button>
+            </CardHeader>
+            <CardBody>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div className="span-2" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--surface-sunken)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <Switch
+                    checked={values['print.watermarkEnabled'] !== false && values['print.watermarkEnabled'] !== 'false'}
+                    onChange={(e) => set('print.watermarkEnabled', e.target.checked)}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-strong)' }}>
+                      Kích hoạt Watermark nền chìm cho tất cả phiếu in
+                    </div>
+                    <div className="hint" style={{ fontSize: 12 }}>
+                      Áp dụng cho Báo giá linh kiện, Báo giá máy, Biên bản bàn giao thiết bị / tài sản, Phiếu kho, Phiếu thu / chi...
+                    </div>
+                  </div>
+                </div>
+
+                <Field
+                  label="Ảnh Logo Watermark riêng (Tùy chọn)"
+                  hint="Tải ảnh lên máy chủ hoặc nhập URL. Để trống hệ thống sẽ tự động lấy theo Logo thương hiệu (app.logoUrl) hoặc con dấu pháp nhân."
+                  className="span-2"
+                >
+                  <ImageUploadInput
+                    value={values['print.watermarkUrl'] ?? ''}
+                    placeholder="VD: /uploads/watermark.png (hoặc để trống)"
+                    onChange={(val) => set('print.watermarkUrl', val)}
+                    disabled={!permissions.general}
+                  />
+                </Field>
+
+                <Field
+                  label="Độ mờ Watermark (%)"
+                  hint="Khuyến nghị từ 5% đến 12% để hình nền chìm tinh tế, sắc nét khi in mà không che khuất chữ và số liệu"
+                >
+                  <Input
+                    type="number"
+                    min="1"
+                    max="40"
+                    step="1"
+                    value={
+                      values['print.watermarkOpacity'] !== undefined && values['print.watermarkOpacity'] !== null && values['print.watermarkOpacity'] !== ''
+                        ? (Number(values['print.watermarkOpacity']) <= 1
+                            ? Math.round(Number(values['print.watermarkOpacity']) * 100)
+                            : Math.round(Number(values['print.watermarkOpacity'])))
+                        : 8
+                    }
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(40, Number(e.target.value) || 8));
+                      set('print.watermarkOpacity', (val / 100).toFixed(2));
+                    }}
+                  />
+                </Field>
+
+                <Field
+                  label="Tên hiển thị trên con dấu (Mặc định)"
+                  hint="Dùng làm nội dung con dấu vector khi chưa cấu hình ảnh logo riêng"
+                >
+                  <Input
+                    value={values['company.name'] ?? 'Công ty Sunny'}
+                    disabled
+                    style={{ background: 'var(--surface-sunken)', opacity: 0.8 }}
+                  />
+                </Field>
+
+                {/* Live Preview Watermark trên trang giấy thu nhỏ */}
+                <div
+                  className="span-2"
+                  style={{
+                    padding: 16,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12 }}>
+                    XEM TRƯỚC WATERMARK TRÊN PHIẾU IN A4 (LIVE PREVIEW)
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '100%',
+                        maxWidth: 480,
+                        background: '#ffffff',
+                        color: '#111827',
+                        padding: '24px 28px',
+                        borderRadius: 6,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                        border: '1px solid #e2e8f0',
+                        fontFamily: '"Times New Roman", Times, serif',
+                        fontSize: '11px',
+                        lineHeight: 1.35,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {/* Watermark Component */}
+                      <PrintWatermark
+                        logoUrl={values['print.watermarkUrl']?.trim() || values['app.logoUrl']?.trim() || null}
+                        opacity={
+                          values['print.watermarkOpacity'] !== undefined
+                            ? (Number(values['print.watermarkOpacity']) <= 1
+                                ? Number(values['print.watermarkOpacity'])
+                                : Number(values['print.watermarkOpacity']) / 100)
+                            : 0.08
+                        }
+                        enabled={values['print.watermarkEnabled'] !== false && values['print.watermarkEnabled'] !== 'false'}
+                        companyName={values['company.name'] || 'CÔNG TY SUNNY'}
+                        size={240}
+                      />
+
+                      {/* Content đè lên trên watermark */}
+                      <div style={{ position: 'relative', zIndex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #334155', paddingBottom: 4, marginBottom: 8 }}>
+                          <div style={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '11.5px' }}>
+                            {values['company.name'] || 'CÔNG TY SUNNY'}
+                          </div>
+                          <div style={{ fontStyle: 'italic', fontSize: '10px' }}>Mẫu bản in A4 tiêu chuẩn</div>
+                        </div>
+
+                        <div style={{ textAlign: 'center', margin: '8px 0', fontWeight: 800, textTransform: 'uppercase', fontSize: '13px' }}>
+                          BẢNG BÁO GIÁ / BIÊN BẢN NGHIỆM THU
+                        </div>
+
+                        <div style={{ background: 'rgba(241, 245, 249, 0.6)', padding: '4px 8px', borderRadius: 4, marginBottom: 8, fontSize: '10px' }}>
+                          <div>Kính gửi: <strong>Quý Khách Hàng / Đối Tác F&B</strong></div>
+                          <div>Địa chỉ: <strong>Tại kho / Điểm bán của khách hàng</strong></div>
+                        </div>
+
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: 8 }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(241, 245, 249, 0.7)' }}>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>STT</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px' }}>Hạng mục / Linh kiện</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>SL</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>Thành tiền (₫)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>01</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px' }}>Bơm áp lực nước / Motor Pump 230V</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>02</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>6.850.000</td>
+                            </tr>
+                            <tr>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>02</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px' }}>Van điện từ Solenoid Valve 3 Way</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>01</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>2.140.000</td>
+                            </tr>
+                            <tr style={{ fontWeight: 700 }}>
+                              <td colSpan={3} style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>TỔNG CỘNG:</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right', color: '#7c3aed' }}>8.990.000 ₫</td>
+                            </tr>
+                          </tbody>
+                        </table>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', textAlign: 'center', marginTop: 12, paddingTop: 4 }}>
+                          <div>
+                            <div style={{ fontWeight: 700 }}>ĐẠI DIỆN KHÁCH HÀNG</div>
+                            <div style={{ fontStyle: 'italic', fontSize: '9px', color: '#64748b' }}>(Ký, đóng dấu)</div>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700 }}>ĐẠI DIỆN CÔNG TY</div>
+                            <div style={{ fontStyle: 'italic', fontSize: '9px', color: '#64748b' }}>(Ký & ghi rõ họ tên)</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Card Quản trị Dữ liệu mẫu (Demo Data Seed & Clean) */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Database size={18} style={{ color: 'var(--brand)' }} />
+                  Dữ liệu mẫu hệ thống (Demo Data Seed)
+                </CardTitle>
+                <div className="card-subtitle">
+                  Khởi tạo hoặc làm mới bộ dữ liệu mẫu chuẩn cho tất cả các tính năng: chuỗi F&B, thiết bị, phụ tùng kho, đơn hàng, chấm công 30 ngày, công việc và phê duyệt.
+                </div>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, color: 'var(--text-strong)', marginBottom: 4 }}>
+                    Dữ liệu demo bao gồm những gì?
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-muted)' }}>
+                    <li>14 nhân sự đa phòng ban (Ban TGĐ, Khối Kinh doanh, Khối Kỹ thuật, Khối Hành chính - Nhân sự).</li>
+                    <li>8 máy F&B cao cấp (Taylor C708, Carpigiani, Selmi, La Marzocco, Unox...) thuộc 4 khách hàng chuỗi lớn (Golden Gate, Maison Marou, Tous les Jours, Phúc Long).</li>
+                    <li>2 kho linh kiện (Hà Nội, TP.HCM) với 8 mã phụ tùng, đơn nhập khẩu PO, báo giá, đơn bán hàng và phiếu kho.</li>
+                    <li>Dữ liệu chấm công 30 ngày liên tục, bảng phân công công việc Kanban, đơn xin nghỉ phép và phiếu chờ duyệt trực tiếp.</li>
+                  </ul>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 12,
+                    paddingTop: 4,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12.5 }}>
+                    <AlertTriangle size={15} style={{ color: 'var(--warning, #f59e0b)' }} />
+                    <span>
+                      Tùy chọn <b>Làm sạch & Nạp lại</b> sẽ xóa toàn bộ dữ liệu phát sinh cũ và khởi tạo bộ demo mới tinh (tài khoản admin và cài đặt vẫn được giữ nguyên).
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={resettingData || pending}
+                      onClick={() => setConfirmResetModal({ open: true, clean: false })}
+                    >
+                      <RefreshCw size={14} /> Nạp bổ sung (Giữ dữ liệu cũ)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      disabled={resettingData || pending}
+                      onClick={() => setConfirmResetModal({ open: true, clean: true })}
+                    >
+                      <Trash2 size={14} /> Làm sạch & Nạp seed mới
+                    </Button>
+                  </div>
+                </div>
               </div>
             </CardBody>
           </Card>
@@ -762,6 +1229,94 @@ export function SettingsScreen({
         </Card>
       )}
 
+      {tab === 'reports' && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Báo cáo hiển thị</CardTitle>
+              <div className="card-subtitle">
+                Tắt những báo cáo đơn vị không dùng để màn hình Báo cáo gọn lại. Tắt chỉ ẩn khỏi
+                giao diện, dữ liệu và phân quyền không thay đổi.
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={pending}
+              onClick={() => save('reports', [DISABLED_REPORTS_KEY])}
+            >
+              <Save size={14} style={{ marginRight: 6 }} /> Lưu
+            </Button>
+          </CardHeader>
+          <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {(Object.keys(REPORT_GROUPS) as (keyof typeof REPORT_GROUPS)[]).map((groupKey) => {
+              const group = REPORT_GROUPS[groupKey];
+              const items = REPORTS.filter((r) => r.group === groupKey);
+              const disabled: string[] = Array.isArray(values[DISABLED_REPORTS_KEY])
+                ? values[DISABLED_REPORTS_KEY]
+                : [];
+
+              return (
+                <div key={groupKey}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>
+                    {group.label}
+                  </div>
+                  <div className="hint" style={{ marginBottom: 8 }}>{group.description}</div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {items.map((r) => {
+                      const on = !disabled.includes(r.key);
+                      return (
+                        <label
+                          key={r.key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 12,
+                            padding: '9px 12px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-base)',
+                            background: on ? 'var(--surface-card)' : 'var(--surface-sunken)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <span style={{ minWidth: 0 }}>
+                            <span
+                              style={{
+                                display: 'block',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: on ? 'var(--text-strong)' : 'var(--text-muted)',
+                              }}
+                            >
+                              {r.label}
+                            </span>
+                            <span className="hint">{r.description}</span>
+                          </span>
+
+                          <Switch
+                            checked={on}
+                            onChange={(e) =>
+                              set(
+                                DISABLED_REPORTS_KEY,
+                                e.target.checked
+                                  ? disabled.filter((k) => k !== r.key)
+                                  : [...disabled, r.key],
+                              )
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </CardBody>
+        </Card>
+      )}
+
       {/* Modal ngày lễ */}
       <Modal
         open={holidayModal.open}
@@ -942,6 +1497,64 @@ export function SettingsScreen({
         title="Xóa ngày lễ"
         confirmText="Xóa"
         message={<>Xóa ngày lễ <b>{confirmDeleteHoliday?.name}</b>?</>}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmResetModal?.open)}
+        onClose={() => setConfirmResetModal(null)}
+        onConfirm={() => {
+          const isClean = Boolean(confirmResetModal?.clean);
+          setResettingData(true);
+          startTransition(async () => {
+            try {
+              const res = await resetDemoDataAction({ clean: isClean });
+              if (res.ok) {
+                toast.success(res.message);
+                setConfirmResetModal(null);
+                router.refresh();
+              } else {
+                toast.error(res.message);
+              }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Có lỗi xảy ra khi nạp dữ liệu';
+              toast.error(msg);
+            } finally {
+              setResettingData(false);
+            }
+          });
+        }}
+        loading={resettingData || pending}
+        danger={Boolean(confirmResetModal?.clean)}
+        title={confirmResetModal?.clean ? 'Làm sạch và nạp lại toàn bộ dữ liệu mẫu' : 'Nạp bổ sung dữ liệu mẫu'}
+        confirmText={confirmResetModal?.clean ? 'Xác nhận xóa & nạp seed' : 'Bắt đầu nạp seed'}
+        cancelText="Đóng"
+        message={
+          confirmResetModal?.clean ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ color: 'var(--danger)', fontWeight: 600 }}>
+                ⚠️ CẢNH BÁO: Dữ liệu phát sinh sẽ bị xóa hoàn toàn!
+              </div>
+              <div>
+                Hệ thống sẽ làm sạch toàn bộ khách hàng, thiết bị F&B, linh kiện kho, phiếu thu/chi, đơn hàng, công việc, chấm công và các yêu cầu nghỉ phép hiện tại.
+              </div>
+              <div>
+                Sau khi xóa, hệ thống sẽ tự động khởi tạo lại bộ <b>Dữ liệu Seed Demo chuẩn</b> (bao gồm 8 máy F&B, 4 chuỗi khách hàng lớn, 8 linh kiện, 30 ngày chấm công và tài khoản nhân sự).
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                * Tài khoản quản trị <b>admin</b> và các thông tin cấu hình hệ thống (tên công ty, token Zalo, bản in...) được bảo lưu an toàn.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                Hệ thống sẽ chạy nạp bổ sung các bản ghi dữ liệu mẫu (Seed Demo) còn thiếu vào cơ sở dữ liệu.
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                Dữ liệu hiện có của bạn sẽ không bị xóa.
+              </div>
+            </div>
+          )
+        }
       />
     </div>
   );

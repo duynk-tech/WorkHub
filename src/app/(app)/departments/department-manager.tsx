@@ -10,7 +10,7 @@ import {
   saveDepartmentAction, deleteDepartmentAction, repairTreeAction, type DepartmentFormInput,
 } from '@/server/modules/org/department-actions';
 import {
-  Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Textarea,
+  Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, SearchableSelect, Textarea,
   StatCard, EmptyState, SearchInput, Avatar, Switch, Divider,
 } from '@/components/ui';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
@@ -308,24 +308,28 @@ export function DepartmentManager({ tree, employees, stats, canManage }: Props) 
             <Input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="P_DEV" />
           </Field>
           <Field label="Đơn vị cấp trên">
-            <Select
-              value={form.parentId ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, parentId: e.target.value ? Number(e.target.value) : null }))}
-            >
-              <option value="">— Cấp cao nhất —</option>
-              {parentOptions.map((n) => (
-                <option key={n.id} value={n.id}>{'　'.repeat(n.level - 1)}{n.name}</option>
-              ))}
-            </Select>
+            <SearchableSelect
+              value={form.parentId ? String(form.parentId) : ''}
+              onChange={(val) => setForm((f) => ({ ...f, parentId: val ? Number(val) : null }))}
+              options={[
+                { value: '', label: '— Cấp cao nhất —' },
+                ...parentOptions.map((n) => ({ value: String(n.id), label: `${'　'.repeat(n.level - 1)}${n.name}` })),
+              ]}
+              placeholder="— Cấp cao nhất —"
+              searchPlaceholder="Tìm đơn vị…"
+            />
           </Field>
           <Field label="Trưởng đơn vị" hint="Dùng cho bước duyệt 'Trưởng phòng ban'">
-            <Select
-              value={form.managerId ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, managerId: e.target.value ? Number(e.target.value) : null }))}
-            >
-              <option value="">— Chưa phân công —</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
-            </Select>
+            <SearchableSelect
+              value={form.managerId ? String(form.managerId) : ''}
+              onChange={(val) => setForm((f) => ({ ...f, managerId: val ? Number(val) : null }))}
+              options={[
+                { value: '', label: '— Chưa phân công —' },
+                ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+              ]}
+              placeholder="— Chưa phân công —"
+              searchPlaceholder="Tìm nhân sự…"
+            />
           </Field>
           <Field label="Thứ tự hiển thị">
             <Input type="number" value={form.sortOrder ?? 0} onChange={(e) => setForm((f) => ({ ...f, sortOrder: Number(e.target.value) }))} />

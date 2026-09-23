@@ -401,6 +401,74 @@ export async function cancelLeaveAction(requestId: number, reason?: string): Pro
   return { ok: true, message: `Đã hủy đơn ${request.code}` };
 }
 
+/**
+ * Xóa hẳn một đơn nghỉ chưa được duyệt.
+ *
+ * Khác với hủy đơn (giữ lại bản ghi ở trạng thái CANCELLED để còn dấu vết), đây
+ * là xóa vĩnh viễn — chỉ dành cho quản trị dọn đơn rác, đơn nhập nhầm hoặc đơn
+ * kẹt quy trình. Đơn đã duyệt không xóa được: phải hủy trước để hoàn lại quỹ
+ * phép và bảng công, rồi mới xóa.
+ */
+export async function deleteLeaveAction(requestId: number): Promise<Result> {
+  const ctx = await requireAuth();
+  if (!ctx.isAdmin && !can(ctx, 'FEATURE_LEAVE_FORCE_CLOSE')) {
+    return { ok: false, message: 'Chỉ quản trị hệ thống mới được xóa đơn nghỉ phép' };
+  }
+
+  const request = await prisma.leaveRequest.findUnique({ where: { id: requestId } });
+  if (!request) return { ok: false, message: 'Không tìm thấy đơn' };
+
+  if (request.status === 'APPROVED') {
+    return { ok: false, message: 'Đơn đã duyệt không xóa được — hãy hủy đơn trước để hoàn lại quỹ phép' };
+  }
+
+  const leaveType = await prisma.leaveType.findUnique({ where: { id: request.leaveTypeId } });
+  const year = request.startDate.getUTCFullYear();
+
+  await prisma.$transaction(async (tx) => {
+    // Đơn đang chờ duyệt vẫn đang giữ chỗ trong quỹ phép, phải trả lại trước khi xóa
+    if (leaveType?.deductsBalance && request.status === 'PENDING' && request.submittedAt) {
+      await adjustBalance(tx, request.employeeId, year, { pending: -Number(request.totalDays) });
+    }
+
+    // Bảng công do hệ thống sinh ra từ đơn này
+    await tx.attendanceRecord.deleteMany({
+      where: {
+        employeeId: request.employeeId,
+        workDate: { gte: request.startDate, lte: request.endDate },
+        source: 'SYSTEM',
+        status: { in: ['LEAVE', 'HALF_DAY'] },
+      },
+    });
+
+    // LeaveRequestDay tự xóa theo cascade; quy trình duyệt thì không, vì quan hệ
+    // từ đơn sang workflow là SetNull — bỏ sót sẽ để lại việc chờ duyệt mồ côi
+    await tx.leaveRequest.delete({ where: { id: requestId } });
+    if (request.workflowInstanceId) {
+      await tx.workflowInstance.delete({ where: { id: request.workflowInstanceId } }).catch(() => null);
+    }
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: ctx.userId,
+      entityType: 'LeaveRequest',
+      entityId: String(requestId),
+      action: 'DELETE',
+      diffJson: {
+        code: request.code,
+        status: request.status,
+        employeeId: request.employeeId,
+        totalDays: Number(request.totalDays),
+      } as never,
+    },
+  }).catch(() => null);
+
+  revalidatePath('/leaves');
+  revalidatePath('/approvals');
+  return { ok: true, message: `Đã xóa đơn ${request.code}` };
+}
+
 const balanceSchema = z.object({
   employeeId: z.number().int(),
   year: z.number().int(),

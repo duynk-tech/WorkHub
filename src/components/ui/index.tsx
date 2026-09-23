@@ -1,4 +1,5 @@
 import * as React from 'react';
+import Link from 'next/link';
 import { cn, initials } from '@/lib/utils';
 
 /* ── Button ─────────────────────────────────────────────── */
@@ -198,9 +199,14 @@ export function PageHeader({
 }
 
 export function StatCard({
-  label, value, hint, icon, tone, footer,
-}: { label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: React.ReactNode; tone?: string; footer?: React.ReactNode }) {
-  return (
+  label, value, hint, icon, tone, footer, href,
+}: {
+  label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: React.ReactNode;
+  tone?: string; footer?: React.ReactNode;
+  /** Có href thì cả thẻ bấm được để đi thẳng tới màn hình chi tiết. */
+  href?: string;
+}) {
+  const card = (
     <Card hover className="stat-card">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <span className="stat-label">{label}</span>
@@ -219,6 +225,13 @@ export function StatCard({
       {footer}
     </Card>
   );
+
+  if (!href) return card;
+  return (
+    <Link href={href} style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}>
+      {card}
+    </Link>
+  );
 }
 
 export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
@@ -228,3 +241,12 @@ export function Skeleton({ className, style }: { className?: string; style?: Rea
 export function Divider({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return <hr className={cn('divider', className)} style={style} />;
 }
+
+export * from './searchable-select';
+export * from './price-input';
+
+export * from './pagination';
+export * from './action-menu';
+export * from './scroll-tabs';
+export * from './modal';
+export * from './image-upload';

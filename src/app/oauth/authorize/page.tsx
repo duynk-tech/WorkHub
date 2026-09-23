@@ -58,7 +58,7 @@ export default async function OAuthAuthorizePage({
   if (state) cancelUrl.searchParams.set('state', state);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'var(--surface-canvas)' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'var(--surface-app)' }}>
       <div style={{ position: 'absolute', top: 16, right: 16 }}>
         <ThemeToggle />
       </div>
@@ -82,7 +82,7 @@ export default async function OAuthAuthorizePage({
                 width: 44,
                 height: 44,
                 borderRadius: 'var(--radius-md)',
-                background: 'var(--brand)',
+                background: branding.logoUrl ? 'transparent' : 'var(--brand)',
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',

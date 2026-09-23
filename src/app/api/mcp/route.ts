@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { authenticateMcp, logMcpCall, type McpIdentity } from '@/server/mcp/auth';
-import { MCP_TOOLS, TOOLS_BY_NAME, checkToolAccess } from '@/server/mcp/tools';
+import { MCP_TOOLS, TOOLS_BY_NAME, checkToolAccess, hasToolPermission } from '@/server/mcp/tools';
 import { can } from '@/server/auth/context';
 import { getAppUrl } from '@/lib/mcp-oauth';
 import { getAppBranding } from '@/server/modules/settings/branding';
+import { getDisabledMcpModules } from '@/server/mcp/module-config';
+import { MCP_MODULES, type McpModuleKey } from '@/server/mcp/modules';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -21,11 +23,12 @@ interface JsonRpcRequest {
 const ok = (id: unknown, result: unknown) => ({ jsonrpc: '2.0', id, result });
 const err = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
-function toolDescriptor(identity: McpIdentity) {
+function toolDescriptor(identity: McpIdentity, disabledModules: McpModuleKey[]) {
   return MCP_TOOLS
+    .filter((t) => !disabledModules.includes(t.module))
     .filter((t) => identity.scopes.length === 0 || identity.scopes.includes(t.name))
     .filter((t) => !(t.mutating && identity.readOnly))
-    .filter((t) => !t.permission || can(identity.ctx, t.permission))
+    .filter((t) => hasToolPermission(identity.ctx, t))
     .map((t) => ({
       name: t.name,
       title: t.title,
@@ -58,11 +61,20 @@ async function handleRpc(body: JsonRpcRequest, identity: McpIdentity) {
       return ok(id, {});
 
     case 'tools/list':
-      return ok(id, { tools: toolDescriptor(identity) });
+      return ok(id, { tools: toolDescriptor(identity, await getDisabledMcpModules()) });
 
     case 'tools/call': {
       const name = String(params?.name ?? '');
       const args = (params?.arguments ?? {}) as Record<string, unknown>;
+
+      // Phân hệ bị tắt thì công cụ coi như không tồn tại với client
+      const offModules = await getDisabledMcpModules();
+      const calling = TOOLS_BY_NAME.get(name);
+      if (calling && offModules.includes(calling.module)) {
+        const why = `Phân hệ "${MCP_MODULES[calling.module].label}" đang tắt trên hệ thống này`;
+        await logMcpCall(identity.clientId, name, args, false, 0, why);
+        return ok(id, { isError: true, content: [{ type: 'text', text: `❌ ${why}` }] });
+      }
 
       const denied = checkToolAccess(identity, name);
       if (denied) {
@@ -193,7 +205,7 @@ export async function GET(req: NextRequest) {
       client: auth.identity.clientName,
       actingAs: auth.identity.ctx.fullName,
       readOnly: auth.identity.readOnly,
-      tools: toolDescriptor(auth.identity).map((t) => ({ name: t.name, title: t.title })),
+      tools: toolDescriptor(auth.identity, await getDisabledMcpModules()).map((t) => ({ name: t.name, title: t.title })),
     },
     {
       headers: { 'Access-Control-Allow-Origin': '*' },

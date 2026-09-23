@@ -56,7 +56,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       {mounted && createPortal(
-        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 100, display: 'flex', flexDirection: 'column', gap: 9, maxWidth: 380 }}>
+        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 9, maxWidth: 380 }}>
           {toasts.map((t) => (
             <div key={t.id} className="card animate-in" style={{ display: 'flex', gap: 10, padding: '12px 14px', boxShadow: 'var(--shadow-lg)', alignItems: 'flex-start' }}>
               <span style={{ color: COLORS[t.tone], display: 'flex', flexShrink: 0, marginTop: 1 }}>

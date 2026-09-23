@@ -1,7 +1,7 @@
 /**
  * Bộ sinh mã QR Code Vector (SVG) thuần TypeScript — không phụ thuộc thư viện ngoài.
  * Tuân theo chuẩn ISO/IEC 18004 (Hỗ trợ QR Version 1 đến 10, ECC Level M).
- * Xuất trực tiếp chuỗi SVG sắc nét phục vụ hiển thị web và in tem nhãn nhiệt/decal.
+ * Xuất trực tiếp chuỗi SVG sắc nét phục vụ hiển thị web và in tem nhãn nhiệt.
  */
 
 // Bảng đa thức Galois Field GF(256) cho mã hóa Reed-Solomon

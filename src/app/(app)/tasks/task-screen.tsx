@@ -1,21 +1,23 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus, ListChecks, LayoutGrid, List as ListIcon, Filter, MessageSquare, CheckSquare,
-  Paperclip, ChevronLeft, ChevronRight, Clock, AlertTriangle, GitBranch,
+  Paperclip, ChevronLeft, ChevronRight, Clock, AlertTriangle, GitBranch, Download,
 } from 'lucide-react';
 import {
-  Button, Card, CardBody, Badge, Avatar, EmptyState, SearchInput, Select, Progress, PageHeader,
+  Button, Card, CardBody, Badge, Avatar, EmptyState, SearchInput, Select, SearchableSelect, Input, Progress, PageHeader,
 } from '@/components/ui';
-import { useToast } from '@/components/ui/toast';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
 import { TaskFormModal, type TaskFormValue } from './task-form-modal';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 import { fmtDate } from '@/lib/date';
-import { updateTaskStatusAction } from '@/server/modules/task/actions';
+import {
+  TASK_DATE_FIELDS, TASK_DATE_PRESETS, describeDateFilter,
+  type TaskDateField, type TaskDatePreset,
+} from '@/server/modules/task/date-filter';
 
 interface TaskRow {
   id: number; code: string; title: string; status: string; priority: string;
@@ -32,38 +34,59 @@ interface Props {
   board: { status: string; tasks: TaskRow[]; total: number }[] | null;
   departments: { id: number; name: string; level: number }[];
   employees: { id: number; fullName: string; code: string; avatarUrl: string | null }[];
-  filter: { search: string; status: string[]; assigneeId: number | null; departmentId: number | null; onlyMine: boolean; overdue: boolean; sort: string; page: number };
+  filter: {
+    search: string; status: string[]; pickedStatus: string[]; scope: string;
+    assigneeId: number | null; departmentId: number | null;
+    onlyMine: boolean; overdue: boolean; sort: string; page: number;
+    dateField: TaskDateField; datePreset: TaskDatePreset;
+    dateFrom: string | null; dateTo: string | null; noDate: boolean;
+    customFrom: string; customTo: string;
+  };
+  scopeCounts: { open: number; closed: number; all: number };
   currentEmployeeId: number;
   canCreate: boolean;
   canAssign: boolean;
   canDelete: boolean;
+  canExport: boolean;
 }
 
 export function TaskScreen({
-  view, data, board, departments, employees, filter, currentEmployeeId, canCreate, canAssign,
+  view, data, board, departments, employees, filter, scopeCounts, currentEmployeeId, canCreate, canAssign,
+  canExport,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const toast = useToast();
-  const [, startTransition] = useTransition();
   const [search, setSearch] = useState(filter.search);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<TaskFormValue | null>(null);
 
-  const setParam = (key: string, value: string) => {
+  const setParam = (key: string, value: string) => setParams({ [key]: value });
+
+  /** Đặt nhiều tham số trong một lần điều hướng; giá trị rỗng thì xóa tham số. */
+  const setParams = (next: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
-    value ? params.set(key, value) : params.delete(key);
-    if (key !== 'page') params.delete('page');
+    for (const [key, value] of Object.entries(next)) {
+      value ? params.set(key, value) : params.delete(key);
+    }
+    if (!('page' in next)) params.delete('page');
     router.push(`/tasks?${params.toString()}`);
   };
 
-  const changeStatus = (id: number, status: string) => {
-    startTransition(async () => {
-      const res = await updateTaskStatusAction(id, status);
-      res.ok ? toast.success(res.message) : toast.error(res.message);
-      router.refresh();
-    });
-  };
+  /**
+   * File Excel phải khớp với danh sách đang xem, nên dùng lại nguyên tham số URL
+   * hiện tại, chỉ bỏ phân trang vì bản xuất lấy hết chứ không theo trang.
+   */
+  const exportUrl = (() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    params.delete('view');
+    const qs = params.toString();
+    return `/api/tasks/export${qs ? `?${qs}` : ''}`;
+  })();
+
+  const dateLabel = describeDateFilter(filter.dateField, filter.datePreset, {
+    from: filter.dateFrom, to: filter.dateTo, noDate: filter.noDate,
+  });
 
   const overdue = (t: TaskRow) => t.dueDate && new Date(t.dueDate) < new Date() && !['DONE', 'CANCELLED'].includes(t.status);
 
@@ -75,20 +98,95 @@ export function TaskScreen({
             <SearchInput placeholder="Tìm mã hoặc tiêu đề công việc…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </form>
 
-          <Select sizeSm style={{ width: 'auto', minWidth: 150 }} value={filter.status[0] ?? ''} onChange={(e) => setParam('status', e.target.value)}>
+          <Select
+            sizeSm style={{ width: 'auto', minWidth: 150 }}
+            value={filter.pickedStatus[0] ?? ''}
+            onChange={(e) => setParam('status', e.target.value)}
+          >
             <option value="">Mọi trạng thái</option>
-            {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            {Object.entries(TASK_STATUS)
+              .filter(([k]) => filter.scope === 'all' || filter.status.length === 0 || filter.status.includes(k) || filter.pickedStatus.includes(k))
+              .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </Select>
 
-          <Select sizeSm style={{ width: 'auto', minWidth: 150 }} value={filter.assigneeId ?? ''} onChange={(e) => setParam('assignee', e.target.value)}>
-            <option value="">Mọi người thực hiện</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-          </Select>
+          <SearchableSelect
+            sizeSm style={{ width: 'auto', minWidth: 170 }}
+            value={filter.assigneeId ? String(filter.assigneeId) : ''}
+            onChange={(val) => setParam('assignee', val)}
+            options={[
+              { value: '', label: 'Mọi người thực hiện' },
+              ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+            ]}
+            placeholder="Mọi người thực hiện"
+            searchPlaceholder="Tìm nhân sự…"
+          />
 
-          <Select sizeSm style={{ width: 'auto', minWidth: 160 }} value={filter.departmentId ?? ''} onChange={(e) => setParam('dept', e.target.value)}>
-            <option value="">Mọi phòng ban</option>
-            {departments.map((d) => <option key={d.id} value={d.id}>{'　'.repeat(d.level - 1)}{d.name}</option>)}
-          </Select>
+          <SearchableSelect
+            sizeSm style={{ width: 'auto', minWidth: 180 }}
+            value={filter.departmentId ? String(filter.departmentId) : ''}
+            onChange={(val) => setParam('dept', val)}
+            options={[
+              { value: '', label: 'Mọi phòng ban' },
+              ...departments.map((d) => ({ value: String(d.id), label: `${'　'.repeat(d.level - 1)}${d.name}` })),
+            ]}
+            placeholder="Mọi phòng ban"
+            searchPlaceholder="Tìm phòng ban…"
+          />
+
+          <div
+            className="row"
+            style={{
+              gap: 0,
+              border: '1px solid var(--border-base)',
+              borderRadius: 'var(--radius-sm)',
+              overflow: 'hidden',
+            }}
+            title="Chọn trường ngày rồi chọn khoảng thời gian"
+          >
+            <Select
+              sizeSm
+              style={{ width: 'auto', minWidth: 130, border: 'none', borderRadius: 0, background: 'var(--surface-sunken)' }}
+              value={filter.dateField}
+              onChange={(e) => setParams({ dfield: e.target.value })}
+            >
+              {Object.entries(TASK_DATE_FIELDS).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </Select>
+            <Select
+              sizeSm
+              style={{ width: 'auto', minWidth: 140, border: 'none', borderRadius: 0 }}
+              value={filter.datePreset}
+              onChange={(e) =>
+                // Rời khỏi "khoảng cụ thể" thì bỏ luôn hai ngày đã nhập cho khỏi treo lơ lửng
+                setParams(
+                  e.target.value === 'CUSTOM'
+                    ? { drange: 'CUSTOM' }
+                    : { drange: e.target.value === 'ALL' ? '' : e.target.value, dfrom: '', dto: '' },
+                )
+              }
+            >
+              {Object.entries(TASK_DATE_PRESETS).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </Select>
+          </div>
+
+          {filter.datePreset === 'CUSTOM' && (
+            <div className="row" style={{ gap: 6 }}>
+              <Input
+                type="date" sizeSm style={{ width: 150 }}
+                value={filter.customFrom}
+                onChange={(e) => setParams({ dfrom: e.target.value })}
+              />
+              <span className="hint">→</span>
+              <Input
+                type="date" sizeSm style={{ width: 150 }}
+                value={filter.customTo}
+                onChange={(e) => setParams({ dto: e.target.value })}
+              />
+            </div>
+          )}
 
           <Button size="sm" variant={filter.onlyMine ? 'soft' : 'secondary'} onClick={() => setParam('mine', filter.onlyMine ? '' : '1')}>
             Của tôi
@@ -97,7 +195,7 @@ export function TaskScreen({
             <AlertTriangle /> Quá hạn
           </Button>
 
-          {(filter.search || filter.status.length || filter.assigneeId || filter.departmentId || filter.onlyMine || filter.overdue) && (
+          {(filter.search || filter.pickedStatus.length || filter.assigneeId || filter.departmentId || filter.onlyMine || filter.overdue || dateLabel) && (
             <Button size="sm" variant="ghost" onClick={() => router.push(`/tasks?view=${view}`)}><Filter /> Xóa lọc</Button>
           )}
 
@@ -114,15 +212,67 @@ export function TaskScreen({
     <div className="stack">
       <PageHeader
         title="Công việc"
-        description={view === 'list' && data ? `${data.total} công việc trong phạm vi của bạn` : 'Bảng Kanban theo trạng thái'}
-        actions={canCreate ? <Button variant="primary" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus /> Tạo công việc</Button> : undefined}
+        description={
+          view !== 'list'
+            ? 'Bảng Kanban theo trạng thái'
+            : (dateLabel ? `${dateLabel} · ` : '') + (filter.scope === 'closed'
+              ? `${data?.total ?? 0} việc đã hoàn thành hoặc đã hủy — tra cứu lại khi cần`
+              : filter.scope === 'all'
+                ? `${data?.total ?? 0} công việc, tính cả việc đã đóng`
+                : `${data?.total ?? 0} việc còn đang chạy trong phạm vi của bạn`)
+        }
+        actions={
+          canExport || canCreate ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {canExport && (
+                <a href={exportUrl} className="btn btn-secondary" title="Tải danh sách đang lọc ra file Excel">
+                  <Download /> Xuất Excel
+                </a>
+              )}
+              {canCreate && (
+                <Button variant="primary" onClick={() => { setEditing(null); setFormOpen(true); }}>
+                  <Plus /> Tạo công việc
+                </Button>
+              )}
+            </div>
+          ) : undefined
+        }
       />
+
+      {view === 'list' && (
+        <div className="tabs">
+          {([
+            { key: 'open', label: 'Đang làm', count: scopeCounts.open },
+            { key: 'closed', label: 'Đã đóng', count: scopeCounts.closed },
+            { key: 'all', label: 'Tất cả', count: scopeCounts.all },
+          ] as const).map((t) => (
+            <div
+              key={t.key}
+              className="tab"
+              data-active={filter.scope === t.key}
+              onClick={() => setParam('scope', t.key === 'open' ? '' : t.key)}
+            >
+              {t.label} ({t.count})
+            </div>
+          ))}
+        </div>
+      )}
 
       {filterBar}
 
       {view === 'list' && data && (
         data.rows.length === 0 ? (
-          <Card><CardBody><EmptyState icon={<ListChecks size={20} />} title="Không có công việc nào" description="Thử đổi bộ lọc hoặc tạo công việc mới." /></CardBody></Card>
+          <Card><CardBody><EmptyState
+            icon={<ListChecks size={20} />}
+            title={filter.scope === 'closed' ? 'Chưa có việc nào được đóng' : 'Không có việc nào đang chạy'}
+            description={
+              filter.scope === 'closed'
+                ? 'Việc hoàn thành hoặc bị hủy sẽ được lưu lại ở đây.'
+                : scopeCounts.closed > 0
+                  ? `Tất cả đã xong. Xem ${scopeCounts.closed} việc đã đóng ở tab "Đã đóng".`
+                  : 'Thử đổi bộ lọc hoặc tạo công việc mới.'
+            }
+          /></CardBody></Card>
         ) : (
           <>
             <div className="table-wrap">
@@ -162,14 +312,8 @@ export function TaskScreen({
                           </div>
                         ) : <span className="text-faint">Chưa giao</span>}
                       </td>
-                      <td style={{ verticalAlign: 'middle' }} onClick={(e) => e.stopPropagation()}>
-                        <Select
-                          sizeSm value={t.status}
-                          onChange={(e) => changeStatus(t.id, e.target.value)}
-                          style={{ minWidth: 110 }}
-                        >
-                          {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                        </Select>
+                      <td style={{ whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                        <TaskStatusBadge status={t.status} />
                       </td>
                       <td style={{ whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
                         <TaskPriorityBadge priority={t.priority} />
@@ -202,15 +346,21 @@ export function TaskScreen({
               </table>
             </div>
 
-            {data.pageCount > 1 && (
-              <div className="row-between">
-                <span className="hint">Trang {data.page}/{data.pageCount} · {data.total} công việc</span>
+            <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <span className="hint">
+                Hiện <strong>{(data.page - 1) * 20 + 1}</strong>–
+                <strong>{Math.min(data.page * 20, data.total)}</strong> trong{' '}
+                <strong>{data.total}</strong> công việc
+              </span>
+
+              {data.pageCount > 1 && (
                 <div className="row" style={{ gap: 6 }}>
                   <Button size="sm" variant="secondary" disabled={data.page <= 1} onClick={() => setParam('page', String(data.page - 1))}><ChevronLeft /> Trước</Button>
+                  <span className="hint" style={{ minWidth: 78, textAlign: 'center' }}>Trang {data.page} / {data.pageCount}</span>
                   <Button size="sm" variant="secondary" disabled={data.page >= data.pageCount} onClick={() => setParam('page', String(data.page + 1))}>Sau <ChevronRight /></Button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </>
         )
       )}
@@ -220,18 +370,27 @@ export function TaskScreen({
           {board.map((col) => {
             const meta = TASK_STATUS[col.status];
             return (
-              <div key={col.status} className="kanban-col">
+              <div
+                key={col.status}
+                className="kanban-col"
+                style={{ '--col': meta?.color ?? 'var(--text-muted)' } as React.CSSProperties}
+              >
                 <div className="kanban-head">
-                  <span className="row" style={{ gap: 7 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta?.color }} />
-                    <span style={{ fontWeight: 620, fontSize: 13 }}>{meta?.label ?? col.status}</span>
+                  <span style={{ fontWeight: 620, fontSize: 13, color: 'var(--text-strong)' }}>
+                    {meta?.label ?? col.status}
                   </span>
-                  <Badge>{col.total}</Badge>
+                  <span className="kanban-count">{col.total}</span>
                 </div>
                 <div className="kanban-body scrollbar-none">
                   {col.tasks.length === 0 && <div className="hint" style={{ padding: '16px 8px', textAlign: 'center' }}>Trống</div>}
                   {col.tasks.map((t) => (
-                    <Link key={t.id} href={`/tasks/${t.id}`} className="kanban-card">
+                    <Link
+                      key={t.id}
+                      href={`/tasks/${t.id}`}
+                      className="kanban-card"
+                      data-overdue={Boolean(overdue(t))}
+                      data-muted={['DONE', 'CANCELLED'].includes(t.status)}
+                    >
                       <div className="row-between" style={{ marginBottom: 6 }}>
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>{t.code}</span>
                         <TaskPriorityBadge priority={t.priority} />

@@ -124,7 +124,7 @@ describe('MCP OAuth 2.1 & RFC 7591 Dynamic Client Registration', () => {
   });
 
   describe('OpenAPI 3.0.3 Spec for Custom GPT Actions', () => {
-    it('/api/openapi.json tạo đặc tả OpenAPI 3.0 hợp lệ với danh sách công cụ WorkHub', async () => {
+    it('/api/openapi.json tạo đặc tả OpenAPI 3.0 hợp lệ với danh sách công cụ hệ thống', async () => {
       const req = new NextRequest('https://workhub.test/api/openapi.json', {
         headers: { host: 'workhub.test' },
       });
@@ -133,7 +133,8 @@ describe('MCP OAuth 2.1 & RFC 7591 Dynamic Client Registration', () => {
 
       const spec = await res.json();
       expect(spec.openapi).toBe('3.0.3');
-      expect(spec.info.title).toContain('WorkHub');
+      // Tên hệ thống đổi được trong Cấu hình, nên chỉ kiểm phần hậu tố cố định
+      expect(spec.info.title).toMatch(/ API \(Custom GPT Actions & MCP REST\)$/);
       expect(spec.servers[0].url).toBe('https://workhub.test');
       expect(spec.components.securitySchemes.ApiKeyAuth).toBeDefined();
       expect(spec.components.securitySchemes.ApiKeyAuth.type).toBe('http');

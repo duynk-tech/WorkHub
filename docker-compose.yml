@@ -19,6 +19,8 @@ services:
     networks:
       - default
       - server
+    volumes:
+      - workhub_uploads_data:/app/public/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -50,3 +52,4 @@ networks:
 
 volumes:
   workhub_mariadb_data:
+  workhub_uploads_data:

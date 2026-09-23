@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
 import { setSetting, getSetting } from './service';
 import { getAppBranding } from './branding';
+import { runFullDemoSeed, cleanBusinessData } from '../../../../prisma/seed/index';
 import {
   getBotInfo,
   sendZaloMessage,
@@ -34,7 +35,12 @@ export interface Result { ok: boolean; message: string }
 const SECRET_KEYS = new Set(['zalo.botToken', 'zalo.webhookSecret', 'ai.geminiApiKey']);
 
 export async function saveSettingsAction(group: string, values: Record<string, unknown>): Promise<Result> {
-  const permission = (group === 'zalo' || group === 'ai') ? 'FEATURE_SETTING_ZALO' : 'FEATURE_SETTING_GENERAL';
+  const permission =
+    group === 'zalo' || group === 'ai'
+      ? 'FEATURE_SETTING_ZALO'
+      : group === 'mcp'
+        ? 'FEATURE_MCP_MANAGE'
+        : 'FEATURE_SETTING_GENERAL';
   const ctx = await requirePermission(permission);
 
   for (const [key, value] of Object.entries(values)) {
@@ -52,6 +58,7 @@ export async function saveSettingsAction(group: string, values: Record<string, u
 
   revalidatePath('/settings');
   revalidatePath('/settings/integrations');
+  revalidatePath('/api/openapi.json');
   revalidatePath('/', 'layout');
   return { ok: true, message: 'Đã lưu cấu hình' };
 }
@@ -492,3 +499,56 @@ export async function testAiAgentAction(
   }
   return { ok: true, message: 'Kiểm thử thành công', result: testRes };
 }
+
+/**
+ * Server action làm sạch dữ liệu cũ và nạp lại toàn bộ dữ liệu mẫu (Seed Demo)
+ * Chỉ tài khoản ADMIN hoặc có quyền FEATURE_SETTING_GENERAL mới được phép chạy.
+ */
+export async function resetDemoDataAction(options?: { clean?: boolean }): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_SETTING_GENERAL');
+
+  try {
+    const shouldClean = options?.clean ?? true;
+    await runFullDemoSeed(prisma, { clean: shouldClean });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: ctx.userId,
+        entityType: 'SystemDatabase',
+        entityId: 'DEMO_SEED',
+        action: 'UPDATE',
+        diffJson: { clean: shouldClean, timestamp: new Date().toISOString() } as never,
+      },
+    });
+
+    // Revalidate toàn bộ các đường dẫn chính
+    revalidatePath('/', 'layout');
+    revalidatePath('/dashboard');
+    revalidatePath('/tasks');
+    revalidatePath('/equipment');
+    revalidatePath('/spare-parts');
+    revalidatePath('/sales');
+    revalidatePath('/tickets');
+    revalidatePath('/documents');
+    revalidatePath('/customers');
+    revalidatePath('/employees');
+    revalidatePath('/departments');
+    revalidatePath('/attendance');
+    revalidatePath('/leaves');
+    revalidatePath('/approvals');
+    revalidatePath('/reports');
+    revalidatePath('/settings');
+
+    return {
+      ok: true,
+      message: shouldClean
+        ? 'Đã làm sạch dữ liệu cũ và nạp lại dữ liệu mẫu Demo thành công!'
+        : 'Đã nạp bổ sung dữ liệu mẫu Demo thành công!',
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Nạp dữ liệu mẫu thất bại';
+    console.error('Lỗi khi nạp dữ liệu mẫu:', error);
+    return { ok: false, message: `Thao tác thất bại: ${msg}` };
+  }
+}
+

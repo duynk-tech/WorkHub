@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { getCompanyInfo } from '@/server/modules/settings/branding';
 import { requireAuth, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { getAssetById } from '@/server/modules/asset/service';
@@ -20,7 +21,7 @@ export default async function AssetDetailPage({
     notFound();
   }
 
-  const [asset, departments, employees] = await Promise.all([
+  const [asset, departments, employees, companyInfo] = await Promise.all([
     getAssetById(assetId),
     prisma.department.findMany({
       where: { isActive: true },
@@ -38,6 +39,7 @@ export default async function AssetDetailPage({
       },
       orderBy: { fullName: 'asc' },
     }),
+    getCompanyInfo(),
   ]);
 
   if (!asset) {
@@ -55,6 +57,7 @@ export default async function AssetDetailPage({
       canMaintenance={can(ctx, 'FEATURE_ASSET_MAINTENANCE')}
       canLiquidate={can(ctx, 'FEATURE_ASSET_LIQUIDATE')}
       canDelete={can(ctx, 'FEATURE_ASSET_DELETE')}
+      companyInfo={JSON.parse(JSON.stringify(companyInfo))}
     />
   );
 }

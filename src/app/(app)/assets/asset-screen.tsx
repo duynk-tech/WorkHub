@@ -33,7 +33,7 @@ import {
   Package,
   Building2,
 } from 'lucide-react';
-import { Button, Card, Input, Select, Badge } from '@/components/ui';
+import { Button, Card, Input, Select, SearchableSelect, Badge } from '@/components/ui';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -76,6 +76,7 @@ export function AssetScreen({
   canMaintenance,
   canLiquidate,
   canDelete,
+  company,
 }: {
   assets: any[];
   metrics: { total: number; inUse: number; inStock: number; maintenance: number; liquidated: number; broken: number };
@@ -89,6 +90,7 @@ export function AssetScreen({
   canMaintenance?: boolean;
   canLiquidate?: boolean;
   canDelete?: boolean;
+  company?: { name?: string; shortName?: string; phone?: string };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -233,7 +235,7 @@ export function AssetScreen({
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <Laptop style={{ width: 24, height: 24, color: 'var(--primary, #0284c7)' }} />
-            Quản lý Thiết bị & Tài sản IT
+            Thiết bị & Tài sản IT
           </h1>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
             Theo dõi danh mục máy tính, cấp phát nhân sự, luân chuyển, bảo hành và in tem QR code dán máy
@@ -336,20 +338,19 @@ export function AssetScreen({
           </div>
 
           <div style={{ width: 170 }}>
-            <Select
+            <SearchableSelect
               value={deptId}
-              onChange={(e) => {
-                setDeptId(e.target.value);
-                applyFilters({ dept: e.target.value });
+              onChange={(val) => {
+                setDeptId(val);
+                applyFilters({ dept: val });
               }}
-            >
-              <option value="">Tất cả phòng ban</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: '', label: 'Tất cả phòng ban' },
+                ...departments.map((d) => ({ value: String(d.id), label: d.name })),
+              ]}
+              placeholder="Tất cả phòng ban"
+              searchPlaceholder="Tìm phòng ban…"
+            />
           </div>
 
           <Button variant="secondary" type="submit">
@@ -887,6 +888,7 @@ export function AssetScreen({
         <AssetPrintStickerModal
           open={Boolean(printAssets)}
           assets={printAssets}
+          company={company}
           onClose={() => setPrintAssets(null)}
         />
       )}

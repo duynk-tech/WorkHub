@@ -249,8 +249,8 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Gọi Gemini AI Agent kết hợp các công cụ MCP nội bộ
-        const aiReply = await handleZaloAiQuery(employee.id, text);
+        // Gọi Gemini AI Agent kết hợp các công cụ MCP nội bộ và Session Context
+        const aiReply = await handleZaloAiQuery(employee.id, text, zaloUserId);
         const sendRes = await sendZaloMessage(zaloUserId, aiReply);
         if (!sendRes.ok) {
           console.error('[Zalo Webhook] Gửi phản hồi AI thất bại:', sendRes.error);

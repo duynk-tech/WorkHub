@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthContext, can } from '@/server/auth/context';
 import { NAV_SECTIONS } from '@/lib/nav';
 import { AppShell } from '@/components/layout/app-shell';
-import { getAppBranding } from '@/server/modules/settings/branding';
+import { getAppBranding, getPrintWatermarkConfig } from '@/server/modules/settings/branding';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getAuthContext();
@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .map((s) => ({ ...s, items: s.items.filter((i) => !i.permission || can(ctx, i.permission)) }))
     .filter((s) => s.items.length > 0);
 
-  const [pendingApprovals, myTasks, notifications, unreadCount, branding] = await Promise.all([
+  const [pendingApprovals, myTasks, notifications, unreadCount, branding, printWatermark] = await Promise.all([
     prisma.approvalTask.count({ where: { approverId: ctx.employeeId, status: 'PENDING' } }),
     prisma.task.count({ where: { assigneeId: ctx.employeeId, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] } } }),
     prisma.inAppNotification.findMany({
@@ -25,6 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }),
     prisma.inAppNotification.count({ where: { userId: ctx.userId, readAt: null } }),
     getAppBranding(),
+    getPrintWatermarkConfig(),
   ]);
 
   return (
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       appName={branding.name}
       logoUrl={branding.logoUrl}
       logoText={branding.logoText}
+      printWatermark={printWatermark}
       sections={sections}
       badges={{ pendingApprovals, myTasks }}
       user={{

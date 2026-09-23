@@ -4,13 +4,19 @@ import { useState, useEffect } from 'react';
 import type { NavSection } from '@/lib/nav';
 import { Sidebar } from './sidebar';
 import { Topbar, type TopbarUser, type TopbarNotification } from './topbar';
+import { NavigationProgressBar } from './nav-progress-bar';
+import { CurrentUserProvider } from './current-user';
+import { PrintWatermarkProvider } from './print-watermark-context';
+import { GuidelineTour } from './guideline-tour';
+import type { PrintWatermarkConfig } from '@/server/modules/settings/branding';
 
 export function AppShell({
-  appName, logoUrl, logoText, sections, badges, user, notifications, unreadCount, children,
+  appName, logoUrl, logoText, printWatermark, sections, badges, user, notifications, unreadCount, children,
 }: {
   appName: string;
   logoUrl?: string | null;
   logoText?: string;
+  printWatermark?: PrintWatermarkConfig | null;
   sections: NavSection[];
   badges: Record<string, number>;
   user: TopbarUser;
@@ -34,27 +40,33 @@ export function AppShell({
   };
 
   return (
-    <div className="app-shell">
-      <Sidebar
-        sections={sections}
-        appName={appName}
-        logoUrl={logoUrl}
-        logoText={logoText}
-        badges={badges}
-        mobileOpen={mobileOpen}
-        onCloseMobile={() => setMobileOpen(false)}
-        collapsed={collapsed}
-        onToggleCollapsed={toggleCollapsed}
-      />
-      <div className="app-main" data-collapsed={collapsed}>
-        <Topbar
-          user={user}
-          notifications={notifications}
-          unreadCount={unreadCount}
-          onOpenMobileMenu={() => setMobileOpen(true)}
+    <CurrentUserProvider user={user}>
+      <PrintWatermarkProvider value={printWatermark}>
+        <div className="app-shell">
+        <NavigationProgressBar />
+        <Sidebar
+          sections={sections}
+          appName={appName}
+          logoUrl={logoUrl}
+          logoText={logoText}
+          badges={badges}
+          mobileOpen={mobileOpen}
+          onCloseMobile={() => setMobileOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
         />
-        <main className="app-content animate-in">{children}</main>
+        <div className="app-main" data-collapsed={collapsed}>
+          <Topbar
+            user={user}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onOpenMobileMenu={() => setMobileOpen(true)}
+          />
+          <main className="app-content animate-in">{children}</main>
+        </div>
+        <GuidelineTour />
       </div>
-    </div>
+      </PrintWatermarkProvider>
+    </CurrentUserProvider>
   );
 }

@@ -75,8 +75,8 @@ describe('AI Agent & MCP Tools Parameter Robustness', () => {
       ctx: mockCtx,
     };
 
-    it('danh mục MCP_TOOLS có đầy đủ 14 công cụ chuẩn', () => {
-      expect(MCP_TOOLS.length).toBe(14);
+    it('danh mục MCP_TOOLS có đầy đủ 30 công cụ chuẩn', () => {
+      expect(MCP_TOOLS.length).toBe(30);
       const names = MCP_TOOLS.map((t) => t.name);
       expect(names).toContain('search_employees');
       expect(names).toContain('get_department_tree');
@@ -92,6 +92,13 @@ describe('AI Agent & MCP Tools Parameter Robustness', () => {
       expect(names).toContain('approve_request');
       expect(names).toContain('attendance_summary');
       expect(names).toContain('my_day');
+      expect(names).toContain('list_fnb_equipment');
+      expect(names).toContain('get_fnb_equipment');
+      expect(names).toContain('list_fnb_customers');
+      expect(names).toContain('list_service_tickets');
+      expect(names).toContain('create_service_ticket');
+      expect(names).toContain('list_spare_parts');
+      expect(names).toContain('get_spare_part_stock');
     });
 
     it('mỗi công cụ đều có inputSchema hợp lệ kiểu object', () => {
