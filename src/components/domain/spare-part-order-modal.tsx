@@ -664,7 +664,7 @@ export function SparePartOrderModal({
                 <thead>
                   <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '8px 12px', textAlign: 'left', width: '46%' }}>
-                      Mặt hàng (Máy móc / Phụ tùng)
+                      Mặt hàng
                     </th>
                     <th style={{ padding: '8px 6px', textAlign: 'center', width: '12%' }}>
                       Số lượng
@@ -685,7 +685,6 @@ export function SparePartOrderModal({
                   {items.map((it, idx) => {
                     const calc = calculation.calculatedItems[idx];
                     const selectedPart = spareParts.find((p) => p.id === Number(it.itemId));
-                    const isMachine = selectedPart?.category === 'EQUIPMENT' || selectedPart?.category === 'MACHINE';
                     const isDetailOpen = Boolean(expandedIndices.includes(idx));
 
                     return (
@@ -696,125 +695,98 @@ export function SparePartOrderModal({
                             background: isDetailOpen ? '#f8fafc' : undefined,
                           }}
                         >
-                          <td style={{ padding: '8px 12px' }}>
-                            <select
-                              className="select"
-                              value={it.itemId}
-                              onChange={(e) => handleItemChange(idx, 'itemId', Number(e.target.value))}
-                              style={{ width: '100%' }}
-                            >
-                              {machineItems.length > 0 && (
-                                <optgroup label="🏭 Máy móc nguyên chiếc & Cụm máy">
-                                  {machineItems.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      [MÁY] [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )}
-                              <optgroup label="🔧 Linh kiện & Phụ tùng thay thế">
-                                {partItems.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            </select>
-
-                            {/* Toolbar nhỏ dưới dropdown: Tag loại hàng + Nút mở rộng chi tiết cước phí */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, fontSize: 11 }}>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                {isMachine ? (
-                                  <span style={{ padding: '1px 6px', borderRadius: 4, background: '#f0fdfa', color: '#0f766e', fontWeight: 600, fontSize: 10.5 }}>
-                                    🏭 Máy móc
-                                  </span>
-                                ) : (
-                                  <span style={{ padding: '1px 6px', borderRadius: 4, background: '#eff6ff', color: '#2563eb', fontWeight: 600, fontSize: 10.5 }}>
-                                    🔧 Phụ tùng
-                                  </span>
-                                )}
-                                {selectedPart?.priceEur && (
-                                  <span style={{ color: 'var(--text-muted)' }}>
-                                    Gốc: €{Number(selectedPart.priceEur).toLocaleString('vi-VN')}
-                                  </span>
-                                )}
-                              </div>
-
+                          <td style={{ padding: '8px 12px', verticalAlign: 'middle' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <button
                                 type="button"
                                 onClick={() => toggleDetail(idx)}
                                 style={{
+                                  width: 32,
+                                  height: 32,
+                                  minWidth: 32,
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: 4,
-                                  padding: '2px 8px',
-                                  fontSize: 11,
-                                  borderRadius: 4,
+                                  justifyContent: 'center',
+                                  borderRadius: 6,
                                   border: isDetailOpen ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
                                   background: isDetailOpen ? '#f5f3ff' : '#fff',
-                                  color: isDetailOpen ? '#7c3aed' : 'var(--text-base, #475569)',
-                                  fontWeight: 600,
+                                  color: isDetailOpen ? '#7c3aed' : 'var(--text-muted, #64748b)',
                                   cursor: 'pointer',
+                                  flexShrink: 0,
                                   transition: 'all 0.15s ease',
                                 }}
-                                title="Click để điều chỉnh cước phí, phí khác và tính lại giá bán"
+                                title={isDetailOpen ? 'Đóng chi tiết cước & phí' : 'Chi tiết cước & phí'}
                               >
-                                <SlidersHorizontal size={11} />
-                                {isDetailOpen ? 'Đóng chi tiết' : 'Chi tiết cước & phí'}
-                                {isDetailOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                                <SlidersHorizontal size={14} />
                               </button>
+
+                              <select
+                                className="select"
+                                value={it.itemId}
+                                onChange={(e) => handleItemChange(idx, 'itemId', Number(e.target.value))}
+                                style={{ width: '100%', flex: 1, minWidth: 0 }}
+                              >
+                                {machineItems.length > 0 && (
+                                  <optgroup label="🏭 Máy móc nguyên chiếc & Cụm máy">
+                                    {machineItems.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        [MÁY] [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="🔧 Linh kiện & Phụ tùng thay thế">
+                                  {partItems.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              </select>
                             </div>
                           </td>
 
-                          <td style={{ padding: '8px 6px', textAlign: 'center', verticalAlign: 'top' }}>
-                            <div style={{ paddingTop: 2 }}>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={it.quantity}
-                                onChange={(e) => handleItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
-                                style={{ width: 75, textAlign: 'center', margin: '0 auto' }}
-                              />
-                            </div>
+                          <td style={{ padding: '8px 6px', textAlign: 'center', verticalAlign: 'middle' }}>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={it.quantity}
+                              onChange={(e) => handleItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
+                              style={{ width: 75, textAlign: 'center', margin: '0 auto' }}
+                            />
                           </td>
 
-                          <td style={{ padding: '8px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                            <div style={{ paddingTop: 2 }}>
-                              <PriceInput
-                                sizeSm
-                                currency="VND"
-                                placeholder={calc && calc.formulaSellingPerUnit > 0 ? calc.formulaSellingPerUnit.toLocaleString('vi-VN') : '0'}
-                                value={it.sellingPrice !== undefined ? it.sellingPrice : (calc?.sellingPerUnit || 0)}
-                                onChange={(val) => handleItemChange(idx, 'sellingPrice', val ?? 0)}
-                                style={{ width: 140, textAlign: 'right', marginLeft: 'auto', fontWeight: 700, color: '#0f9960' }}
-                              />
-                              {calc && it.sellingPrice !== undefined && it.sellingPrice !== calc.formulaSellingPerUnit && (
-                                <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>
-                                  Đang chỉnh tay (Gốc: {calc.formulaSellingPerUnit.toLocaleString('vi-VN')}₫)
-                                </div>
-                              )}
-                            </div>
+                          <td style={{ padding: '8px 8px', textAlign: 'right', verticalAlign: 'middle' }}>
+                            <PriceInput
+                              sizeSm
+                              currency="VND"
+                              placeholder={calc && calc.formulaSellingPerUnit > 0 ? calc.formulaSellingPerUnit.toLocaleString('vi-VN') : '0'}
+                              value={it.sellingPrice !== undefined ? it.sellingPrice : (calc?.sellingPerUnit || 0)}
+                              onChange={(val) => handleItemChange(idx, 'sellingPrice', val ?? 0)}
+                              style={{ width: 140, textAlign: 'right', marginLeft: 'auto', fontWeight: 700, color: '#0f9960' }}
+                            />
+                            {calc && it.sellingPrice !== undefined && it.sellingPrice !== calc.formulaSellingPerUnit && (
+                              <div style={{ fontSize: 10, color: '#d97706', marginTop: 2 }}>
+                                Đang chỉnh tay (Gốc: {calc.formulaSellingPerUnit.toLocaleString('vi-VN')}₫)
+                              </div>
+                            )}
                           </td>
 
-                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
-                            <div style={{ paddingTop: 6 }}>
-                              {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
-                            </div>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                            {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
                           </td>
 
-                          <td style={{ padding: '8px 4px', textAlign: 'center', verticalAlign: 'top' }}>
-                            <div style={{ paddingTop: 6 }}>
-                              {items.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveItem(idx)}
-                                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: 4 }}
-                                  title="Xóa dòng"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </div>
+                          <td style={{ padding: '8px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                            {items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(idx)}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: 4 }}
+                                title="Xóa dòng"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </td>
                         </tr>
 
@@ -835,7 +807,7 @@ export function SparePartOrderModal({
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--text-strong)' }}>
                                     <SlidersHorizontal size={14} color="#7c3aed" />
                                     <span>
-                                      Điều chỉnh cước & phí riêng cho {isMachine ? 'máy móc' : 'phụ tùng'}:{' '}
+                                      Điều chỉnh cước & phí:{' '}
                                       <strong style={{ color: '#7c3aed' }}>{selectedPart?.name}</strong>
                                     </span>
                                   </div>
