@@ -494,7 +494,7 @@ export function CustomerOrderPrintModal({
                       </td>
                       <td style={{ border: '1px solid #000', padding: '5px 8px' }}></td>
                       <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right' }}>
-                        {fmt(goodsAmount)}
+                        {fmt(rawSubtotal)}
                       </td>
                     </tr>
 

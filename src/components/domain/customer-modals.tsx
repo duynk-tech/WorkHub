@@ -21,6 +21,7 @@ import {
   type SaveCustomerOrderInput,
   type CustomerOrderItemInput,
 } from '@/server/modules/customer/types';
+import { VOLUME_DISCOUNT_TIERS } from '@/server/modules/spare-parts/types';
 import {
   saveCustomerAction,
   saveCustomerOrderAction,
@@ -321,6 +322,9 @@ export function CustomerOrderModal({
 
     if (q.locationId) setLocationId(q.locationId);
     setVatRate(String(q.vatRate !== undefined && q.vatRate !== null ? q.vatRate : defaultVat));
+    if (q.discountRate !== undefined && q.discountRate !== null) {
+      setManualDiscountRate(String(q.discountRate));
+    }
     setStatus('CONFIRMED');
     setNotes(`Chốt từ báo giá ${q.quoteCode}`);
     toast.success(`Đã nạp ${q.items?.length || 0} dòng hàng từ báo giá ${q.quoteCode}`);
@@ -341,8 +345,29 @@ export function CustomerOrderModal({
     return 0;
   };
 
+  const tiers = pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS;
   const totalQuantity = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-  const goodsAmount = items.reduce((sum, it) => sum + lineTotal(it), 0);
+  const suggestedTier = tiers.find((t: any) => totalQuantity >= t.min && totalQuantity <= t.max);
+  const suggestedRate = Math.round((suggestedTier?.rate || 0) * 100 * 10) / 10;
+
+  const [manualDiscountRate, setManualDiscountRate] = useState<string | null>(() => {
+    if (order) {
+      const raw = (order.items || []).reduce((s: number, it: any) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
+      const net = Number(order.goodsAmount || 0);
+      if (raw > 0 && raw > net) {
+        return String(Math.round(((raw - net) / raw) * 1000) / 10);
+      }
+      return '0';
+    }
+    return null;
+  });
+
+  const effectiveDiscountRate = manualDiscountRate !== null ? (Number(manualDiscountRate) || 0) : suggestedRate;
+  const discountRateInput = manualDiscountRate !== null ? manualDiscountRate : String(suggestedRate);
+
+  const grossAmount = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
+  const discountAmount = Math.round((grossAmount * effectiveDiscountRate) / 100);
+  const goodsAmount = Math.max(0, grossAmount - discountAmount);
   const vatAmount = Math.round((goodsAmount * (Number(vatRate) || 0)) / 100);
   const totalAmount = goodsAmount + vatAmount;
 
@@ -368,6 +393,8 @@ export function CustomerOrderModal({
       quotationId: quotationId ? Number(quotationId) : undefined,
       shippingFee: 0,
       vatRate: Number(vatRate) || 0,
+      discountRate: effectiveDiscountRate,
+      discountAmount,
       dueDate: dueDate || undefined,
       invoiceNo: invoiceNo.trim() || undefined,
       invoiceSerial: invoiceSerial.trim() || undefined,
@@ -375,7 +402,16 @@ export function CustomerOrderModal({
       orderDate,
       deliveryDate: deliveryDate || undefined,
       notes: notes.trim() || undefined,
-      items: rows.map(({ discountVnd: _discount, priceSource: _src, ...rest }) => rest),
+      items: rows.map((it) => {
+        const lineGross = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+        const lineDiscount = grossAmount > 0 ? Math.round((lineGross / grossAmount) * discountAmount) : 0;
+        const lineTotal = Math.max(0, lineGross - lineDiscount);
+        const { discountVnd: _discount, priceSource: _src, ...rest } = it;
+        return {
+          ...rest,
+          totalPrice: lineTotal,
+        };
+      }),
     };
 
     const res = await saveCustomerOrderAction(order ? order.id : null, payload);
@@ -644,12 +680,87 @@ export function CustomerOrderModal({
                   </td>
                   <td></td>
                   <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
-                    {goodsAmount.toLocaleString('vi-VN')} ₫
+                    {grossAmount.toLocaleString('vi-VN')}
                   </td>
                   <td></td>
                 </tr>
 
-                {/* 2. Thuế VAT */}
+                {/* 2. Chiết khấu số lượng */}
+                <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                  <td
+                    colSpan={4}
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontWeight: 600,
+                      color: 'var(--text-strong)',
+                    }}
+                  >
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      <span>Chiết khấu ({totalQuantity} cái):</span>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        {tiers.map((tier: any) => {
+                          const tierPct = Math.round((tier.rate || 0) * 100 * 10) / 10;
+                          const isSelected = effectiveDiscountRate === tierPct;
+                          return (
+                            <button
+                              key={tier.label}
+                              type="button"
+                              onClick={() => setManualDiscountRate(String(tierPct))}
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: 11,
+                                borderRadius: 4,
+                                border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                                background: isSelected ? '#f5f3ff' : '#fff',
+                                color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
+                                fontWeight: isSelected ? 700 : 500,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {tier.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.5"
+                          value={discountRateInput}
+                          onChange={(e) => setManualDiscountRate(e.target.value)}
+                          style={{
+                            width: 44,
+                            padding: '2px 4px',
+                            fontSize: 11,
+                            textAlign: 'center',
+                            border: '1px solid var(--border-base, #cbd5e1)',
+                            borderRadius: 4,
+                            background: 'var(--surface-card, #fff)',
+                            color: 'var(--text-strong, #0f172a)',
+                          }}
+                        />
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontWeight: 700,
+                      color: discountAmount > 0 ? '#b91c1c' : 'var(--text-muted)',
+                    }}
+                  >
+                    {discountAmount > 0 ? `-${discountAmount.toLocaleString('vi-VN')}` : '0'}
+                  </td>
+                  <td></td>
+                </tr>
+
+                {/* 3. Thuế VAT */}
                 <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
                   <td
                     colSpan={4}
@@ -718,14 +829,12 @@ export function CustomerOrderModal({
                       color: vatAmount > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
                     }}
                   >
-                    {vatAmount > 0
-                      ? `+${vatAmount.toLocaleString('vi-VN')} ₫`
-                      : '0 ₫'}
+                    {vatAmount > 0 ? vatAmount.toLocaleString('vi-VN') : '0'}
                   </td>
                   <td></td>
                 </tr>
 
-                {/* 3. Tổng cộng thanh toán */}
+                {/* 4. Tổng cộng thanh toán */}
                 <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
                   <td
                     colSpan={4}
@@ -740,7 +849,7 @@ export function CustomerOrderModal({
                     TỔNG CỘNG THANH TOÁN (VND){Number(vatRate) > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                   </td>
                   <td style={{ padding: '10px 6px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
-                    {totalAmount.toLocaleString('vi-VN')} ₫
+                    {totalAmount.toLocaleString('vi-VN')}
                   </td>
                   <td></td>
                 </tr>

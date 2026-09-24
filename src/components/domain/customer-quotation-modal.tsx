@@ -82,7 +82,11 @@ export function CustomerQuotationModal({
       : String(defaultVat),
   );
   const [shippingFee, setShippingFee] = useState<number>(Number(quotation?.shippingFee ?? 0));
-  const [discountRate, setDiscountRate] = useState<string>(String(quotation?.discountRate ?? 0));
+  const [manualDiscountRate, setManualDiscountRate] = useState<string | null>(
+    quotation?.discountRate !== undefined && quotation?.discountRate !== null
+      ? String(quotation.discountRate)
+      : null,
+  );
   const [paymentTerms, setPaymentTerms] = useState(
     quotation?.paymentTerms || pricingConfig?.defaultPaymentTerms || DEFAULT_PAYMENT_TERMS
   );
@@ -130,20 +134,22 @@ export function CustomerQuotationModal({
     return Number(p?.avgCost || p?.costPrice || 0);
   };
 
-  const totalCost = items.reduce((sum, it) => sum + costOf(it) * (Number(it.quantity) || 0), 0);
-  const gross = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
-  const lineNet = items.reduce((sum, it) => sum + lineTotal(it), 0);
-  const rate = Math.max(0, Number(discountRate) || 0);
-  const discountAmount = Math.min(gross, gross - lineNet + Math.round((lineNet * rate) / 100));
-  const goodsTotal = gross - discountAmount;
-  const freight = Math.max(0, Number(shippingFee) || 0);
-  const subtotal = goodsTotal + freight;
-
   /** Tỷ lệ chiết khấu gợi ý theo tổng sản lượng, lấy đúng bậc thang của cấu hình giá. */
   const totalQty = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
   const tiers = pricingConfig?.volumeDiscountTiers || VOLUME_DISCOUNT_TIERS;
   const suggestedRate =
     (tiers.find((t: any) => totalQty >= t.min && totalQty <= t.max)?.rate || 0) * 100;
+  const effectiveDiscountRate = manualDiscountRate !== null ? (Number(manualDiscountRate) || 0) : suggestedRate;
+  const discountRateInput = manualDiscountRate !== null ? manualDiscountRate : String(suggestedRate);
+
+  const totalCost = items.reduce((sum, it) => sum + costOf(it) * (Number(it.quantity) || 0), 0);
+  const gross = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
+  const lineNet = items.reduce((sum, it) => sum + lineTotal(it), 0);
+  const rate = Math.max(0, effectiveDiscountRate);
+  const discountAmount = Math.min(gross, gross - lineNet + Math.round((lineNet * rate) / 100));
+  const goodsTotal = gross - discountAmount;
+  const freight = Math.max(0, Number(shippingFee) || 0);
+  const subtotal = goodsTotal + freight;
   const vatAmount = Math.round((subtotal * (Number(vatRate) || 0)) / 100);
   const totalAmount = subtotal + vatAmount;
 
@@ -380,10 +386,10 @@ export function CustomerQuotationModal({
 
             <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
               Chiết khấu
-              {suggestedRate > 0 && Number(discountRate) !== suggestedRate && (
+              {suggestedRate > 0 && effectiveDiscountRate !== suggestedRate && (
                 <button
                   type="button"
-                  onClick={() => setDiscountRate(String(suggestedRate))}
+                  onClick={() => setManualDiscountRate(String(suggestedRate))}
                   style={{
                     marginLeft: 6,
                     padding: '1px 6px',
@@ -407,8 +413,8 @@ export function CustomerQuotationModal({
                 min="0"
                 max="100"
                 step="0.5"
-                value={discountRate}
-                onChange={(e) => setDiscountRate(e.target.value)}
+                value={discountRateInput}
+                onChange={(e) => setManualDiscountRate(e.target.value)}
                 sizeSm
                 style={{ width: 70, flexShrink: 0, textAlign: 'right' }}
               />

@@ -81,6 +81,8 @@ export interface CustomerOrderItemInput {
   name: string;
   quantity: number;
   unitPrice: number;
+  totalPrice?: number;
+  discountVnd?: number;
   equipmentId?: number;
   /** Linh kiện trong danh mục kho — căn cứ xuất kho và đặt hàng nhà cung cấp. */
   inventoryItemId?: number;
@@ -99,6 +101,10 @@ export interface SaveCustomerOrderInput {
   status?: string;
   /** Cước vận chuyển thu của khách (VNĐ). */
   shippingFee?: number;
+  /** Tỷ lệ chiết khấu (%). */
+  discountRate?: number;
+  /** Số tiền chiết khấu (VNĐ). */
+  discountAmount?: number;
   /** Hạn thanh toán. */
   dueDate?: string;
   /** Hóa đơn VAT đã xuất cho đơn này. */

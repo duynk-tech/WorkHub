@@ -10,6 +10,7 @@ import type { Prisma } from '@prisma/client';
 import type {
   CustomerFilter,
   CustomerMetrics,
+  CustomerOrderItemInput,
   SaveCustomerInput,
   SaveCustomerOrderInput,
   SaveCustomerQuotationInput,
@@ -518,16 +519,43 @@ export async function deleteCustomer(id: number) {
 
 /** Tổng hợp tiền của một đơn hàng: tiền hàng, VAT và tổng khách phải trả (đơn bán khách không tính cước). */
 export function summarizeOrder(
-  items: { quantity: number; unitPrice: number }[],
+  items: { quantity: number; unitPrice: number; totalPrice?: number; discountVnd?: number }[],
   vatRate = 0,
   _shippingFee = 0,
+  discountRate = 0,
+  discountAmountInput?: number,
 ) {
-  const goodsAmount = items.reduce(
+  const grossAmount = items.reduce(
     (sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
     0,
   );
+  const explicitItemsTotal = items.reduce(
+    (sum, i) =>
+      sum +
+      (i.totalPrice !== undefined && i.totalPrice !== null
+        ? Number(i.totalPrice)
+        : (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0)),
+    0,
+  );
+
+  let discountAmount = 0;
+  if (
+    discountAmountInput !== undefined &&
+    discountAmountInput !== null &&
+    !isNaN(Number(discountAmountInput))
+  ) {
+    discountAmount = Math.max(0, Number(discountAmountInput));
+  } else if (discountRate > 0) {
+    discountAmount = Math.round((grossAmount * discountRate) / 100);
+  } else if (grossAmount > explicitItemsTotal) {
+    discountAmount = grossAmount - explicitItemsTotal;
+  }
+
+  const goodsAmount = Math.max(0, grossAmount - discountAmount);
   const vatAmount = Math.round((goodsAmount * (Number(vatRate) || 0)) / 100);
   return {
+    grossAmount,
+    discountAmount,
     goodsAmount,
     shippingFee: 0,
     vatAmount,
@@ -539,11 +567,39 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
   const numId = id ? Number(id) : null;
   const orderCode = input.orderCode?.trim() || (numId ? undefined : await generateOrderCode());
   const vatRate = Number(input.vatRate) || 0;
-  const { goodsAmount, vatAmount, totalAmount } = summarizeOrder(
+  const { grossAmount, discountAmount, goodsAmount, vatAmount, totalAmount } = summarizeOrder(
     input.items,
     vatRate,
     0,
+    input.discountRate,
+    input.discountAmount,
   );
+
+  const mapItemData = (item: CustomerOrderItemInput) => {
+    const lineGross = Number(item.quantity) * Number(item.unitPrice);
+    let lineTotal =
+      item.totalPrice !== undefined && item.totalPrice !== null
+        ? Number(item.totalPrice)
+        : lineGross;
+    if (
+      (item.totalPrice === undefined || item.totalPrice === null) &&
+      discountAmount > 0 &&
+      grossAmount > 0
+    ) {
+      const lineDiscount = Math.round((lineGross / grossAmount) * discountAmount);
+      lineTotal = Math.max(0, lineGross - lineDiscount);
+    }
+    return {
+      itemType: item.itemType,
+      name: item.name.trim(),
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: lineTotal,
+      equipmentId: item.equipmentId || null,
+      inventoryItemId: item.inventoryItemId || null,
+      notes: item.notes?.trim() || null,
+    };
+  };
 
   if (numId && !isNaN(numId) && numId > 0) {
     // Xóa các items cũ và tạo lại
@@ -568,16 +624,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
         invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : null,
         notes: input.notes?.trim() || null,
         items: {
-          create: input.items.map((item) => ({
-            itemType: item.itemType,
-            name: item.name.trim(),
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
-            equipmentId: item.equipmentId || null,
-            inventoryItemId: item.inventoryItemId || null,
-            notes: item.notes?.trim() || null,
-          })),
+          create: input.items.map(mapItemData),
         },
       },
       include: { items: true, location: true },
@@ -606,16 +653,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : null,
       notes: input.notes?.trim() || null,
       items: {
-        create: input.items.map((item) => ({
-          itemType: item.itemType,
-          name: item.name.trim(),
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.quantity * item.unitPrice,
-          equipmentId: item.equipmentId || null,
-          inventoryItemId: item.inventoryItemId || null,
-          notes: item.notes?.trim() || null,
-        })),
+        create: input.items.map(mapItemData),
       },
     },
     include: { items: true, location: true },
