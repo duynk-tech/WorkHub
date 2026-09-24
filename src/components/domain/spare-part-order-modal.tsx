@@ -632,6 +632,10 @@ export function SparePartOrderModal({
       };
     });
 
+    const subtotalEur = items.reduce(
+      (sum, it) => sum + (Number(it.unitPriceEur) || 0) * (Number(it.quantity) || 1),
+      0
+    );
     const subtotalVnd = calculatedItems.reduce((sum, it) => sum + it.subtotal, 0);
     const discountVnd = calculatedItems.reduce((sum, it) => sum + it.discount, 0);
 
@@ -661,6 +665,7 @@ export function SparePartOrderModal({
     return {
       totalQty,
       discountRate,
+      subtotalEur,
       subtotalVnd,
       discountVnd,
       totalShippingFee,
@@ -1080,7 +1085,7 @@ export function SparePartOrderModal({
             </div>
 
             <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
-              <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 12 }}>
+              <table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '7px 8px', textAlign: 'left' }}>
@@ -1089,8 +1094,9 @@ export function SparePartOrderModal({
                     <th style={{ padding: '7px 2px', textAlign: 'center', width: 48 }} title="Số lượng">
                       SL
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 190 }} title="Nhập giá vốn EUR hoặc VNĐ (đồng bộ 2 chiều theo tỉ giá)">
-                      Giá vốn (EUR · VNĐ)
+                    <th style={{ padding: '5px 6px', textAlign: 'right', width: 112 }} title={`Giá vốn: Dòng trên nhập EUR (€), dòng dưới quy đổi VNĐ (₫) theo tỉ giá ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}>
+                      <div>Giá vốn</div>
+                      <div style={{ fontSize: 9.5, fontWeight: 500, color: 'var(--text-muted)' }}>EUR · VNĐ</div>
                     </th>
                     <th style={{ padding: '7px 6px', textAlign: 'right', width: 98 }} title="Cước vận chuyển phân bổ cho dòng">
                       Cước VC (₫)
@@ -1165,38 +1171,32 @@ export function SparePartOrderModal({
                           </div>
                         </td>
 
-                        {/* 3. Giá vốn: 2 ô EURO và VNĐ nằm chung cạnh nhau */}
+                        {/* 3. Giá vốn: 2 dòng EURO (€) và VNĐ (₫) */}
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
-                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', width: '100%' }}>
-                              <PriceInput
-                                sizeSm
-                                currency="EUR"
-                                suffix="€"
-                                allowDecimals
-                                placeholder="0"
-                                value={it.unitPriceEur}
-                                onChange={(val) => handleItemChange(idx, 'unitPriceEur', val ?? 0)}
-                                containerStyle={{ width: 74 }}
-                                style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
-                                title={`Giá vốn EUR (€). Tỉ giá: ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}
-                              />
-                              <PriceInput
-                                sizeSm
-                                currency="VND"
-                                suffix="₫"
-                                placeholder="0"
-                                value={it.unitCostVnd}
-                                onChange={(val) => handleItemChange(idx, 'unitCostVnd', val ?? 0)}
-                                containerStyle={{ width: 104 }}
-                                style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
-                                title="Giá vốn quy đổi VNĐ. Nhập để tự động quy đổi ngược lại EUR"
-                              />
-                            </div>
-                            <div style={{ fontSize: 9.5, color: 'var(--text-muted)', lineHeight: 1.3, display: 'flex', justifyContent: 'space-between', width: '100%', padding: '0 2px' }}>
-                              <span>EUR (€)</span>
-                              <span>VNĐ (1€={exchangeRate.toLocaleString('vi-VN')}₫)</span>
-                            </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                            <PriceInput
+                              sizeSm
+                              currency="EUR"
+                              suffix="€"
+                              allowDecimals
+                              placeholder="0"
+                              value={it.unitPriceEur}
+                              onChange={(val) => handleItemChange(idx, 'unitPriceEur', val ?? 0)}
+                              containerStyle={{ width: 104 }}
+                              style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
+                              title={`Giá vốn gốc EUR (€). Tỉ giá: ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}
+                            />
+                            <PriceInput
+                              sizeSm
+                              currency="VND"
+                              suffix="₫"
+                              placeholder="0"
+                              value={it.unitCostVnd}
+                              onChange={(val) => handleItemChange(idx, 'unitCostVnd', val ?? 0)}
+                              containerStyle={{ width: 104 }}
+                              style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
+                              title="Giá vốn quy đổi VNĐ. Nhập để tự động quy đổi ngược lại EUR"
+                            />
                           </div>
                         </td>
 
@@ -1329,8 +1329,9 @@ export function SparePartOrderModal({
                     <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
                       {calculation.totalQty} cái
                     </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#475569', fontSize: 11.5 }}>
-                      {calculation.subtotalVnd.toLocaleString('vi-VN')} ₫
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 11 }}>
+                      <div style={{ color: '#64748b' }}>{calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</div>
+                      <div style={{ color: '#334155' }}>{calculation.subtotalVnd.toLocaleString('vi-VN')} ₫</div>
                     </td>
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7', fontSize: 11.5 }}>
                       {calculation.totalShippingFee.toLocaleString('vi-VN')} ₫
