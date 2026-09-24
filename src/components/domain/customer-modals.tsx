@@ -11,7 +11,6 @@ import {
   lineTotal,
 } from '@/components/domain/line-items-editor';
 import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X } from 'lucide-react';
-import { SparePartModal } from '@/components/domain/spare-parts-modals';
 import {
   ORDER_TYPES,
   ORDER_STATUSES,
@@ -228,12 +227,6 @@ export function CustomerOrderModal({
   const [loading, setLoading] = useState(false);
   const [currentLocations, setCurrentLocations] = useState<any[]>(locations);
   const [quickLocationOpen, setQuickLocationOpen] = useState(false);
-  const [newPartModalOpen, setNewPartModalOpen] = useState(false);
-  const [extraParts, setExtraParts] = useState<any[]>([]);
-
-  const allSpareParts = useMemo(() => {
-    return [...extraParts, ...(spareParts || [])];
-  }, [extraParts, spareParts]);
 
   const [orderType, setOrderType] = useState(order?.orderType || 'MACHINE_PURCHASE');
   const [status, setStatus] = useState(order?.status || 'COMPLETED');
@@ -280,7 +273,7 @@ export function CustomerOrderModal({
     })),
     machines,
     stockMachines,
-    spareParts: allSpareParts,
+    spareParts,
     pricingConfig,
     strictSellingPrice: true,
     onWarning: (msg) => toast.warning(msg),
@@ -288,21 +281,6 @@ export function CustomerOrderModal({
 
   const handleRemoveItem = (index: number) => {
     if (!removeItem(index)) toast.error('Đơn hàng phải có ít nhất 1 sản phẩm');
-  };
-
-  const handlePartCreated = (newPart: any) => {
-    if (!newPart) return;
-    setExtraParts((prev) => [newPart, ...prev]);
-    const ref = `SP:${newPart.id}`;
-    const lastIdx = items.length - 1;
-    if (lastIdx >= 0 && (!items[lastIdx].name || items[lastIdx].name === '')) {
-      selectCatalog(lastIdx, ref);
-    } else {
-      addItem();
-      setTimeout(() => {
-        selectCatalog(items.length, ref);
-      }, 0);
-    }
   };
 
   const [quotationId, setQuotationId] = useState<number | ''>(order?.quotationId || '');
@@ -644,7 +622,6 @@ export function CustomerOrderModal({
             catalogRefs={catalogRefs}
             catalogOptions={catalogOptions}
             onAdd={addItem}
-            onAddNewPart={() => setNewPartModalOpen(true)}
             onRemove={handleRemoveItem}
             onChange={changeItem}
             onSelectCatalog={selectCatalog}
@@ -838,16 +815,6 @@ export function CustomerOrderModal({
           </div>
         </form>
       </div>
-
-      {newPartModalOpen && (
-        <SparePartModal
-          open={newPartModalOpen}
-          pricingConfig={pricingConfig}
-          zIndex={550}
-          onClose={() => setNewPartModalOpen(false)}
-          onSuccess={handlePartCreated}
-        />
-      )}
 
       {quickLocationOpen && (
         <CustomerLocationModal
