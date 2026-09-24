@@ -13,6 +13,7 @@ import {
 } from '@/server/modules/spare-parts/types';
 import {
   createSparePartOrderAction,
+  updateSparePartOrderAction,
   updateSparePartOrderStatusAction,
 } from '@/server/modules/spare-parts/actions';
 import {
@@ -50,6 +51,7 @@ interface SparePartOrderModalProps {
   equipments?: any[];
   pricingConfig?: SparePartPricingConfig;
   companyInfo?: CompanyInfo;
+  initialOrder?: any;
   onSuccess?: () => void;
 }
 
@@ -141,6 +143,7 @@ export function SparePartOrderModal({
   equipments = [],
   pricingConfig,
   companyInfo,
+  initialOrder,
   onSuccess,
 }: SparePartOrderModalProps) {
   const toast = useToast();
@@ -155,27 +158,46 @@ export function SparePartOrderModal({
     setMounted(true);
   }, []);
 
-  const [supplier, setSupplier] = useState('Selmi (Ý)');
-  const [currency, setCurrency] = useState('EUR');
+  const [supplier, setSupplier] = useState(initialOrder?.supplier || 'Selmi (Ý)');
+  const [currency, setCurrency] = useState(initialOrder?.currency || 'EUR');
   const [exchangeRate, setExchangeRate] = useState<number>(
-    pricingConfig?.defaultExchangeRateEur ?? 32500
+    initialOrder?.exchangeRate
+      ? Number(initialOrder.exchangeRate)
+      : (pricingConfig?.defaultExchangeRateEur ?? 32500)
   );
-  const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>('');
+  const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>(
+    initialOrder?.targetWarehouseId ? Number(initialOrder.targetWarehouseId) : ''
+  );
 
-  const [customerId, setCustomerId] = useState<number | ''>('');
-  const [equipmentId, setEquipmentId] = useState<number | ''>('');
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [etaDate, setEtaDate] = useState('');
-  const [notes, setNotes] = useState('');
+  const [customerId, setCustomerId] = useState<number | ''>(
+    initialOrder?.customerId ? Number(initialOrder.customerId) : ''
+  );
+  const [equipmentId, setEquipmentId] = useState<number | ''>(
+    initialOrder?.equipmentId ? Number(initialOrder.equipmentId) : ''
+  );
+  const [trackingNumber, setTrackingNumber] = useState(initialOrder?.trackingNumber || '');
+  const [etaDate, setEtaDate] = useState(
+    initialOrder?.etaDate ? new Date(initialOrder.etaDate).toISOString().slice(0, 10) : ''
+  );
+
+  const rawNotes = initialOrder?.notes || '';
+  const parsedVatFromNotes = rawNotes.match(/\[VAT:\s*(\d+)%\]/i)?.[1];
+  const cleanNotes = rawNotes.replace(/\[VAT:\s*\d+%\]/gi, '').trim();
+
+  const [notes, setNotes] = useState(cleanNotes);
   const [vatRate, setVatRate] = useState<number>(
-    pricingConfig?.defaultVatRate ?? 8
+    initialOrder?.vatRate !== undefined && initialOrder?.vatRate !== null
+      ? Number(initialOrder.vatRate)
+      : parsedVatFromNotes !== undefined
+      ? Number(parsedVatFromNotes)
+      : (pricingConfig?.defaultVatRate ?? 8)
   );
 
   useEffect(() => {
-    if (pricingConfig?.defaultVatRate !== undefined) {
+    if (!initialOrder && pricingConfig?.defaultVatRate !== undefined) {
       setVatRate(pricingConfig.defaultVatRate);
     }
-  }, [pricingConfig?.defaultVatRate]);
+  }, [initialOrder, pricingConfig?.defaultVatRate]);
 
   const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
   const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
@@ -257,17 +279,30 @@ export function SparePartOrderModal({
       shippingFee?: number;
       otherFee?: number;
     }>
-  >([
-    {
-      itemId: '',
-      quantity: 1,
-      unitPriceEur: 0,
-      unitCostVnd: 0,
-      sellingPrice: undefined,
-      shippingFee: undefined,
-      otherFee: undefined,
-    },
-  ]);
+  >(() => {
+    if (initialOrder?.items && initialOrder.items.length > 0) {
+      return initialOrder.items.map((it: any) => ({
+        itemId: it.itemId || it.item?.id || '',
+        quantity: Number(it.quantity) || 1,
+        unitPriceEur: Number(it.unitPriceEur || 0),
+        unitCostVnd: Number(it.unitPriceVnd || 0),
+        sellingPrice: it.sellingPrice !== undefined ? Number(it.sellingPrice) : undefined,
+        shippingFee: it.shippingFee !== undefined ? Number(it.shippingFee) : undefined,
+        otherFee: it.otherFee !== undefined ? Number(it.otherFee) : undefined,
+      }));
+    }
+    return [
+      {
+        itemId: '',
+        quantity: 1,
+        unitPriceEur: 0,
+        unitCostVnd: 0,
+        sellingPrice: undefined,
+        shippingFee: undefined,
+        otherFee: undefined,
+      },
+    ];
+  });
 
   useEffect(() => {
     if (pricingConfig) {
@@ -681,7 +716,7 @@ export function SparePartOrderModal({
 
     setLoading(true);
     try {
-      const res = await createSparePartOrderAction({
+      const payload = {
         supplier,
         currency,
         exchangeRate: Number(exchangeRate),
@@ -698,14 +733,18 @@ export function SparePartOrderModal({
           quantity: Number(it.quantity),
           unitPriceEur: Number(it.unitPriceEur),
         })),
-      });
+      };
+
+      const res = initialOrder?.id
+        ? await updateSparePartOrderAction(initialOrder.id, payload)
+        : await createSparePartOrderAction(payload);
 
       if (res.ok) {
         toast.success(res.message);
         onSuccess?.();
         onClose();
       } else {
-        toast.error(res.message || 'Lỗi khi tạo đơn hàng order');
+        toast.error(res.message || (initialOrder?.id ? 'Lỗi khi cập nhật đơn hàng order' : 'Lỗi khi tạo đơn hàng order'));
       }
     } catch (err: any) {
       toast.error(err?.message || 'Có lỗi xảy ra');
@@ -818,7 +857,7 @@ export function SparePartOrderModal({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
-                  Tạo Đơn Hàng Order / Lô Hàng Mới
+                  {initialOrder?.id ? `Chỉnh sửa Đơn hàng: ${initialOrder.orderCode}` : 'Tạo Đơn Hàng Order / Lô Hàng Mới'}
                 </h2>
                 <button
                   type="button"
@@ -1722,7 +1761,7 @@ export function SparePartOrderModal({
               <Printer size={15} /> In Báo Giá
             </Button>
             <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
-              Xác nhận
+              {initialOrder?.id ? 'Cập nhật đơn hàng' : 'Xác nhận'}
             </Button>
           </div>
         </form>

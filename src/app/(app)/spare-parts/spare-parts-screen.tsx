@@ -164,6 +164,7 @@ export function SparePartsScreen({
   const [pricingTargetPart, setPricingTargetPart] = useState<any | null>(null);
 
   const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<any | null>(null);
   const [stockCountOpen, setStockCountOpen] = useState(false);
   const [payOrder, setPayOrder] = useState<any>(null);
   const [printVoucher, setPrintVoucher] = useState<{ payment: any; supplier: string } | null>(null);
@@ -943,7 +944,10 @@ export function SparePartsScreen({
             {canManage && (
               <Button
                 size="sm"
-                onClick={() => setOrderModalOpen(true)}
+                onClick={() => {
+                  setEditingOrder(null);
+                  setOrderModalOpen(true);
+                }}
                 style={{ background: '#7c3aed', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
                 <ShoppingCart size={15} /> Tạo đơn mua
@@ -1110,6 +1114,17 @@ export function SparePartsScreen({
                                 icon: <FileDown size={15} />,
                                 onClick: () => setSelectedOrderForQuote(order),
                               },
+                              ...(canManage && order.status !== 'STOCKED' && order.status !== 'COMPLETED' && order.status !== 'CANCELLED'
+                                ? [{
+                                    key: 'edit',
+                                    label: 'Chỉnh sửa đơn hàng',
+                                    icon: <Edit2 size={15} />,
+                                    onClick: () => {
+                                      setEditingOrder(order);
+                                      setOrderModalOpen(true);
+                                    },
+                                  }]
+                                : []),
                               ...(canManage && order.status !== 'COMPLETED' && order.status !== 'CANCELLED'
                                 ? [{
                                     key: 'progress',
@@ -1232,8 +1247,35 @@ export function SparePartsScreen({
                           background: 'var(--surface-card)',
                         }}
                       >
-                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>
-                          Linh kiện đặt hàng ({order.items?.length || 0})
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
+                            Linh kiện đặt hàng ({order.items?.length || 0})
+                          </span>
+                          {canManage && order.status !== 'STOCKED' && order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingOrder(order);
+                                setOrderModalOpen(true);
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                border: 'none',
+                                background: '#f5f3ff',
+                                color: '#7c3aed',
+                                padding: '3px 8px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                              title="Chỉnh sửa danh sách mặt hàng và chi phí đơn hàng"
+                            >
+                              <Edit2 size={12} /> Sửa đơn hàng
+                            </button>
+                          )}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {order.items?.map((it: any) => (
@@ -1818,14 +1860,21 @@ export function SparePartsScreen({
       {orderModalOpen && (
         <SparePartOrderModal
           open={orderModalOpen}
-          onClose={() => setOrderModalOpen(false)}
+          initialOrder={editingOrder}
+          onClose={() => {
+            setOrderModalOpen(false);
+            setEditingOrder(null);
+          }}
           spareParts={spareParts}
           warehouses={warehouses}
           pricingConfig={pricingConfig}
           companyInfo={companyInfo}
           customers={customers}
           equipments={equipments}
-          onSuccess={() => startTransition(() => router.refresh())}
+          onSuccess={() => {
+            setEditingOrder(null);
+            startTransition(() => router.refresh());
+          }}
         />
       )}
 

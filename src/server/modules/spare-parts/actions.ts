@@ -9,6 +9,7 @@ import {
   createStockTransaction,
   seedDefaultSparePartsAndWarehouses,
   createSparePartOrder,
+  updateSparePartOrder,
   updateSparePartOrderStatus,
 } from './service';
 import type {
@@ -130,6 +131,28 @@ export async function createSparePartOrderAction(input: any) {
   } catch (error: any) {
     console.error('[createSparePartOrderAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi tạo đơn hàng order' };
+  }
+}
+
+export async function updateSparePartOrderAction(orderId: number, input: any) {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn không có quyền chỉnh sửa đơn hàng order' };
+  }
+
+  try {
+    const { SaveSparePartOrderSchema } = await import('./types');
+    const validated = SaveSparePartOrderSchema.parse(input);
+    const order = await updateSparePartOrder(orderId, validated, ctx.userId);
+    revalidatePath('/spare-parts');
+    return {
+      ok: true,
+      message: `Đã cập nhật đơn hàng order ${order.orderCode} thành công`,
+      order: JSON.parse(JSON.stringify(order)),
+    };
+  } catch (error: any) {
+    console.error('[updateSparePartOrderAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi cập nhật đơn hàng order' };
   }
 }
 

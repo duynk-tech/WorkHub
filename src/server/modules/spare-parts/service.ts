@@ -1082,6 +1082,108 @@ export async function createSparePartOrder(input: SaveSparePartOrderInput, userI
   });
 }
 
+/** Chỉnh sửa Đơn hàng Order khi chưa nhập kho */
+export async function updateSparePartOrder(
+  orderId: number,
+  input: SaveSparePartOrderInput,
+  userId: number
+) {
+  if (!prisma?.sparePartOrder) {
+    throw new Error('Prisma client chưa tải model sparePartOrder. Vui lòng thử lại.');
+  }
+
+  const existing = await prisma.sparePartOrder.findUnique({
+    where: { id: orderId },
+    include: { items: true },
+  });
+  if (!existing) {
+    throw new Error('Không tìm thấy đơn hàng order');
+  }
+
+  if (existing.status === 'STOCKED' || existing.status === 'COMPLETED') {
+    throw new Error('Đơn hàng đã nhập kho, không thể chỉnh sửa thông tin hàng hóa!');
+  }
+  if (existing.status === 'CANCELLED') {
+    throw new Error('Đơn hàng đã hủy, không thể chỉnh sửa!');
+  }
+
+  // Lấy thông tin giá EUR của các phụ tùng nếu chưa truyền
+  const itemIds = input.items.map((it) => it.itemId);
+  const dbItems = await prisma.inventoryItem.findMany({
+    where: { id: { in: itemIds } },
+  });
+  const itemMap = new Map(dbItems.map((i) => [i.id, i]));
+
+  const enrichedItems = input.items.map((it) => {
+    const dbItem = itemMap.get(it.itemId);
+    const unitPriceEur = it.unitPriceEur ?? Number(dbItem?.priceEur || 0);
+    return {
+      ...it,
+      unitPriceEur,
+      name: dbItem?.name,
+      itemCode: dbItem?.itemCode,
+    };
+  });
+
+  const pricing = calculateOrderPricing(enrichedItems, {
+    exchangeRate: input.exchangeRate,
+    shippingFee: input.shippingFee,
+  });
+
+  const totalVnd =
+    pricing.subtotalVnd -
+    pricing.discountVnd +
+    (input.shippingFee !== undefined ? input.shippingFee : pricing.shippingFee) +
+    (input.customsFee !== undefined ? input.customsFee : 0);
+
+  return prisma.$transaction(async (tx) => {
+    // Xóa các dòng hàng cũ và tạo lại theo danh sách mới
+    await tx.sparePartOrderItem.deleteMany({
+      where: { orderId },
+    });
+
+    return tx.sparePartOrder.update({
+      where: { id: orderId },
+      data: {
+        supplier: input.supplier.trim(),
+        currency: input.currency || 'EUR',
+        exchangeRate: input.exchangeRate,
+        shippingFee: input.shippingFee !== undefined ? input.shippingFee : pricing.shippingFee,
+        customsFee: input.customsFee !== undefined ? input.customsFee : 0,
+        discountRate: pricing.discountRate,
+        totalItemsQty: pricing.totalItemsQty,
+        subtotalVnd: pricing.subtotalVnd,
+        discountVnd: pricing.discountVnd,
+        totalVnd,
+        targetWarehouseId: input.targetWarehouseId,
+        customerId: input.customerId,
+        customerOrderId: input.customerOrderId,
+        equipmentId: input.equipmentId,
+        serviceTicketId: input.serviceTicketId,
+        trackingNumber: input.trackingNumber?.trim() || null,
+        etaDate: input.etaDate ? new Date(input.etaDate) : null,
+        notes: input.notes?.trim() || null,
+        items: {
+          create: pricing.items.map((it) => ({
+            itemId: it.itemId,
+            quantity: it.quantity,
+            unitPriceEur: it.unitPriceEur,
+            unitPriceVnd: it.unitPriceVnd,
+            discountVnd: it.discountVnd,
+            finalPriceVnd: it.finalPriceVnd,
+          })),
+        },
+      },
+      include: {
+        items: { include: { item: true } },
+        targetWarehouse: true,
+        customer: true,
+        equipment: true,
+      },
+    });
+  });
+}
+
 /** Cập nhật trạng thái / Tiến trình Đơn hàng Order */
 export async function updateSparePartOrderStatus(
   orderId: number,
