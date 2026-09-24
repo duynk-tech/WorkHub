@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Input, PriceInput } from '@/components/ui';
+import { Button, Input, PriceInput } from '@/components/ui';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select';
-import { Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Package } from 'lucide-react';
 import {
   calculateQuotedUnitPrice,
   type SparePartPricingConfig,
@@ -75,8 +75,12 @@ export function buildCatalogOptions({
       value: `EQ:${m.id}`,
       group: 'Máy trong kho',
       label: m.name,
-      subLabel: [m.brand, m.machineCode, priceLabel].filter(Boolean).join(' · '),
+      subLabel: [m.brand, m.machineCode, 'Tồn: 1 máy', priceLabel].filter(Boolean).join(' · '),
       keywords: [m.machineCode, m.brand, m.model, m.serialNumber, priceLabel].filter(Boolean).join(' '),
+      itemCode: m.machineCode,
+      unit: 'máy',
+      stockQty: 1,
+      type: 'EQUIPMENT',
     });
   }
 
@@ -97,6 +101,10 @@ export function buildCatalogOptions({
         .filter(Boolean)
         .join(' · '),
       keywords: [m.machineCode, m.brand, m.model, m.serialNumber, priceLabel].filter(Boolean).join(' '),
+      itemCode: m.machineCode,
+      unit: 'máy',
+      stockQty: 0,
+      type: 'RENTAL',
     });
   }
 
@@ -131,12 +139,23 @@ export function buildCatalogOptions({
             : 'chưa có giá';
     }
 
+    const totalStock =
+      p.totalStock !== undefined
+        ? Number(p.totalStock) || 0
+        : Array.isArray(p.stocks)
+        ? p.stocks.reduce((sum: number, s: any) => sum + (Number(s.quantity) || 0), 0)
+        : Number(p.stockQty ?? 0);
+
     opts.push({
       value: `SP:${p.id}`,
       group: 'Linh kiện / Phụ tùng',
       label: p.name,
-      subLabel: [p.itemCode, priceLabel].filter(Boolean).join(' · '),
+      subLabel: [p.itemCode, `Tồn: ${totalStock} ${p.unit || 'cái'}`, priceLabel].filter(Boolean).join(' · '),
       keywords: [p.itemCode, p.brand, p.unit, priceLabel].filter(Boolean).join(' '),
+      itemCode: p.itemCode,
+      unit: p.unit || 'cái',
+      stockQty: totalStock,
+      type: 'SPARE_PART',
     });
   }
 
@@ -144,6 +163,8 @@ export function buildCatalogOptions({
     value: 'CUSTOM',
     group: 'Mục khác',
     label: 'Nhập thủ công (dịch vụ hoặc hàng ngoài danh mục)',
+    unit: 'lần',
+    type: 'CUSTOM',
   });
 
   return opts;
@@ -342,6 +363,7 @@ export function LineItemsEditor({
   items,
   catalogRefs,
   catalogOptions,
+  catalogDetailsMap,
   costOf,
   onAdd,
   onRemove,
@@ -353,6 +375,7 @@ export function LineItemsEditor({
   items: LineItem[];
   catalogRefs: string[];
   catalogOptions: SearchableSelectOption[];
+  catalogDetailsMap?: Map<string, { itemCode?: string; unit?: string; stockQty?: number; type?: string; name: string }>;
   /** Giá vốn một đơn vị của dòng hàng. Có hàm này thì hiện cột giá vốn và tỷ suất
    *  — thông tin nội bộ, không bao giờ xuất hiện trên bản in gửi khách. */
   costOf?: (item: LineItem) => number;
@@ -363,210 +386,324 @@ export function LineItemsEditor({
   warnMissingPrice?: boolean;
 }) {
   const showCost = Boolean(costOf);
-  const grid = showCost
-    ? '30px minmax(170px, 1.05fr) minmax(150px, 1fr) 52px 108px 112px 58px 100px 26px'
-    : '34px minmax(200px, 1.1fr) minmax(190px, 1fr) 60px 120px 104px 28px';
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-strong)' }}>{title}</span>
-        <button
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Package size={14} color="#7c3aed" />
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong, #0f172a)' }}>
+            {title} ({items.length} mặt hàng)
+          </span>
+        </div>
+        <Button
           type="button"
+          size="sm"
+          variant="secondary"
           onClick={onAdd}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            fontSize: 12,
-            color: 'var(--brand)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
+          style={{ fontSize: 11.5, height: 28, padding: '0 8px' }}
         >
-          <Plus size={14} /> Thêm dòng
-        </button>
+          <Plus size={12} /> Thêm dòng
+        </Button>
       </div>
 
-      {/* Tiêu đề cột – các dòng bên dưới dùng chung grid nên thẳng hàng như bảng */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: grid,
-          gap: 8,
-          padding: '0 32px 6px 10px',
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: '0.3px',
-          textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-        }}
-      >
-        <span style={{ textAlign: 'center' }}>STT</span>
-        <span style={{ gridColumn: 'span 2' }}>Máy / Linh kiện / Dịch vụ</span>
-        <span style={{ textAlign: 'center' }}>SL</span>
-        {showCost && <span>Giá vốn</span>}
-        <span>{showCost ? 'Giá bán' : 'Đơn giá'}</span>
-        {showCost && <span style={{ textAlign: 'center' }}>Lãi</span>}
-        <span style={{ textAlign: 'right' }}>Thành tiền</span>
-        <span />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {items.map((item, idx) => {
-          const ref = catalogRefs[idx] || '';
-          const picked = catalogOptions.find((o) => o.value === ref);
-          /* Ô tên chỉ hiện khi nhập thủ công, hoặc khi mục đã lưu không còn trong danh mục
-             (VD: đơn cũ trỏ tới máy nay đã bán) — để dòng đó vẫn đọc & sửa được. */
-          const showNameInput =
-            ref === 'CUSTOM' || (ref !== '' && !picked) || (ref === '' && Boolean(item.name));
-
-          return (
-            <div
-              key={idx}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: grid,
-                gap: 8,
-                alignItems: 'center',
-                background: 'var(--surface-sunken)',
-                padding: '7px 10px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-base)',
-              }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 600, textAlign: 'center', color: 'var(--text-muted)' }}>
-                {idx + 1}
-              </span>
-
-              <SearchableSelect
-                value={ref}
-                onChange={(val) => onSelectCatalog(idx, val)}
-                options={catalogOptions}
-                placeholder="Chọn máy, linh kiện hoặc dịch vụ"
-                searchPlaceholder="Nhập tên hoặc mã để tìm"
-                allowClear
-                sizeSm
-                style={showNameInput ? undefined : { gridColumn: 'span 2' }}
-                emptyText="Không tìm thấy trong danh mục. Chọn “Nhập thủ công” để tự nhập tên."
-              />
-
-              {showNameInput && (
-                <Input
-                  placeholder="Nhập tên dịch vụ hoặc hàng hóa"
-                  value={item.name}
-                  onChange={(e) => onChange(idx, 'name', e.target.value)}
-                  sizeSm
-                  title={ITEM_TYPE_LABELS[item.itemType] || 'Hàng hóa'}
-                  autoFocus={ref === 'CUSTOM'}
-                />
-              )}
-
-              <Input
-                type="number"
-                min="1"
-                value={item.quantity}
-                onChange={(e) => onChange(idx, 'quantity', Number(e.target.value))}
-                sizeSm
-                style={{ textAlign: 'center' }}
-              />
-
+      <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
+        <table style={{ width: '100%', minWidth: showCost ? 820 : 660, borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
+              <th style={{ padding: '7px 4px', textAlign: 'center', width: 34 }}>STT</th>
+              <th style={{ padding: '7px 8px', textAlign: 'left' }}>Máy / Linh kiện / Dịch vụ</th>
+              <th style={{ padding: '7px 2px', textAlign: 'center', width: 50 }} title="Số lượng">SL</th>
               {showCost && (
-                <div
-                  style={{
-                    fontSize: 12,
-                    textAlign: 'right',
-                    color: 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title="Giá vốn bình quân tại thời điểm hiện tại"
-                >
-                  {costOf!(item) > 0 ? fmt(costOf!(item)) : '—'}
-                </div>
+                <th style={{ padding: '7px 6px', textAlign: 'right', width: 104 }} title="Giá vốn đơn vị (Nội bộ)">
+                  Giá vốn (₫)
+                </th>
               )}
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 116 }} title="Đơn giá bán cho khách">
+                Đơn giá bán (₫)
+              </th>
+              {showCost && (
+                <th style={{ padding: '7px 4px', textAlign: 'center', width: 72 }} title="Tỷ suất lãi gộp dự kiến">
+                  Lãi / Tỷ suất
+                </th>
+              )}
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Thành tiền: Số lượng × Đơn giá bán">
+                Thành tiền (₫)
+              </th>
+              <th style={{ padding: '7px 2px', width: 28 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => {
+              const ref = catalogRefs[idx] || '';
+              const picked = catalogOptions.find((o) => o.value === ref) as any;
+              const detail = catalogDetailsMap?.get(ref) || picked;
+              const showNameInput =
+                ref === 'CUSTOM' || (ref !== '' && !picked) || (ref === '' && Boolean(item.name));
+              const cost = costOf ? costOf(item) : 0;
+              const unitPrice = Number(item.unitPrice) || 0;
+              const qty = Math.max(1, Number(item.quantity) || 1);
+              const total = lineTotal(item);
+              const profitPerUnit = unitPrice - cost;
+              const totalProfit = total - (cost * qty);
+              const margin = unitPrice > 0 && cost > 0 ? ((unitPrice - cost) / unitPrice) * 100 : null;
+              const isMissingPrice = warnMissingPrice && Boolean(item.name.trim()) && unitPrice <= 0;
 
-              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <PriceInput
-                  placeholder={showCost ? 'Giá bán (₫)' : 'Đơn giá (₫)'}
-                  value={item.unitPrice}
-                  onChange={(val) => onChange(idx, 'unitPrice', val || 0)}
-                  sizeSm
-                  invalid={warnMissingPrice && Boolean(item.name.trim()) && (!item.unitPrice || Number(item.unitPrice) <= 0)}
-                />
-                {warnMissingPrice && Boolean(item.name.trim()) && (!item.unitPrice || Number(item.unitPrice) <= 0) && (
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      color: '#dc2626',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 3,
-                      marginTop: 2,
-                      whiteSpace: 'nowrap',
-                    }}
-                    title="Mặt hàng này chưa được thiết lập giá bán"
-                  >
-                    <AlertTriangle size={11} style={{ flexShrink: 0 }} /> Chưa có giá bán
-                  </span>
-                )}
-              </div>
+              return (
+                <tr
+                  key={idx}
+                  style={{
+                    borderBottom: '1px solid var(--border-base, #e2e8f0)',
+                    background: idx % 2 === 1 ? '#fbfcfe' : '#ffffff',
+                  }}
+                >
+                  {/* 1. STT */}
+                  <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <div style={{ height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
+                      {idx + 1}
+                    </div>
+                  </td>
 
-              {showCost && (() => {
-                const cost = costOf!(item);
-                const price = Number(item.unitPrice) || 0;
-                const margin = price > 0 && cost > 0 ? ((price - cost) / price) * 100 : null;
-                return (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap',
-                      color:
-                        margin === null ? 'var(--text-muted)' : margin < 0 ? '#dc2626' : margin < 10 ? '#d97706' : '#16a34a',
-                    }}
-                    title="Tỷ suất lãi gộp của dòng này"
-                  >
-                    {margin === null ? '—' : `${margin.toFixed(0)}%`}
-                  </div>
-                );
-              })()}
+                  {/* 2. Mặt hàng / Dịch vụ */}
+                  <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {showNameInput ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <SearchableSelect
+                              sizeSm
+                              triggerStyle={{ height: 26, minHeight: 26, fontSize: 12, padding: '0 8px' }}
+                              value={ref}
+                              onChange={(val) => onSelectCatalog(idx, val)}
+                              options={catalogOptions}
+                              placeholder="-- Chọn máy, linh kiện hoặc dịch vụ --"
+                              searchPlaceholder="Nhập tên hoặc mã để tìm…"
+                              popoverMinWidth={340}
+                              allowClear
+                            />
+                          </div>
+                          <div style={{ width: 170, flexShrink: 0 }}>
+                            <Input
+                              placeholder="Tên dịch vụ / hàng hóa"
+                              value={item.name}
+                              onChange={(e) => onChange(idx, 'name', e.target.value)}
+                              sizeSm
+                              style={{ height: 26, fontSize: 11.5 }}
+                              autoFocus={ref === 'CUSTOM'}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <SearchableSelect
+                          sizeSm
+                          triggerStyle={{ height: 26, minHeight: 26, fontSize: 12, padding: '0 8px' }}
+                          value={ref}
+                          onChange={(val) => onSelectCatalog(idx, val)}
+                          options={catalogOptions}
+                          placeholder="-- Chọn máy, linh kiện hoặc dịch vụ --"
+                          searchPlaceholder="Nhập tên hoặc mã để tìm…"
+                          popoverMinWidth={340}
+                          allowClear
+                        />
+                      )}
 
-              <div
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  textAlign: 'right',
-                  color: 'var(--text-strong)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {fmt(lineTotal(item))} ₫
-              </div>
+                      {/* Dòng 2: Badge Mã + Tồn kho */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          height: 26,
+                          fontSize: 10.5,
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        {detail ? (
+                          <>
+                            {detail.itemCode && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  background: 'var(--surface-sunken, #f1f5f9)',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  border: '1px solid var(--border-subtle, #e2e8f0)',
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                Mã: <strong style={{ color: 'var(--text-strong, #0f172a)' }}>{detail.itemCode}</strong>
+                              </span>
+                            )}
+                            {detail.stockQty !== undefined && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  background: detail.stockQty > 0 ? '#f0fdf4' : '#fef2f2',
+                                  color: detail.stockQty > 0 ? '#15803d' : '#b91c1c',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  border: `1px solid ${detail.stockQty > 0 ? '#bbf7d0' : '#fecaca'}`,
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                Tồn: <strong>{detail.stockQty}</strong> {detail.unit || 'cái'}
+                              </span>
+                            )}
+                            {detail.type === 'RENTAL' && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  background: '#fef3c7',
+                                  color: '#b45309',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  border: '1px solid #fde68a',
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                Máy thuê/ký gửi
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span>-- Chưa chọn mặt hàng --</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
 
-              <button
-                type="button"
-                onClick={() => onRemove(idx)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--danger)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: 2,
-                }}
-                title="Xóa dòng"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          );
-        })}
+                  {/* 3. SL */}
+                  <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => onChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
+                        style={{ width: 44, textAlign: 'center', height: 26, padding: '0 2px', margin: '0 auto', fontSize: 12 }}
+                      />
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {detail?.unit || 'cái'}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 4. Giá vốn */}
+                  {showCost && (
+                    <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+                          {cost > 0 ? `${fmt(cost)} ₫` : '—'}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+                          {cost > 0 && qty > 1 ? `Tổng: ${fmt(cost * qty)} ₫` : null}
+                        </div>
+                      </div>
+                    </td>
+                  )}
+
+                  {/* 5. Giá bán */}
+                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                      <PriceInput
+                        placeholder="0"
+                        value={item.unitPrice}
+                        onChange={(val) => onChange(idx, 'unitPrice', val || 0)}
+                        sizeSm
+                        containerStyle={{ width: 106, marginLeft: 'auto' }}
+                        style={{
+                          textAlign: 'right',
+                          fontWeight: 700,
+                          height: 26,
+                          fontSize: 11.5,
+                          color: isMissingPrice ? '#dc2626' : '#0f9960',
+                        }}
+                        invalid={isMissingPrice}
+                      />
+                      <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        {isMissingPrice ? (
+                          <span style={{ color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 600 }}>
+                            <AlertTriangle size={10} /> Chưa có giá
+                          </span>
+                        ) : margin !== null ? (
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            Lãi {margin.toFixed(0)}%
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 6. Lãi */}
+                  {showCost && (
+                    <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'center' }}>
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            height: 26,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: margin === null ? 'var(--text-muted)' : margin < 0 ? '#dc2626' : margin < 10 ? '#d97706' : '#16a34a',
+                          }}
+                        >
+                          {margin === null ? '—' : `${margin.toFixed(0)}%`}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 9.5,
+                            height: 26,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: profitPerUnit >= 0 ? '#16a34a' : '#dc2626',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {cost > 0 && profitPerUnit !== 0 ? `${profitPerUnit > 0 ? '+' : ''}${fmt(profitPerUnit)}` : null}
+                        </span>
+                      </div>
+                    </td>
+                  )}
+
+                  {/* 7. Thành tiền */}
+                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--text-strong, #0f172a)', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+                        {fmt(total)} ₫
+                      </div>
+                      <div style={{ fontSize: 10, color: totalProfit >= 0 ? '#16a34a' : '#dc2626', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+                        {cost > 0 ? `${totalProfit >= 0 ? '+' : ''}${fmt(totalProfit)} ₫` : null}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 8. Xóa dòng */}
+                  <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => onRemove(idx)}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: '6px 2px', display: 'inline-flex' }}
+                        title="Xóa dòng"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

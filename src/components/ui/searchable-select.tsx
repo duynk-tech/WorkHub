@@ -14,6 +14,7 @@ export interface SearchableSelectOption {
   group?: string;
   /** Nội dung phụ dùng để tìm kiếm nhưng không hiển thị (mã, hãng...). */
   keywords?: string;
+  [key: string]: any;
 }
 
 export interface SearchableSelectProps {

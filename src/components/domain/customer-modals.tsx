@@ -9,7 +9,7 @@ import {
   useLineItems,
   lineTotal,
 } from '@/components/domain/line-items-editor';
-import { Plus, Trash2, MapPin, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart } from 'lucide-react';
 import {
   ORDER_TYPES,
   ORDER_STATUSES,
@@ -378,7 +378,8 @@ export function CustomerOrderModal({
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Hủy
           </Button>
-          <Button variant="primary" onClick={handleSave} loading={loading}>
+          <Button variant="primary" onClick={handleSave} loading={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <ShoppingCart size={15} />
             {order ? 'Lưu đơn hàng' : 'Tạo đơn hàng'}
           </Button>
         </>
