@@ -20,6 +20,7 @@ export interface PriceInputProps
    * thừa một số 0, còn đọc đủ từng hàng thì người nhập thấy ngay.
    */
   exactWords?: boolean;
+  containerStyle?: React.CSSProperties;
 }
 
 /** Chuyển số thành chuỗi phân cách hàng nghìn */
@@ -65,6 +66,7 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       showInWords = false,
       exactWords = false,
       disabled,
+      containerStyle,
       ...props
     },
     forwardedRef
@@ -167,8 +169,8 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
         : '';
 
     return (
-      <div style={{ position: 'relative', width: '100%' }}>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'relative', width: '100%', ...containerStyle }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
           <input
             ref={(node) => {
               innerRef.current = node;

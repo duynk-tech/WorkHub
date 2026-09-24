@@ -1080,31 +1080,31 @@ export function SparePartOrderModal({
             </div>
 
             <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
-              <table style={{ width: '100%', minWidth: 920, borderCollapse: 'collapse', fontSize: 12 }}>
+              <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '7px 8px', textAlign: 'left', width: '25%' }}>
+                    <th style={{ padding: '7px 8px', textAlign: 'left' }}>
                       Mặt hàng
                     </th>
-                    <th style={{ padding: '7px 4px', textAlign: 'center', width: '6%' }}>
-                      Số lượng
+                    <th style={{ padding: '7px 2px', textAlign: 'center', width: 48 }} title="Số lượng">
+                      SL
                     </th>
-                    <th style={{ padding: '7px 8px', textAlign: 'right', width: '21%' }} title="Nhập giá vốn EUR hoặc VNĐ (đồng bộ 2 chiều theo tỉ giá)">
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 190 }} title="Nhập giá vốn EUR hoặc VNĐ (đồng bộ 2 chiều theo tỉ giá)">
                       Giá vốn (EUR · VNĐ)
                     </th>
-                    <th style={{ padding: '7px 8px', textAlign: 'right', width: '11%' }} title="Cước vận chuyển phân bổ cho dòng">
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 98 }} title="Cước vận chuyển phân bổ cho dòng">
                       Cước VC (₫)
                     </th>
-                    <th style={{ padding: '7px 8px', textAlign: 'right', width: '11%' }} title="Phí khác / hải quan phân bổ cho dòng">
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 98 }} title="Phí khác / hải quan phân bổ cho dòng">
                       Phí khác (₫)
                     </th>
-                    <th style={{ padding: '7px 8px', textAlign: 'right', width: '13%' }} title="Giá bán đề xuất: Vốn + Margin + Cước + Phí">
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Giá bán đề xuất: Vốn + Margin + Cước + Phí">
                       Đơn giá bán (₫)
                     </th>
-                    <th style={{ padding: '7px 8px', textAlign: 'right', width: '11%' }} title="Thành tiền bán: Số lượng × Đơn giá bán">
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 110 }} title="Thành tiền bán: Số lượng × Đơn giá bán">
                       Thành tiền (₫)
                     </th>
-                    <th style={{ padding: '7px 4px', width: '2%' }}></th>
+                    <th style={{ padding: '7px 2px', width: 28 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1150,25 +1150,25 @@ export function SparePartOrderModal({
                         </td>
 
                         {/* 2. Số lượng */}
-                        <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'top' }}>
+                        <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                             <Input
                               type="number"
                               min="1"
                               value={it.quantity}
                               onChange={(e) => handleItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
-                              style={{ width: 52, textAlign: 'center', height: 28, padding: '2px 4px', margin: '0 auto' }}
+                              style={{ width: 44, textAlign: 'center', height: 28, padding: '0 2px', margin: '0 auto', fontSize: 12 }}
                             />
-                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>
                               {selectedPart?.unit || 'cái'}
                             </div>
                           </div>
                         </td>
 
                         {/* 3. Giá vốn: 2 ô EURO và VNĐ nằm chung cạnh nhau */}
-                        <td style={{ padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.35fr)', gap: 4, width: '100%' }}>
+                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', width: '100%' }}>
                               <PriceInput
                                 sizeSm
                                 currency="EUR"
@@ -1177,6 +1177,7 @@ export function SparePartOrderModal({
                                 placeholder="0"
                                 value={it.unitPriceEur}
                                 onChange={(val) => handleItemChange(idx, 'unitPriceEur', val ?? 0)}
+                                containerStyle={{ width: 74 }}
                                 style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
                                 title={`Giá vốn EUR (€). Tỉ giá: ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}
                               />
@@ -1187,20 +1188,21 @@ export function SparePartOrderModal({
                                 placeholder="0"
                                 value={it.unitCostVnd}
                                 onChange={(val) => handleItemChange(idx, 'unitCostVnd', val ?? 0)}
+                                containerStyle={{ width: 104 }}
                                 style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
                                 title="Giá vốn quy đổi VNĐ. Nhập để tự động quy đổi ngược lại EUR"
                               />
                             </div>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3, display: 'flex', justifyContent: 'space-between', padding: '0 2px' }}>
+                            <div style={{ fontSize: 9.5, color: 'var(--text-muted)', lineHeight: 1.3, display: 'flex', justifyContent: 'space-between', width: '100%', padding: '0 2px' }}>
                               <span>EUR (€)</span>
-                              <span>VNĐ (1€ = {exchangeRate.toLocaleString('vi-VN')}₫)</span>
+                              <span>VNĐ (1€={exchangeRate.toLocaleString('vi-VN')}₫)</span>
                             </div>
                           </div>
                         </td>
 
                         {/* 4. Cước VC */}
-                        <td style={{ padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
+                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
                             <PriceInput
                               sizeSm
                               currency="VND"
@@ -1208,17 +1210,18 @@ export function SparePartOrderModal({
                               value={it.shippingFee !== undefined ? it.shippingFee : defaultShippingFee * it.quantity}
                               onChange={(val) => handleItemChange(idx, 'shippingFee', val ?? 0)}
                               placeholder="0"
-                              style={{ width: '100%', textAlign: 'right', fontWeight: 600, height: 28 }}
+                              containerStyle={{ width: 92, marginLeft: 'auto' }}
+                              style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
                             />
-                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
                               {it.quantity > 1 ? `≈ ${Math.round((it.shippingFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : 'tổng dòng'}
                             </div>
                           </div>
                         </td>
 
                         {/* 5. Phí khác */}
-                        <td style={{ padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
+                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
                             <PriceInput
                               sizeSm
                               currency="VND"
@@ -1226,17 +1229,18 @@ export function SparePartOrderModal({
                               value={it.otherFee !== undefined ? it.otherFee : defaultCustomsFee * it.quantity}
                               onChange={(val) => handleItemChange(idx, 'otherFee', val ?? 0)}
                               placeholder="0"
-                              style={{ width: '100%', textAlign: 'right', fontWeight: 600, height: 28 }}
+                              containerStyle={{ width: 92, marginLeft: 'auto' }}
+                              style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
                             />
-                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
                               {it.quantity > 1 ? `≈ ${Math.round((it.otherFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : 'HQ/khác'}
                             </div>
                           </div>
                         </td>
 
                         {/* 6. Đơn giá bán */}
-                        <td style={{ padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
+                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
                             <PriceInput
                               sizeSm
                               currency="VND"
@@ -1244,16 +1248,17 @@ export function SparePartOrderModal({
                               placeholder={calc && calc.formulaSellingPerUnit > 0 ? calc.formulaSellingPerUnit.toLocaleString('vi-VN') : '0'}
                               value={it.sellingPrice !== undefined ? it.sellingPrice : (calc?.sellingPerUnit || 0)}
                               onChange={(val) => handleItemChange(idx, 'sellingPrice', val ?? 0)}
+                              containerStyle={{ width: 106, marginLeft: 'auto' }}
                               style={{
-                                width: '100%',
                                 textAlign: 'right',
                                 fontWeight: 700,
                                 height: 28,
+                                fontSize: 11.5,
                                 color: isManualSelling ? '#b45309' : '#0f9960',
                                 borderColor: isManualSelling ? '#f59e0b' : undefined,
                               }}
                             />
-                            <div style={{ fontSize: 10.5, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right' }}>
                               {isManualSelling ? (
                                 <button
                                   type="button"
@@ -1265,7 +1270,7 @@ export function SparePartOrderModal({
                                     padding: 0,
                                     cursor: 'pointer',
                                     color: '#b45309',
-                                    fontSize: 10.5,
+                                    fontSize: 10,
                                     fontWeight: 600,
                                     display: 'inline-flex',
                                     alignItems: 'center',
@@ -1273,7 +1278,7 @@ export function SparePartOrderModal({
                                     textDecoration: 'underline',
                                   }}
                                 >
-                                  <RotateCcw size={10} />
+                                  <RotateCcw size={9} />
                                   <span>Gốc: {calc.formulaSellingPerUnit.toLocaleString('vi-VN')}₫</span>
                                 </button>
                               ) : (
@@ -1286,19 +1291,19 @@ export function SparePartOrderModal({
                         </td>
 
                         {/* 7. Thành tiền */}
-                        <td style={{ padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
+                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
-                            <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12.5, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
                             </div>
-                            <div style={{ fontSize: 10.5, color: '#16a34a', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: '#16a34a', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
                               +{(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')} ₫
                             </div>
                           </div>
                         </td>
 
                         {/* 8. Xóa dòng */}
-                        <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'top' }}>
+                        <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'top' }}>
                           {items.length > 1 && (
                             <button
                               type="button"
@@ -1306,7 +1311,7 @@ export function SparePartOrderModal({
                               style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: '6px 2px', display: 'inline-flex' }}
                               title="Xóa dòng"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           )}
                         </td>
@@ -1318,23 +1323,23 @@ export function SparePartOrderModal({
                 <tfoot>
                   {/* Hàng tổng cộng các cột */}
                   <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 600 }}>
-                    <td style={{ padding: '8px 10px', color: 'var(--text-strong)' }}>
+                    <td style={{ padding: '8px 8px', color: 'var(--text-strong)' }}>
                       Tổng cộng ({items.length} mặt hàng):
                     </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)' }}>
+                    <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
                       {calculation.totalQty} cái
                     </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#475569' }}>
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#475569', fontSize: 11.5 }}>
                       {calculation.subtotalVnd.toLocaleString('vi-VN')} ₫
                     </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7' }}>
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7', fontSize: 11.5 }}>
                       {calculation.totalShippingFee.toLocaleString('vi-VN')} ₫
                     </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#d97706' }}>
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#d97706', fontSize: 11.5 }}>
                       {calculation.totalOtherFee.toLocaleString('vi-VN')} ₫
                     </td>
                     <td></td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
                       {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫
                     </td>
                     <td></td>
