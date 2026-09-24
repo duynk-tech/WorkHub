@@ -28,6 +28,8 @@ import {
   Undo2,
   Printer,
   ShoppingCart,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Card, Button, Badge, ConfirmDialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
@@ -98,6 +100,16 @@ export function CustomerDetailScreen({
   const [editCustomerModalOpen, setEditCustomerModalOpen] = useState(false);
   const [createLocationModalOpen, setCreateLocationModalOpen] = useState(false);
   const [handoverEquipment, setHandoverEquipment] = useState<any | null>(null);
+  const [expandedOrderItems, setExpandedOrderItems] = useState<Record<string, boolean>>({});
+  const [expandedQuotationItems, setExpandedQuotationItems] = useState<Record<string, boolean>>({});
+
+  const toggleOrderItems = (orderId: string | number) => {
+    setExpandedOrderItems(prev => ({ ...prev, [String(orderId)]: !prev[String(orderId)] }));
+  };
+
+  const toggleQuotationItems = (quoteId: string | number) => {
+    setExpandedQuotationItems(prev => ({ ...prev, [String(quoteId)]: !prev[String(quoteId)] }));
+  };
 
   const statusInfo = CUSTOMER_STATUSES[customer.status] || { label: customer.status, color: '#64748b', bg: '#f1f5f9' };
 
@@ -797,41 +809,82 @@ export function CustomerDetailScreen({
                     </div>
                   </div>
 
-                  <div style={{ marginTop: 14, borderTop: '1px solid var(--border-base)', paddingTop: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-                      Hàng hóa / dịch vụ đã báo giá:
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {q.items?.map((it: any) => (
-                        <div
-                          key={it.id}
+                  {/* Hàng hóa / dịch vụ đã báo giá */}
+                  {q.items && q.items.length > 0 && (
+                    <div style={{ marginTop: 10, borderTop: '1px solid var(--border-base)', paddingTop: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleQuotationItems(q.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          width: '100%',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '3px 0',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span
                           style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
+                            display: 'inline-flex',
                             alignItems: 'center',
-                            fontSize: 12.5,
-                            padding: '4px 8px',
-                            borderRadius: 'var(--radius-xs)',
-                            background: 'var(--surface-sunken)',
+                            gap: 6,
+                            fontSize: 12,
+                            fontWeight: 650,
+                            color: 'var(--text-muted)',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
-                            {Number(it.discountVnd) > 0 && (
-                              <span style={{ color: 'var(--danger)', fontSize: 11.5 }}>
-                                CK {new Intl.NumberFormat('vi-VN').format(Number(it.discountVnd))} ₫
-                              </span>
-                            )}
-                          </div>
+                          {expandedQuotationItems[String(q.id)] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          <span>Hàng hóa / dịch vụ đã báo giá ({q.items.length})</span>
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            color: 'var(--brand)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {expandedQuotationItems[String(q.id)] ? 'Thu gọn' : 'Xem chi tiết'}
+                        </span>
+                      </button>
 
-                          <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                            {new Intl.NumberFormat('vi-VN').format(Number(it.totalPrice || 0))} ₫
-                          </div>
+                      {expandedQuotationItems[String(q.id)] && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                          {q.items.map((it: any) => (
+                            <div
+                              key={it.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                fontSize: 12.5,
+                                padding: '4px 8px',
+                                borderRadius: 'var(--radius-xs)',
+                                background: 'var(--surface-sunken)',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
+                                {Number(it.discountVnd) > 0 && (
+                                  <span style={{ color: 'var(--danger)', fontSize: 11.5 }}>
+                                    CK {new Intl.NumberFormat('vi-VN').format(Number(it.discountVnd))} ₫
+                                  </span>
+                                )}
+                              </div>
+
+                              <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                {new Intl.NumberFormat('vi-VN').format(Number(it.totalPrice || 0))} ₫
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
+                  )}
                 </Card>
               );
             })
@@ -1103,48 +1156,88 @@ export function CustomerDetailScreen({
                   </div>
 
                   {/* Chi tiết sản phẩm */}
-                  <div style={{ marginTop: 14, borderTop: '1px solid var(--border-base)', paddingTop: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-                      Chi tiết sản phẩm / máy móc:
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {o.items?.map((it: any) => (
-                        <div
-                          key={it.id}
+                  {o.items && o.items.length > 0 && (
+                    <div style={{ marginTop: 10, borderTop: '1px solid var(--border-base)', paddingTop: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleOrderItems(o.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          width: '100%',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '3px 0',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span
                           style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
+                            display: 'inline-flex',
                             alignItems: 'center',
-                            fontSize: 12.5,
-                            padding: '4px 8px',
-                            borderRadius: 'var(--radius-xs)',
-                            background: 'var(--surface-sunken)',
+                            gap: 6,
+                            fontSize: 12,
+                            fontWeight: 650,
+                            color: 'var(--text-muted)',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span
+                          {expandedOrderItems[String(o.id)] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          <span>Chi tiết sản phẩm / máy móc ({o.items.length})</span>
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            color: 'var(--brand)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {expandedOrderItems[String(o.id)] ? 'Thu gọn' : 'Xem chi tiết'}
+                        </span>
+                      </button>
+
+                      {expandedOrderItems[String(o.id)] && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                          {o.items.map((it: any) => (
+                            <div
+                              key={it.id}
                               style={{
-                                padding: '1px 6px',
-                                borderRadius: 4,
-                                fontSize: 11,
-                                fontWeight: 600,
-                                background: it.itemType === 'EQUIPMENT' ? '#e0f2fe' : '#ede9fe',
-                                color: it.itemType === 'EQUIPMENT' ? '#0369a1' : '#6d28d9',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                fontSize: 12.5,
+                                padding: '4px 8px',
+                                borderRadius: 'var(--radius-xs)',
+                                background: 'var(--surface-sunken)',
                               }}
                             >
-                              {it.itemType === 'EQUIPMENT' ? 'Máy móc' : it.itemType === 'SPARE_PART' ? 'Linh kiện' : 'Dịch vụ'}
-                            </span>
-                            <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
-                          </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span
+                                  style={{
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    background: it.itemType === 'EQUIPMENT' ? '#e0f2fe' : '#ede9fe',
+                                    color: it.itemType === 'EQUIPMENT' ? '#0369a1' : '#6d28d9',
+                                  }}
+                                >
+                                  {it.itemType === 'EQUIPMENT' ? 'Máy móc' : it.itemType === 'SPARE_PART' ? 'Linh kiện' : 'Dịch vụ'}
+                                </span>
+                                <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
+                                <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
+                              </div>
 
-                          <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                            {new Intl.NumberFormat('vi-VN').format(Number(it.totalPrice || 0))} ₫
-                          </div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                {new Intl.NumberFormat('vi-VN').format(Number(it.totalPrice || 0))} ₫
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
+                  )}
                 </Card>
               );
             })
