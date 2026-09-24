@@ -275,83 +275,172 @@ export function SalesOrderDetailModal({
             {(order.items ?? []).length === 0 ? (
               <div className="hint">Đơn chưa có dòng hàng nào</div>
             ) : (
-              <table className="table table-compact" style={{ fontSize: 12.5 }}>
-                <thead>
-                  <tr>
-                    <th>Tên hàng</th>
-                    <th style={{ width: 96 }}>Loại</th>
-                    <th className="num" style={{ width: 60 }}>SL</th>
-                    <th className="num" style={{ width: 110 }}>Đơn giá</th>
-                    <th className="num" style={{ width: 120 }}>Thành tiền</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.items.map((it: any) => (
-                    <tr key={it.id}>
-                      <td>
-                        {it.name}
-                        {it.notes && <div className="hint">{it.notes}</div>}
-                      </td>
-                      <td>{ITEM_TYPES[it.itemType] ?? it.itemType}</td>
-                      <td className="num">{it.quantity}</td>
-                      <td className="num">{money(Number(it.unitPrice))}</td>
-                      <td className="num" style={{ fontWeight: 700 }}>{money(Number(it.totalPrice))}</td>
+              <div>
+                <table className="table table-compact" style={{ fontSize: 12.5, width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th>Tên hàng</th>
+                      <th style={{ width: 96 }}>Loại</th>
+                      <th className="num" style={{ width: 60 }}>SL</th>
+                      <th className="num" style={{ width: 110 }}>Đơn giá</th>
+                      <th className="num" style={{ width: 120 }}>Thành tiền</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  </thead>
+                  <tbody>
+                    {order.items.map((it: any) => (
+                      <tr key={it.id}>
+                        <td>
+                          {it.name}
+                          {it.notes && <div className="hint">{it.notes}</div>}
+                        </td>
+                        <td>{ITEM_TYPES[it.itemType] ?? it.itemType}</td>
+                        <td className="num">{it.quantity}</td>
+                        <td className="num">{money(Number(it.unitPrice))}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{money(Number(it.totalPrice))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    {/* 1. Tổng tiền hàng */}
+                    <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 700 }}>
+                      <td colSpan={2} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-strong)' }}>
+                        Tổng cộng ({(order.items ?? []).length} mặt hàng):
+                      </td>
+                      <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)' }}>
+                        {(order.items ?? []).reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0)} cái
+                      </td>
+                      <td></td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
+                        {money(Number(order.goodsAmount))}
+                      </td>
+                    </tr>
 
-            <div
-              style={{
-                marginTop: 10,
-                paddingTop: 10,
-                borderTop: '1px dashed var(--border-base)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                fontSize: 13,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Tiền hàng</span>
-                <span>{money(Number(order.goodsAmount))}</span>
-              </div>
-              {Number(order.shippingFee) > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Cước vận chuyển</span>
-                  <span>{money(Number(order.shippingFee))}</span>
+                    {/* 2. Chiết khấu (nếu có) */}
+                    {(() => {
+                      const discountAmount = Math.max(
+                        0,
+                        (order.items ?? []).reduce(
+                          (sum: number, it: any) =>
+                            sum + Math.max(0, (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0) - Number(it.totalPrice || 0)),
+                          0,
+                        ),
+                      );
+                      if (discountAmount <= 0) return null;
+                      return (
+                        <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                          <td
+                            colSpan={4}
+                            style={{
+                              padding: '6px 10px',
+                              textAlign: 'right',
+                              fontWeight: 600,
+                              color: 'var(--text-strong)',
+                            }}
+                          >
+                            Chiết khấu:
+                          </td>
+                          <td
+                            style={{
+                              padding: '6px 10px',
+                              textAlign: 'right',
+                              fontWeight: 700,
+                              color: '#b91c1c',
+                            }}
+                          >
+                            -{money(discountAmount)}
+                          </td>
+                        </tr>
+                      );
+                    })()}
+
+                    {/* 3. Thuế VAT */}
+                    <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                      <td
+                        colSpan={4}
+                        style={{
+                          padding: '6px 10px',
+                          textAlign: 'right',
+                          fontWeight: 600,
+                          color: 'var(--text-strong)',
+                        }}
+                      >
+                        Thuế VAT ({Number(order.vatRate)}%):
+                      </td>
+                      <td
+                        style={{
+                          padding: '6px 10px',
+                          textAlign: 'right',
+                          fontWeight: 700,
+                          color: Number(order.vatAmount) > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {Number(order.vatAmount) > 0
+                          ? `+${money(Number(order.vatAmount))}`
+                          : '0 ₫'}
+                      </td>
+                    </tr>
+
+                    {/* 4. Hàng trả lại (nếu có) */}
+                    {order.returned > 0 && (
+                      <tr style={{ background: '#fffbeb', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: '6px 10px',
+                            textAlign: 'right',
+                            fontWeight: 600,
+                            color: '#b45309',
+                          }}
+                        >
+                          Hàng khách trả lại:
+                        </td>
+                        <td
+                          style={{
+                            padding: '6px 10px',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: '#b45309',
+                          }}
+                        >
+                          -{money(order.returned)}
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* 5. Tổng cộng thanh toán */}
+                    <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
+                      <td
+                        colSpan={4}
+                        style={{
+                          padding: '10px',
+                          textAlign: 'right',
+                          textTransform: 'uppercase',
+                          color: 'var(--text-strong)',
+                          fontSize: 13,
+                        }}
+                      >
+                        TỔNG CỘNG THANH TOÁN (VND){Number(order.vatRate) > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
+                        {money(order.total)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12.5,
+                    fontStyle: 'italic',
+                    color: 'var(--text-muted)',
+                    textAlign: 'right',
+                  }}
+                >
+                  Bằng chữ: {readVndInWords(order.total)}
                 </div>
-              )}
-              {Number(order.vatAmount) > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>VAT {Number(order.vatRate)}%</span>
-                  <span>{money(Number(order.vatAmount))}</span>
-                </div>
-              )}
-              {order.returned > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b45309' }}>
-                  <span>Hàng trả lại</span>
-                  <span>-{money(order.returned)}</span>
-                </div>
-              )}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontWeight: 800,
-                  fontSize: 14,
-                  paddingTop: 6,
-                  borderTop: '1px solid var(--border-base)',
-                }}
-              >
-                <span>Tổng thanh toán</span>
-                <span style={{ color: 'var(--brand)' }}>{money(order.total)}</span>
               </div>
-              <div className="hint" style={{ fontStyle: 'italic' }}>
-                Bằng chữ: {readVndInWords(order.total)}
-              </div>
-            </div>
+            )}
           </Section>
 
           <Section title={`Đã thu của khách (${order.payments?.length ?? 0})`} icon={<Wallet size={13} />}>

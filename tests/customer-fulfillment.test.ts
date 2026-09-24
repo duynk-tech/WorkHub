@@ -25,13 +25,13 @@ describe('Vòng đời giao hàng của đơn hàng khách', () => {
     expect(ORDER_STATUSES.READY_TO_DELIVER.label).toBe('Đã có hàng, chờ giao');
   });
 
-  it('tổng đơn hàng gồm tiền hàng, cước và VAT — khớp với báo giá', () => {
-    const s = summarizeOrder([{ quantity: 2, unitPrice: 9_500_000 }], 8, 4_500_000);
+  it('đơn hàng bán khách không tính cước vận chuyển, VAT tính trên tiền hàng', () => {
+    const s = summarizeOrder([{ quantity: 2, unitPrice: 9_500_000 }], 8, 0);
     expect(s.goodsAmount).toBe(19_000_000);
-    expect(s.shippingFee).toBe(4_500_000);
-    // VAT tính trên cả tiền hàng lẫn cước
-    expect(s.vatAmount).toBe(1_880_000);
-    expect(s.totalAmount).toBe(25_380_000);
+    expect(s.shippingFee).toBe(0);
+    // VAT tính trên tiền hàng (không tính cước)
+    expect(s.vatAmount).toBe(1_520_000);
+    expect(s.totalAmount).toBe(20_520_000);
   });
 
   it('đơn không cước không VAT thì tổng đúng bằng tiền hàng', () => {

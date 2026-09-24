@@ -154,7 +154,7 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
       select: {
         id: true, orderCode: true, orderType: true, status: true,
         orderDate: true, deliveryDate: true, dueDate: true,
-        goodsAmount: true, totalAmount: true, paidAmount: true, returnedAmount: true,
+        goodsAmount: true, shippingFee: true, vatRate: true, totalAmount: true, paidAmount: true, returnedAmount: true,
         stockIssuedAt: true,
         customer: { select: { id: true, code: true, name: true, phone: true } },
         location: { select: { id: true, name: true } },
@@ -163,16 +163,39 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
     });
 
     const mapped = rows.map((o) => {
-      const total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
+      const freight = Number(o.shippingFee || 0);
+      let goodsAmount = Number(o.goodsAmount || 0);
+      let total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
+      if (freight > 0) {
+        const vatRate = Number(o.vatRate || 0);
+        const vat = Math.round((goodsAmount * vatRate) / 100);
+        total = goodsAmount + vat;
+      }
       const paid = Number(o.paidAmount || 0);
       return {
         ...o,
+        shippingFee: 0,
         total,
         paid,
         // Hàng trả lại không còn phải thu, trừ ra trước khi tính công nợ
         remaining: Math.max(0, total - Number(o.returnedAmount || 0) - paid),
       };
     });
+
+    // Dọn dẹp cước vận chuyển cũ trên đơn bán khách nếu còn tồn tại trong DB
+    const toFixFreight = rows.filter((o) => Number(o.shippingFee) > 0);
+    if (toFixFreight.length > 0) {
+      for (const o of toFixFreight) {
+        const goods = Number(o.goodsAmount || 0);
+        const vatRate = Number(o.vatRate || 0);
+        const vat = Math.round((goods * vatRate) / 100);
+        const total = goods + vat;
+        prisma.customerOrder.update({
+          where: { id: o.id },
+          data: { shippingFee: 0, vatAmount: vat, totalAmount: total },
+        }).catch(() => {});
+      }
+    }
 
     // Tự động chuyển COMPLETED cho đơn đã xuất kho và đã thanh toán đủ 100%
     const toComplete = mapped.filter(
@@ -253,7 +276,37 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
   });
   if (!o) return null;
 
-  const total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
+  let goodsAmount = Number(o.goodsAmount || 0);
+  let vatRate = Number(o.vatRate || 0);
+  let vatAmount = Number(o.vatAmount || 0);
+  let total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
+  const freight = Number(o.shippingFee || 0);
+
+  // Đơn bán khách không tính cước vận chuyển: dọn cước và tính lại VAT & Tổng tiền nếu đơn cũ có cước
+  if (freight > 0) {
+    if (o.items && o.items.length > 0) {
+      goodsAmount = o.items.reduce(
+        (sum: number, it: any) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
+        0,
+      );
+    }
+    vatAmount = Math.round((goodsAmount * vatRate) / 100);
+    total = goodsAmount + vatAmount;
+    await prisma.customerOrder.update({
+      where: { id },
+      data: {
+        goodsAmount,
+        shippingFee: 0,
+        vatAmount,
+        totalAmount: total,
+      },
+    }).catch((e) => console.warn('[getSalesOrderDetail] fix shipping fee err:', e?.message));
+    (o as any).goodsAmount = goodsAmount;
+    (o as any).shippingFee = 0;
+    (o as any).vatAmount = vatAmount;
+    (o as any).totalAmount = total;
+  }
+
   const paid = Number(o.paidAmount || 0);
   const returned = Number(o.returnedAmount || 0);
   const remaining = Math.max(0, total - returned - paid);
@@ -269,6 +322,9 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
 
   return {
     ...o,
+    goodsAmount,
+    shippingFee: 0,
+    vatAmount,
     total,
     paid,
     returned,
@@ -457,23 +513,22 @@ export async function deleteCustomer(id: number) {
   return prisma.customer.delete({ where: { id: numId } });
 }
 
-/** Tổng hợp tiền của một đơn hàng: tiền hàng, cước, VAT và tổng khách phải trả. */
+/** Tổng hợp tiền của một đơn hàng: tiền hàng, VAT và tổng khách phải trả (đơn bán khách không tính cước). */
 export function summarizeOrder(
   items: { quantity: number; unitPrice: number }[],
   vatRate = 0,
-  shippingFee = 0,
+  _shippingFee = 0,
 ) {
   const goodsAmount = items.reduce(
     (sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
     0,
   );
-  const freight = Math.max(0, Number(shippingFee) || 0);
-  const vatAmount = Math.round(((goodsAmount + freight) * (Number(vatRate) || 0)) / 100);
+  const vatAmount = Math.round((goodsAmount * (Number(vatRate) || 0)) / 100);
   return {
     goodsAmount,
-    shippingFee: freight,
+    shippingFee: 0,
     vatAmount,
-    totalAmount: goodsAmount + freight + vatAmount,
+    totalAmount: goodsAmount + vatAmount,
   };
 }
 
@@ -481,10 +536,10 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
   const numId = id ? Number(id) : null;
   const orderCode = input.orderCode?.trim() || (numId ? undefined : await generateOrderCode());
   const vatRate = Number(input.vatRate) || 0;
-  const { goodsAmount, shippingFee, vatAmount, totalAmount } = summarizeOrder(
+  const { goodsAmount, vatAmount, totalAmount } = summarizeOrder(
     input.items,
     vatRate,
-    input.shippingFee,
+    0,
   );
 
   if (numId && !isNaN(numId) && numId > 0) {
@@ -498,7 +553,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
         status: input.status || 'COMPLETED',
         locationId: input.locationId ? Number(input.locationId) : null,
         goodsAmount,
-        shippingFee,
+        shippingFee: 0,
         vatRate,
         vatAmount,
         totalAmount,
@@ -536,7 +591,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       orderType: input.orderType,
       status: input.status || 'COMPLETED',
       goodsAmount,
-      shippingFee,
+      shippingFee: 0,
       vatRate,
       vatAmount,
       totalAmount,
@@ -747,7 +802,7 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
   const orderTotals = summarizeOrder(
     items,
     Number(quotation.vatRate || 0),
-    Number(quotation.shippingFee || 0),
+    0,
   );
 
   const [order] = await prisma.$transaction([
@@ -760,7 +815,7 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
         orderType,
         status: 'PENDING',
         goodsAmount: orderTotals.goodsAmount,
-        shippingFee: orderTotals.shippingFee,
+        shippingFee: 0,
         vatRate: Number(quotation.vatRate || 0),
         vatAmount: orderTotals.vatAmount,
         totalAmount: orderTotals.totalAmount,
