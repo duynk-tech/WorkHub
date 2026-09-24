@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { nextSequentialCode } from '../../src/lib/code-sequence';
+import selmiOrderParts from './selmi-order-parts.json';
 
 /**
  * Sinh mã khách trong seed.
@@ -639,6 +640,7 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
       hnQty: 25,
       hcmQty: 30,
     },
+    ...selmiOrderParts,
   ];
 
   const partItemMap = new Map<string, number>();
@@ -691,6 +693,34 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         createdById: technicianId || 1,
       },
     });
+
+    const tylBladeId = partItemMap.get('PART-TYL-BLADE');
+    const airPumpId = partItemMap.get('PART-AIR-PUMP');
+    if (tylBladeId && airPumpId) {
+      await prisma.sparePartOrderItem.createMany({
+        data: [
+          {
+            orderId: po1.id,
+            itemId: tylBladeId,
+            quantity: 10,
+            unitPriceEur: 110,
+            unitPriceVnd: 2800000,
+            discountVnd: 0,
+            finalPriceVnd: 28000000,
+          },
+          {
+            orderId: po1.id,
+            itemId: airPumpId,
+            quantity: 10,
+            unitPriceEur: 255,
+            unitPriceVnd: 2800000,
+            discountVnd: 0,
+            finalPriceVnd: 28000000,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    }
   }
 
   const po2Code = 'PO-2026-0002';
@@ -716,6 +746,34 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         createdById: technicianId || 1,
       },
     });
+
+    const pt100Id = partItemMap.get('PART-TEMP-PT100');
+    const powerBoardId = partItemMap.get('COMMSESPMIC____000001');
+    if (pt100Id && powerBoardId) {
+      await prisma.sparePartOrderItem.createMany({
+        data: [
+          {
+            orderId: po2.id,
+            itemId: pt100Id,
+            quantity: 6,
+            unitPriceEur: 70,
+            unitPriceVnd: 1950000,
+            discountVnd: 0,
+            finalPriceVnd: 11700000,
+          },
+          {
+            orderId: po2.id,
+            itemId: powerBoardId,
+            quantity: 4,
+            unitPriceEur: 487.5,
+            unitPriceVnd: 6575000,
+            discountVnd: 0,
+            finalPriceVnd: 26300000,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    }
   }
 
   // 6. Báo Giá & Đơn Bán Hàng Khách Hàng (Quotations, Orders & Payments)
