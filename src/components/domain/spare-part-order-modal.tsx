@@ -35,6 +35,7 @@ import {
   SlidersHorizontal,
   RefreshCw,
   RotateCcw,
+  Printer,
 } from 'lucide-react';
 import { SparePartQuotationModal } from './spare-part-quotation-modal';
 import { SparePartModal } from './spare-parts-modals';
@@ -1568,24 +1569,22 @@ export function SparePartOrderModal({
           </div>
 
           {/* Footer Actions */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 8, paddingTop: 10, borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
+              Hủy
+            </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={() => setQuotationOpen(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #ddd6fe', color: '#6d28d9' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #ddd6fe', color: '#6d28d9', background: '#faf5ff' }}
+              title="Xem và in phiếu báo giá (A4 / PDF)"
             >
-              <FileDown size={15} /> Xuất Phiếu Báo Giá KH (A4 / PDF)
+              <Printer size={15} /> In Báo Giá
             </Button>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
-                Hủy
-              </Button>
-              <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
-                <Plane size={14} style={{ marginRight: 6 }} /> Xác nhận
-              </Button>
-            </div>
+            <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
+              <Plane size={14} style={{ marginRight: 6 }} /> Xác nhận
+            </Button>
           </div>
         </form>
       </div>
