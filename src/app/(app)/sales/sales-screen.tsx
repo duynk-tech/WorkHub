@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle, Printer } from 'lucide-react';
 import {
   Badge, Button, Card, PageHeader, Pagination, SearchInput, SearchableSelect, StatCard, usePaged,
 } from '@/components/ui';
@@ -264,6 +264,7 @@ export function SalesScreen({
                 <th style={{ width: 110 }}>Ngày đặt</th>
                 <th className="num" style={{ width: 130 }}>Tổng tiền</th>
                 <th className="num" style={{ width: 130 }}>Còn phải thu</th>
+                <th style={{ width: 60, textAlign: 'center' }}>In</th>
               </tr>
             </thead>
             <tbody>
@@ -332,6 +333,22 @@ export function SalesScreen({
                       ) : (
                         <span style={{ color: '#15803d' }}>Đã thu đủ</span>
                       )}
+                    </td>
+                    <td style={{ textAlign: 'center' }} onClick={(e) => { e.stopPropagation(); setDetailId(o.id); }}>
+                      <button
+                        type="button"
+                        style={{
+                          padding: '4px 7px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: '#faf5ff',
+                          color: '#7c3aed',
+                          border: '1px solid #ddd6fe',
+                          cursor: 'pointer',
+                        }}
+                        title="Xem chi tiết & in hóa đơn / bàn giao"
+                      >
+                        <Printer size={13} />
+                      </button>
                     </td>
                   </tr>
                 );

@@ -40,6 +40,7 @@ import {
   OrderFulfillmentModal,
   type FulfillmentMode,
 } from '@/components/domain/order-fulfillment-modal';
+import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
 import { CustomerPaymentModal } from '@/components/domain/customer-payment-modal';
 import { PaymentVoucherModal } from '@/components/domain/payment-voucher-modal';
 import { CustomerReturnModal } from '@/components/domain/customer-return-modal';
@@ -90,6 +91,7 @@ export function CustomerDetailScreen({
   const [createQuotationOpen, setCreateQuotationOpen] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<any>(null);
   const [printingQuotation, setPrintingQuotation] = useState<any>(null);
+  const [printingOrder, setPrintingOrder] = useState<any>(null);
   const [fulfillment, setFulfillment] = useState<{ order: any; mode: FulfillmentMode } | null>(null);
   const [paymentOrderId, setPaymentOrderId] = useState<number | 'GENERAL' | null>(null);
   const [returnOrder, setReturnOrder] = useState<any>(null);
@@ -1000,85 +1002,103 @@ export function CustomerDetailScreen({
                         )}
                       </div>
 
-                      {canManage && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {Number(o.totalAmount || 0) > Number(o.paidAmount || 0) &&
-                            o.status !== 'CANCELLED' && (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => setPrintingOrder(o)}
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: '#faf5ff',
+                            color: '#7c3aed',
+                            border: '1px solid #ddd6fe',
+                            cursor: 'pointer',
+                          }}
+                          title="In hóa đơn bán hàng & bàn giao (A4 / PDF)"
+                        >
+                          <Printer size={14} />
+                        </button>
+
+                        {canManage && (
+                          <>
+                            {Number(o.totalAmount || 0) > Number(o.paidAmount || 0) &&
+                              o.status !== 'CANCELLED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentOrderId(o.id)}
+                                  style={{
+                                    padding: '5px 8px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: '#fef3c7',
+                                    color: '#b45309',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Ghi nhận khách thanh toán cho đơn này"
+                                >
+                                  <Wallet size={14} />
+                                </button>
+                              )}
+
+                            {o.status !== 'CANCELLED' && (o.items || []).length > 0 && (
                               <button
                                 type="button"
-                                onClick={() => setPaymentOrderId(o.id)}
+                                onClick={() => setReturnOrder(o)}
                                 style={{
                                   padding: '5px 8px',
                                   borderRadius: 'var(--radius-sm)',
-                                  background: '#fef3c7',
-                                  color: '#b45309',
+                                  background: '#f5f3ff',
+                                  color: '#7c3aed',
                                   border: 'none',
                                   cursor: 'pointer',
                                 }}
-                                title="Ghi nhận khách thanh toán cho đơn này"
+                                title="Khách trả hàng"
                               >
-                                <Wallet size={14} />
+                                <Undo2 size={14} />
                               </button>
                             )}
 
-                          {o.status !== 'CANCELLED' && (o.items || []).length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setReturnOrder(o)}
-                              style={{
-                                padding: '5px 8px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: '#f5f3ff',
-                                color: '#7c3aed',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                              title="Khách trả hàng"
-                            >
-                              <Undo2 size={14} />
-                            </button>
-                          )}
-
-                          {o.items?.some((it: any) => it.itemType === 'SPARE_PART') && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setFulfillment({ order: o, mode: 'SUPPLIER' })}
-                                style={{
-                                  padding: '5px 8px',
-                                  borderRadius: 'var(--radius-sm)',
-                                  background: '#ede9fe',
-                                  color: '#6d28d9',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                }}
-                                title="Đặt hàng nhà cung cấp cho linh kiện trong đơn"
-                              >
-                                <Truck size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setFulfillment({ order: o, mode: 'ISSUE' })}
-                                style={{
-                                  padding: '5px 8px',
-                                  borderRadius: 'var(--radius-sm)',
-                                  background: o.stockIssuedAt ? '#dcfce7' : '#e0f2fe',
-                                  color: o.stockIssuedAt ? '#15803d' : '#0369a1',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                }}
-                                title={
-                                  o.stockIssuedAt
-                                    ? `Đã xuất kho ngày ${new Date(o.stockIssuedAt).toLocaleDateString('vi-VN')}`
-                                    : 'Xuất kho giao khách (trừ tồn kho)'
-                                }
-                              >
-                                <PackageCheck size={14} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
+                            {o.items?.some((it: any) => it.itemType === 'SPARE_PART') && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setFulfillment({ order: o, mode: 'SUPPLIER' })}
+                                  style={{
+                                    padding: '5px 8px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: '#ede9fe',
+                                    color: '#6d28d9',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Đặt hàng nhà cung cấp cho linh kiện trong đơn"
+                                >
+                                  <Truck size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setFulfillment({ order: o, mode: 'ISSUE' })}
+                                  style={{
+                                    padding: '5px 8px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: o.stockIssuedAt ? '#dcfce7' : '#e0f2fe',
+                                    color: o.stockIssuedAt ? '#15803d' : '#0369a1',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                  }}
+                                  title={
+                                    o.stockIssuedAt
+                                      ? `Đã xuất kho ngày ${new Date(o.stockIssuedAt).toLocaleDateString('vi-VN')}`
+                                      : 'Xuất kho giao khách (trừ tồn kho)'
+                                  }
+                                >
+                                  <PackageCheck size={14} />
+                                </button>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1581,6 +1601,17 @@ export function CustomerDetailScreen({
           customer={customer}
           companyInfo={companyInfo}
           onClose={() => setPrintingQuotation(null)}
+        />
+      )}
+
+      {printingOrder && (
+        <CustomerOrderPrintModal
+          open={Boolean(printingOrder)}
+          order={printingOrder}
+          customer={customer}
+          machines={[...(customer.machines || []), ...(stockMachines || [])]}
+          companyInfo={companyInfo}
+          onClose={() => setPrintingOrder(null)}
         />
       )}
 

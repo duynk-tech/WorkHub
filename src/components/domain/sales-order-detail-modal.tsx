@@ -253,6 +253,27 @@ export function SalesOrderDetailModal({
                   ✓ Đã thu đủ
                 </span>
               )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setPrintOpen(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  border: '1px solid #ddd6fe',
+                  color: '#6d28d9',
+                  background: '#fff',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  height: 'auto',
+                }}
+                title="Xem trước và in hóa đơn / biên bản bàn giao (A4 / PDF)"
+              >
+                <Printer size={13} /> In / Xuất hóa đơn
+              </Button>
             </div>
           </div>
 
