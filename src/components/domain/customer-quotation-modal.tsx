@@ -547,6 +547,7 @@ export function CustomerQuotationPrintModal({
     <Modal
       open={open}
       onClose={onClose}
+      overlayClassName="print-preview-modal-overlay"
       title="In báo giá gửi khách hàng"
       description={`Báo giá số ${quotation.quoteCode}`}
       size="xl"
@@ -595,11 +596,15 @@ export function CustomerQuotationPrintModal({
             overflow: visible !important;
           }
 
-          body > *:not(.modal-overlay) {
+          body > *:not(.print-preview-modal-overlay) {
             display: none !important;
           }
 
-          .modal-overlay {
+          .modal-overlay:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .print-preview-modal-overlay {
             position: static !important;
             display: block !important;
             inset: auto !important;
@@ -609,7 +614,7 @@ export function CustomerQuotationPrintModal({
             animation: none !important;
             z-index: auto !important;
           }
-          .modal-overlay .modal {
+          .print-preview-modal-overlay .modal {
             display: block !important;
             width: 100% !important;
             max-width: none !important;
@@ -620,12 +625,12 @@ export function CustomerQuotationPrintModal({
             background: #ffffff !important;
             animation: none !important;
           }
-          .modal-overlay .modal-header,
-          .modal-overlay .modal-footer,
+          .print-preview-modal-overlay .modal-header,
+          .print-preview-modal-overlay .modal-footer,
           .no-print {
             display: none !important;
           }
-          .modal-overlay .modal-body {
+          .print-preview-modal-overlay .modal-body {
             padding: 0 !important;
             overflow: visible !important;
             max-height: none !important;

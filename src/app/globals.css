@@ -651,6 +651,7 @@
 
 @media print {
   .no-print { display: none !important; }
+  .modal-overlay:not(.print-preview-modal-overlay) { display: none !important; }
   body { background: #fff; }
   .print-watermark-container {
     -webkit-print-color-adjust: exact !important;

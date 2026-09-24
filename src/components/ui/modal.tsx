@@ -16,9 +16,11 @@ export interface ModalProps {
   children: React.ReactNode;
   closeOnOverlay?: boolean;
   zIndex?: number;
+  className?: string;
+  overlayClassName?: string;
 }
 
-export function Modal({ open, onClose, title, description, size = 'md', footer, children, closeOnOverlay = true, zIndex }: ModalProps) {
+export function Modal({ open, onClose, title, description, size = 'md', footer, children, closeOnOverlay = true, zIndex, className, overlayClassName }: ModalProps) {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
@@ -38,11 +40,11 @@ export function Modal({ open, onClose, title, description, size = 'md', footer, 
 
   return createPortal(
     <div
-      className="modal-overlay"
+      className={cn('modal-overlay', overlayClassName)}
       style={zIndex === undefined ? undefined : { zIndex }}
       onMouseDown={(e) => { if (closeOnOverlay && e.target === e.currentTarget) onClose(); }}
     >
-      <div className={cn('modal', size !== 'md' && `modal-${size}`)} role="dialog" aria-modal="true">
+      <div className={cn('modal', size !== 'md' && `modal-${size}`, className)} role="dialog" aria-modal="true">
         {(title || description) && (
           <div className="modal-header">
             <div>
