@@ -486,8 +486,8 @@ export function SparePartQuotationModal({
                     <th style={{ border: '1px solid #000', padding: '5px 6px' }}>Tên linh kiện / Mô tả chi tiết</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>ĐVT</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px', textAlign: 'right' }}>Đơn giá (₫)</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '120px', textAlign: 'right' }}>Thành tiền (₫)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px', textAlign: 'right' }}>Đơn giá</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '120px', textAlign: 'right' }}>Thành tiền</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -531,7 +531,7 @@ export function SparePartQuotationModal({
                     </td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px' }}></td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>
-                      {new Intl.NumberFormat('vi-VN').format(grossVnd)} ₫
+                      {new Intl.NumberFormat('vi-VN').format(grossVnd)}
                     </td>
                   </tr>
 
@@ -542,7 +542,7 @@ export function SparePartQuotationModal({
                           Chiết khấu{discountRateNum > 0 ? ` (${discountRateNum}%)` : ''}:
                         </td>
                         <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: '#b91c1c' }}>
-                          -{new Intl.NumberFormat('vi-VN').format(discountAmount)} ₫
+                          -{new Intl.NumberFormat('vi-VN').format(discountAmount)}
                         </td>
                       </tr>
                       <tr>
@@ -550,7 +550,7 @@ export function SparePartQuotationModal({
                           Tiền hàng sau chiết khấu:
                         </td>
                         <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 700 }}>
-                          {new Intl.NumberFormat('vi-VN').format(goodsTotalVnd)} ₫
+                          {new Intl.NumberFormat('vi-VN').format(goodsTotalVnd)}
                         </td>
                       </tr>
                     </>
@@ -562,17 +562,17 @@ export function SparePartQuotationModal({
                       Thuế VAT {vatRateNum > 0 ? `(${vatRateNum}%)` : '(0%)'}:
                     </td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: vatRateNum > 0 ? 600 : 400, color: vatRateNum > 0 ? '#0f172a' : '#64748b' }}>
-                      {vatAmount > 0 ? `+${new Intl.NumberFormat('vi-VN').format(vatAmount)} ₫` : '0 ₫'}
+                      {vatAmount > 0 ? new Intl.NumberFormat('vi-VN').format(vatAmount) : '0'}
                     </td>
                   </tr>
 
                   {/* Tổng cộng thanh toán */}
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)', fontWeight: 800, fontSize: '12.5px' }}>
                     <td colSpan={5} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
-                      TỔNG CỘNG THANH TOÁN (VND){vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                      TỔNG CỘNG THANH TOÁN{vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', color: '#7c3aed', fontSize: '13.5px' }}>
-                      {new Intl.NumberFormat('vi-VN').format(totalVnd)} ₫
+                      {new Intl.NumberFormat('vi-VN').format(totalVnd)}
                     </td>
                   </tr>
                 </tbody>

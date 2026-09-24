@@ -443,8 +443,8 @@ export function CustomerOrderPrintModal({
                       <th style={{ border: '1px solid #000', padding: '6px 6px', width: '85px', textAlign: 'center' }}>Phân loại</th>
                       <th style={{ border: '1px solid #000', padding: '6px 6px', width: '45px', textAlign: 'center' }}>ĐVT</th>
                       <th style={{ border: '1px solid #000', padding: '6px 6px', width: '45px', textAlign: 'center' }}>SL</th>
-                      <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right' }}>Đơn giá (₫)</th>
-                      <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right' }}>Thành tiền (₫)</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right' }}>Đơn giá</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right' }}>Thành tiền</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -494,7 +494,7 @@ export function CustomerOrderPrintModal({
                       </td>
                       <td style={{ border: '1px solid #000', padding: '5px 8px' }}></td>
                       <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right' }}>
-                        {fmt(goodsAmount)} ₫
+                        {fmt(goodsAmount)}
                       </td>
                     </tr>
 
@@ -505,7 +505,7 @@ export function CustomerOrderPrintModal({
                           Chiết khấu:
                         </td>
                         <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right', fontWeight: 600, color: '#b91c1c' }}>
-                          -{fmt(discountAmount)} ₫
+                          -{fmt(discountAmount)}
                         </td>
                       </tr>
                     )}
@@ -516,7 +516,7 @@ export function CustomerOrderPrintModal({
                         Thuế VAT ({vatRate}%):
                       </td>
                       <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
-                        {vatAmount > 0 ? `+${fmt(vatAmount)} ₫` : '0 ₫'}
+                        {vatAmount > 0 ? fmt(vatAmount) : '0'}
                       </td>
                     </tr>
 
@@ -527,7 +527,7 @@ export function CustomerOrderPrintModal({
                           Hàng khách trả lại:
                         </td>
                         <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>
-                          -{fmt(returnedAmount)} ₫
+                          -{fmt(returnedAmount)}
                         </td>
                       </tr>
                     )}
@@ -535,10 +535,10 @@ export function CustomerOrderPrintModal({
                     {/* Dòng 5: Tổng cộng thanh toán */}
                     <tr style={{ background: '#f1f5f9', fontWeight: 800, fontSize: '13px' }}>
                       <td colSpan={6} style={{ border: '1px solid #000', padding: '7px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
-                        TỔNG CỘNG THANH TOÁN (VND){vatRate > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                        TỔNG CỘNG THANH TOÁN{vatRate > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                       </td>
                       <td style={{ border: '1px solid #000', padding: '7px 8px', textAlign: 'right', color: '#7c3aed', fontSize: '13.5px' }}>
-                        {fmt(totalAmount)} ₫
+                        {fmt(totalAmount)}
                       </td>
                     </tr>
                   </tbody>

@@ -317,8 +317,8 @@ export function InventoryTransactionReportModal({
                     <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center' }}>SL</th>
                     {hasPrices && (
                       <>
-                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right' }}>Đơn giá (₫)</th>
-                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right' }}>Thành tiền (₫)</th>
+                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right' }}>Đơn giá</th>
+                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right' }}>Thành tiền</th>
                       </>
                     )}
                   </tr>
@@ -373,7 +373,7 @@ export function InventoryTransactionReportModal({
                       <>
                         <td style={{ border: '1px solid #000', padding: '6px 8px' }}></td>
                         <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', color: '#0f172a' }}>
-                          {new Intl.NumberFormat('vi-VN').format(totalAmount)} ₫
+                          {new Intl.NumberFormat('vi-VN').format(totalAmount)}
                         </td>
                       </>
                     )}
@@ -393,14 +393,14 @@ export function InventoryTransactionReportModal({
                     <tr>
                       <td style={{ border: '1px solid #000', padding: '5px 10px' }}>Tiền mua hàng (FOB)</td>
                       <td style={{ border: '1px solid #000', padding: '5px 10px', textAlign: 'right', fontWeight: 600 }}>
-                        {new Intl.NumberFormat('vi-VN').format(costMetrics.merchandiseTotal)} ₫
+                        {new Intl.NumberFormat('vi-VN').format(costMetrics.merchandiseTotal)}
                       </td>
                     </tr>
                     {costMetrics.shippingFee > 0 && (
                       <tr>
                         <td style={{ border: '1px solid #000', padding: '5px 10px' }}>Cước vận chuyển</td>
                         <td style={{ border: '1px solid #000', padding: '5px 10px', textAlign: 'right', fontWeight: 600 }}>
-                          {new Intl.NumberFormat('vi-VN').format(costMetrics.shippingFee)} ₫
+                          {new Intl.NumberFormat('vi-VN').format(costMetrics.shippingFee)}
                         </td>
                       </tr>
                     )}
@@ -408,7 +408,7 @@ export function InventoryTransactionReportModal({
                       <tr>
                         <td style={{ border: '1px solid #000', padding: '5px 10px' }}>Chi phí khác (thuế NK, customs…)</td>
                         <td style={{ border: '1px solid #000', padding: '5px 10px', textAlign: 'right', fontWeight: 600 }}>
-                          {new Intl.NumberFormat('vi-VN').format(costMetrics.otherFee)} ₫
+                          {new Intl.NumberFormat('vi-VN').format(costMetrics.otherFee)}
                         </td>
                       </tr>
                     )}
@@ -417,7 +417,7 @@ export function InventoryTransactionReportModal({
                         TỔNG GIÁ VỐN NHẬP KHO (Landed Cost)
                       </td>
                       <td style={{ border: '1px solid #000', padding: '5px 10px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
-                        {new Intl.NumberFormat('vi-VN').format(costMetrics.totalLandedCost)} ₫
+                        {new Intl.NumberFormat('vi-VN').format(costMetrics.totalLandedCost)}
                       </td>
                     </tr>
                   </tbody>

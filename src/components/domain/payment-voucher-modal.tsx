@@ -160,7 +160,7 @@ export function PaymentVoucherModal({
           </div>
           <div style={line}>
             <span style={label}>Số tiền:</span>
-            <span style={{ ...dotted, fontSize: '15px' }}>{fmt(amount)} ₫</span>
+            <span style={{ ...dotted, fontSize: '15px' }}>{fmt(amount)}</span>
           </div>
           <div style={{ ...line, fontStyle: 'italic' }}>
             <span style={label}>Bằng chữ:</span>

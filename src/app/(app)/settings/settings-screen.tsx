@@ -699,7 +699,7 @@ export function SettingsScreen({
                               <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>STT</th>
                               <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px' }}>Hạng mục / Linh kiện</th>
                               <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>SL</th>
-                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>Thành tiền (₫)</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>Thành tiền</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -717,7 +717,7 @@ export function SettingsScreen({
                             </tr>
                             <tr style={{ fontWeight: 700 }}>
                               <td colSpan={3} style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>TỔNG CỘNG:</td>
-                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right', color: '#7c3aed' }}>8.990.000 ₫</td>
+                              <td style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right', color: '#7c3aed' }}>8.990.000</td>
                             </tr>
                           </tbody>
                         </table>

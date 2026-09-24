@@ -863,7 +863,7 @@ export function CustomerQuotationPrintModal({
                     colSpan={colSpan}
                     style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 800, textTransform: 'uppercase' }}
                   >
-                    Tổng thanh toán (VND)
+                    Tổng thanh toán
                   </td>
                   <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 800, color: 'var(--brand)' }}>
                     {fmt(totalAmount)}
