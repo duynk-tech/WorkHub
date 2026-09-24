@@ -408,7 +408,7 @@ export function LineItemsEditor({
       </div>
 
       <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
-        <table style={{ width: '100%', minWidth: showCost ? 820 : 660, borderCollapse: 'collapse', fontSize: 12 }}>
+        <table style={{ width: '100%', minWidth: showCost ? 740 : 660, borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
               <th style={{ padding: '7px 4px', textAlign: 'center', width: 34 }}>STT</th>
@@ -419,15 +419,10 @@ export function LineItemsEditor({
                   Giá vốn (₫)
                 </th>
               )}
-              <th style={{ padding: '7px 6px', textAlign: 'right', width: 116 }} title="Đơn giá bán cho khách">
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 130 }} title="Đơn giá bán cho khách">
                 Đơn giá bán (₫)
               </th>
-              {showCost && (
-                <th style={{ padding: '7px 4px', textAlign: 'center', width: 72 }} title="Tỷ suất lãi gộp dự kiến">
-                  Lãi / Tỷ suất
-                </th>
-              )}
-              <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Thành tiền: Số lượng × Đơn giá bán">
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 130 }} title="Thành tiền: Số lượng × Đơn giá bán">
                 Thành tiền (₫)
               </th>
               <th style={{ padding: '7px 2px', width: 28 }}></th>
@@ -444,9 +439,6 @@ export function LineItemsEditor({
               const unitPrice = Number(item.unitPrice) || 0;
               const qty = Math.max(1, Number(item.quantity) || 1);
               const total = lineTotal(item);
-              const profitPerUnit = unitPrice - cost;
-              const totalProfit = total - (cost * qty);
-              const margin = unitPrice > 0 && cost > 0 ? ((unitPrice - cost) / unitPrice) * 100 : null;
               const isMissingPrice = warnMissingPrice && Boolean(item.name.trim()) && unitPrice <= 0;
 
               return (
@@ -616,7 +608,7 @@ export function LineItemsEditor({
                         value={item.unitPrice}
                         onChange={(val) => onChange(idx, 'unitPrice', val || 0)}
                         sizeSm
-                        containerStyle={{ width: 106, marginLeft: 'auto' }}
+                        containerStyle={{ width: 116, marginLeft: 'auto' }}
                         style={{
                           textAlign: 'right',
                           fontWeight: 700,
@@ -627,61 +619,20 @@ export function LineItemsEditor({
                         invalid={isMissingPrice}
                       />
                       <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        {isMissingPrice ? (
+                        {isMissingPrice && (
                           <span style={{ color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 600 }}>
                             <AlertTriangle size={10} /> Chưa có giá
                           </span>
-                        ) : margin !== null ? (
-                          <span style={{ color: 'var(--text-muted)' }}>
-                            Lãi {margin.toFixed(0)}%
-                          </span>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   </td>
 
-                  {/* 6. Lãi */}
-                  {showCost && (
-                    <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'top' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'center' }}>
-                        <span
-                          style={{
-                            fontSize: 11.5,
-                            fontWeight: 700,
-                            height: 26,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: margin === null ? 'var(--text-muted)' : margin < 0 ? '#dc2626' : margin < 10 ? '#d97706' : '#16a34a',
-                          }}
-                        >
-                          {margin === null ? '—' : `${margin.toFixed(0)}%`}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 9.5,
-                            height: 26,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: profitPerUnit >= 0 ? '#16a34a' : '#dc2626',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {cost > 0 && profitPerUnit !== 0 ? `${profitPerUnit > 0 ? '+' : ''}${fmt(profitPerUnit)}` : null}
-                        </span>
-                      </div>
-                    </td>
-                  )}
-
-                  {/* 7. Thành tiền */}
+                  {/* 6. Thành tiền */}
                   <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                       <div style={{ fontWeight: 700, color: 'var(--text-strong, #0f172a)', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
                         {fmt(total)} ₫
-                      </div>
-                      <div style={{ fontSize: 10, color: totalProfit >= 0 ? '#16a34a' : '#dc2626', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
-                        {cost > 0 ? `${totalProfit >= 0 ? '+' : ''}${fmt(totalProfit)} ₫` : null}
                       </div>
                     </div>
                   </td>

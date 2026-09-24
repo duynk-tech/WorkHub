@@ -509,42 +509,6 @@ export function CustomerOrderModal({
           warnMissingPrice={true}
         />
 
-        {totalCost > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--surface-sunken)',
-              border: '1px dashed var(--border-base)',
-              fontSize: 12.5,
-              color: 'var(--text-muted)',
-              flexWrap: 'wrap',
-            }}
-          >
-            <strong style={{ color: 'var(--text-strong)' }}>Chi tiết (Nội bộ):</strong>
-            <span>
-              Tổng giá vốn{' '}
-              <strong style={{ color: 'var(--text-strong)' }}>
-                {new Intl.NumberFormat('vi-VN').format(totalCost)} ₫
-              </strong>
-            </span>
-            <span>
-              Lãi gộp dự kiến{' '}
-              <strong style={{ color: goodsAmount - totalCost >= 0 ? '#16a34a' : '#dc2626' }}>
-                {new Intl.NumberFormat('vi-VN').format(goodsAmount - totalCost)} ₫
-              </strong>
-            </span>
-            <span>
-              Tỷ suất{' '}
-              <strong style={{ color: goodsAmount - totalCost >= 0 ? '#16a34a' : '#dc2626' }}>
-                {goodsAmount > 0 ? (((goodsAmount - totalCost) / goodsAmount) * 100).toFixed(1) : '0'}%
-              </strong>
-            </span>
-          </div>
-        )}
 
         {Number(vatRate) > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
