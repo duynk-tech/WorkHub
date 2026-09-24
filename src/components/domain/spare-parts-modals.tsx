@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
 import { Field, Input, Button, Textarea, PriceInput, ImageUpload } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
@@ -495,12 +495,43 @@ export function StockTransactionModal({
   const [loading, setLoading] = useState(false);
 
   const [type, setType] = useState<'IN' | 'OUT' | 'TRANSFER'>(defaultType);
+  const defaultWarehouse = useMemo(() => {
+    if (!warehouses || warehouses.length === 0) return undefined;
+    return (
+      warehouses.find(
+        (w) =>
+          (w.type === 'CENTRAL' || w.code === 'WH-HN' || w.code === 'WH-HN-CENTRAL') &&
+          (w.status === 'ACTIVE' || !w.status)
+      ) ||
+      warehouses.find((w) => w.type === 'CENTRAL') ||
+      warehouses.find((w) => w.status === 'ACTIVE' || !w.status) ||
+      warehouses[0]
+    );
+  }, [warehouses]);
+
   const [sourceWarehouseId, setSourceWarehouseId] = useState<number | undefined>(
-    warehouses.length > 0 ? warehouses[0].id : undefined
+    () => defaultWarehouse?.id || (warehouses.length > 0 ? warehouses[0].id : undefined)
   );
-  const [targetWarehouseId, setTargetWarehouseId] = useState<number | undefined>(
-    warehouses.length > 1 ? warehouses[1].id : warehouses[0]?.id
-  );
+  const [targetWarehouseId, setTargetWarehouseId] = useState<number | undefined>(() => {
+    if (defaultType === 'IN') return defaultWarehouse?.id || warehouses[0]?.id;
+    return warehouses.length > 1 ? warehouses[1].id : warehouses[0]?.id;
+  });
+
+  useEffect(() => {
+    if (warehouses.length > 0 && defaultWarehouse) {
+      if (!sourceWarehouseId) {
+        setSourceWarehouseId(defaultWarehouse.id);
+      }
+      if (!targetWarehouseId) {
+        if (type === 'IN') {
+          setTargetWarehouseId(defaultWarehouse.id);
+        } else {
+          const other = warehouses.find((w) => w.id !== defaultWarehouse.id) || defaultWarehouse;
+          setTargetWarehouseId(other.id);
+        }
+      }
+    }
+  }, [warehouses, defaultWarehouse, sourceWarehouseId, targetWarehouseId, type]);
   const [reason, setReason] = useState(
     defaultType === 'IN'
       ? 'Nhập kho lô phụ tùng mới từ nhà sản xuất'

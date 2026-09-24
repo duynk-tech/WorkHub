@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { Button, Field, Input, PriceInput, SearchableSelect } from '@/components/ui';
+import { Button, Field, Input, PriceInput, SearchableSelect, type SearchableSelectOption } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
 import {
   ORDER_STATUSES,
@@ -140,9 +140,32 @@ export function SparePartOrderModal({
   const [exchangeRate, setExchangeRate] = useState<number>(
     pricingConfig?.defaultExchangeRateEur ?? 32500
   );
+  // Kho mặc định: ưu tiên kho CENTRAL (kho tổng/trung tâm), hoặc WH-HN, hoặc kho hoạt động đầu tiên
+  const defaultWarehouse = useMemo(() => {
+    if (!warehouses || warehouses.length === 0) return null;
+    return (
+      warehouses.find(
+        (w) =>
+          (w.type === 'CENTRAL' || w.code === 'WH-HN' || w.code === 'WH-HN-CENTRAL') &&
+          (w.status === 'ACTIVE' || !w.status)
+      ) ||
+      warehouses.find((w) => w.type === 'CENTRAL') ||
+      warehouses.find((w) => w.status === 'ACTIVE' || !w.status) ||
+      warehouses[0]
+    );
+  }, [warehouses]);
+
   const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>(
-    warehouses[0]?.id || ''
+    () => defaultWarehouse?.id || ''
   );
+
+  // Khi danh sách kho nạp xong hoặc mở modal: tự động gán kho mặc định nếu chưa chọn
+  useEffect(() => {
+    if (!targetWarehouseId && defaultWarehouse?.id) {
+      setTargetWarehouseId(defaultWarehouse.id);
+    }
+  }, [defaultWarehouse, targetWarehouseId]);
+
   const [customerId, setCustomerId] = useState<number | ''>('');
   const [equipmentId, setEquipmentId] = useState<number | ''>('');
   const [trackingNumber, setTrackingNumber] = useState('');
@@ -166,6 +189,7 @@ export function SparePartOrderModal({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [newPartModalOpen, setNewPartModalOpen] = useState(false);
+  const [targetRowForNewPart, setTargetRowForNewPart] = useState<number | null>(null);
   const [batchGuideOpen, setBatchGuideOpen] = useState(false);
   const [extraParts, setExtraParts] = useState<any[]>([]);
 
@@ -182,6 +206,42 @@ export function SparePartOrderModal({
     () => allSpareParts.filter((p) => p.category !== 'EQUIPMENT' && p.category !== 'MACHINE'),
     [allSpareParts],
   );
+
+  // Danh sách options mặt hàng hỗ trợ tìm kiếm theo mã, tên, danh mục, hãng
+  const itemOptions: SearchableSelectOption[] = useMemo(() => {
+    const list: SearchableSelectOption[] = [
+      {
+        value: '__NEW_PART__',
+        label: '➕ + Tạo mã phụ tùng mới vào danh mục...',
+        keywords: 'tao moi them phu tung new part linh kien',
+        group: '⚡ Thao tác nhanh',
+      },
+    ];
+
+    if (machineItems.length > 0) {
+      for (const p of machineItems) {
+        list.push({
+          value: String(p.id),
+          label: `[MÁY] [${p.itemCode}] ${p.name}`,
+          subLabel: `Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
+          keywords: `${p.itemCode} ${p.name} ${p.manufacturer || ''} ${p.compatibleWith || ''} may moc equipment`,
+          group: '🏭 Máy móc nguyên chiếc & Cụm máy',
+        });
+      }
+    }
+
+    for (const p of partItems) {
+      list.push({
+        value: String(p.id),
+        label: `[${p.itemCode}] ${p.name}`,
+        subLabel: `Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
+        keywords: `${p.itemCode} ${p.name} ${p.manufacturer || ''} ${p.compatibleWith || ''} phu tung linh kien`,
+        group: '🔧 Linh kiện & Phụ tùng thay thế',
+      });
+    }
+
+    return list;
+  }, [machineItems, partItems]);
 
   const initialPart = allSpareParts.find((p) => p.supplyType === 'ON_ORDER') || allSpareParts[0];
   const initialPrices = getPartPriceInfo(
@@ -296,18 +356,51 @@ export function SparePartOrderModal({
       marginPercent,
       pricingMethod
     );
-    setItems((prev) => [
-      ...prev,
-      {
-        itemId: newPart.id,
-        quantity: 1,
-        unitPriceEur: prices.unitPriceEur,
-        unitCostVnd: prices.unitCost,
-        sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
-        shippingFee: prices.unitShip,
-        otherFee: prices.unitOther,
-      },
-    ]);
+    setItems((prev) => {
+      // Nếu mở tạo mã từ một dòng cụ thể thì gán vào dòng đó
+      if (targetRowForNewPart !== null && targetRowForNewPart < prev.length) {
+        const next = [...prev];
+        const qty = Math.max(1, Number(next[targetRowForNewPart].quantity) || 1);
+        next[targetRowForNewPart] = {
+          ...next[targetRowForNewPart],
+          itemId: newPart.id,
+          unitPriceEur: prices.unitPriceEur,
+          unitCostVnd: prices.unitCost,
+          sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
+          shippingFee: prices.unitShip * qty,
+          otherFee: prices.unitOther * qty,
+        };
+        return next;
+      }
+      // Hoặc nếu dòng cuối cùng chưa chọn mặt hàng thì gán vào dòng đó
+      const lastIndex = prev.length - 1;
+      if (lastIndex >= 0 && !prev[lastIndex].itemId) {
+        const next = [...prev];
+        next[lastIndex] = {
+          itemId: newPart.id,
+          quantity: 1,
+          unitPriceEur: prices.unitPriceEur,
+          unitCostVnd: prices.unitCost,
+          sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
+          shippingFee: prices.unitShip,
+          otherFee: prices.unitOther,
+        };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          itemId: newPart.id,
+          quantity: 1,
+          unitPriceEur: prices.unitPriceEur,
+          unitCostVnd: prices.unitCost,
+          sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
+          shippingFee: prices.unitShip,
+          otherFee: prices.unitOther,
+        },
+      ];
+    });
+    setTargetRowForNewPart(null);
     toast.success(`Đã thêm "${newPart.name}" vào danh sách đặt hàng`);
     startTransition(() => {
       router.refresh();
@@ -321,6 +414,7 @@ export function SparePartOrderModal({
 
   const handleItemChange = (index: number, field: string, val: any) => {
     if (field === 'itemId' && val === '__NEW_PART__') {
+      setTargetRowForNewPart(index);
       setNewPartModalOpen(true);
       return;
     }
@@ -822,8 +916,12 @@ export function SparePartOrderModal({
               <SearchableSelect
                 value={String(targetWarehouseId ?? '')}
                 onChange={(val) => setTargetWarehouseId(val ? Number(val) : '')}
-                options={warehouses.map((w) => ({ value: String(w.id), label: w.name, subLabel: w.code }))}
-                placeholder="-- Chọn kho --"
+                options={warehouses.map((w) => ({
+                  value: String(w.id),
+                  label: `${w.name}${w.id === defaultWarehouse?.id ? ' (Mặc định)' : ''}`,
+                  subLabel: `${w.code} · ${w.type === 'CENTRAL' ? 'Kho trung tâm' : 'Chi nhánh'}`,
+                }))}
+                placeholder="-- Chọn kho nhập --"
                 searchPlaceholder="Tìm kho…"
               />
             </Field>
@@ -1026,32 +1124,17 @@ export function SparePartOrderModal({
                         {/* 1. Mặt hàng */}
                         <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <select
-                              className="select"
-                              value={it.itemId}
-                              onChange={(e) => handleItemChange(idx, 'itemId', e.target.value)}
-                              style={{ width: '100%', fontSize: 12, height: 28, padding: '2px 6px' }}
-                            >
-                              <option value="__NEW_PART__" style={{ color: '#7c3aed', fontWeight: 600 }}>
-                                ➕ + Tạo mã phụ tùng mới vào danh mục...
-                              </option>
-                              {machineItems.length > 0 && (
-                                <optgroup label="🏭 Máy móc nguyên chiếc & Cụm máy">
-                                  {machineItems.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      [MÁY] [{p.itemCode}] {p.name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )}
-                              <optgroup label="🔧 Linh kiện & Phụ tùng thay thế">
-                                {partItems.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    [{p.itemCode}] {p.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            </select>
+                            <SearchableSelect
+                              sizeSm
+                              triggerStyle={{ height: 28, minHeight: 28, fontSize: 12, padding: '0 8px' }}
+                              value={String(it.itemId || '')}
+                              onChange={(val) => handleItemChange(idx, 'itemId', val)}
+                              options={itemOptions}
+                              placeholder="-- Chọn mặt hàng --"
+                              searchPlaceholder="Tìm theo mã hoặc tên mặt hàng…"
+                              popoverMinWidth={340}
+                              emptyText="Không tìm thấy mặt hàng phù hợp"
+                            />
                             <div style={{ fontSize: 10.5, color: 'var(--text-muted)', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 6 }}>
                               {selectedPart ? (
                                 <>

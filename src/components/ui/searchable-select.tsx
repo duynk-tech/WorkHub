@@ -29,6 +29,9 @@ export interface SearchableSelectProps {
   emptyText?: string;
   /** Thu gọn chiều cao cho các hàng nhập liệu dày đặc (khớp với Input sizeSm). */
   sizeSm?: boolean;
+  triggerStyle?: React.CSSProperties;
+  /** Độ rộng tối thiểu của menu thả xuống khi mở (tránh bị cụt chữ trong bảng nhỏ). */
+  popoverMinWidth?: number;
 }
 
 function normalizeSearch(str: string): string {
@@ -53,6 +56,8 @@ export function SearchableSelect({
   allowClear = false,
   emptyText = 'Không tìm thấy kết quả phù hợp',
   sizeSm = false,
+  triggerStyle,
+  popoverMinWidth,
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -130,10 +135,13 @@ export function SearchableSelect({
       const spaceAbove = rect.top - 12;
       const openUp = spaceBelow < 200 && spaceAbove > spaceBelow;
       const maxHeight = Math.max(160, Math.min(300, openUp ? spaceAbove : spaceBelow));
+      const popoverWidth = Math.max(rect.width, popoverMinWidth || 0);
+      const maxLeft = Math.max(12, window.innerWidth - popoverWidth - 12);
+      const left = Math.max(12, Math.min(rect.left, maxLeft));
       setPos({
         top: openUp ? rect.top - 4 - maxHeight : rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
+        left,
+        width: popoverWidth,
         maxHeight,
       });
     };
@@ -202,9 +210,10 @@ export function SearchableSelect({
           boxShadow: isOpen ? 'var(--shadow-focus)' : 'none',
           color: selectedOption && selectedOption.value ? 'var(--text-strong)' : 'var(--text-muted)',
           ...(sizeSm ? { height: 32, fontSize: 12.5, padding: '0 9px' } : null),
+          ...triggerStyle,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
           {selectedOption?.icon && (
             <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
               {selectedOption.icon}
@@ -259,7 +268,7 @@ export function SearchableSelect({
             top: pos.top,
             left: pos.left,
             width: pos.width,
-            zIndex: 1000,
+            zIndex: 1050,
             background: 'var(--surface-card)',
             border: '1px solid var(--border-base)',
             borderRadius: 'var(--radius-md)',
