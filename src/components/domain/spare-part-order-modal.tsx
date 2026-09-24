@@ -737,6 +737,7 @@ export function SparePartOrderModal({
                   Tạo Đơn Hàng Order / Lô Hàng Mới
                 </h2>
                 <span
+                  title="Quản lý Lô Hàng: Đơn hàng này đại diện cho 1 lô hàng nhập mới. Khi lô hàng về kho và chuyển trạng thái sang &quot;Đã nhập kho&quot; (STOCKED), hệ thống tự động ghi nhận phiếu nhập kho, tăng tồn kho và tính giá vốn bình quân gia quyền."
                   style={{
                     fontSize: 11,
                     background: '#ede9fe',
@@ -744,9 +745,14 @@ export function SparePartOrderModal({
                     padding: '2px 8px',
                     borderRadius: 999,
                     fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    cursor: 'help',
                   }}
                 >
                   PO Nhập Kho
+                  <Info size={11} />
                 </span>
               </div>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
@@ -867,49 +873,6 @@ export function SparePartOrderModal({
             )}
           </div>
 
-          {/* Gợi ý quy trình Lô hàng mới */}
-          <div
-            style={{
-              padding: '9px 12px',
-              background: '#f0fdf4',
-              border: '1px solid #bbf7d0',
-              borderRadius: 8,
-              fontSize: 12,
-              color: '#166534',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Info size={15} style={{ flexShrink: 0, color: '#16a34a' }} />
-              <span>
-                <strong>Quản lý Lô Hàng:</strong> Đơn hàng này đại diện cho 1 lô hàng nhập mới. Khi lô hàng về kho và chuyển trạng thái sang <strong>&quot;Đã nhập kho&quot; (STOCKED)</strong>, hệ thống tự động ghi nhận phiếu nhập kho, tăng tồn kho và tính giá vốn bình quân gia quyền.
-              </span>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => setNewPartModalOpen(true)}
-              style={{
-                fontSize: 11.5,
-                height: 28,
-                padding: '0 10px',
-                borderColor: '#86efac',
-                background: '#ffffff',
-                color: '#15803d',
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              <Plus size={12} /> Thêm mới phụ tùng vào danh mục
-            </Button>
-          </div>
-
           {/* Bảng danh sách mặt hàng cần order (Máy móc & Phụ tùng) */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
@@ -929,6 +892,24 @@ export function SparePartOrderModal({
                 <Button type="button" size="sm" variant="secondary" onClick={handleAddItem} style={{ fontSize: 12 }}>
                   <Plus size={13} /> Thêm dòng hàng
                 </Button>
+                <span
+                  title="Quản lý Lô Hàng: Đơn hàng này đại diện cho 1 lô hàng nhập mới. Khi lô hàng về kho và chuyển trạng thái sang &quot;Đã nhập kho&quot; (STOCKED), hệ thống tự động ghi nhận phiếu nhập kho, tăng tồn kho và tính giá vốn bình quân gia quyền."
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#15803d',
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: '50%',
+                    width: 26,
+                    height: 26,
+                    cursor: 'help',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Info size={14} />
+                </span>
               </div>
             </div>
 
