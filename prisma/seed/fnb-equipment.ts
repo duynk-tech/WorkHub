@@ -883,6 +883,35 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
     });
   }
 
+  if (ord1) {
+    const existingItems1 = await prisma.customerOrderItem.count({ where: { orderId: ord1.id } });
+    if (existingItems1 === 0) {
+      await prisma.customerOrderItem.createMany({
+        data: [
+          {
+            orderId: ord1.id,
+            itemType: 'EQUIPMENT',
+            name: 'Máy pha cà phê chuyên nghiệp La Marzocco Linea PB 2 Group',
+            quantity: 1,
+            unitPrice: 175000000,
+            totalPrice: 175000000,
+            equipmentId: createdEquipmentMap.get('EQ-2026-0005'),
+            notes: 'Máy pha cà phê 2 Group Head Dual Boiler nhập khẩu Ý',
+          },
+          {
+            orderId: ord1.id,
+            itemType: 'SPARE_PART',
+            name: 'Hệ thống xử lý nước & lọc canxi BWT Bestmax Premium 2XL',
+            quantity: 1,
+            unitPrice: 10000000,
+            totalPrice: 10000000,
+            notes: 'Hệ thống lọc nước chuyên dụng cho máy pha cafe espresso',
+          },
+        ],
+      });
+    }
+  }
+
   // Đơn hàng bán ORD-2026-0002 (Golden Gate - Còn nợ công nợ)
   const ord2Code = 'ORD-2026-0002';
   let ord2 = await prisma.customerOrder.findUnique({ where: { orderCode: ord2Code } });
@@ -920,6 +949,44 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         note: 'Golden Gate đặt cọc đợt 1 tiền thuê thiết bị',
       },
     });
+  }
+
+  if (ord2) {
+    const existingItems2 = await prisma.customerOrderItem.count({ where: { orderId: ord2.id } });
+    if (existingItems2 === 0) {
+      await prisma.customerOrderItem.createMany({
+        data: [
+          {
+            orderId: ord2.id,
+            itemType: 'EQUIPMENT',
+            name: 'Máy làm đá viên vuông cao cấp Hoshizaki IM-100CNE (Gói thuê 6 tháng)',
+            quantity: 1,
+            unitPrice: 58000000,
+            totalPrice: 58000000,
+            equipmentId: createdEquipmentMap.get('EQ-2026-0007'),
+            notes: 'Thuê máy làm đá viên 100kg/24h đặt tại Kichi Kichi Vạn Hạnh Mall',
+          },
+          {
+            orderId: ord2.id,
+            itemType: 'SPARE_PART',
+            name: 'Bộ lõi lọc nước thô & khử cặn Hoshizaki 4HC-H (2 lõi)',
+            quantity: 2,
+            unitPrice: 3200000,
+            totalPrice: 6400000,
+            notes: 'Lõi lọc nước thay định kỳ 6 tháng',
+          },
+          {
+            orderId: ord2.id,
+            itemType: 'SERVICE',
+            name: 'Dịch vụ vận chuyển, lắp đặt đường ống cấp thoát nước & hiệu chỉnh máy',
+            quantity: 1,
+            unitPrice: 3600000,
+            totalPrice: 3600000,
+            notes: 'Bàn giao kỹ thuật và hướng dẫn vận hành quầy Bar',
+          },
+        ],
+      });
+    }
   }
 
   // 7. Sổ Chứng Từ & Báo Cáo Kho (Inventory Transactions)
