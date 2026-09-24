@@ -477,7 +477,6 @@ export function SparePartQuotationModal({
                 <thead>
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px' }}>Mã linh kiện</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px' }}>Tên linh kiện / Mô tả chi tiết</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>ĐVT</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>SL</th>
@@ -491,9 +490,6 @@ export function SparePartQuotationModal({
                       <tr key={it.id || idx}>
                         <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
                           {String(idx + 1).padStart(2, '0')}
-                        </td>
-                        <td style={{ border: '1px solid #000', padding: '4px 6px', fontFamily: 'monospace', fontWeight: 700 }}>
-                          {it.item?.itemCode || '—'}
                         </td>
                         <td style={{ border: '1px solid #000', padding: '4px 6px' }}>
                           <div style={{ fontWeight: 600 }}>{it.item?.name || 'Linh kiện'}</div>
@@ -521,7 +517,7 @@ export function SparePartQuotationModal({
 
                   {/* Chi tiết chi phí */}
                   <tr style={{ background: '#f8fafc' }}>
-                    <td colSpan={4} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>
+                    <td colSpan={3} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>
                       Tổng tiền hàng linh kiện:
                     </td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center', fontWeight: 700 }}>
@@ -536,7 +532,7 @@ export function SparePartQuotationModal({
                   {discountAmount > 0 && (
                     <>
                       <tr>
-                        <td colSpan={6} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', color: '#b91c1c' }}>
+                        <td colSpan={5} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', color: '#b91c1c' }}>
                           Chiết khấu{discountRateNum > 0 ? ` (${discountRateNum}%)` : ''}:
                         </td>
                         <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: '#b91c1c' }}>
@@ -544,7 +540,7 @@ export function SparePartQuotationModal({
                         </td>
                       </tr>
                       <tr>
-                        <td colSpan={6} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>
+                        <td colSpan={5} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 600 }}>
                           Tiền hàng sau chiết khấu:
                         </td>
                         <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: 700 }}>
@@ -556,7 +552,7 @@ export function SparePartQuotationModal({
 
                   {/* Thuế VAT */}
                   <tr>
-                    <td colSpan={6} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', color: vatRateNum > 0 ? '#0f172a' : '#64748b' }}>
+                    <td colSpan={5} style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', color: vatRateNum > 0 ? '#0f172a' : '#64748b' }}>
                       Thuế VAT {vatRateNum > 0 ? `(${vatRateNum}%)` : '(0%)'}:
                     </td>
                     <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'right', fontWeight: vatRateNum > 0 ? 600 : 400, color: vatRateNum > 0 ? '#0f172a' : '#64748b' }}>
@@ -566,7 +562,7 @@ export function SparePartQuotationModal({
 
                   {/* Tổng cộng thanh toán */}
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)', fontWeight: 800, fontSize: '12.5px' }}>
-                    <td colSpan={6} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
+                    <td colSpan={5} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
                       TỔNG CỘNG THANH TOÁN (VND){vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', color: '#7c3aed', fontSize: '13.5px' }}>

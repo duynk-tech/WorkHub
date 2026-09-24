@@ -312,7 +312,6 @@ export function InventoryTransactionReportModal({
                 <thead>
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                     <th style={{ border: '1px solid #000', padding: '6px 8px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px' }}>Mã linh kiện</th>
                     <th style={{ border: '1px solid #000', padding: '6px 8px' }}>Tên linh kiện / Vật tư</th>
                     <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center' }}>ĐVT</th>
                     <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center' }}>SL</th>
@@ -333,9 +332,6 @@ export function InventoryTransactionReportModal({
                       <tr key={it.id || idx}>
                         <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>
                           {String(idx + 1).padStart(2, '0')}
-                        </td>
-                        <td style={{ border: '1px solid #000', padding: '6px 8px', fontFamily: 'monospace', fontWeight: 700 }}>
-                          {it.item?.itemCode || '—'}
                         </td>
                         <td style={{ border: '1px solid #000', padding: '6px 8px' }}>
                           <div style={{ fontWeight: 600 }}>{it.item?.name || 'Linh kiện'}</div>
@@ -367,7 +363,7 @@ export function InventoryTransactionReportModal({
 
                   {/* Dòng tổng */}
                   <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
-                    <td colSpan={4} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>
+                    <td colSpan={3} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>
                       CỘNG TOÀN PHIẾU:
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', color: '#15803d' }}>
