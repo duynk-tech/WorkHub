@@ -26,10 +26,10 @@ const DEFAULT_DELIVERY_TIME = '15 - 25 ngày làm việc kể từ ngày xác nh
 const DEFAULT_WARRANTY_TERMS =
   'Bảo hành chính hãng 12 tháng. Hỗ trợ kỹ thuật tận nơi trong vòng 24 giờ kể từ khi tiếp nhận yêu cầu.';
 
-/** Ngày mặc định hết hiệu lực báo giá: 15 ngày kể từ hôm nay. */
-function defaultValidUntil(): string {
+/** Ngày mặc định hết hiệu lực báo giá: theo cấu hình hoặc 15 ngày kể từ hôm nay. */
+function defaultValidUntil(days = 15): string {
   const d = new Date();
-  d.setDate(d.getDate() + 15);
+  d.setDate(d.getDate() + (Number(days) || 15));
   return d.toISOString().slice(0, 10);
 }
 
@@ -73,7 +73,7 @@ export function CustomerQuotationModal({
   const [validUntil, setValidUntil] = useState(
     quotation?.validUntil
       ? new Date(quotation.validUntil).toISOString().slice(0, 10)
-      : defaultValidUntil(),
+      : defaultValidUntil(pricingConfig?.defaultValidDays ?? 15),
   );
   const defaultVat = pricingConfig?.defaultVatRate ?? 8;
   const [vatRate, setVatRate] = useState(
@@ -83,10 +83,18 @@ export function CustomerQuotationModal({
   );
   const [shippingFee, setShippingFee] = useState<number>(Number(quotation?.shippingFee ?? 0));
   const [discountRate, setDiscountRate] = useState<string>(String(quotation?.discountRate ?? 0));
-  const [paymentTerms, setPaymentTerms] = useState(quotation?.paymentTerms || DEFAULT_PAYMENT_TERMS);
-  const [deliveryTime, setDeliveryTime] = useState(quotation?.deliveryTime || DEFAULT_DELIVERY_TIME);
-  const [warrantyTerms, setWarrantyTerms] = useState(quotation?.warrantyTerms || DEFAULT_WARRANTY_TERMS);
-  const [notes, setNotes] = useState(quotation?.notes || '');
+  const [paymentTerms, setPaymentTerms] = useState(
+    quotation?.paymentTerms || pricingConfig?.defaultPaymentTerms || DEFAULT_PAYMENT_TERMS
+  );
+  const [deliveryTime, setDeliveryTime] = useState(
+    quotation?.deliveryTime || pricingConfig?.defaultDeliveryTime || DEFAULT_DELIVERY_TIME
+  );
+  const [warrantyTerms, setWarrantyTerms] = useState(
+    quotation?.warrantyTerms || pricingConfig?.defaultWarrantyTerms || DEFAULT_WARRANTY_TERMS
+  );
+  const [notes, setNotes] = useState(
+    quotation?.notes || pricingConfig?.defaultQuotationNotes || ''
+  );
 
   const {
     items,

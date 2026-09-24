@@ -222,6 +222,11 @@ export const SparePartPricingConfigSchema = z.object({
   defaultExtraShippingRate: z.coerce.number().min(0).max(5).default(0.25),
   defaultVatRate: z.coerce.number().min(0).max(100).default(8),
   volumeDiscountTiers: z.array(VolumeDiscountTierSchema).default(VOLUME_DISCOUNT_TIERS),
+  defaultValidDays: z.coerce.number().int().min(1).default(15),
+  defaultDeliveryTime: z.string().default('15 - 25 ngày làm việc (vận chuyển hàng không quốc tế)'),
+  defaultPaymentTerms: z.string().default('Tạm ứng 50% khi xác nhận đơn hàng, 50% còn lại trước khi bàn giao linh kiện'),
+  defaultWarrantyTerms: z.string().default('Bảo hành chính hãng 06 tháng đối với linh kiện cơ điện tử; hỗ trợ kỹ thuật lắp đặt tận nơi.'),
+  defaultQuotationNotes: z.string().default('Linh kiện chính hãng nhập khẩu nguyên chiếc từ nhà sản xuất.'),
 });
 
 export type SparePartPricingConfig = z.infer<typeof SparePartPricingConfigSchema>;

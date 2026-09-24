@@ -14,6 +14,7 @@ import {
   Percent,
   CheckCircle2,
   Info,
+  FileText,
 } from 'lucide-react';
 import {
   type SparePartPricingConfig,
@@ -36,6 +37,11 @@ const DEFAULT_CONFIG: SparePartPricingConfig = {
     { min: 10, max: 29, rate: 0.02 },
     { min: 30, max: 99999, rate: 0.03 },
   ],
+  defaultValidDays: 15,
+  defaultDeliveryTime: '15 - 25 ngày làm việc (vận chuyển hàng không quốc tế)',
+  defaultPaymentTerms: 'Tạm ứng 50% khi xác nhận đơn hàng, 50% còn lại trước khi bàn giao linh kiện',
+  defaultWarrantyTerms: 'Bảo hành chính hãng 06 tháng đối với linh kiện cơ điện tử; hỗ trợ kỹ thuật lắp đặt tận nơi.',
+  defaultQuotationNotes: 'Linh kiện chính hãng nhập khẩu nguyên chiếc từ nhà sản xuất.',
 };
 
 interface SparePartPricingModalProps {
@@ -53,7 +59,7 @@ export function SparePartPricingModal({
 }: SparePartPricingModalProps) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'margin' | 'logistics' | 'tiers'>('margin');
+  const [activeTab, setActiveTab] = useState<'margin' | 'logistics' | 'tiers' | 'terms'>('margin');
 
   const [form, setForm] = useState<SparePartPricingConfig>(() => ({
     ...DEFAULT_CONFIG,
@@ -209,6 +215,26 @@ export function SparePartPricingModal({
             }}
           >
             <SlidersHorizontal size={15} /> Chiết khấu số lượng ({form.volumeDiscountTiers.length} bậc)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('terms')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: activeTab === 'terms' ? '#dcfce7' : 'transparent',
+              color: activeTab === 'terms' ? '#15803d' : 'var(--text-muted)',
+              fontWeight: activeTab === 'terms' ? 700 : 500,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <FileText size={15} /> Điều khoản thương mại & Bàn giao
           </button>
         </div>
 
@@ -565,6 +591,92 @@ export function SparePartPricingModal({
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* TAB 4: COMMERCIAL & HANDOVER TERMS */}
+        {activeTab === 'terms' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                fontSize: 12.5,
+                color: '#166534',
+                lineHeight: 1.5,
+              }}
+            >
+              📄 <strong>Cấu hình Điều khoản Báo giá & Bàn giao mặc định</strong>: Các nội dung này sẽ tự động được điền sẵn khi nhân viên tạo Báo giá gửi khách hàng. Nhân viên vẫn có thể tùy chỉnh lại cho từng khách hàng cụ thể nếu có thỏa thuận riêng.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14 }}>
+              <Field label="Hiệu lực báo giá (ngày)" required hint="Số ngày báo giá có hiệu lực kể từ ngày phát hành">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    required
+                    value={form.defaultValidDays ?? 15}
+                    onChange={(e) =>
+                      setForm({ ...form, defaultValidDays: Number(e.target.value) || 15 })
+                    }
+                  />
+                  <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>ngày</span>
+                </div>
+              </Field>
+
+              <Field label="Thời gian giao hàng mặc định" required hint="Thời gian dự kiến giao phụ tùng cho khách">
+                <Input
+                  value={form.defaultDeliveryTime ?? ''}
+                  onChange={(e) =>
+                    setForm({ ...form, defaultDeliveryTime: e.target.value })
+                  }
+                  placeholder="15 - 25 ngày làm việc (vận chuyển hàng không quốc tế)"
+                />
+              </Field>
+            </div>
+
+            <Field label="Điều khoản thanh toán mặc định" required hint="Quy định tiến độ thanh toán & tạm ứng">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.defaultPaymentTerms ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, defaultPaymentTerms: e.target.value })
+                }
+                placeholder="Tạm ứng 50% khi xác nhận đơn hàng, 50% còn lại trước khi bàn giao linh kiện"
+                style={{ resize: 'vertical', width: '100%', fontFamily: 'inherit', padding: '8px 12px' }}
+              />
+            </Field>
+
+            <Field label="Điều khoản bảo hành & hỗ trợ kỹ thuật" required hint="Chính sách bảo hành phụ tùng và hỗ trợ sau bán">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.defaultWarrantyTerms ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, defaultWarrantyTerms: e.target.value })
+                }
+                placeholder="Bảo hành chính hãng 06 tháng đối với linh kiện cơ điện tử; hỗ trợ kỹ thuật lắp đặt tận nơi."
+                style={{ resize: 'vertical', width: '100%', fontFamily: 'inherit', padding: '8px 12px' }}
+              />
+            </Field>
+
+            <Field label="Ghi chú & Cam kết chất lượng chân trang" hint="Nội dung cam kết hiển thị ở cuối báo giá">
+              <textarea
+                className="input"
+                rows={2}
+                value={form.defaultQuotationNotes ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, defaultQuotationNotes: e.target.value })
+                }
+                placeholder="Linh kiện chính hãng nhập khẩu nguyên chiếc từ nhà sản xuất."
+                style={{ resize: 'vertical', width: '100%', fontFamily: 'inherit', padding: '8px 12px' }}
+              />
+            </Field>
           </div>
         )}
 

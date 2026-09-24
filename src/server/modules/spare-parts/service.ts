@@ -890,6 +890,11 @@ export const DEFAULT_PRICING_CONFIG: SparePartPricingConfig = {
   defaultExtraShippingRate: 0.25,
   defaultVatRate: 8,
   volumeDiscountTiers: VOLUME_DISCOUNT_TIERS,
+  defaultValidDays: 15,
+  defaultDeliveryTime: '15 - 25 ngày làm việc (vận chuyển hàng không quốc tế)',
+  defaultPaymentTerms: 'Tạm ứng 50% khi xác nhận đơn hàng, 50% còn lại trước khi bàn giao linh kiện',
+  defaultWarrantyTerms: 'Bảo hành chính hãng 06 tháng đối với linh kiện cơ điện tử; hỗ trợ kỹ thuật lắp đặt tận nơi.',
+  defaultQuotationNotes: 'Linh kiện chính hãng nhập khẩu nguyên chiếc từ nhà sản xuất.',
 };
 
 /** Đọc cấu hình chính sách giá & margin phụ tùng */

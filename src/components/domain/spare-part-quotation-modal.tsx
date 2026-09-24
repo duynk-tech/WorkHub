@@ -55,20 +55,26 @@ export function SparePartQuotationModal({
   const [customerAddress, setCustomerAddress] = useState(order.customer?.address || '');
 
   // Điều khoản thương mại
-  const [validDays, setValidDays] = useState('15');
-  const [deliveryTime, setDeliveryTime] = useState('15 - 25 ngày làm việc (vận chuyển hàng không quốc tế)');
+  const [validDays, setValidDays] = useState(String(pricingConfig?.defaultValidDays ?? 15));
+  const [deliveryTime, setDeliveryTime] = useState(
+    pricingConfig?.defaultDeliveryTime ?? '15 - 25 ngày làm việc (vận chuyển hàng không quốc tế)'
+  );
   const [paymentTerms, setPaymentTerms] = useState(
-    'Tạm ứng 50% khi xác nhận đơn hàng, 50% còn lại trước khi bàn giao linh kiện'
+    pricingConfig?.defaultPaymentTerms ??
+      'Tạm ứng 50% khi xác nhận đơn hàng, 50% còn lại trước khi bàn giao linh kiện'
   );
   const [warrantyTerms, setWarrantyTerms] = useState(
-    'Bảo hành chính hãng 06 tháng đối với linh kiện cơ điện tử; hỗ trợ kỹ thuật lắp đặt tận nơi.'
+    pricingConfig?.defaultWarrantyTerms ??
+      'Bảo hành chính hãng 06 tháng đối với linh kiện cơ điện tử; hỗ trợ kỹ thuật lắp đặt tận nơi.'
   );
   const rawNotes = order.notes || '';
   const parsedVatFromNotes = rawNotes.match(/\[VAT:\s*(\d+)%\]/i)?.[1];
   const cleanNotes = rawNotes.replace(/\[VAT:\s*\d+%\]/gi, '').trim();
 
   const [notes, setNotes] = useState(
-    cleanNotes || 'Linh kiện chính hãng nhập khẩu nguyên chiếc từ nhà sản xuất.'
+    cleanNotes ||
+      pricingConfig?.defaultQuotationNotes ||
+      'Linh kiện chính hãng nhập khẩu nguyên chiếc từ nhà sản xuất.'
   );
 
   const initialVatRate = order.vatRate !== undefined && order.vatRate !== null
