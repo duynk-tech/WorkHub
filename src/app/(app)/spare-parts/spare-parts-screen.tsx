@@ -946,7 +946,7 @@ export function SparePartsScreen({
                 onClick={() => setOrderModalOpen(true)}
                 style={{ background: '#7c3aed', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
-                <Plus size={15} /> Tạo đơn mua
+                <ShoppingCart size={15} /> Tạo đơn mua
               </Button>
             )}
           </div>
@@ -966,7 +966,7 @@ export function SparePartsScreen({
                   margin: '0 auto 16px',
                 }}
               >
-                <Plane size={28} />
+                <ShoppingCart size={28} />
               </div>
               <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-strong)' }}>
                 Chưa có đơn mua nào
@@ -980,7 +980,7 @@ export function SparePartsScreen({
                   onClick={() => setOrderModalOpen(true)}
                   style={{ background: '#7c3aed', color: '#fff' }}
                 >
-                  <Plus size={15} style={{ marginRight: 6 }} /> Tạo đơn hàng Order đầu tiên
+                  <ShoppingCart size={15} style={{ marginRight: 6 }} /> Tạo đơn hàng Order đầu tiên
                 </Button>
               )}
             </Card>

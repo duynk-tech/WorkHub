@@ -20,7 +20,7 @@ import {
   Plus,
   Trash2,
   Calculator,
-  Plane,
+  ShoppingCart,
   Truck,
   CheckCircle2,
   Calendar,
@@ -832,7 +832,7 @@ export function SparePartOrderModal({
                 flexShrink: 0,
               }}
             >
-              <Plane size={18} />
+              <ShoppingCart size={18} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1707,7 +1707,7 @@ export function SparePartOrderModal({
               <Printer size={15} /> In Báo Giá
             </Button>
             <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
-              <Plane size={14} style={{ marginRight: 6 }} /> Xác nhận
+              Xác nhận
             </Button>
           </div>
         </form>
