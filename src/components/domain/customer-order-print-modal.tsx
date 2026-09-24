@@ -7,6 +7,8 @@ import { Printer, FileText, Wrench } from 'lucide-react';
 import { readVndInWords } from '@/lib/number-to-words';
 import { PrintWatermark } from './print-watermark';
 import { useCurrentUser } from '@/components/layout/current-user';
+import { getEquipmentSpecRows } from '@/lib/equipment-specs';
+import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
 
 const ITEM_TYPES: Record<string, string> = {
   EQUIPMENT: 'Máy & Thiết bị',
@@ -23,6 +25,7 @@ export interface CustomerOrderPrintModalProps {
   customer?: any;
   location?: any;
   companyInfo?: any;
+  machines?: any[];
 }
 
 export function CustomerOrderPrintModal({
@@ -32,6 +35,7 @@ export function CustomerOrderPrintModal({
   customer,
   location,
   companyInfo,
+  machines,
 }: CustomerOrderPrintModalProps) {
   const me = useCurrentUser();
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
@@ -452,6 +456,16 @@ export function CustomerOrderPrintModal({
                       const qty = Number(it.quantity) || 0;
                       const price = Number(it.unitPrice) || 0;
                       const lineTotal = Number(it.totalPrice) || qty * price;
+                      const allMachines = [
+                        ...(machines || []),
+                        ...(order?.customer?.machines || []),
+                        ...(order?.machines || []),
+                        ...(customer?.machines || []),
+                      ];
+                      const eq = it.equipmentId
+                        ? allMachines.find((m: any) => m.id === it.equipmentId)
+                        : null;
+                      const specRows = eq ? getEquipmentSpecRows(eq) : [];
                       return (
                         <tr key={it.id || idx}>
                           <td style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>
@@ -459,8 +473,9 @@ export function CustomerOrderPrintModal({
                           </td>
                           <td style={{ border: '1px solid #000', padding: '5px 8px' }}>
                             <div style={{ fontWeight: 600 }}>{it.name}</div>
+                            {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                             {it.notes && (
-                              <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                              <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: specRows.length > 0 ? 3 : 0 }}>
                                 {it.notes}
                               </div>
                             )}

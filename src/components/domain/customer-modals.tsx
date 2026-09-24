@@ -1006,6 +1006,7 @@ export function CustomerOrderModal({
               quantity: Number(it.quantity) || 1,
               unitPrice: Number(it.unitPrice) || 0,
               totalPrice: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+              equipmentId: it.equipmentId,
               notes: it.notes,
             })),
           }}
@@ -1018,6 +1019,7 @@ export function CustomerOrderModal({
           }}
           location={currentLocations.find((l) => l.id === Number(locationId))}
           companyInfo={companyInfo}
+          machines={[...(machines || []), ...(stockMachines || [])]}
         />
       )}
     </div>,

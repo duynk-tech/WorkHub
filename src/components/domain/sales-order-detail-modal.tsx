@@ -539,6 +539,7 @@ export function SalesOrderDetailModal({
         customer={order.customer}
         location={order.location}
         companyInfo={companyInfo}
+        machines={[...(order.customer?.machines || []), ...(order.machines || [])]}
       />
     )}
   </>

@@ -8,6 +8,8 @@ import {
   calculateQuotedUnitPrice,
   type SparePartPricingConfig,
 } from '@/server/modules/spare-parts/types';
+import { getEquipmentSpecRows, getEquipmentQuickPills } from '@/lib/equipment-specs';
+import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
 
 /**
  * Bảng chọn hàng dùng chung cho Đơn hàng và Báo giá khách hàng.
@@ -81,6 +83,7 @@ export function buildCatalogOptions({
       unit: 'máy',
       stockQty: 1,
       type: 'EQUIPMENT',
+      equipment: m,
     });
   }
 
@@ -105,6 +108,7 @@ export function buildCatalogOptions({
       unit: 'máy',
       stockQty: 0,
       type: 'RENTAL',
+      equipment: m,
     });
   }
 
@@ -390,6 +394,7 @@ export function LineItemsEditor({
   footerRows?: React.ReactNode;
 }) {
   const showCost = Boolean(costOf);
+  const [expandedSpecIndices, setExpandedSpecIndices] = useState<Record<number, boolean>>({});
 
   return (
     <div>
@@ -457,6 +462,10 @@ export function LineItemsEditor({
               const qty = Math.max(1, Number(item.quantity) || 1);
               const total = lineTotal(item);
               const isMissingPrice = warnMissingPrice && Boolean(item.name.trim()) && unitPrice <= 0;
+              const eq = detail?.equipment;
+              const specRows = eq ? getEquipmentSpecRows(eq) : [];
+              const quickPills = eq ? getEquipmentQuickPills(eq) : [];
+              const isSpecsExpanded = Boolean(expandedSpecIndices[idx]);
 
               return (
                 <tr
@@ -516,15 +525,17 @@ export function LineItemsEditor({
                         />
                       )}
 
-                      {/* Dòng 2: Badge Mã + Tồn kho */}
+                      {/* Dòng 2: Badge Mã + Tồn kho + Thông số máy */}
                       <div
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 6,
-                          height: 26,
+                          gap: 5,
+                          minHeight: 26,
                           fontSize: 10.5,
                           color: 'var(--text-muted)',
+                          flexWrap: 'wrap',
+                          marginTop: 1,
                         }}
                       >
                         {detail ? (
@@ -579,9 +590,61 @@ export function LineItemsEditor({
                                 Máy thuê/ký gửi
                               </span>
                             )}
+                            {quickPills.map((pill: string, pIdx: number) => (
+                              <span
+                                key={pIdx}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  border: '1px solid #bfdbfe',
+                                  lineHeight: 1.2,
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {pill}
+                              </span>
+                            ))}
+                            {specRows.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedSpecIndices((prev) => ({
+                                    ...prev,
+                                    [idx]: !prev[idx],
+                                  }))
+                                }
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  background: isSpecsExpanded ? '#ede9fe' : '#f8fafc',
+                                  color: isSpecsExpanded ? '#7c3aed' : 'var(--text-muted)',
+                                  border: `1px solid ${isSpecsExpanded ? '#c4b5fd' : 'var(--border-subtle, #e2e8f0)'}`,
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                                title="Xem / Ẩn bảng thông số kỹ thuật 2 cột"
+                              >
+                                📋 {isSpecsExpanded ? 'Thu gọn thông số' : 'Thông số kỹ thuật'}
+                              </button>
+                            )}
                           </>
                         ) : null}
                       </div>
+
+                      {/* Bảng thông số kỹ thuật 2 cột (khi bấm mở rộng) */}
+                      {isSpecsExpanded && specRows.length > 0 && (
+                        <div style={{ marginTop: 3 }}>
+                          <EquipmentSpecGrid rows={specRows} compact />
+                        </div>
+                      )}
                     </div>
                   </td>
 

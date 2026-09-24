@@ -17,6 +17,8 @@ import {
 } from '@/server/modules/spare-parts/types';
 import { QUOTATION_STATUSES, type SaveCustomerQuotationInput } from '@/server/modules/customer/types';
 import { saveCustomerQuotationAction } from '@/server/modules/customer/actions';
+import { getEquipmentSpecRows } from '@/lib/equipment-specs';
+import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
 
 const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n));
 
@@ -491,12 +493,14 @@ export function CustomerQuotationPrintModal({
   quotation,
   customer,
   companyInfo,
+  machines = [],
 }: {
   open: boolean;
   onClose: () => void;
   quotation: any;
   customer: any;
   companyInfo?: any;
+  machines?: any[];
 }) {
   const me = useCurrentUser();
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
@@ -790,6 +794,13 @@ export function CustomerQuotationPrintModal({
                 {items.map((item: any, idx: number) => {
                   const lineGross = Number(item.quantity) * Number(item.unitPrice);
                   const lineFinal = hasLineDiscount ? Number(item.totalPrice) : lineGross;
+                  const allMachines = [
+                    ...(machines || []),
+                    ...(customer?.machines || []),
+                    ...(quotation?.machines || []),
+                  ];
+                  const eq = item.equipmentId ? allMachines.find((m: any) => m.id === item.equipmentId) : null;
+                  const specRows = eq ? getEquipmentSpecRows(eq) : [];
                   return (
                     <tr key={item.id ?? idx}>
                       <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center' }}>
@@ -797,7 +808,12 @@ export function CustomerQuotationPrintModal({
                       </td>
                       <td style={{ border: cellBorder, padding: '6px 7px' }}>
                         <div style={{ fontWeight: 600 }}>{item.name}</div>
-                        {item.notes && <div style={{ fontSize: '11px', color: '#475569' }}>{item.notes}</div>}
+                        {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
+                        {item.notes && (
+                          <div style={{ fontSize: '11px', color: '#475569', marginTop: specRows.length > 0 ? 3 : 0 }}>
+                            {item.notes}
+                          </div>
+                        )}
                       </td>
                       <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center' }}>{item.quantity}</td>
                       <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right' }}>
