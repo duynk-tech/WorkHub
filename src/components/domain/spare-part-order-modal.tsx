@@ -1287,7 +1287,7 @@ export function SparePartOrderModal({
                               }}
                             />
                             <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {isManualSelling ? (
+                              {isManualSelling && (
                                 <button
                                   type="button"
                                   onClick={() => handleItemChange(idx, 'sellingPrice', calc.formulaSellingPerUnit)}
@@ -1309,10 +1309,6 @@ export function SparePartOrderModal({
                                   <RotateCcw size={9} />
                                   <span>Gốc: {calc.formulaSellingPerUnit.toLocaleString('vi-VN')}₫</span>
                                 </button>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>
-                                  Margin {marginPercent}% (Tự động)
-                                </span>
                               )}
                             </div>
                           </div>
