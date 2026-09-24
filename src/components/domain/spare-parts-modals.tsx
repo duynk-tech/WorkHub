@@ -55,12 +55,14 @@ export function SparePartModal({
   pricingConfig,
   onClose,
   onSuccess,
+  zIndex,
 }: {
   open: boolean;
   part?: any;
   pricingConfig?: SparePartPricingConfig;
   onClose: () => void;
   onSuccess?: (item?: any) => void;
+  zIndex?: number;
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -172,6 +174,7 @@ export function SparePartModal({
       onClose={onClose}
       title={modalTitle}
       size="lg"
+      zIndex={zIndex}
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {!part && (

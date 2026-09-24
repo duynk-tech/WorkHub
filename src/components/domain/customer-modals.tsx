@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Modal } from '@/components/ui/modal';
 import { Field, Input, Select, Textarea, Button, PriceInput } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
@@ -9,7 +10,8 @@ import {
   useLineItems,
   lineTotal,
 } from '@/components/domain/line-items-editor';
-import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart } from 'lucide-react';
+import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X } from 'lucide-react';
+import { SparePartModal } from '@/components/domain/spare-parts-modals';
 import {
   ORDER_TYPES,
   ORDER_STATUSES,
@@ -206,9 +208,32 @@ export function CustomerOrderModal({
   onSuccess?: (o: any) => void;
 }) {
   const toast = useToast();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
   const [loading, setLoading] = useState(false);
   const [currentLocations, setCurrentLocations] = useState<any[]>(locations);
   const [quickLocationOpen, setQuickLocationOpen] = useState(false);
+  const [newPartModalOpen, setNewPartModalOpen] = useState(false);
+  const [extraParts, setExtraParts] = useState<any[]>([]);
+
+  const allSpareParts = useMemo(() => {
+    return [...extraParts, ...(spareParts || [])];
+  }, [extraParts, spareParts]);
 
   const [orderType, setOrderType] = useState(order?.orderType || 'MACHINE_PURCHASE');
   const [status, setStatus] = useState(order?.status || 'COMPLETED');
@@ -255,7 +280,7 @@ export function CustomerOrderModal({
     })),
     machines,
     stockMachines,
-    spareParts,
+    spareParts: allSpareParts,
     pricingConfig,
     strictSellingPrice: true,
     onWarning: (msg) => toast.warning(msg),
@@ -263,6 +288,21 @@ export function CustomerOrderModal({
 
   const handleRemoveItem = (index: number) => {
     if (!removeItem(index)) toast.error('Đơn hàng phải có ít nhất 1 sản phẩm');
+  };
+
+  const handlePartCreated = (newPart: any) => {
+    if (!newPart) return;
+    setExtraParts((prev) => [newPart, ...prev]);
+    const ref = `SP:${newPart.id}`;
+    const lastIdx = items.length - 1;
+    if (lastIdx >= 0 && (!items[lastIdx].name || items[lastIdx].name === '')) {
+      selectCatalog(lastIdx, ref);
+    } else {
+      addItem();
+      setTimeout(() => {
+        selectCatalog(items.length, ref);
+      }, 0);
+    }
   };
 
   const [quotationId, setQuotationId] = useState<number | ''>(order?.quotationId || '');
@@ -317,7 +357,7 @@ export function CustomerOrderModal({
     return 0;
   };
 
-  const totalCost = items.reduce((sum, it) => sum + costOf(it) * (Number(it.quantity) || 0), 0);
+  const totalQuantity = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
   const goodsAmount = items.reduce((sum, it) => sum + lineTotal(it), 0);
   const vatAmount = Math.round((goodsAmount * (Number(vatRate) || 0)) / 100);
   const totalAmount = goodsAmount + vatAmount;
@@ -366,228 +406,455 @@ export function CustomerOrderModal({
     }
   };
 
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={order ? `Chỉnh sửa đơn: ${order.orderCode}` : `Tạo đơn hàng cho: ${customerName}`}
-      description="Ghi nhận giao dịch mua máy, thuê máy, linh kiện phụ tùng hoặc hợp đồng dịch vụ"
-      size="xl"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={loading}>
-            Hủy
-          </Button>
-          <Button variant="primary" onClick={handleSave} loading={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <ShoppingCart size={15} />
-            {order ? 'Lưu đơn hàng' : 'Tạo đơn hàng'}
-          </Button>
-        </>
-      }
+  if (!mounted || !open) return null;
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 500,
+        background: 'rgba(0, 0, 0, 0.55)',
+        backdropFilter: 'blur(3px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {!order && usableQuotations.length > 0 && (
-          <Field label="Lập đơn từ báo giá đã chốt (tùy chọn)">
-            <Select
-              value={quotationId}
-              onChange={(e) => handleImportQuotation(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">-- Nhập đơn mới, không từ báo giá --</option>
-              {usableQuotations.map((q: any) => (
-                <option key={q.id} value={q.id}>
-                  {q.quoteCode} · {new Intl.NumberFormat('vi-VN').format(Number(q.totalAmount || 0))} ₫ ·{' '}
-                  {q.items?.length || 0} dòng ·{' '}
-                  {QUOTATION_STATUSES[q.status]?.label || q.status}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1fr 1fr 1fr', gap: 12 }}>
-          <Field label="Hình thức giao dịch">
-            <Select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
-              {Object.entries(ORDER_TYPES).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          <Field label="Trạng thái đơn">
-            <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-              {Object.entries(ORDER_STATUSES).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          <Field label="Ngày đặt hàng">
-            <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-          </Field>
-
-          <Field label="Ngày bàn giao dự kiến">
-            <Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
-          </Field>
-
-          <Field label="Hạn thanh toán">
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </Field>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Điểm đặt / Chi nhánh nhận máy">
-            <div style={{ display: 'flex', gap: 6 }}>
-              <Select
-                value={locationId}
-                onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : '')}
-                style={{ flex: 1, minWidth: 0 }}
-              >
-                <option value="">-- Trụ sở chính / Chưa gán chi nhánh --</option>
-                {currentLocations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name} {loc.address ? `(${loc.address})` : ''}
-                  </option>
-                ))}
-              </Select>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setQuickLocationOpen(true)}
-                title="Thêm chi nhánh mới cho khách hàng này"
-                style={{ padding: '0 10px', height: 38, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              >
-                <Plus size={13} /> Thêm
-              </Button>
-            </div>
-          </Field>
-
-          <Field label="Ghi chú đơn hàng">
-            <Input
-              placeholder="VD: Bàn giao kèm hướng dẫn sử dụng và phiếu bảo hành"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        {items.some((it) => it.name.trim() && (!it.unitPrice || Number(it.unitPrice) <= 0)) && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-md)',
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              color: '#b91c1c',
-              fontSize: 12.5,
-              fontWeight: 500,
-            }}
-          >
-            <AlertTriangle size={15} style={{ flexShrink: 0, color: '#dc2626' }} />
-            <span>
-              Có sản phẩm chưa có giá bán tính sẵn. Vui lòng kiểm tra và nhập đơn giá bán trước khi tạo đơn hàng.
-            </span>
-          </div>
-        )}
-
-        <LineItemsEditor
-          items={items}
-          catalogRefs={catalogRefs}
-          catalogOptions={catalogOptions}
-          onAdd={addItem}
-          onRemove={handleRemoveItem}
-          onChange={changeItem}
-          onSelectCatalog={selectCatalog}
-          costOf={costOf}
-          warnMissingPrice={true}
-        />
-
-
-        {Number(vatRate) > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Field label="Số hóa đơn VAT">
-              <Input
-                placeholder="VD: 00001234"
-                value={invoiceNo}
-                onChange={(e) => setInvoiceNo(e.target.value)}
-              />
-            </Field>
-            <Field label="Ký hiệu hóa đơn">
-              <Input
-                placeholder="VD: 1C26TAA"
-                value={invoiceSerial}
-                onChange={(e) => setInvoiceSerial(e.target.value)}
-              />
-            </Field>
-            <Field label="Ngày xuất hóa đơn">
-              <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-            </Field>
-          </div>
-        )}
-
-        {/* Khối tổng: ô nhập cước và VAT nằm ngay trong cột tổng, không lặp lại nhãn */}
+      <div
+        style={{
+          display: 'flex',
+          background: 'var(--surface-card)',
+          borderRadius: 12,
+          width: '100%',
+          maxWidth: 'min(1280px, 98vw)',
+          maxHeight: '94vh',
+          flexDirection: 'column',
+          boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.2)',
+          border: '1px solid var(--border-base, #e2e8f0)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
         <div
           style={{
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--border-base, #e2e8f0)',
             display: 'flex',
-            justifyContent: 'flex-end',
-            paddingTop: 10,
-            borderTop: '1px dashed var(--border-base)',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--surface-sunken, #f8fafc)',
+            flexShrink: 0,
           }}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: '#f5f3ff',
+                color: '#7c3aed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <ShoppingCart size={18} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+                  {order ? `Chỉnh sửa đơn: ${order.orderCode}` : 'Tạo Đơn Hàng Bán Khách'}
+                </h2>
+                <span
+                  style={{
+                    fontSize: 11,
+                    background: '#ede9fe',
+                    color: '#6d28d9',
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontWeight: 700,
+                    border: '1px solid #c4b5fd',
+                  }}
+                >
+                  {customerName}
+                </span>
+              </div>
+              <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Ghi nhận giao dịch bán linh kiện, phụ tùng máy móc hoặc dịch vụ cho khách hàng
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              padding: 4,
+              borderRadius: 6,
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Scrollable Form Body */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSave();
+          }}
+          style={{
+            overflowY: 'auto',
+            padding: '12px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          {/* Thông tin đơn hàng (Top header grid) */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'auto 180px',
-              gap: '7px 14px',
-              alignItems: 'center',
-              fontSize: 13,
+              gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+              gap: 8,
+              alignItems: 'start',
+              padding: '8px 12px',
+              background: 'var(--surface-sunken, #f8fafc)',
+              borderRadius: 8,
+              border: '1px solid var(--border-base, #e2e8f0)',
             }}
+            className="po-header-grid"
           >
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>Tiền hàng</span>
-            <strong style={{ color: 'var(--text-strong)', textAlign: 'right' }}>
-              {new Intl.NumberFormat('vi-VN').format(goodsAmount)} ₫
-            </strong>
+            <Field label="Hình thức giao dịch">
+              <Select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
+                {Object.entries(ORDER_TYPES).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>Thuế VAT</span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={vatRate}
-                onChange={(e) => setVatRate(e.target.value)}
-                sizeSm
-                style={{ width: 70, flexShrink: 0, textAlign: 'right' }}
-              />
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>%</span>
-              <span style={{ flex: 1, textAlign: 'right', color: 'var(--text-strong)', fontWeight: 600 }}>
-                {vatAmount > 0 ? `${new Intl.NumberFormat('vi-VN').format(vatAmount)} ₫` : '—'}
-              </span>
+            <Field label="Trạng thái đơn">
+              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                {Object.entries(ORDER_STATUSES).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Ngày đặt hàng">
+              <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+            </Field>
+
+            <Field label="Ngày bàn giao dự kiến">
+              <Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+            </Field>
+
+            <Field label="Hạn thanh toán">
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </Field>
+
+            <div style={{ gridColumn: usableQuotations.length > 0 ? 'span 3' : 'span 5' }}>
+              <Field label="Điểm đặt / Chi nhánh nhận máy">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Select
+                    value={locationId}
+                    onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : '')}
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <option value="">-- Trụ sở chính / Chưa gán chi nhánh --</option>
+                    {currentLocations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name} {loc.address ? `(${loc.address})` : ''}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setQuickLocationOpen(true)}
+                    title="Thêm chi nhánh mới cho khách hàng này"
+                    style={{ padding: '0 10px', height: 38, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Plus size={13} /> Thêm
+                  </Button>
+                </div>
+              </Field>
             </div>
 
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right', fontWeight: 600 }}>
-              Khách phải trả
-            </span>
-            <strong style={{ fontSize: 18, fontWeight: 700, color: 'var(--brand)', textAlign: 'right' }}>
-              {new Intl.NumberFormat('vi-VN').format(totalAmount)} ₫
-            </strong>
+            {!order && usableQuotations.length > 0 && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <Field label="Lập đơn từ báo giá đã chốt (tùy chọn)">
+                  <Select
+                    value={quotationId}
+                    onChange={(e) => handleImportQuotation(e.target.value ? Number(e.target.value) : '')}
+                  >
+                    <option value="">-- Nhập đơn mới, không từ báo giá --</option>
+                    {usableQuotations.map((q: any) => (
+                      <option key={q.id} value={q.id}>
+                        {q.quoteCode} · {new Intl.NumberFormat('vi-VN').format(Number(q.totalAmount || 0))} ₫ ·{' '}
+                        {q.items?.length || 0} dòng ·{' '}
+                        {QUOTATION_STATUSES[q.status]?.label || q.status}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            )}
           </div>
-        </div>
+
+          {items.some((it) => it.name.trim() && (!it.unitPrice || Number(it.unitPrice) <= 0)) && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#b91c1c',
+                fontSize: 12.5,
+                fontWeight: 500,
+              }}
+            >
+              <AlertTriangle size={15} style={{ flexShrink: 0, color: '#dc2626' }} />
+              <span>
+                Có sản phẩm chưa có giá bán tính sẵn. Vui lòng kiểm tra và nhập đơn giá bán trước khi tạo đơn hàng.
+              </span>
+            </div>
+          )}
+
+          {/* Bảng danh sách mặt hàng */}
+          <LineItemsEditor
+            title="Danh sách mặt hàng"
+            items={items}
+            catalogRefs={catalogRefs}
+            catalogOptions={catalogOptions}
+            onAdd={addItem}
+            onAddNewPart={() => setNewPartModalOpen(true)}
+            onRemove={handleRemoveItem}
+            onChange={changeItem}
+            onSelectCatalog={selectCatalog}
+            warnMissingPrice={true}
+            footerRows={
+              <>
+                {/* 1. Tổng tiền hàng */}
+                <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 700 }}>
+                  <td colSpan={2} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-strong)' }}>
+                    Tổng cộng ({items.length} mặt hàng):
+                  </td>
+                  <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)' }}>
+                    {totalQuantity} cái
+                  </td>
+                  <td></td>
+                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
+                    {goodsAmount.toLocaleString('vi-VN')} ₫
+                  </td>
+                  <td></td>
+                </tr>
+
+                {/* 2. Thuế VAT */}
+                <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                  <td
+                    colSpan={4}
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontWeight: 600,
+                      color: 'var(--text-strong)',
+                    }}
+                  >
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                      <span>Thuế VAT:</span>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        {[0, 8, 10].map((rate) => {
+                          const isSelected = Number(vatRate) === rate;
+                          return (
+                            <button
+                              key={rate}
+                              type="button"
+                              onClick={() => setVatRate(String(rate))}
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: 11,
+                                borderRadius: 4,
+                                border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                                background: isSelected ? '#f5f3ff' : '#fff',
+                                color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
+                                fontWeight: isSelected ? 700 : 500,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.5"
+                          value={vatRate}
+                          onChange={(e) => setVatRate(e.target.value)}
+                          style={{
+                            width: 44,
+                            padding: '2px 4px',
+                            fontSize: 11,
+                            textAlign: 'center',
+                            border: '1px solid var(--border-base, #cbd5e1)',
+                            borderRadius: 4,
+                            background: 'var(--surface-card, #fff)',
+                            color: 'var(--text-strong, #0f172a)',
+                          }}
+                        />
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontWeight: 700,
+                      color: vatAmount > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {vatAmount > 0
+                      ? `+${vatAmount.toLocaleString('vi-VN')} ₫`
+                      : '0 ₫'}
+                  </td>
+                  <td></td>
+                </tr>
+
+                {/* 3. Tổng cộng thanh toán */}
+                <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
+                  <td
+                    colSpan={4}
+                    style={{
+                      padding: '10px',
+                      textAlign: 'right',
+                      textTransform: 'uppercase',
+                      color: 'var(--text-strong)',
+                      fontSize: 13,
+                    }}
+                  >
+                    TỔNG CỘNG THANH TOÁN (VND){Number(vatRate) > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                  </td>
+                  <td style={{ padding: '10px 6px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
+                    {totalAmount.toLocaleString('vi-VN')} ₫
+                  </td>
+                  <td></td>
+                </tr>
+              </>
+            }
+          />
+
+          {/* Thông tin hóa đơn & Ghi chú đơn hàng */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: 12, alignItems: 'start' }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-strong)' }}>
+                Thông tin hóa đơn VAT (nếu có)
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.2fr', gap: 6 }}>
+                <Input
+                  placeholder="Số HĐ (VD: 00001234)"
+                  value={invoiceNo}
+                  onChange={(e) => setInvoiceNo(e.target.value)}
+                  sizeSm
+                />
+                <Input
+                  placeholder="Ký hiệu (1C26TAA)"
+                  value={invoiceSerial}
+                  onChange={(e) => setInvoiceSerial(e.target.value)}
+                  sizeSm
+                />
+                <Input
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  sizeSm
+                  title="Ngày xuất hóa đơn"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-strong)' }}>
+                Ghi chú đơn hàng
+              </label>
+              <Input
+                placeholder="VD: Bàn giao kèm hướng dẫn sử dụng và phiếu bảo hành..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 10,
+              marginTop: 6,
+              paddingTop: 10,
+              borderTop: '1px solid var(--border-base, #e2e8f0)',
+            }}
+          >
+            <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
+              Hủy
+            </Button>
+            <Button
+              type="submit"
+              loading={loading}
+              style={{
+                background: '#7c3aed',
+                color: '#fff',
+                fontWeight: 600,
+                padding: '0 18px',
+                height: 36,
+                border: 'none',
+              }}
+            >
+              {order ? 'Lưu đơn hàng' : 'Xác nhận'}
+            </Button>
+          </div>
+        </form>
       </div>
+
+      {newPartModalOpen && (
+        <SparePartModal
+          open={newPartModalOpen}
+          pricingConfig={pricingConfig}
+          zIndex={550}
+          onClose={() => setNewPartModalOpen(false)}
+          onSuccess={handlePartCreated}
+        />
+      )}
 
       {quickLocationOpen && (
         <CustomerLocationModal
           open={quickLocationOpen}
           customerId={customerId}
           customerName={customerName}
+          zIndex={550}
           onClose={() => setQuickLocationOpen(false)}
           onSuccess={(newLoc) => {
             setCurrentLocations((prev) => [...prev, newLoc]);
@@ -596,7 +863,8 @@ export function CustomerOrderModal({
           }}
         />
       )}
-    </Modal>
+    </div>,
+    document.body
   );
 }
 
@@ -607,12 +875,14 @@ export function CustomerLocationModal({
   customerName,
   onClose,
   onSuccess,
+  zIndex,
 }: {
   open: boolean;
   customerId: number;
   customerName: string;
   onClose: () => void;
   onSuccess?: (loc: any) => void;
+  zIndex?: number;
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -650,6 +920,7 @@ export function CustomerLocationModal({
     <Modal
       open={open}
       onClose={onClose}
+      zIndex={zIndex}
       title={`Thêm Điểm lắp đặt / Chi nhánh: ${customerName}`}
       description="Khai báo chi nhánh hoặc điểm lắp đặt thiết bị của khách hàng"
       size="md"

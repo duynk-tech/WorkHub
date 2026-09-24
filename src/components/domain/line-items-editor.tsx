@@ -366,10 +366,12 @@ export function LineItemsEditor({
   catalogDetailsMap,
   costOf,
   onAdd,
+  onAddNewPart,
   onRemove,
   onChange,
   onSelectCatalog,
   warnMissingPrice = false,
+  footerRows,
 }: {
   title?: string;
   items: LineItem[];
@@ -380,10 +382,12 @@ export function LineItemsEditor({
    *  — thông tin nội bộ, không bao giờ xuất hiện trên bản in gửi khách. */
   costOf?: (item: LineItem) => number;
   onAdd: () => void;
+  onAddNewPart?: () => void;
   onRemove: (index: number) => void;
   onChange: (index: number, field: keyof LineItem, value: any) => void;
   onSelectCatalog: (index: number, ref: string) => void;
   warnMissingPrice?: boolean;
+  footerRows?: React.ReactNode;
 }) {
   const showCost = Boolean(costOf);
 
@@ -396,15 +400,28 @@ export function LineItemsEditor({
             {title} ({items.length} mặt hàng)
           </span>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={onAdd}
-          style={{ fontSize: 11.5, height: 28, padding: '0 8px' }}
-        >
-          <Plus size={12} /> Thêm dòng
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {onAddNewPart && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={onAddNewPart}
+              style={{ borderColor: '#ddd6fe', color: '#7c3aed', background: '#faf5ff', fontSize: 11.5, height: 28, padding: '0 8px' }}
+            >
+              <Plus size={12} /> Thêm phụ tùng mới
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={onAdd}
+            style={{ fontSize: 11.5, height: 28, padding: '0 8px' }}
+          >
+            <Plus size={12} /> Thêm dòng hàng
+          </Button>
+        </div>
       </div>
 
       <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
@@ -654,6 +671,11 @@ export function LineItemsEditor({
               );
             })}
           </tbody>
+          {footerRows && (
+            <tfoot>
+              {footerRows}
+            </tfoot>
+          )}
         </table>
       </div>
     </div>
