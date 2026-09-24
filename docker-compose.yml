@@ -15,7 +15,7 @@ services:
       - APP_ENCRYPTION_KEY=ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=
       - CRON_SECRET=production-cron-secret
       - TZ=Asia/Ho_Chi_Minh
-      - SEED_DEMO=true
+      # - AUTO_SEED=true # Bỏ comment nếu muốn tự động seed khi khởi động (mặc định tắt)
     networks:
       - default
       - server

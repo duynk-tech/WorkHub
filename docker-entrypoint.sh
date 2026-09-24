@@ -12,8 +12,12 @@ echo "→ Áp dụng migration & đồng bộ schema…"
 npx prisma migrate deploy || true
 npx prisma db push --skip-generate
 
-echo "→ Nạp dữ liệu khởi tạo…"
-npx tsx prisma/seed/index.ts
+if [ "$AUTO_SEED" = "true" ]; then
+  echo "→ Nạp dữ liệu khởi tạo (AUTO_SEED=true)…"
+  npx tsx prisma/seed/index.ts
+else
+  echo "→ Bỏ qua seed tự động (AUTO_SEED không bật). Khởi tạo dữ liệu qua giao diện web (/install)."
+fi
 
 echo "✓ Khởi động ứng dụng"
 exec "$@"
