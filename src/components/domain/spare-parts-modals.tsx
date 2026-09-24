@@ -24,7 +24,7 @@ import {
   saveStockTransactionAction,
   updateSparePartOrderStatusAction,
 } from '@/server/modules/spare-parts/actions';
-import { Plus, Trash2, ArrowRight, ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, PackagePlus, X, SlidersHorizontal, ChevronDown, ChevronUp, Calculator } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, PackagePlus, X, SlidersHorizontal, ChevronDown, ChevronUp, Calculator, Info } from 'lucide-react';
 import { ItemPriceCalculatorModal } from './item-price-calculator-modal';
 export { ItemPriceCalculatorModal };
 
@@ -173,86 +173,102 @@ export function SparePartModal({
       title={modalTitle}
       size="lg"
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {!part && (
           <div
             style={{
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-sm)',
+              padding: '6px 10px',
+              borderRadius: 6,
               background: '#eff6ff',
               border: '1px solid #bfdbfe',
               color: '#1d4ed8',
-              fontSize: 12,
-              lineHeight: 1.45,
+              fontSize: 11.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
-            Đây là bước khai báo danh mục: mã mới được tạo với tồn kho bằng 0. Hàng thực tế chỉ vào
-            kho khi lập <strong>phiếu nhập kho</strong> hoặc nhập từ đơn đặt hàng nhà cung cấp.
+            <Info size={14} style={{ flexShrink: 0, color: '#2563eb' }} />
+            <span>Khai báo danh mục: mã mới tạo với tồn kho = 0. Hàng thực tế ghi tồn khi lập phiếu nhập kho hoặc đơn hàng order.</span>
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 12 }}>
-          <Field label="Tên phụ tùng / linh kiện" required>
-            <Input
-              required
-              placeholder="VD: Bo nguồn Micron 25, Cảm biến PT100..."
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </Field>
-
-          <div>
-            <Field label="Hình thức cung ứng">
-              <select
-                className="select"
-                value={form.supplyType}
-                onChange={(e) => setForm({ ...form, supplyType: e.target.value as any })}
-              >
-                <option value="READY_STOCK">Hàng có sẵn trong kho</option>
-                <option value="ON_ORDER">Hàng order (Nhập khẩu)</option>
-              </select>
+        {/* Hàng 1: Tên & Phân loại (& Loại máy F&B nếu có) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+          <div style={{ gridColumn: isEquipmentCategory(form.category) ? 'span 1' : 'span 2' }}>
+            <Field label="Tên phụ tùng / linh kiện" required>
+              <Input
+                required
+                placeholder="VD: Bo nguồn Micron 25, Cảm biến PT100..."
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </Field>
           </div>
 
-          <div>
-            <Field label="Phân loại">
-              <select
-                className="select"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value as any })}
-              >
-                {Object.entries(PART_CATEGORIES).map(([key, val]) => (
-                  <option key={key} value={key}>
-                    {val.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-        </div>
-
-        {/* Máy nguyên chiếc: khai sẵn loại máy F&B để khi xuất bán hệ thống lập
-            hồ sơ máy đúng loại, người xuất kho không phải chọn lại */}
-        {isEquipmentCategory(form.category) && (
-          <Field
-            label="Loại máy F&B"
-            hint="Dùng khi xuất bán để lập hồ sơ máy tại khách"
-          >
+          <Field label="Phân loại">
             <select
               className="select"
-              value={form.fnbCategory || 'OTHER'}
-              onChange={(e) => setForm({ ...form, fnbCategory: e.target.value })}
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value as any })}
             >
-              {Object.entries(EQUIPMENT_CATEGORIES).map(([key, val]) => (
+              {Object.entries(PART_CATEGORIES).map(([key, val]) => (
                 <option key={key} value={key}>
                   {val.label}
                 </option>
               ))}
             </select>
           </Field>
-        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          {isEquipmentCategory(form.category) && (
+            <Field label="Loại máy F&B">
+              <select
+                className="select"
+                value={form.fnbCategory || 'OTHER'}
+                onChange={(e) => setForm({ ...form, fnbCategory: e.target.value })}
+              >
+                {Object.entries(EQUIPMENT_CATEGORIES).map(([key, val]) => (
+                  <option key={key} value={key}>
+                    {val.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+        </div>
+
+        {/* Hàng 2: Hãng SX, Dòng máy tương thích, Hình thức cung ứng */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+          <Field label="Hãng sản xuất / Thương hiệu">
+            <Input
+              placeholder="Selmi, Taylor, Omron, Bando..."
+              value={form.manufacturer || ''}
+              onChange={(e) => setForm({ ...form, manufacturer: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Dòng máy tương thích">
+            <Input
+              placeholder="VD: Selmi Micron 25, Legend 24..."
+              value={form.compatibleWith || ''}
+              onChange={(e) => setForm({ ...form, compatibleWith: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Hình thức cung ứng">
+            <select
+              className="select"
+              value={form.supplyType}
+              onChange={(e) => setForm({ ...form, supplyType: e.target.value as any })}
+            >
+              <option value="READY_STOCK">Hàng có sẵn trong kho</option>
+              <option value="ON_ORDER">Hàng order (Nhập khẩu)</option>
+            </select>
+          </Field>
+        </div>
+
+        {/* Hàng 3: Đơn vị tính, Cảnh báo tồn, Vòng đời linh kiện */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
           <Field label="Đơn vị tính" required>
             <Input
               required
@@ -271,43 +287,25 @@ export function SparePartModal({
             />
           </Field>
 
-          <Field label="Hãng sản xuất / Thương hiệu">
-            <Input
-              placeholder="Selmi, Taylor, Omron, Bando..."
-              value={form.manufacturer || ''}
-              onChange={(e) => setForm({ ...form, manufacturer: e.target.value })}
-            />
-          </Field>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
-          <Field label="Dòng máy tương thích">
-            <Input
-              placeholder="VD: Selmi Micron 25, Legend 24, Máy làm kem Taylor C707..."
-              value={form.compatibleWith || ''}
-              onChange={(e) => setForm({ ...form, compatibleWith: e.target.value })}
-            />
-          </Field>
-
           <Field label="Vòng đời linh kiện">
             <Input
-              placeholder="Trên 12 tháng, Trên 24 tháng..."
+              placeholder="Trên 12 tháng, 24 tháng..."
               value={form.lifespan || ''}
               onChange={(e) => setForm({ ...form, lifespan: e.target.value })}
             />
           </Field>
         </div>
 
-        {/* Giá và Ngoại tệ */}
+        {/* Hàng 4: Giá và Ngoại tệ - Chuẩn 3 cột cân đối, không lệch */}
         <div
           style={{
-            padding: 12,
+            padding: '10px 12px',
             background: 'var(--surface-sunken)',
             borderRadius: 8,
             border: '1px solid var(--border-base)',
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: 12,
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 10,
           }}
         >
           <Field label="Giá gốc EUR (€)">
@@ -319,7 +317,6 @@ export function SparePartModal({
                 setForm({
                   ...form,
                   priceEur: eur,
-                  // Tự động tính giá vốn VND ước tính = EUR * eurExchangeRate nếu chưa nhập
                   costPrice:
                     form.costPrice || !eur
                       ? form.costPrice
@@ -327,6 +324,11 @@ export function SparePartModal({
                 });
               }}
             />
+            {Boolean(form.priceEur && Number(form.priceEur) > 0) && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                ≈ {Math.round((form.priceEur || 0) * eurExchangeRate).toLocaleString('vi-VN')} ₫
+              </div>
+            )}
           </Field>
 
           <Field label="Giá vốn VND (quy đổi)">
@@ -345,8 +347,8 @@ export function SparePartModal({
           </Field>
 
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <label className="label" style={{ marginBottom: 0 }}>Giá bán / Báo giá (VNĐ)</label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <label className="label" style={{ marginBottom: 0, fontSize: 12 }}>Giá bán lẻ (₫)</label>
               <button
                 type="button"
                 onClick={() => setPriceCalcOpen(true)}
@@ -355,23 +357,24 @@ export function SparePartModal({
                   color: '#7c3aed',
                   border: '1px solid #ddd6fe',
                   borderRadius: 4,
-                  padding: '2px 8px',
-                  fontSize: 11,
+                  padding: '1.5px 6px',
+                  fontSize: 10.5,
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 4,
+                  gap: 3,
+                  lineHeight: 1.2,
                 }}
-                title="Mở popup tính giá & cấu thành chi phí"
+                title="Mở popup tính giá đề xuất theo margin & chi phí"
               >
-                <Calculator size={12} />
+                <Calculator size={11} />
                 Tính giá đề xuất
               </button>
             </div>
             <PriceInput
               currency="VND"
-              placeholder="Giá bán lẻ"
+              placeholder="Giá bán lẻ VND"
               showInWords
               value={form.sellingPrice}
               onChange={(val) =>
@@ -381,32 +384,51 @@ export function SparePartModal({
                 })
               }
             />
-            {(shippingFee !== defaultShippingFee || otherFee !== defaultCustomsFee) && (
-              <div style={{ fontSize: 10.5, color: '#7c3aed', marginTop: 3 }}>
-                🚚 Cước: {shippingFee.toLocaleString('vi-VN')}₫ · Phí khác: {otherFee.toLocaleString('vi-VN')}₫
-              </div>
-            )}
+          </div>
+
+          {(shippingFee !== defaultShippingFee || otherFee !== defaultCustomsFee) && (
+            <div
+              style={{
+                gridColumn: 'span 3',
+                fontSize: 11,
+                color: '#7c3aed',
+                background: '#faf5ff',
+                border: '1px dashed #ddd6fe',
+                borderRadius: 4,
+                padding: '3px 8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <span>🚚 Cước VC: <strong>{shippingFee.toLocaleString('vi-VN')}₫</strong> · Phí khác: <strong>{otherFee.toLocaleString('vi-VN')}₫</strong></span>
+            </div>
+          )}
+        </div>
+
+        {/* Hàng 5: Mô tả kỹ thuật & Hình ảnh phụ tùng */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, alignItems: 'start' }}>
+          <div style={{ gridColumn: 'span 1' }}>
+            <Field label="Mô tả kỹ thuật & thông số">
+              <Input
+                placeholder="Vật liệu, kích thước, chi tiết..."
+                value={form.description || ''}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </Field>
+          </div>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <ImageUpload
+              label="Hình ảnh phụ tùng / linh kiện"
+              placeholder="https://... hoặc tải ảnh trực tiếp từ máy"
+              value={form.imageUrl}
+              onChange={(url) => setForm({ ...form, imageUrl: url })}
+            />
           </div>
         </div>
 
-        <Field label="Mô tả kỹ thuật & thông số">
-          <Textarea
-            rows={2}
-            placeholder="Mô tả vật liệu, kích thước, thông số kỹ thuật chi tiết..."
-            value={form.description || ''}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-        </Field>
-
-        <ImageUpload
-          label="Hình ảnh phụ tùng / linh kiện"
-          hint="Tải ảnh linh kiện thực tế lên máy chủ hoặc nhập URL để nhân viên kho và kỹ thuật dễ nhận diện"
-          placeholder="https://... hoặc tải ảnh trực tiếp từ máy tính"
-          value={form.imageUrl}
-          onChange={(url) => setForm({ ...form, imageUrl: url })}
-        />
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
           <Button type="button" variant="ghost" onClick={onClose}>
             Hủy
           </Button>
