@@ -30,7 +30,7 @@ export async function saveSparePartAction(id: number | null, input: SaveSparePar
     return {
       ok: true,
       message: id ? 'Cập nhật phụ tùng thành công' : 'Thêm mới phụ tùng thành công',
-      item,
+      item: JSON.parse(JSON.stringify(item)),
     };
   } catch (error: any) {
     console.error('[saveSparePartAction error]:', error);
@@ -66,7 +66,7 @@ export async function saveWarehouseAction(id: number | null, input: SaveWarehous
     return {
       ok: true,
       message: id ? 'Cập nhật kho thành công' : 'Thêm mới kho / xe lưu động thành công',
-      warehouse,
+      warehouse: JSON.parse(JSON.stringify(warehouse)),
     };
   } catch (error: any) {
     console.error('[saveWarehouseAction error]:', error);
@@ -87,7 +87,7 @@ export async function saveStockTransactionAction(input: SaveStockTransactionInpu
     return {
       ok: true,
       message: 'Giao dịch kho đã được thực hiện thành công',
-      transaction,
+      transaction: JSON.parse(JSON.stringify(transaction)),
     };
   } catch (error: any) {
     console.error('[saveStockTransactionAction error]:', error);
@@ -104,7 +104,7 @@ export async function seedSparePartsAction() {
   try {
     const res = await seedDefaultSparePartsAndWarehouses(ctx.userId);
     revalidatePath('/spare-parts');
-    return res;
+    return JSON.parse(JSON.stringify(res));
   } catch (error: any) {
     console.error('[seedSparePartsAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi khởi tạo dữ liệu mẫu' };
@@ -125,7 +125,7 @@ export async function createSparePartOrderAction(input: any) {
     return {
       ok: true,
       message: `Đã tạo đơn hàng order ${order.orderCode} thành công`,
-      order,
+      order: JSON.parse(JSON.stringify(order)),
     };
   } catch (error: any) {
     console.error('[createSparePartOrderAction error]:', error);
@@ -151,7 +151,7 @@ export async function updateSparePartOrderStatusAction(orderId: number, input: a
     return {
       ok: true,
       message: `Đã cập nhật trạng thái đơn hàng ${order.orderCode} thành công`,
-      order,
+      order: JSON.parse(JSON.stringify(order)),
     };
   } catch (error: any) {
     console.error('[updateSparePartOrderStatusAction error]:', error);
@@ -174,7 +174,7 @@ export async function saveSparePartPricingConfigAction(input: any) {
     return {
       ok: true,
       message: 'Cập nhật cấu hình chính sách giá & margin thành công',
-      config,
+      config: JSON.parse(JSON.stringify(config)),
     };
   } catch (error: any) {
     console.error('[saveSparePartPricingConfigAction error]:', error);
@@ -372,7 +372,7 @@ export async function submitStockCountAction(countId: number) {
       message: res.balanced
         ? 'Kiểm kê khớp sổ sách, không có chênh lệch nào'
         : `Đã lập ${res.transactions.length} phiếu chênh lệch chờ duyệt: ${res.transactions.join(', ')}`,
-      result: res,
+      result: JSON.parse(JSON.stringify(res)),
     };
   } catch (error: any) {
     console.error('[submitStockCountAction error]:', error);

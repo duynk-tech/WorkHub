@@ -30,7 +30,7 @@ export default async function TicketsPage() {
   return (
     <TicketScreen
       tickets={JSON.parse(JSON.stringify(tickets))}
-      metrics={metrics}
+      metrics={JSON.parse(JSON.stringify(metrics))}
       equipments={JSON.parse(JSON.stringify(equipments))}
       technicians={JSON.parse(JSON.stringify(technicians))}
       spareParts={JSON.parse(JSON.stringify(spareParts))}

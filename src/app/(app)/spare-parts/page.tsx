@@ -72,7 +72,7 @@ export default async function SparePartsPage({
       transactions={JSON.parse(JSON.stringify(transactions.rows))}
       transactionTotal={transactions.total}
       orders={JSON.parse(JSON.stringify(orders))}
-      stats={stats}
+      stats={JSON.parse(JSON.stringify(stats))}
       canManage={canManage}
       pricingConfig={JSON.parse(JSON.stringify(pricingConfig))}
       companyInfo={JSON.parse(JSON.stringify(companyInfo))}
@@ -80,7 +80,7 @@ export default async function SparePartsPage({
       equipments={JSON.parse(JSON.stringify(equipments))}
       initialTab={sp.tab}
       equipmentList={JSON.parse(JSON.stringify(equipmentList))}
-      equipmentMetrics={equipmentMetrics}
+      equipmentMetrics={JSON.parse(JSON.stringify(equipmentMetrics))}
       equipmentCustomers={JSON.parse(JSON.stringify(equipmentCustomers))}
     />
   );

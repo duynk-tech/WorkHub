@@ -46,11 +46,11 @@ export default async function AssetsPage({
 
   return (
     <AssetScreen
-      company={company}
+      company={JSON.parse(JSON.stringify(company))}
       assets={JSON.parse(JSON.stringify(assets))}
-      metrics={metrics}
-      departments={departments}
-      employees={employees}
+      metrics={JSON.parse(JSON.stringify(metrics))}
+      departments={JSON.parse(JSON.stringify(departments))}
+      employees={JSON.parse(JSON.stringify(employees))}
       filter={filter}
       canCreate={can(ctx, 'FEATURE_ASSET_CREATE')}
       canEdit={can(ctx, 'FEATURE_ASSET_EDIT')}

@@ -39,7 +39,7 @@ export default async function CustomersPage({
       care={JSON.parse(JSON.stringify(care))}
       technicians={JSON.parse(JSON.stringify(technicians))}
       initialTab={sp.tab || (sp.within ? 'care' : undefined)}
-      metrics={metrics}
+      metrics={JSON.parse(JSON.stringify(metrics))}
       filter={filter}
       canManage={canManage}
     />
