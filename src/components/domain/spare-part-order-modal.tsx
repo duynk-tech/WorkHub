@@ -188,7 +188,7 @@ export function SparePartOrderModal({
     const list: SearchableSelectOption[] = [
       {
         value: '__NEW_PART__',
-        label: '➕ + Tạo mã phụ tùng mới vào danh mục...',
+        label: '+ Tạo mã phụ tùng mới vào danh mục...',
         keywords: 'tao moi them phu tung new part linh kien',
         group: '⚡ Thao tác nhanh',
       },
@@ -1203,7 +1203,7 @@ export function SparePartOrderModal({
                               style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
                             />
                             <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {it.quantity > 1 ? `≈ ${Math.round((it.shippingFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : 'tổng dòng'}
+                              {it.quantity > 1 ? `≈ ${Math.round((it.shippingFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : null}
                             </div>
                           </div>
                         </td>
@@ -1222,7 +1222,7 @@ export function SparePartOrderModal({
                               style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
                             />
                             <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {it.quantity > 1 ? `≈ ${Math.round((it.otherFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : 'HQ/khác'}
+                              {it.quantity > 1 ? `≈ ${Math.round((it.otherFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : null}
                             </div>
                           </div>
                         </td>
