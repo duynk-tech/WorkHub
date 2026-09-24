@@ -817,7 +817,7 @@ export function CustomerQuotationPrintModal({
                         <div style={{ fontWeight: 650, color: '#0f172a' }}>{item.name}</div>
                         {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                         {item.notes && (
-                          <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0 }}>
+                          <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0, paddingLeft: 8 }}>
                             {item.notes}
                           </div>
                         )}

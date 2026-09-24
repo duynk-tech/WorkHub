@@ -19,6 +19,7 @@ export function EquipmentSpecGrid({
       style={{
         marginTop: 3,
         marginBottom: 2,
+        paddingLeft: compact ? 6 : 8,
         fontSize: compact ? '10px' : '10.5px',
         lineHeight: 1.45,
       }}
