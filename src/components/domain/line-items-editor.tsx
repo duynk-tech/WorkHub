@@ -580,9 +580,7 @@ export function LineItemsEditor({
                               </span>
                             )}
                           </>
-                        ) : (
-                          <span>-- Chưa chọn mặt hàng --</span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </td>
