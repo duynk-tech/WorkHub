@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Phone, MapPin, Wallet, Undo2, FileText, Wrench, ExternalLink } from 'lucide-react';
+import { Building2, Phone, MapPin, Wallet, Undo2, FileText, Wrench, ExternalLink, Printer } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { Badge, Button, EmptyState } from '@/components/ui';
 import { fmtDate } from '@/lib/date';
@@ -13,6 +13,7 @@ import {
   PAYMENT_METHODS,
 } from '@/server/modules/customer/types';
 import { getSalesOrderDetailAction } from '@/server/modules/customer/actions';
+import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -77,15 +78,18 @@ function Section({ title, icon, children }: { title: string; icon?: React.ReactN
 export function SalesOrderDetailModal({
   open,
   orderId,
+  companyInfo,
   onClose,
 }: {
   open: boolean;
   orderId: number | null;
+  companyInfo?: any;
   onClose: () => void;
 }) {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [printOpen, setPrintOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !orderId) return;
@@ -111,23 +115,48 @@ export function SalesOrderDetailModal({
   const ty = order ? ORDER_TYPES[order.orderType] : null;
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="lg"
-      title={order ? `Đơn bán ${order.orderCode}` : 'Chi tiết đơn bán'}
-      description={order ? order.customer?.name : undefined}
-      footer={
-        <>
-          {order?.customer?.id && (
-            <Link href={`/customers/${order.customer.id}`} className="btn btn-secondary">
-              <ExternalLink /> Mở hồ sơ khách
-            </Link>
-          )}
-          <Button variant="primary" onClick={onClose}>Đóng</Button>
-        </>
-      }
-    >
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        size="lg"
+        title={order ? `Đơn bán ${order.orderCode}` : 'Chi tiết đơn bán'}
+        description={order ? order.customer?.name : undefined}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+            <div>
+              {order && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPrintOpen(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: '1px solid #ddd6fe',
+                    color: '#6d28d9',
+                    background: '#faf5ff',
+                    fontWeight: 600,
+                  }}
+                  title="Xem trước và in hóa đơn (A4 / PDF)"
+                >
+                  <Printer size={14} /> In / Xem hóa đơn
+                </Button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {order?.customer?.id && (
+                <Link href={`/customers/${order.customer.id}`} className="btn btn-secondary">
+                  <ExternalLink size={14} /> Mở hồ sơ khách
+                </Link>
+              )}
+              <Button variant="primary" onClick={onClose}>Đóng</Button>
+            </div>
+          </div>
+        }
+      >
       {loading && <EmptyState title="Đang tải chi tiết đơn…" />}
       {!loading && error && <EmptyState title="Không mở được đơn" description={error} />}
 
@@ -501,5 +530,17 @@ export function SalesOrderDetailModal({
         </div>
       )}
     </Modal>
+
+    {printOpen && order && (
+      <CustomerOrderPrintModal
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        order={order}
+        customer={order.customer}
+        location={order.location}
+        companyInfo={companyInfo}
+      />
+    )}
+  </>
   );
 }

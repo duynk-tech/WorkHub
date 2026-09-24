@@ -234,6 +234,9 @@ export async function getCustomerOrderContext(ctx: AuthContext, customerId: numb
       id: true,
       name: true,
       code: true,
+      phone: true,
+      address: true,
+      contactName: true,
       locations: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
       machines: {
         select: {

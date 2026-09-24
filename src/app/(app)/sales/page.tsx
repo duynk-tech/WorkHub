@@ -4,6 +4,7 @@ import { requireAuth, can } from '@/server/auth/context';
 import { listSalesOrders, canViewSalesOrders } from '@/server/modules/customer/service';
 import { listSpareParts, getSparePartPricingConfig } from '@/server/modules/spare-parts/service';
 import { listEquipment } from '@/server/modules/equipment/service';
+import { getCompanyInfo } from '@/server/modules/settings/branding';
 import { prisma } from '@/lib/prisma';
 import { SalesScreen } from './sales-screen';
 
@@ -21,7 +22,7 @@ export default async function SalesPage() {
 
   // Dữ liệu dùng chung cho mọi khách nạp sẵn; phần riêng của từng khách
   // (địa điểm, máy, báo giá) đợi chọn khách rồi mới lấy
-  const [orders, customers, spareParts, stockMachines, pricingConfig] = await Promise.all([
+  const [orders, customers, spareParts, stockMachines, pricingConfig, companyInfo] = await Promise.all([
     listSalesOrders(ctx),
     prisma.customer.findMany({
       where: { status: 'ACTIVE' },
@@ -31,6 +32,7 @@ export default async function SalesPage() {
     listSpareParts({}),
     listEquipment({ status: 'IN_STOCK' }),
     getSparePartPricingConfig(),
+    getCompanyInfo(),
   ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function SalesPage() {
         spareParts={JSON.parse(JSON.stringify(spareParts))}
         stockMachines={JSON.parse(JSON.stringify(stockMachines))}
         pricingConfig={JSON.parse(JSON.stringify(pricingConfig))}
+        companyInfo={JSON.parse(JSON.stringify(companyInfo))}
         canManage={can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin}
       />
     </Suspense>

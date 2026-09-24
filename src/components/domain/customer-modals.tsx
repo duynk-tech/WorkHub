@@ -10,7 +10,8 @@ import {
   useLineItems,
   lineTotal,
 } from '@/components/domain/line-items-editor';
-import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X } from 'lucide-react';
+import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X, Printer } from 'lucide-react';
+import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
 import {
   ORDER_TYPES,
   ORDER_STATUSES,
@@ -180,12 +181,14 @@ export function CustomerOrderModal({
   onClose,
   customerId,
   customerName,
+  customer,
   locations = [],
   machines = [],
   stockMachines = [],
   spareParts = [],
   quotations = [],
   pricingConfig,
+  companyInfo,
   order,
   onSuccess,
 }: {
@@ -193,6 +196,7 @@ export function CustomerOrderModal({
   onClose: () => void;
   customerId: number;
   customerName: string;
+  customer?: any;
   locations?: any[];
   /** Máy đang đặt tại khách. Chỉ máy cho thuê / ký gửi mới lên đơn được (bán đứt, gia hạn);
    *  máy đã bán đứt thì loại khỏi danh sách. */
@@ -203,11 +207,13 @@ export function CustomerOrderModal({
   /** Báo giá của khách, để lập đơn từ báo giá đã chốt. */
   quotations?: any[];
   pricingConfig?: any;
+  companyInfo?: any;
   order?: any;
   onSuccess?: (o: any) => void;
 }) {
   const toast = useToast();
   const [mounted, setMounted] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -799,6 +805,32 @@ export function CustomerOrderModal({
               Hủy
             </Button>
             <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                const activeItems = validItems();
+                if (activeItems.length === 0) {
+                  toast.error('Vui lòng thêm ít nhất một mặt hàng để xem trước hóa đơn');
+                  return;
+                }
+                setPreviewOpen(true);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                border: '1px solid #ddd6fe',
+                color: '#6d28d9',
+                background: '#faf5ff',
+                height: 36,
+                padding: '0 14px',
+                fontWeight: 600,
+              }}
+              title="Xem trước hóa đơn / đơn hàng in (A4 / PDF)"
+            >
+              <Printer size={15} /> Xem trước
+            </Button>
+            <Button
               type="submit"
               loading={loading}
               style={{
@@ -828,6 +860,55 @@ export function CustomerOrderModal({
             setLocationId(newLoc.id);
             setQuickLocationOpen(false);
           }}
+        />
+      )}
+
+      {previewOpen && (
+        <CustomerOrderPrintModal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          order={{
+            orderCode: order?.orderCode || `ORD-${new Date().getFullYear()}-DỰ THẢO`,
+            orderType,
+            status,
+            orderDate,
+            deliveryDate,
+            dueDate,
+            invoiceNo,
+            invoiceSerial,
+            invoiceDate,
+            notes,
+            vatRate: Number(vatRate) || 0,
+            vatAmount,
+            goodsAmount,
+            totalAmount,
+            customer: {
+              id: customerId,
+              name: customerName,
+              contactName: customer?.contactName || order?.customer?.contactName,
+              phone: customer?.phone || order?.customer?.phone,
+              address: customer?.address || order?.customer?.address,
+            },
+            location: currentLocations.find((l) => l.id === Number(locationId)),
+            items: (validItems().length > 0 ? validItems() : items).map((it: any, idx: number) => ({
+              id: it.id || idx + 1,
+              name: it.name,
+              itemType: it.itemType,
+              quantity: Number(it.quantity) || 1,
+              unitPrice: Number(it.unitPrice) || 0,
+              totalPrice: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+              notes: it.notes,
+            })),
+          }}
+          customer={{
+            id: customerId,
+            name: customerName,
+            contactName: customer?.contactName || order?.customer?.contactName,
+            phone: customer?.phone || order?.customer?.phone,
+            address: customer?.address || order?.customer?.address,
+          }}
+          location={currentLocations.find((l) => l.id === Number(locationId))}
+          companyInfo={companyInfo}
         />
       )}
     </div>,

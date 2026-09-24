@@ -49,6 +49,7 @@ export function SalesScreen({
   spareParts = [],
   stockMachines = [],
   pricingConfig,
+  companyInfo,
   canManage = false,
 }: {
   orders?: any[];
@@ -57,6 +58,7 @@ export function SalesScreen({
   spareParts?: any[];
   stockMachines?: any[];
   pricingConfig?: any;
+  companyInfo?: any;
   canManage?: boolean;
 }) {
   const router = useRouter();
@@ -344,6 +346,7 @@ export function SalesScreen({
       <SalesOrderDetailModal
         open={detailId !== null}
         orderId={detailId}
+        companyInfo={companyInfo}
         onClose={() => setDetailId(null)}
       />
 
@@ -400,12 +403,14 @@ export function SalesScreen({
           open={Boolean(orderCtx)}
           customerId={orderCtx.id}
           customerName={orderCtx.name}
+          customer={orderCtx}
           locations={orderCtx.locations || []}
           machines={orderCtx.machines || []}
           stockMachines={stockMachines}
           spareParts={spareParts}
           quotations={orderCtx.quotations || []}
           pricingConfig={pricingConfig}
+          companyInfo={companyInfo}
           onClose={() => {
             setOrderCtx(null);
             if (searchParams.get('customerId')) {
