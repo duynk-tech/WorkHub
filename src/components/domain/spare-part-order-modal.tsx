@@ -1129,10 +1129,10 @@ export function SparePartOrderModal({
                       >
                         {/* 1. Mặt hàng */}
                         <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                             <SearchableSelect
                               sizeSm
-                              triggerStyle={{ height: 28, minHeight: 28, fontSize: 12, padding: '0 8px' }}
+                              triggerStyle={{ height: 26, minHeight: 26, fontSize: 12, padding: '0 8px' }}
                               value={String(it.itemId || '')}
                               onChange={(val) => handleItemChange(idx, 'itemId', val)}
                               options={itemOptions}
@@ -1141,15 +1141,50 @@ export function SparePartOrderModal({
                               popoverMinWidth={340}
                               emptyText="Không tìm thấy mặt hàng phù hợp"
                             />
-                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                height: 26,
+                                fontSize: 10.5,
+                                color: 'var(--text-muted)',
+                              }}
+                            >
                               {selectedPart ? (
                                 <>
-                                  <span>Mã: <strong style={{ color: 'var(--text-strong)' }}>{selectedPart.itemCode}</strong></span>
-                                  <span>·</span>
-                                  <span>Tồn: <strong>{selectedPart.stockQty ?? 0}</strong> {selectedPart.unit || 'cái'}</span>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3,
+                                      background: 'var(--surface-sunken, #f1f5f9)',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      border: '1px solid var(--border-subtle, #e2e8f0)',
+                                      lineHeight: 1.2,
+                                    }}
+                                  >
+                                    Mã: <strong style={{ color: 'var(--text-strong, #0f172a)' }}>{selectedPart.itemCode}</strong>
+                                  </span>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3,
+                                      background: (selectedPart.stockQty ?? 0) > 0 ? '#f0fdf4' : '#fef2f2',
+                                      color: (selectedPart.stockQty ?? 0) > 0 ? '#15803d' : '#b91c1c',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      border: `1px solid ${(selectedPart.stockQty ?? 0) > 0 ? '#bbf7d0' : '#fecaca'}`,
+                                      lineHeight: 1.2,
+                                    }}
+                                  >
+                                    Tồn: <strong>{selectedPart.stockQty ?? 0}</strong> {selectedPart.unit || 'cái'}
+                                  </span>
                                 </>
                               ) : (
-                                <span>-- Chọn mặt hàng --</span>
+                                <span>-- Chưa chọn mặt hàng --</span>
                               )}
                             </div>
                           </div>
@@ -1157,15 +1192,15 @@ export function SparePartOrderModal({
 
                         {/* 2. Số lượng */}
                         <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                             <Input
                               type="number"
                               min="1"
                               value={it.quantity}
                               onChange={(e) => handleItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
-                              style={{ width: 44, textAlign: 'center', height: 28, padding: '0 2px', margin: '0 auto', fontSize: 12 }}
+                              style={{ width: 44, textAlign: 'center', height: 26, padding: '0 2px', margin: '0 auto', fontSize: 12 }}
                             />
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {selectedPart?.unit || 'cái'}
                             </div>
                           </div>
@@ -1202,7 +1237,7 @@ export function SparePartOrderModal({
 
                         {/* 4. Cước VC */}
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                             <PriceInput
                               sizeSm
                               currency="VND"
@@ -1211,9 +1246,9 @@ export function SparePartOrderModal({
                               onChange={(val) => handleItemChange(idx, 'shippingFee', val ?? 0)}
                               placeholder="0"
                               containerStyle={{ width: 92, marginLeft: 'auto' }}
-                              style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
+                              style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
                             />
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {it.quantity > 1 ? `≈ ${Math.round((it.shippingFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : 'tổng dòng'}
                             </div>
                           </div>
@@ -1221,7 +1256,7 @@ export function SparePartOrderModal({
 
                         {/* 5. Phí khác */}
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                             <PriceInput
                               sizeSm
                               currency="VND"
@@ -1230,9 +1265,9 @@ export function SparePartOrderModal({
                               onChange={(val) => handleItemChange(idx, 'otherFee', val ?? 0)}
                               placeholder="0"
                               containerStyle={{ width: 92, marginLeft: 'auto' }}
-                              style={{ textAlign: 'right', fontWeight: 600, height: 28, fontSize: 11.5 }}
+                              style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
                             />
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {it.quantity > 1 ? `≈ ${Math.round((it.otherFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : 'HQ/khác'}
                             </div>
                           </div>
@@ -1240,7 +1275,7 @@ export function SparePartOrderModal({
 
                         {/* 6. Đơn giá bán */}
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2, alignItems: 'flex-end' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                             <PriceInput
                               sizeSm
                               currency="VND"
@@ -1252,13 +1287,13 @@ export function SparePartOrderModal({
                               style={{
                                 textAlign: 'right',
                                 fontWeight: 700,
-                                height: 28,
+                                height: 26,
                                 fontSize: 11.5,
                                 color: isManualSelling ? '#b45309' : '#0f9960',
                                 borderColor: isManualSelling ? '#f59e0b' : undefined,
                               }}
                             />
-                            <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {isManualSelling ? (
                                 <button
                                   type="button"
@@ -1292,18 +1327,18 @@ export function SparePartOrderModal({
 
                         {/* 7. Thành tiền */}
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}>
-                            <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3 }}>
+                            <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
                             </div>
-                            <div style={{ fontSize: 10, color: '#16a34a', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: '#16a34a', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               +{(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')} ₫
                             </div>
                           </div>
                         </td>
 
                         {/* 8. Xóa dòng */}
-                        <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'top' }}>
+                        <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
                           {items.length > 1 && (
                             <button
                               type="button"
