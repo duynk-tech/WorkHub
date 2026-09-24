@@ -799,7 +799,14 @@ export function CustomerQuotationPrintModal({
                     ...(customer?.machines || []),
                     ...(quotation?.machines || []),
                   ];
-                  const eq = item.equipmentId ? allMachines.find((m: any) => m.id === item.equipmentId) : null;
+                  const eq =
+                    item.equipment ||
+                    (item.equipmentId ? allMachines.find((m: any) => m.id === item.equipmentId) : null) ||
+                    allMachines.find(
+                      (m: any) =>
+                        (m.name && item.name && m.name.toLowerCase() === item.name.toLowerCase()) ||
+                        (m.machineCode && item.itemCode && m.machineCode === item.itemCode)
+                    );
                   const specRows = eq ? getEquipmentSpecRows(eq) : [];
                   return (
                     <tr key={item.id ?? idx}>

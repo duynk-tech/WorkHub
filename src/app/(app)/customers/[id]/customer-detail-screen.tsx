@@ -1600,6 +1600,7 @@ export function CustomerDetailScreen({
           quotation={printingQuotation}
           customer={customer}
           companyInfo={companyInfo}
+          machines={[...(customer.machines || []), ...(stockMachines || [])]}
           onClose={() => setPrintingQuotation(null)}
         />
       )}

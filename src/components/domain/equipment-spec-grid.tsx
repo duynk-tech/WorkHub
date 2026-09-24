@@ -27,7 +27,9 @@ export function EquipmentSpecGrid({
         fontSize: compact ? '10px' : '11px',
         lineHeight: 1.4,
         maxWidth: 580,
-      }}
+        WebkitPrintColorAdjust: 'exact',
+        printColorAdjust: 'exact',
+      } as React.CSSProperties}
     >
       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
         <tbody>

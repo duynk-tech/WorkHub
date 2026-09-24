@@ -462,9 +462,14 @@ export function CustomerOrderPrintModal({
                         ...(order?.machines || []),
                         ...(customer?.machines || []),
                       ];
-                      const eq = it.equipmentId
-                        ? allMachines.find((m: any) => m.id === it.equipmentId)
-                        : null;
+                      const eq =
+                        it.equipment ||
+                        (it.equipmentId ? allMachines.find((m: any) => m.id === it.equipmentId) : null) ||
+                        allMachines.find(
+                          (m: any) =>
+                            (m.name && it.name && m.name.toLowerCase() === it.name.toLowerCase()) ||
+                            (m.machineCode && it.itemCode && m.machineCode === it.itemCode)
+                        );
                       const specRows = eq ? getEquipmentSpecRows(eq) : [];
                       return (
                         <tr key={it.id || idx}>
