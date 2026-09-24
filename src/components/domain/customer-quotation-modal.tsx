@@ -779,13 +779,13 @@ export function CustomerQuotationPrintModal({
                   <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
                   <th style={{ border: cellBorder, padding: '5px 7px', textAlign: 'left' }}>Tên hàng hóa / dịch vụ</th>
                   <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-                  <th style={{ border: cellBorder, padding: '5px 7px', width: '110px', textAlign: 'right' }}>Đơn giá</th>
+                  <th style={{ border: cellBorder, padding: '5px 6px', width: '85px', textAlign: 'right', whiteSpace: 'nowrap' }}>Đơn giá</th>
                   {hasLineDiscount && (
-                    <th style={{ border: cellBorder, padding: '5px 7px', width: '100px', textAlign: 'right' }}>
+                    <th style={{ border: cellBorder, padding: '5px 6px', width: '80px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       Chiết khấu
                     </th>
                   )}
-                  <th style={{ border: cellBorder, padding: '5px 7px', width: '120px', textAlign: 'right' }}>
+                  <th style={{ border: cellBorder, padding: '5px 6px', width: '95px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                     Thành tiền
                   </th>
                 </tr>
@@ -825,15 +825,15 @@ export function CustomerQuotationPrintModal({
                         )}
                       </td>
                       <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center', verticalAlign: 'top' }}>{item.quantity}</td>
-                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', verticalAlign: 'top' }}>
+                      <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                         {fmt(Number(item.unitPrice))}
                       </td>
                       {hasLineDiscount && (
-                        <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', verticalAlign: 'top' }}>
+                        <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           {Number(item.discountVnd) > 0 ? fmt(Number(item.discountVnd)) : '—'}
                         </td>
                       )}
-                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 700, verticalAlign: 'top' }}>
+                      <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'right', fontWeight: 700, verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                         {fmt(lineFinal)}
                       </td>
                     </tr>
