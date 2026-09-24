@@ -24,56 +24,43 @@ export function EquipmentSpecGrid({
         background: 'rgba(248, 250, 252, 0.75)',
         borderRadius: '0 3px 3px 0',
         fontSize: compact ? '10px' : '10.5px',
-        lineHeight: 1.45,
-        maxWidth: 620,
+        lineHeight: 1.5,
         WebkitPrintColorAdjust: 'exact',
         printColorAdjust: 'exact',
       } as React.CSSProperties}
     >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-          columnGap: 14,
-          rowGap: 2.5,
-        }}
-      >
-        {rows.map((r, idx) => {
-          const isWide = r.label.includes('Tính năng') || r.value.length > 55;
-          return (
-            <div
-              key={idx}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {rows.map((r, idx) => (
+          <div
+            key={idx}
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 5,
+              color: '#475569',
+            }}
+          >
+            <span style={{ color: '#94a3b8', fontSize: '8px', lineHeight: 1, flexShrink: 0 }}>▪</span>
+            <span
               style={{
-                gridColumn: isWide ? '1 / -1' : 'auto',
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 5,
-                color: '#475569',
+                fontWeight: 650,
+                color: '#334155',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
-              <span style={{ color: '#94a3b8', fontSize: '8px', lineHeight: 1 }}>▪</span>
-              <span
-                style={{
-                  fontWeight: 600,
-                  color: '#334155',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                {r.label}:
-              </span>
-              <span
-                style={{
-                  color: '#1e293b',
-                  fontWeight: 450,
-                  wordBreak: 'break-word',
-                }}
-              >
-                {r.value}
-              </span>
-            </div>
-          );
-        })}
+              {r.label}:
+            </span>
+            <span
+              style={{
+                color: '#1e293b',
+                fontWeight: 450,
+              }}
+            >
+              {r.value}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
