@@ -472,32 +472,32 @@ export function CustomerOrderPrintModal({
                         );
                       const specRows = eq ? getEquipmentSpecRows(eq) : [];
                       return (
-                        <tr key={it.id || idx}>
-                          <td style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>
+                        <tr key={it.id || idx} style={{ verticalAlign: 'top' }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', verticalAlign: 'top' }}>
                             {String(idx + 1).padStart(2, '0')}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '5px 8px' }}>
-                            <div style={{ fontWeight: 600 }}>{it.name}</div>
+                          <td style={{ border: '1px solid #000', padding: '6px 8px', verticalAlign: 'top' }}>
+                            <div style={{ fontWeight: 650, color: '#0f172a' }}>{it.name}</div>
                             {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                             {it.notes && (
-                              <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: specRows.length > 0 ? 3 : 0 }}>
+                              <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0 }}>
                                 {it.notes}
                               </div>
                             )}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center', fontSize: '11px' }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', fontSize: '11px', verticalAlign: 'top' }}>
                             {ITEM_TYPES[it.itemType] ?? it.itemType}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', verticalAlign: 'top' }}>
                             {it.unit || 'cái'}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center', fontWeight: 700 }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>
                             {qty}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right' }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
                             {fmt(price)}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'right', fontWeight: 600 }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', fontWeight: 600, verticalAlign: 'top' }}>
                             {fmt(lineTotal)}
                           </td>
                         </tr>

@@ -809,29 +809,29 @@ export function CustomerQuotationPrintModal({
                     );
                   const specRows = eq ? getEquipmentSpecRows(eq) : [];
                   return (
-                    <tr key={item.id ?? idx}>
-                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center' }}>
+                    <tr key={item.id ?? idx} style={{ verticalAlign: 'top' }}>
+                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center', verticalAlign: 'top' }}>
                         {String(idx + 1).padStart(2, '0')}
                       </td>
-                      <td style={{ border: cellBorder, padding: '6px 7px' }}>
-                        <div style={{ fontWeight: 600 }}>{item.name}</div>
+                      <td style={{ border: cellBorder, padding: '6px 8px', verticalAlign: 'top' }}>
+                        <div style={{ fontWeight: 650, color: '#0f172a' }}>{item.name}</div>
                         {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                         {item.notes && (
-                          <div style={{ fontSize: '11px', color: '#475569', marginTop: specRows.length > 0 ? 3 : 0 }}>
+                          <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0 }}>
                             {item.notes}
                           </div>
                         )}
                       </td>
-                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center' }}>{item.quantity}</td>
-                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right' }}>
+                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center', verticalAlign: 'top' }}>{item.quantity}</td>
+                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', verticalAlign: 'top' }}>
                         {fmt(Number(item.unitPrice))}
                       </td>
                       {hasLineDiscount && (
-                        <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right' }}>
+                        <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', verticalAlign: 'top' }}>
                           {Number(item.discountVnd) > 0 ? fmt(Number(item.discountVnd)) : '—'}
                         </td>
                       )}
-                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 700 }}>
+                      <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 700, verticalAlign: 'top' }}>
                         {fmt(lineFinal)}
                       </td>
                     </tr>

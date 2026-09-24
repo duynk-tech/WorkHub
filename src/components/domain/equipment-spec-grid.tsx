@@ -6,7 +6,6 @@ import type { EquipmentSpecRow } from '@/lib/equipment-specs';
 export function EquipmentSpecGrid({
   rows,
   compact = false,
-  bordered = true,
 }: {
   rows: EquipmentSpecRow[];
   compact?: boolean;
@@ -18,56 +17,64 @@ export function EquipmentSpecGrid({
     <div
       className="equipment-spec-grid"
       style={{
-        marginTop: 5,
+        marginTop: 4,
         marginBottom: 3,
-        border: bordered ? '1px solid #cbd5e1' : 'none',
-        borderRadius: 4,
-        overflow: 'hidden',
-        background: '#f8fafc',
-        fontSize: compact ? '10px' : '11px',
-        lineHeight: 1.4,
-        maxWidth: 580,
+        padding: '3px 8px 3px 9px',
+        borderLeft: '2px solid #94a3b8',
+        background: 'rgba(248, 250, 252, 0.75)',
+        borderRadius: '0 3px 3px 0',
+        fontSize: compact ? '10px' : '10.5px',
+        lineHeight: 1.45,
+        maxWidth: 620,
         WebkitPrintColorAdjust: 'exact',
         printColorAdjust: 'exact',
       } as React.CSSProperties}
     >
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-        <tbody>
-          {rows.map((r, idx) => (
-            <tr
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          columnGap: 14,
+          rowGap: 2.5,
+        }}
+      >
+        {rows.map((r, idx) => {
+          const isWide = r.label.includes('Tính năng') || r.value.length > 55;
+          return (
+            <div
               key={idx}
               style={{
-                borderBottom: idx < rows.length - 1 ? '1px solid #e2e8f0' : 'none',
+                gridColumn: isWide ? '1 / -1' : 'auto',
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 5,
+                color: '#475569',
               }}
             >
-              <td
+              <span style={{ color: '#94a3b8', fontSize: '8px', lineHeight: 1 }}>▪</span>
+              <span
                 style={{
-                  padding: compact ? '3px 6px' : '4px 8px',
-                  width: '32%',
-                  color: '#475569',
                   fontWeight: 600,
-                  background: '#f1f5f9',
-                  borderRight: '1px solid #e2e8f0',
+                  color: '#334155',
                   whiteSpace: 'nowrap',
-                  verticalAlign: 'top',
+                  flexShrink: 0,
                 }}
               >
-                {r.label}
-              </td>
-              <td
+                {r.label}:
+              </span>
+              <span
                 style={{
-                  padding: compact ? '3px 6px' : '4px 8px',
-                  color: '#0f172a',
-                  fontWeight: 500,
-                  verticalAlign: 'top',
+                  color: '#1e293b',
+                  fontWeight: 450,
+                  wordBreak: 'break-word',
                 }}
               >
                 {r.value}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
