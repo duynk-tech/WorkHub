@@ -345,11 +345,10 @@ export function EquipmentHandoverModal({
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
                     <th style={{ border: '1px solid #000', padding: '5px 7px' }}>Tên thiết bị & Thông số</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '120px' }}>Mã thiết bị</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '110px' }}>Số Serial (S/N)</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '90px' }}>Hãng / Model</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '120px' }}>Số Serial (S/N)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '110px' }}>Hãng / Model</th>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px' }}>Tình trạng kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '140px' }}>Tình trạng kỹ thuật</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -358,9 +357,6 @@ export function EquipmentHandoverModal({
                     <td style={{ border: '1px solid #000', padding: '6px 7px' }}>
                       <div style={{ fontWeight: 700 }}>{equipment.name}</div>
                       <div style={{ fontSize: '11px', color: '#475569' }}>Phân loại: {categoryName}</div>
-                    </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace', fontWeight: 700 }}>
-                      {equipment.machineCode}
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace' }}>
                       {equipment.serialNumber}
