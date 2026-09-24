@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/ui/modal';
 import { Button, Input, Field, Textarea } from '@/components/ui';
 import { Printer, FileText, Wrench } from 'lucide-react';
@@ -80,6 +80,19 @@ export function CustomerOrderPrintModal({
   const [invoiceDate, setInvoiceDate] = useState(
     order?.invoiceDate ? new Date(order.invoiceDate).toISOString().slice(0, 10) : ''
   );
+
+  useEffect(() => {
+    if (!order) return;
+    setCustomerName(customer?.name || order.customer?.name || 'Quý Khách Hàng');
+    setContactPerson(customer?.contactName || order.customer?.contactName || '');
+    setCustomerPhone(customer?.phone || order.customer?.phone || '');
+    setCustomerAddress(customer?.address || order.customer?.address || '');
+    setDeliveryPoint(location?.name || order.location?.name || '');
+    setNotes(order.notes || '');
+    setInvoiceNo(order.invoiceNo || '');
+    setInvoiceSerial(order.invoiceSerial || '');
+    setInvoiceDate(order.invoiceDate ? new Date(order.invoiceDate).toISOString().slice(0, 10) : '');
+  }, [order, customer, location]);
 
   if (!order) return null;
 
