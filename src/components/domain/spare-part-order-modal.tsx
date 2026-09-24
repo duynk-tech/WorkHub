@@ -49,6 +49,65 @@ interface SparePartOrderModalProps {
   onSuccess?: () => void;
 }
 
+function getPartPriceInfo(
+  part: any,
+  exchangeRate: number,
+  defaultShippingFee: number,
+  defaultCustomsFee: number,
+  marginPercent = 30,
+  pricingMethod: 'MARGIN' | 'MARKUP' = 'MARGIN'
+) {
+  if (!part) {
+    return {
+      unitPriceEur: 0,
+      unitCost: 0,
+      sellingPrice: 0,
+      unitShip: defaultShippingFee,
+      unitOther: defaultCustomsFee,
+    };
+  }
+
+  const rateNum = Number(exchangeRate) || 32500;
+  const eur = part.priceEur && Number(part.priceEur) > 0 ? Number(part.priceEur) : 0;
+  const costVnd = part.costPrice && Number(part.costPrice) > 0
+    ? Number(part.costPrice)
+    : part.avgCost && Number(part.avgCost) > 0
+      ? Number(part.avgCost)
+      : 0;
+
+  const unitCost = eur > 0 ? Math.round(eur * rateNum) : costVnd;
+  const unitPriceEur = eur > 0 ? eur : (unitCost > 0 ? Math.round((unitCost / rateNum) * 100) / 100 : 0);
+
+  // Parse custom fees from description if any
+  let unitShip = defaultShippingFee;
+  let unitOther = defaultCustomsFee;
+  if (part.description) {
+    const match = String(part.description).match(/<!--fees:({.*?})-->/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.shippingFee !== undefined && Number(parsed.shippingFee) >= 0) unitShip = Number(parsed.shippingFee);
+        if (parsed.otherFee !== undefined && Number(parsed.otherFee) >= 0) unitOther = Number(parsed.otherFee);
+      } catch {}
+    }
+  }
+
+  const listSelling = part.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
+  const baseSelling = unitCost > 0 ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod) : 0;
+  const formulaSelling = baseSelling > 0 ? baseSelling + unitShip + unitOther : 0;
+
+  // Ưu tiên giá bán niêm yết của mặt hàng nếu đã có, nếu chưa thì dùng giá bán theo công thức Margin + cước
+  const sellingPrice = listSelling > 0 ? listSelling : formulaSelling;
+
+  return {
+    unitPriceEur,
+    unitCost,
+    sellingPrice,
+    unitShip,
+    unitOther,
+  };
+}
+
 export function SparePartOrderModal({
   open,
   onClose,
@@ -95,6 +154,8 @@ export function SparePartOrderModal({
     }
   }, [pricingConfig?.defaultVatRate]);
 
+  const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
+  const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
   const defaultShippingFee = pricingConfig?.defaultShippingFee ?? 3500000;
   const defaultCustomsFee = pricingConfig?.defaultCustomsFee ?? 1000000;
 
@@ -115,6 +176,16 @@ export function SparePartOrderModal({
     [spareParts],
   );
 
+  const initialPart = spareParts.find((p) => p.supplyType === 'ON_ORDER') || spareParts[0];
+  const initialPrices = getPartPriceInfo(
+    initialPart,
+    exchangeRate,
+    defaultShippingFee,
+    defaultCustomsFee,
+    marginPercent,
+    pricingMethod
+  );
+
   const [items, setItems] = useState<
     Array<{
       itemId: number | '';
@@ -126,13 +197,44 @@ export function SparePartOrderModal({
     }>
   >([
     {
-      itemId: spareParts.find((p) => p.supplyType === 'ON_ORDER')?.id || spareParts[0]?.id || '',
+      itemId: initialPart?.id || '',
       quantity: 1,
-      unitPriceEur: Number(spareParts[0]?.priceEur || 100),
-      shippingFee: defaultShippingFee,
-      otherFee: defaultCustomsFee,
+      unitPriceEur: initialPrices.unitPriceEur,
+      sellingPrice: initialPrices.sellingPrice > 0 ? initialPrices.sellingPrice : undefined,
+      shippingFee: initialPrices.unitShip,
+      otherFee: initialPrices.unitOther,
     },
   ]);
+
+  // Khi danh sách spareParts nạp xong sau khi mở modal: tự động cập nhật mặt hàng đầu tiên nếu chưa có
+  useEffect(() => {
+    if (spareParts.length > 0) {
+      setItems((prev) => {
+        if (prev.length === 1 && !prev[0].itemId) {
+          const firstPart = spareParts.find((p) => p.supplyType === 'ON_ORDER') || spareParts[0];
+          const prices = getPartPriceInfo(
+            firstPart,
+            exchangeRate,
+            defaultShippingFee,
+            defaultCustomsFee,
+            marginPercent,
+            pricingMethod
+          );
+          return [
+            {
+              itemId: firstPart?.id || '',
+              quantity: 1,
+              unitPriceEur: prices.unitPriceEur,
+              sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
+              shippingFee: prices.unitShip,
+              otherFee: prices.unitOther,
+            },
+          ];
+        }
+        return prev;
+      });
+    }
+  }, [spareParts, exchangeRate, defaultShippingFee, defaultCustomsFee, marginPercent, pricingMethod]);
 
   useEffect(() => {
     if (pricingConfig) {
@@ -150,14 +252,24 @@ export function SparePartOrderModal({
   }, [pricingConfig?.defaultShippingFee, pricingConfig?.defaultCustomsFee]);
 
   const handleAddItem = () => {
+    const firstPart = spareParts[0];
+    const prices = getPartPriceInfo(
+      firstPart,
+      exchangeRate,
+      defaultShippingFee,
+      defaultCustomsFee,
+      marginPercent,
+      pricingMethod
+    );
     setItems((prev) => [
       ...prev,
       {
-        itemId: spareParts[0]?.id || '',
+        itemId: firstPart?.id || '',
         quantity: 1,
-        unitPriceEur: Number(spareParts[0]?.priceEur || 50),
-        shippingFee: pricingConfig?.defaultShippingFee ?? 3500000,
-        otherFee: pricingConfig?.defaultCustomsFee ?? 1000000,
+        unitPriceEur: prices.unitPriceEur,
+        sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
+        shippingFee: prices.unitShip,
+        otherFee: prices.unitOther,
       },
     ]);
   };
@@ -175,27 +287,43 @@ export function SparePartOrderModal({
       const next = [...prev];
       const current = { ...next[index], [field]: val };
       if (field === 'itemId') {
-        const found = spareParts.find((p) => p.id === Number(val));
-        if (found && found.priceEur) {
-          current.unitPriceEur = Number(found.priceEur);
+        const found = spareParts.find((p) => p.id === Number(val) || String(p.id) === String(val));
+        if (found) {
+          const prices = getPartPriceInfo(
+            found,
+            exchangeRate,
+            defaultShippingFee,
+            defaultCustomsFee,
+            marginPercent,
+            pricingMethod
+          );
+          current.itemId = found.id;
+          current.unitPriceEur = prices.unitPriceEur;
+          current.sellingPrice = prices.sellingPrice > 0 ? prices.sellingPrice : undefined;
+          const qty = Math.max(1, Number(current.quantity) || 1);
+          current.shippingFee = prices.unitShip * qty;
+          current.otherFee = prices.unitOther * qty;
+        } else {
+          current.itemId = '';
+          current.unitPriceEur = 0;
+          delete current.sellingPrice;
         }
-        delete current.sellingPrice;
       }
       if (field === 'quantity') {
         const prevQty = Math.max(1, Number(next[index].quantity) || 1);
         const qty = Math.max(1, Number(val) || 1);
         current.quantity = qty;
 
-        const part = spareParts.find((p) => p.id === Number(current.itemId));
-        const eur = current.unitPriceEur !== undefined ? Number(current.unitPriceEur) : Number(part?.priceEur || 0);
+        const part = spareParts.find((p) => p.id === Number(current.itemId) || String(p.id) === String(current.itemId));
+        const eur = current.unitPriceEur !== undefined && Number(current.unitPriceEur) > 0
+          ? Number(current.unitPriceEur)
+          : Number(part?.priceEur || 0);
         const rateNum = Number(exchangeRate) || 32500;
         const unitCost = eur > 0
           ? Math.round(eur * rateNum)
-          : Number(part?.avgCost || part?.costPrice || 0);
-        const mPercent = pricingConfig?.defaultMarginPercent ?? 30;
-        const pMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
+          : Number(part?.costPrice || part?.avgCost || 0);
         const baseSelling = unitCost > 0
-          ? calculateSellingPriceFromMargin(unitCost, mPercent, pMethod)
+          ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod)
           : 0;
 
         // Cước vận chuyển và phí khác tính theo số lượng (cước định mức cấu hình theo đơn vị mỗi cái)
@@ -212,8 +340,10 @@ export function SparePartOrderModal({
 
         const freightPerUnit = unitShip;
         const otherFeePerUnit = unitOther;
-        const newSellingPrice = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
-        if (newSellingPrice > 0) {
+        const listSelling = part?.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
+        const formulaSelling = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
+        const newSellingPrice = listSelling > 0 ? listSelling : formulaSelling;
+        if (newSellingPrice > 0 && (current.sellingPrice === undefined || current.sellingPrice === 0)) {
           current.sellingPrice = newSellingPrice;
         }
       }
@@ -227,17 +357,17 @@ export function SparePartOrderModal({
     setItems((prev) => {
       const next = [...prev];
       const current = { ...next[index], [field]: val };
-      const part = spareParts.find((p) => p.id === Number(current.itemId));
+      const part = spareParts.find((p) => p.id === Number(current.itemId) || String(p.id) === String(current.itemId));
       const qty = Math.max(1, Number(current.quantity) || 1);
-      const eur = current.unitPriceEur !== undefined ? Number(current.unitPriceEur) : Number(part?.priceEur || 0);
+      const eur = current.unitPriceEur !== undefined && Number(current.unitPriceEur) > 0
+        ? Number(current.unitPriceEur)
+        : Number(part?.priceEur || 0);
       const rateNum = Number(exchangeRate) || 32500;
       const unitCost = eur > 0
         ? Math.round(eur * rateNum)
         : Number(part?.avgCost || part?.costPrice || 0);
-      const mPercent = pricingConfig?.defaultMarginPercent ?? 30;
-      const pMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
       const baseSelling = unitCost > 0
-        ? calculateSellingPriceFromMargin(unitCost, mPercent, pMethod)
+        ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod)
         : 0;
       const ship = field === 'shippingFee' ? val : (current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee * qty);
       const other = field === 'otherFee' ? val : (current.otherFee !== undefined ? current.otherFee : defaultCustomsFee * qty);
@@ -265,18 +395,21 @@ export function SparePartOrderModal({
       }
     }
 
-    const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
-    const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
-
     const calculatedItems = items.map((it) => {
+      const part = spareParts.find((p) => p.id === Number(it.itemId) || String(p.id) === String(it.itemId));
       const qty = Number(it.quantity) || 0;
-      const eur = Number(it.unitPriceEur) || 0;
-      const priceVnd = Math.round(eur * exchangeRate);
+      const rateNum = Number(exchangeRate) || 32500;
+      const eur = it.unitPriceEur !== undefined && Number(it.unitPriceEur) > 0
+        ? Number(it.unitPriceEur)
+        : Number(part?.priceEur || 0);
+      const unitCost = eur > 0
+        ? Math.round(eur * rateNum)
+        : Number(part?.costPrice || part?.avgCost || 0);
+      const priceVnd = unitCost;
       const subtotal = priceVnd * qty;
       const discount = Math.round(subtotal * discountRate);
       const finalPrice = subtotal - discount;
 
-      const unitCost = priceVnd;
       const lineShipping = it.shippingFee !== undefined
         ? Math.max(0, Number(it.shippingFee) || 0)
         : (pricingConfig?.defaultShippingFee ?? 3500000) * qty;
@@ -301,11 +434,11 @@ export function SparePartOrderModal({
           ? baseSellingPerUnit + freightPerUnit + otherFeePerUnit
           : 0;
 
-      // Ưu tiên đơn giá bán đã nhập; nếu chưa nhập thì tự tính theo công thức
+      const listSelling = part?.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
       const sellingPerUnit =
         it.sellingPrice !== undefined && it.sellingPrice > 0
           ? Number(it.sellingPrice)
-          : formulaSellingPerUnit;
+          : (listSelling > 0 ? listSelling : formulaSellingPerUnit);
 
       const sellingSubtotal = qty * sellingPerUnit;
 
@@ -426,9 +559,6 @@ export function SparePartOrderModal({
 
   const selectedCustomer = customers.find((c) => c.id === Number(customerId));
   const selectedEquipment = equipments.find((e) => e.id === Number(equipmentId));
-
-  const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
-  const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
 
   const previewOrder = {
     orderCode: `NHAP-${new Date().getFullYear()}`,
@@ -728,19 +858,37 @@ export function SparePartOrderModal({
                               >
                                 {machineItems.length > 0 && (
                                   <optgroup label="🏭 Máy móc nguyên chiếc & Cụm máy">
-                                    {machineItems.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        [MÁY] [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
-                                      </option>
-                                    ))}
+                                    {machineItems.map((p) => {
+                                      const priceTag = p.priceEur && Number(p.priceEur) > 0
+                                        ? `(${p.priceEur}€)`
+                                        : p.sellingPrice && Number(p.sellingPrice) > 0
+                                          ? `(${Number(p.sellingPrice).toLocaleString('vi-VN')}₫)`
+                                          : p.costPrice && Number(p.costPrice) > 0
+                                            ? `(vốn ${Number(p.costPrice).toLocaleString('vi-VN')}₫)`
+                                            : '';
+                                      return (
+                                        <option key={p.id} value={p.id}>
+                                          [MÁY] [{p.itemCode}] {p.name} {priceTag}
+                                        </option>
+                                      );
+                                    })}
                                   </optgroup>
                                 )}
                                 <optgroup label="🔧 Linh kiện & Phụ tùng thay thế">
-                                  {partItems.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      [{p.itemCode}] {p.name} {p.priceEur ? `(${p.priceEur}€)` : ''}
-                                    </option>
-                                  ))}
+                                  {partItems.map((p) => {
+                                    const priceTag = p.priceEur && Number(p.priceEur) > 0
+                                      ? `(${p.priceEur}€)`
+                                      : p.sellingPrice && Number(p.sellingPrice) > 0
+                                        ? `(${Number(p.sellingPrice).toLocaleString('vi-VN')}₫)`
+                                        : p.costPrice && Number(p.costPrice) > 0
+                                          ? `(vốn ${Number(p.costPrice).toLocaleString('vi-VN')}₫)`
+                                          : '';
+                                    return (
+                                      <option key={p.id} value={p.id}>
+                                        [{p.itemCode}] {p.name} {priceTag}
+                                      </option>
+                                    );
+                                  })}
                                 </optgroup>
                               </select>
                             </div>
