@@ -152,7 +152,7 @@ export function SparePartPricingModal({
       open={open}
       onClose={onClose}
       title="Cấu hình Chính sách Giá & Margin Phụ tùng"
-      size="lg"
+      size="xl"
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Navigation Tabs */}
