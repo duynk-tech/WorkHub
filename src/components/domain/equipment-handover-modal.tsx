@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { Input, Field, Textarea } from '@/components/ui';
-import { EQUIPMENT_CATEGORIES } from '@/server/modules/equipment/types';
 import { useCurrentUser } from '@/components/layout/current-user';
 import {
   PrintDocumentModal,
@@ -139,7 +138,6 @@ export function EquipmentHandoverModal({
     }
   }, [equipment]);
 
-  const categoryName = EQUIPMENT_CATEGORIES[equipment.category]?.label || 'Thiết bị F&B';
   const specRows = getEquipmentSpecRows(equipment);
 
   const parsedDate = new Date(docDate);
@@ -400,9 +398,11 @@ export function EquipmentHandoverModal({
                     <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>01</td>
                     <td style={{ border: '1px solid #000', padding: '6px 7px', verticalAlign: 'top' }}>
                       <div style={{ fontWeight: 700, color: '#0f172a' }}>{equipment.name}</div>
-                      <div style={{ fontSize: '11px', color: '#475569', marginBottom: specRows.length > 0 ? 3 : 0 }}>
-                        Mã máy: <strong>{equipment.machineCode}</strong> • Phân loại: {categoryName}
-                      </div>
+                      {equipment.machineCode && (
+                        <div style={{ fontSize: '11px', color: '#475569', marginBottom: specRows.length > 0 ? 3 : 0 }}>
+                          Mã máy: <strong>{equipment.machineCode}</strong>
+                        </div>
+                      )}
                       {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace', fontWeight: 600, verticalAlign: 'top' }}>
