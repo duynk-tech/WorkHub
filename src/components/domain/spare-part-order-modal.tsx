@@ -140,31 +140,7 @@ export function SparePartOrderModal({
   const [exchangeRate, setExchangeRate] = useState<number>(
     pricingConfig?.defaultExchangeRateEur ?? 32500
   );
-  // Kho mặc định: ưu tiên kho CENTRAL (kho tổng/trung tâm), hoặc WH-HN, hoặc kho hoạt động đầu tiên
-  const defaultWarehouse = useMemo(() => {
-    if (!warehouses || warehouses.length === 0) return null;
-    return (
-      warehouses.find(
-        (w) =>
-          (w.type === 'CENTRAL' || w.code === 'WH-HN' || w.code === 'WH-HN-CENTRAL') &&
-          (w.status === 'ACTIVE' || !w.status)
-      ) ||
-      warehouses.find((w) => w.type === 'CENTRAL') ||
-      warehouses.find((w) => w.status === 'ACTIVE' || !w.status) ||
-      warehouses[0]
-    );
-  }, [warehouses]);
-
-  const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>(
-    () => defaultWarehouse?.id || ''
-  );
-
-  // Khi danh sách kho nạp xong hoặc mở modal: tự động gán kho mặc định nếu chưa chọn
-  useEffect(() => {
-    if (!targetWarehouseId && defaultWarehouse?.id) {
-      setTargetWarehouseId(defaultWarehouse.id);
-    }
-  }, [defaultWarehouse, targetWarehouseId]);
+  const [targetWarehouseId, setTargetWarehouseId] = useState<number | ''>('');
 
   const [customerId, setCustomerId] = useState<number | ''>('');
   const [equipmentId, setEquipmentId] = useState<number | ''>('');
@@ -222,8 +198,8 @@ export function SparePartOrderModal({
       for (const p of machineItems) {
         list.push({
           value: String(p.id),
-          label: `[MÁY] [${p.itemCode}] ${p.name}`,
-          subLabel: `Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
+          label: `[MÁY] ${p.name}`,
+          subLabel: `Mã: ${p.itemCode} · Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
           keywords: `${p.itemCode} ${p.name} ${p.manufacturer || ''} ${p.compatibleWith || ''} may moc equipment`,
           group: '🏭 Máy móc nguyên chiếc & Cụm máy',
         });
@@ -233,8 +209,8 @@ export function SparePartOrderModal({
     for (const p of partItems) {
       list.push({
         value: String(p.id),
-        label: `[${p.itemCode}] ${p.name}`,
-        subLabel: `Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
+        label: p.name,
+        subLabel: `Mã: ${p.itemCode} · Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
         keywords: `${p.itemCode} ${p.name} ${p.manufacturer || ''} ${p.compatibleWith || ''} phu tung linh kien`,
         group: '🔧 Linh kiện & Phụ tùng thay thế',
       });
@@ -242,16 +218,6 @@ export function SparePartOrderModal({
 
     return list;
   }, [machineItems, partItems]);
-
-  const initialPart = allSpareParts.find((p) => p.supplyType === 'ON_ORDER') || allSpareParts[0];
-  const initialPrices = getPartPriceInfo(
-    initialPart,
-    exchangeRate,
-    defaultShippingFee,
-    defaultCustomsFee,
-    marginPercent,
-    pricingMethod
-  );
 
   const [items, setItems] = useState<
     Array<{
@@ -265,51 +231,21 @@ export function SparePartOrderModal({
     }>
   >([
     {
-      itemId: initialPart?.id || '',
+      itemId: '',
       quantity: 1,
-      unitPriceEur: initialPrices.unitPriceEur,
-      unitCostVnd: initialPrices.unitCost,
-      sellingPrice: initialPrices.sellingPrice > 0 ? initialPrices.sellingPrice : undefined,
-      shippingFee: initialPrices.unitShip,
-      otherFee: initialPrices.unitOther,
+      unitPriceEur: 0,
+      unitCostVnd: 0,
+      sellingPrice: undefined,
+      shippingFee: undefined,
+      otherFee: undefined,
     },
   ]);
-
-  // Khi danh sách spareParts nạp xong sau khi mở modal: tự động cập nhật mặt hàng đầu tiên nếu chưa có
-  useEffect(() => {
-    if (allSpareParts.length > 0) {
-      setItems((prev) => {
-        if (prev.length === 1 && !prev[0].itemId) {
-          const firstPart = allSpareParts.find((p) => p.supplyType === 'ON_ORDER') || allSpareParts[0];
-          const prices = getPartPriceInfo(
-            firstPart,
-            exchangeRate,
-            defaultShippingFee,
-            defaultCustomsFee,
-            marginPercent,
-            pricingMethod
-          );
-          return [
-            {
-              itemId: firstPart?.id || '',
-              quantity: 1,
-              unitPriceEur: prices.unitPriceEur,
-              unitCostVnd: prices.unitCost,
-              sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
-              shippingFee: prices.unitShip,
-              otherFee: prices.unitOther,
-            },
-          ];
-        }
-        return prev;
-      });
-    }
-  }, [allSpareParts, exchangeRate, defaultShippingFee, defaultCustomsFee, marginPercent, pricingMethod]);
 
   useEffect(() => {
     if (pricingConfig) {
       setItems((prev) =>
         prev.map((it) => {
+          if (!it.itemId) return it;
           const qty = Number(it.quantity) || 1;
           return {
             ...it,
@@ -322,25 +258,16 @@ export function SparePartOrderModal({
   }, [pricingConfig?.defaultShippingFee, pricingConfig?.defaultCustomsFee]);
 
   const handleAddItem = () => {
-    const firstPart = allSpareParts[0];
-    const prices = getPartPriceInfo(
-      firstPart,
-      exchangeRate,
-      defaultShippingFee,
-      defaultCustomsFee,
-      marginPercent,
-      pricingMethod
-    );
     setItems((prev) => [
       ...prev,
       {
-        itemId: firstPart?.id || '',
+        itemId: '',
         quantity: 1,
-        unitPriceEur: prices.unitPriceEur,
-        unitCostVnd: prices.unitCost,
-        sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
-        shippingFee: prices.unitShip,
-        otherFee: prices.unitOther,
+        unitPriceEur: 0,
+        unitCostVnd: 0,
+        sellingPrice: undefined,
+        shippingFee: undefined,
+        otherFee: undefined,
       },
     ]);
   };
@@ -555,7 +482,8 @@ export function SparePartOrderModal({
 
   // Live calculation based on order pricing formulas
   const calculation = useMemo(() => {
-    const totalQty = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+    const validItemsForQty = items.filter((it) => Boolean(it.itemId));
+    const totalQty = validItemsForQty.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
 
     let discountRate = 0;
     const tiers = pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS;
@@ -567,6 +495,26 @@ export function SparePartOrderModal({
     }
 
     const calculatedItems = items.map((it) => {
+      if (!it.itemId) {
+        return {
+          ...it,
+          eur: 0,
+          priceVnd: 0,
+          subtotal: 0,
+          discount: 0,
+          finalPrice: 0,
+          unitCost: 0,
+          shippingFee: 0,
+          otherFee: 0,
+          freightPerUnit: 0,
+          otherFeePerUnit: 0,
+          baseSellingPerUnit: 0,
+          formulaSellingPerUnit: 0,
+          sellingPerUnit: 0,
+          sellingSubtotal: 0,
+        };
+      }
+
       const part = allSpareParts.find((p) => p.id === Number(it.itemId) || String(p.id) === String(it.itemId));
       const qty = Number(it.quantity) || 0;
       const rateNum = Number(exchangeRate) || 32500;
@@ -633,7 +581,7 @@ export function SparePartOrderModal({
     });
 
     const subtotalEur = items.reduce(
-      (sum, it) => sum + (Number(it.unitPriceEur) || 0) * (Number(it.quantity) || 1),
+      (sum, it) => sum + (it.itemId ? (Number(it.unitPriceEur) || 0) * (Number(it.quantity) || 1) : 0),
       0
     );
     const subtotalVnd = calculatedItems.reduce((sum, it) => sum + it.subtotal, 0);
@@ -685,6 +633,11 @@ export function SparePartOrderModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!targetWarehouseId) {
+      toast.error('Vui lòng chọn kho nhập dự kiến');
+      return;
+    }
 
     const validItems = items.filter((it) => it.itemId && Number(it.quantity) > 0);
     if (validItems.length === 0) {
@@ -923,8 +876,9 @@ export function SparePartOrderModal({
                 onChange={(val) => setTargetWarehouseId(val ? Number(val) : '')}
                 options={warehouses.map((w) => ({
                   value: String(w.id),
-                  label: `${w.name}${w.id === defaultWarehouse?.id ? ' (Mặc định)' : ''}`,
-                  subLabel: `${w.code} · ${w.type === 'CENTRAL' ? 'Kho trung tâm' : 'Chi nhánh'}`,
+                  label: `[${w.code}] ${w.name}`,
+                  subLabel: w.type === 'CENTRAL' ? 'Kho trung tâm' : 'Chi nhánh',
+                  keywords: `${w.code} ${w.name}`,
                 }))}
                 placeholder="-- Chọn kho nhập --"
                 searchPlaceholder="Tìm kho…"
