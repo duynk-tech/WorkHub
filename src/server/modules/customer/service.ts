@@ -162,7 +162,7 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
       },
     });
 
-    return rows.map((o) => {
+    const mapped = rows.map((o) => {
       const total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
       const paid = Number(o.paidAmount || 0);
       return {
@@ -173,6 +173,22 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
         remaining: Math.max(0, total - Number(o.returnedAmount || 0) - paid),
       };
     });
+
+    // Tự động chuyển COMPLETED cho đơn đã xuất kho và đã thanh toán đủ 100%
+    const toComplete = mapped.filter(
+      (o) => !['COMPLETED', 'CANCELLED'].includes(o.status) && Boolean(o.stockIssuedAt) && o.remaining <= 0,
+    );
+    if (toComplete.length > 0) {
+      await prisma.customerOrder.updateMany({
+        where: { id: { in: toComplete.map((x) => x.id) } },
+        data: { status: 'COMPLETED' },
+      }).catch((e) => console.warn('[listSalesOrders] auto-complete err:', e?.message));
+      for (const item of toComplete) {
+        item.status = 'COMPLETED';
+      }
+    }
+
+    return mapped;
   } catch (err: any) {
     console.warn('[listSalesOrders] bỏ qua:', err?.message);
     return [];
@@ -240,13 +256,23 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
   const total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
   const paid = Number(o.paidAmount || 0);
   const returned = Number(o.returnedAmount || 0);
+  const remaining = Math.max(0, total - returned - paid);
+
+  // Tự động chuyển COMPLETED nếu đã xuất kho và đã thu đủ 100% tiền
+  if (o.stockIssuedAt && remaining <= 0 && !['COMPLETED', 'CANCELLED'].includes(o.status)) {
+    await prisma.customerOrder.update({
+      where: { id },
+      data: { status: 'COMPLETED' },
+    }).catch((e) => console.warn('[getSalesOrderDetail] auto-complete err:', e?.message));
+    o.status = 'COMPLETED';
+  }
 
   return {
     ...o,
     total,
     paid,
     returned,
-    remaining: Math.max(0, total - returned - paid),
+    remaining,
   };
 }
 
@@ -968,11 +994,16 @@ export async function issueCustomerOrderStock(
     });
   }
 
+  const total = Number(order.totalAmount ?? order.goodsAmount ?? 0);
+  const paid = Number(order.paidAmount || 0);
+  const returned = Number(order.returnedAmount || 0);
+  const isPaidInFull = Math.max(0, total - returned - paid) <= 0;
+
   await prisma.customerOrder.update({
     where: { id: order.id },
     data: {
       stockIssuedAt: new Date(),
-      status: order.status === 'COMPLETED' ? order.status : 'DELIVERED',
+      status: (order.status === 'COMPLETED' || isPaidInFull) ? 'COMPLETED' : 'DELIVERED',
     },
   });
 
@@ -1196,10 +1227,20 @@ export async function recordCustomerPayment(input: SaveCustomerPaymentInput, use
   });
 
   if (input.orderId) {
-    await prisma.customerOrder.update({
+    const updated = await prisma.customerOrder.update({
       where: { id: input.orderId },
       data: { paidAmount: { increment: amount } },
     });
+    const total = Number(updated.totalAmount ?? updated.goodsAmount ?? 0);
+    const paid = Number(updated.paidAmount || 0);
+    const returned = Number(updated.returnedAmount || 0);
+    const rem = Math.max(0, total - returned - paid);
+    if (updated.stockIssuedAt && rem <= 0 && updated.status !== 'CANCELLED') {
+      await prisma.customerOrder.update({
+        where: { id: updated.id },
+        data: { status: 'COMPLETED' },
+      }).catch(() => {});
+    }
     return payment;
   }
 
@@ -1215,11 +1256,21 @@ export async function recordCustomerPayment(input: SaveCustomerPaymentInput, use
     const remaining = Math.max(0, Number(o.totalAmount || 0) - Number(o.paidAmount || 0));
     if (remaining <= 0) continue;
     const apply = Math.min(left, remaining);
-    await prisma.customerOrder.update({
+    const updated = await prisma.customerOrder.update({
       where: { id: o.id },
       data: { paidAmount: { increment: apply } },
     });
     left -= apply;
+    const total = Number(updated.totalAmount ?? updated.goodsAmount ?? 0);
+    const paid = Number(updated.paidAmount || 0);
+    const returned = Number(updated.returnedAmount || 0);
+    const rem = Math.max(0, total - returned - paid);
+    if (updated.stockIssuedAt && rem <= 0 && updated.status !== 'CANCELLED') {
+      await prisma.customerOrder.update({
+        where: { id: updated.id },
+        data: { status: 'COMPLETED' },
+      }).catch(() => {});
+    }
   }
 
   return payment;

@@ -22,6 +22,9 @@ import {
 
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(n || 0))} ₫`;
 
+const isCompletedOrCancelled = (o: any) =>
+  ['COMPLETED', 'CANCELLED'].includes(o.status) || (Boolean(o.stockIssuedAt) && Number(o.remaining || 0) <= 0);
+
 /** Nhóm theo việc kinh doanh phải làm, không theo cột dữ liệu. */
 const CHIPS: { key: string; label: string; color: string; match: (o: any) => boolean }[] = [
   { key: 'ALL', label: 'Tất cả', color: 'var(--brand)', match: () => true },
@@ -29,7 +32,7 @@ const CHIPS: { key: string; label: string; color: string; match: (o: any) => boo
     key: 'OPEN',
     label: 'Chưa hoàn tất',
     color: '#d97706',
-    match: (o) => !['COMPLETED', 'CANCELLED'].includes(o.status),
+    match: (o) => !isCompletedOrCancelled(o),
   },
   {
     key: 'AWAITING',
@@ -120,7 +123,7 @@ export function SalesScreen({
     () =>
       orders.reduce(
         (acc, o) => {
-          const open = !['COMPLETED', 'CANCELLED'].includes(o.status);
+          const open = !isCompletedOrCancelled(o);
           return {
             open: acc.open + (open ? 1 : 0),
             awaiting:
