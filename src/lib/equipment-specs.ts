@@ -40,7 +40,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
     .filter(Boolean)
     .join(' • ');
   if (modelOrigin) {
-    rows.push({ label: 'Model', value: modelOrigin });
+    rows.push({ label: model ? 'Model' : 'Hãng/SX', value: modelOrigin });
   }
 
   // 2. Điện & Công suất

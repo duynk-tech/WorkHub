@@ -389,11 +389,10 @@ export function EquipmentHandoverModal({
                 <thead>
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px' }}>Tên thiết bị & Thông số</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '115px' }}>Số Serial (S/N)</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '105px' }}>Hãng / Model</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '40px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '135px' }}>Tình trạng kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px' }}>Tên thiết bị & Thông số kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px' }}>Số Serial (S/N)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '150px' }}>Tình trạng kỹ thuật</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -408,10 +407,6 @@ export function EquipmentHandoverModal({
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace', fontWeight: 600, verticalAlign: 'top' }}>
                       {equipment.serialNumber}
-                    </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', verticalAlign: 'top' }}>
-                      <div style={{ fontWeight: 600 }}>{equipment.brand || '—'}</div>
-                      {equipment.model && <div style={{ fontSize: '11px', color: '#475569' }}>Model: {equipment.model}</div>}
                     </td>
                     <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>01</td>
                     <td style={{ border: '1px solid #000', padding: '6px 7px', fontSize: '11.5px', verticalAlign: 'top' }}>
