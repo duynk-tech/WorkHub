@@ -805,7 +805,9 @@ export function CustomerQuotationPrintModal({
                     allMachines.find(
                       (m: any) =>
                         (m.name && item.name && m.name.toLowerCase() === item.name.toLowerCase()) ||
-                        (m.machineCode && item.itemCode && m.machineCode === item.itemCode)
+                        (m.machineCode && item.itemCode && m.machineCode === item.itemCode) ||
+                        (m.model && item.name && item.name.toLowerCase().includes(m.model.toLowerCase())) ||
+                        (m.name && item.name && item.name.toLowerCase().includes(m.name.toLowerCase()))
                     );
                   const specRows = eq ? getEquipmentSpecRows(eq) : [];
                   return (

@@ -399,6 +399,25 @@ export function CustomerOrderPrintModal({
                   <div style={{ fontSize: '11px', letterSpacing: '1px', marginTop: 1 }}>
                     - - - - - - - - - o 0 o - - - - - - - - -
                   </div>
+                  {(invoiceNo || invoiceSerial) && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: '11px',
+                        color: '#1e3a8a',
+                        textAlign: 'center',
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 4,
+                        padding: '3px 8px',
+                        display: 'inline-block',
+                      }}
+                    >
+                      <span>HĐ GTGT: {invoiceSerial ? `Ký hiệu ${invoiceSerial} • ` : ''}</span>
+                      <span>Số: <strong>{invoiceNo}</strong></span>
+                      {invoiceDate ? <span> • Ngày {new Date(invoiceDate).toLocaleDateString('vi-VN')}</span> : null}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -426,12 +445,6 @@ export function CustomerOrderPrintModal({
                   {deliveryPoint && (
                     <div style={{ gridColumn: '1 / -1' }}>
                       Điểm giao nhận: <strong>{deliveryPoint}</strong>
-                    </div>
-                  )}
-                  {(invoiceNo || invoiceSerial) && (
-                    <div style={{ gridColumn: '1 / -1', color: '#1e40af', fontSize: '12px' }}>
-                      Hóa đơn GTGT: {invoiceSerial ? `Ký hiệu: ${invoiceSerial} • ` : ''}Số HĐ: <strong>{invoiceNo}</strong>
-                      {invoiceDate ? ` • Ngày: ${new Date(invoiceDate).toLocaleDateString('vi-VN')}` : ''}
                     </div>
                   )}
                 </div>
@@ -467,7 +480,9 @@ export function CustomerOrderPrintModal({
                         allMachines.find(
                           (m: any) =>
                             (m.name && it.name && m.name.toLowerCase() === it.name.toLowerCase()) ||
-                            (m.machineCode && it.itemCode && m.machineCode === it.itemCode)
+                            (m.machineCode && it.itemCode && m.machineCode === it.itemCode) ||
+                            (m.model && it.name && it.name.toLowerCase().includes(m.model.toLowerCase())) ||
+                            (m.name && it.name && it.name.toLowerCase().includes(m.name.toLowerCase()))
                         );
                       const specRows = eq ? getEquipmentSpecRows(eq) : [];
                       return (

@@ -380,6 +380,35 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
     (o as any).items = await ensureSeedOrderItems(o);
   }
 
+  // Tải thông tin máy móc liên quan để bản in & xem chi tiết có đầy đủ thông số kỹ thuật
+  const eqIds = ((o.items || []) as any[]).map((it) => it.equipmentId).filter(Boolean);
+  const relatedMachines = await prisma.fnbEquipment
+    .findMany({
+      where: {
+        OR: [
+          ...(eqIds.length > 0 ? [{ id: { in: eqIds } }] : []),
+          ...(o.customerId ? [{ customerId: o.customerId }] : []),
+          { ownershipType: 'COMPANY_OWNED' },
+        ],
+      },
+    })
+    .catch(() => []);
+  (o as any).machines = relatedMachines;
+
+  for (const it of ((o as any).items || []) as any[]) {
+    if (it.equipmentId && !it.equipment) {
+      it.equipment = relatedMachines.find((m: any) => m.id === it.equipmentId);
+    }
+    if (!it.equipment && it.name) {
+      it.equipment = relatedMachines.find(
+        (m: any) =>
+          m.name.toLowerCase() === it.name.toLowerCase() ||
+          (m.model && it.name.toLowerCase().includes(m.model.toLowerCase())) ||
+          it.name.toLowerCase().includes(m.name.toLowerCase())
+      );
+    }
+  }
+
   let goodsAmount = Number(o.goodsAmount || 0);
   let vatRate = Number(o.vatRate || 0);
   let vatAmount = Number(o.vatAmount || 0);
@@ -503,9 +532,23 @@ export async function getCustomerById(id: number) {
       },
     });
     if (c && (c as any).orders) {
+      const allCustMachines = (c as any).machines || [];
       for (const ord of (c as any).orders) {
         if (!ord.items || ord.items.length === 0) {
           ord.items = await ensureSeedOrderItems(ord);
+        }
+        for (const it of (ord.items || []) as any[]) {
+          if (it.equipmentId && !it.equipment) {
+            it.equipment = allCustMachines.find((m: any) => m.id === it.equipmentId);
+          }
+          if (!it.equipment && it.name) {
+            it.equipment = allCustMachines.find(
+              (m: any) =>
+                m.name.toLowerCase() === it.name.toLowerCase() ||
+                (m.model && it.name.toLowerCase().includes(m.model.toLowerCase())) ||
+                it.name.toLowerCase().includes(m.name.toLowerCase())
+            );
+          }
         }
       }
     }
