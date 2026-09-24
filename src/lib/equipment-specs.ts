@@ -32,7 +32,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
     .filter(Boolean)
     .join(' • ');
   if (modelOrigin) {
-    rows.push({ icon: '🏷️', label: 'Model', value: modelOrigin });
+    rows.push({ label: 'Model', value: modelOrigin });
   }
 
   // 2. Điện & Công suất
@@ -48,7 +48,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
   const power = rawPower ? `CS: ${rawPower}` : '';
   const electrical = [voltage, power].filter(Boolean).join(' • ');
   if (electrical) {
-    rows.push({ icon: '⚡', label: 'Điện', value: electrical });
+    rows.push({ label: 'Điện', value: electrical });
   }
 
   // 3. Kích thước & Trọng lượng
@@ -56,7 +56,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
   if (specs.dimensions) physParts.push(specs.dimensions);
   if (specs.weightKg) physParts.push(`Nặng ${specs.weightKg} kg`);
   if (physParts.length > 0) {
-    rows.push({ icon: '📐', label: 'KT', value: physParts.join(' • ') });
+    rows.push({ label: 'KT', value: physParts.join(' • ') });
   }
 
   // 4. Cấu hình & Năng suất
@@ -68,7 +68,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
   if (ice.hopperCapacity) capacityParts.push(`Bồn chứa: ${ice.hopperCapacity}`);
   if (ice.cylinderCapacity) capacityParts.push(`Cối làm kem: ${ice.cylinderCapacity}`);
   if (capacityParts.length > 0) {
-    rows.push({ icon: '⚙️', label: 'Cấu hình', value: capacityParts.join(' • ') });
+    rows.push({ label: 'Cấu hình', value: capacityParts.join(' • ') });
   }
 
   // 5. Tính năng nổi bật
@@ -89,7 +89,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
     featureParts.push(`Nhiên liệu: ${kitchen.powerType}`);
   }
   if (featureParts.length > 0) {
-    rows.push({ icon: '✨', label: 'Tính năng', value: featureParts.join(' • ') });
+    rows.push({ label: 'Tính năng', value: featureParts.join(' • ') });
   }
 
   return rows;

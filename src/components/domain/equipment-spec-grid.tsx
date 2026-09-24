@@ -17,19 +17,13 @@ export function EquipmentSpecGrid({
     <div
       className="equipment-spec-grid"
       style={{
-        marginTop: 4,
-        marginBottom: 3,
-        padding: '3px 8px 3px 9px',
-        borderLeft: '2px solid #94a3b8',
-        background: 'rgba(248, 250, 252, 0.75)',
-        borderRadius: '0 3px 3px 0',
+        marginTop: 3,
+        marginBottom: 2,
         fontSize: compact ? '10px' : '10.5px',
-        lineHeight: 1.5,
-        WebkitPrintColorAdjust: 'exact',
-        printColorAdjust: 'exact',
-      } as React.CSSProperties}
+        lineHeight: 1.45,
+      }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         {rows.map((r, idx) => (
           <div
             key={idx}
@@ -37,24 +31,12 @@ export function EquipmentSpecGrid({
               display: 'flex',
               alignItems: 'baseline',
               gap: 4,
-              color: '#475569',
             }}
           >
-            {r.icon && (
-              <span
-                style={{
-                  fontSize: '9.5px',
-                  lineHeight: 1,
-                  flexShrink: 0,
-                }}
-              >
-                {r.icon}
-              </span>
-            )}
             <span
               style={{
-                fontWeight: 650,
-                color: '#334155',
+                fontWeight: 600,
+                color: '#475569',
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
               }}
