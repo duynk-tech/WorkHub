@@ -57,6 +57,7 @@ export function PrintDocumentModal({
       title={title}
       description={description}
       size="xl"
+      overlayClassName="print-preview-modal-overlay"
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>

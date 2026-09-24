@@ -12,7 +12,15 @@ export interface EquipmentSpecRow {
 export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] {
   if (!equipmentOrSpecs) return [];
 
-  const specs = (equipmentOrSpecs.specs || equipmentOrSpecs) as Record<string, any>;
+  let rawSpecs = equipmentOrSpecs.specs || equipmentOrSpecs;
+  if (typeof rawSpecs === 'string') {
+    try {
+      rawSpecs = JSON.parse(rawSpecs);
+    } catch {
+      rawSpecs = {};
+    }
+  }
+  const specs = (rawSpecs && typeof rawSpecs === 'object' ? rawSpecs : {}) as Record<string, any>;
   const brand = equipmentOrSpecs.brand || specs.brand;
   const model = equipmentOrSpecs.model || specs.model;
   const madeIn = specs.madeIn;
@@ -78,9 +86,11 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
   if (ice.preCooling) featureParts.push('Giữ tươi ban đêm');
   if (ice.airPump) featureParts.push('Bơm tăng xốp');
   if (ice.compressor) featureParts.push(`Máy nén ${ice.compressor}`);
+  if (ice.refrigerant) featureParts.push(`Gas ${ice.refrigerant}`);
   if (ice.coolingType) featureParts.push(ice.coolingType);
   if (choco.machineType) featureParts.push(choco.machineType);
   if (choco.tempRange) featureParts.push(`Nhiệt độ: ${choco.tempRange}`);
+  if (choco.heatingMethod) featureParts.push(choco.heatingMethod);
   if (choco.hasFootPedal) featureParts.push('Bàn đạp ngắt rót');
   if (choco.materialGrade) featureParts.push(choco.materialGrade);
   if (kitchen.equipmentType) featureParts.push(kitchen.equipmentType);

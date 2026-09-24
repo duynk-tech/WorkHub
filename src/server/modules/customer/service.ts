@@ -485,6 +485,12 @@ export async function getCustomerById(id: number) {
                 category: true,
                 status: true,
                 ownershipType: true,
+                brand: true,
+                model: true,
+                specs: true,
+                warrantyExpiresAt: true,
+                installedDate: true,
+                notes: true,
               },
             },
           },
@@ -493,6 +499,7 @@ export async function getCustomerById(id: number) {
         machines: {
           include: {
             location: { select: { id: true, name: true, address: true } },
+            customerOrder: { select: { id: true, orderCode: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -570,6 +577,12 @@ export async function getCustomerById(id: number) {
                   category: true,
                   status: true,
                   ownershipType: true,
+                  brand: true,
+                  model: true,
+                  specs: true,
+                  warrantyExpiresAt: true,
+                  installedDate: true,
+                  notes: true,
                 },
               },
             },
@@ -578,6 +591,7 @@ export async function getCustomerById(id: number) {
           machines: {
             include: {
               location: { select: { id: true, name: true, address: true } },
+              customerOrder: { select: { id: true, orderCode: true } },
             },
             orderBy: { createdAt: 'desc' },
           },

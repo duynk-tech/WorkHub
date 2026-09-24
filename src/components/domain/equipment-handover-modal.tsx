@@ -9,6 +9,8 @@ import {
   DocumentPartyBoxes,
   PRINT_SIGNATURE_CLASS,
 } from '@/components/domain/print-document-modal';
+import { getEquipmentSpecRows } from '@/lib/equipment-specs';
+import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
 
 interface EquipmentHandoverModalProps {
   open: boolean;
@@ -108,7 +110,37 @@ export function EquipmentHandoverModal({
   const [warrantyMonths, setWarrantyMonths] = useState('12');
   const [notes, setNotes] = useState(equipment.notes || 'Thiết bị được lắp đặt và chạy thử nghiệm thu đạt chuẩn.');
 
+  React.useEffect(() => {
+    if (!equipment) return;
+    const seq = equipment.machineCode?.split('-').pop() || String(equipment.id).padStart(4, '0');
+    setDocNumber(`BBBG-${new Date().getFullYear()}-${seq}`);
+    setReceiverCompany(equipment.customer?.name || 'Khách hàng F&B');
+    setReceiverRepresentative(
+      equipment.location?.managerName || equipment.customer?.contactName || ''
+    );
+    setReceiverPhone(equipment.location?.phone || equipment.customer?.phone || '');
+    setLocationName(equipment.location?.name || 'Điểm bán');
+    setLocationAddress(
+      equipment.location?.address || equipment.customer?.address || 'Chi nhánh khách hàng'
+    );
+    if (equipment.customerOrder?.orderCode) {
+      setContractNo(equipment.customerOrder.orderCode);
+    }
+    if (equipment.notes) {
+      setNotes(equipment.notes);
+    }
+    if (equipment.installedDate && equipment.warrantyExpiresAt) {
+      const start = new Date(equipment.installedDate).getTime();
+      const end = new Date(equipment.warrantyExpiresAt).getTime();
+      const months = Math.round((end - start) / (30.4375 * 24 * 3600 * 1000));
+      if (months > 0) {
+        setWarrantyMonths(String(months));
+      }
+    }
+  }, [equipment]);
+
   const categoryName = EQUIPMENT_CATEGORIES[equipment.category]?.label || 'Thiết bị F&B';
+  const specRows = getEquipmentSpecRows(equipment);
 
   const parsedDate = new Date(docDate);
   const day = parsedDate.getDate();
@@ -262,6 +294,19 @@ export function EquipmentHandoverModal({
             </div>
           </div>
 
+          <div style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-subtle)' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, color: 'var(--text-strong)' }}>
+              ⚙️ Thông số kỹ thuật thiết bị (in kèm trên biên bản)
+            </div>
+            {specRows.length > 0 ? (
+              <EquipmentSpecGrid rows={specRows} />
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                Chưa có thông số chi tiết trong hồ sơ máy. Có thể ghi chú thêm ở mục dưới.
+              </div>
+            )}
+          </div>
+
           <Field label="Ghi chú thêm">
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
@@ -340,32 +385,36 @@ export function EquipmentHandoverModal({
               <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase' }}>
                 I. Danh mục thiết bị bàn giao:
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', textAlign: 'left' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
                 <thead>
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
                     <th style={{ border: '1px solid #000', padding: '5px 7px' }}>Tên thiết bị & Thông số</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '120px' }}>Số Serial (S/N)</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '110px' }}>Hãng / Model</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '140px' }}>Tình trạng kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '115px' }}>Số Serial (S/N)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '105px' }}>Hãng / Model</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '40px', textAlign: 'center' }}>SL</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '135px' }}>Tình trạng kỹ thuật</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700 }}>01</td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px' }}>
-                      <div style={{ fontWeight: 700 }}>{equipment.name}</div>
-                      <div style={{ fontSize: '11px', color: '#475569' }}>Phân loại: {categoryName}</div>
+                  <tr style={{ verticalAlign: 'top' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>01</td>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', verticalAlign: 'top' }}>
+                      <div style={{ fontWeight: 700, color: '#0f172a' }}>{equipment.name}</div>
+                      <div style={{ fontSize: '11px', color: '#475569', marginBottom: specRows.length > 0 ? 3 : 0 }}>
+                        Mã máy: <strong>{equipment.machineCode}</strong> • Phân loại: {categoryName}
+                      </div>
+                      {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace', fontWeight: 600, verticalAlign: 'top' }}>
                       {equipment.serialNumber}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px' }}>
-                      {equipment.brand || '—'} {equipment.model ? `/ ${equipment.model}` : ''}
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', verticalAlign: 'top' }}>
+                      <div style={{ fontWeight: 600 }}>{equipment.brand || '—'}</div>
+                      {equipment.model && <div style={{ fontSize: '11px', color: '#475569' }}>Model: {equipment.model}</div>}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700 }}>01</td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontSize: '11.5px' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>01</td>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontSize: '11.5px', verticalAlign: 'top' }}>
                       {equipmentCondition}
                     </td>
                   </tr>
@@ -417,6 +466,12 @@ export function EquipmentHandoverModal({
                 <li>Khi phát sinh sự cố kỹ thuật, Bên B liên hệ Hotline <strong>{delivererPhone}</strong> hoặc mở Zalo quét mã QR trên thân máy để gửi phiếu báo hỏng khẩn cấp (Cam kết SLA phản hồi kỹ thuật trong vòng 2 giờ).</li>
               </ul>
             </div>
+
+            {notes && (
+              <div style={{ marginBottom: 10, fontSize: '12px', color: '#334155' }}>
+                <strong>* Ghi chú bổ sung:</strong> {notes}
+              </div>
+            )}
 
             {/* 9. Đại diện các bên ký nhận */}
             <div className={PRINT_SIGNATURE_CLASS} style={{ marginTop: 10, pageBreakInside: 'avoid', breakInside: 'avoid' }}>
