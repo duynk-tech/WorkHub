@@ -1342,6 +1342,32 @@ export function SparePartOrderModal({
                       </tr>
                     );
                   })}
+
+                  {/* Dòng bấm nhanh để thêm mặt hàng mới ngay dưới row cuối */}
+                  <tr>
+                    <td colSpan={8} style={{ padding: '6px 8px', background: '#faf5ff', borderTop: '1px dashed #ddd6fe' }}>
+                      <button
+                        type="button"
+                        onClick={handleAddItem}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#7c3aed',
+                          fontWeight: 600,
+                          fontSize: 12,
+                          padding: '4px 6px',
+                          borderRadius: 4,
+                        }}
+                      >
+                        <Plus size={13} strokeWidth={2.5} />
+                        <span>Thêm dòng hàng</span>
+                      </button>
+                    </td>
+                  </tr>
                 </tbody>
 
                 <tfoot>
