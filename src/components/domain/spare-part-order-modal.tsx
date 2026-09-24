@@ -112,6 +112,26 @@ function getPartPriceInfo(
   };
 }
 
+function getPartStockQty(part: any, warehouseId?: number | ''): { totalStock: number; whStock?: number } {
+  if (!part) return { totalStock: 0 };
+  const totalStock =
+    part.totalStock !== undefined
+      ? Number(part.totalStock) || 0
+      : Array.isArray(part.stocks)
+      ? part.stocks.reduce((sum: number, s: any) => sum + (Number(s.quantity) || 0), 0)
+      : Number(part.stockQty ?? part.quantity ?? 0);
+
+  if (warehouseId && Array.isArray(part.stocks)) {
+    const wh = part.stocks.find((s: any) => s.warehouseId === Number(warehouseId));
+    return {
+      totalStock,
+      whStock: wh ? Number(wh.quantity) || 0 : 0,
+    };
+  }
+
+  return { totalStock };
+}
+
 export function SparePartOrderModal({
   open,
   onClose,
@@ -196,10 +216,14 @@ export function SparePartOrderModal({
 
     if (machineItems.length > 0) {
       for (const p of machineItems) {
+        const { totalStock, whStock } = getPartStockQty(p, targetWarehouseId);
+        const stockText = targetWarehouseId && whStock !== undefined
+          ? `Kho: ${whStock} (Tổng: ${totalStock})`
+          : `Tồn: ${totalStock}`;
         list.push({
           value: String(p.id),
           label: `[MÁY] ${p.name}`,
-          subLabel: `Mã: ${p.itemCode} · Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
+          subLabel: `Mã: ${p.itemCode} · ${stockText} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
           keywords: `${p.itemCode} ${p.name} ${p.manufacturer || ''} ${p.compatibleWith || ''} may moc equipment`,
           group: '🏭 Máy móc nguyên chiếc & Cụm máy',
         });
@@ -207,17 +231,21 @@ export function SparePartOrderModal({
     }
 
     for (const p of partItems) {
+      const { totalStock, whStock } = getPartStockQty(p, targetWarehouseId);
+      const stockText = targetWarehouseId && whStock !== undefined
+        ? `Kho: ${whStock} (Tổng: ${totalStock})`
+        : `Tồn: ${totalStock}`;
       list.push({
         value: String(p.id),
         label: p.name,
-        subLabel: `Mã: ${p.itemCode} · Tồn: ${p.stockQty ?? 0} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
+        subLabel: `Mã: ${p.itemCode} · ${stockText} ${p.unit || 'cái'} · Vốn: ${p.priceEur ? `${p.priceEur} €` : (p.costPrice ? `${Number(p.costPrice).toLocaleString('vi-VN')} ₫` : '0 ₫')}`,
         keywords: `${p.itemCode} ${p.name} ${p.manufacturer || ''} ${p.compatibleWith || ''} phu tung linh kien`,
         group: '🔧 Linh kiện & Phụ tùng thay thế',
       });
     }
 
     return list;
-  }, [machineItems, partItems]);
+  }, [machineItems, partItems, targetWarehouseId]);
 
   const [items, setItems] = useState<
     Array<{
@@ -1071,6 +1099,8 @@ export function SparePartOrderModal({
                   {items.map((it, idx) => {
                     const calc = calculation.calculatedItems[idx];
                     const selectedPart = allSpareParts.find((p) => p.id === Number(it.itemId));
+                    const stockInfo = getPartStockQty(selectedPart, targetWarehouseId);
+                    const isStockPositive = (targetWarehouseId && stockInfo.whStock !== undefined ? stockInfo.whStock : stockInfo.totalStock) > 0 || stockInfo.totalStock > 0;
                     const isManualSelling = calc && it.sellingPrice !== undefined && it.sellingPrice !== calc.formulaSellingPerUnit;
 
                     return (
@@ -1126,15 +1156,24 @@ export function SparePartOrderModal({
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: 3,
-                                      background: (selectedPart.stockQty ?? 0) > 0 ? '#f0fdf4' : '#fef2f2',
-                                      color: (selectedPart.stockQty ?? 0) > 0 ? '#15803d' : '#b91c1c',
+                                      background: isStockPositive ? '#f0fdf4' : '#fef2f2',
+                                      color: isStockPositive ? '#15803d' : '#b91c1c',
                                       padding: '2px 6px',
                                       borderRadius: 4,
-                                      border: `1px solid ${(selectedPart.stockQty ?? 0) > 0 ? '#bbf7d0' : '#fecaca'}`,
+                                      border: `1px solid ${isStockPositive ? '#bbf7d0' : '#fecaca'}`,
                                       lineHeight: 1.2,
                                     }}
+                                    title={
+                                      targetWarehouseId && stockInfo.whStock !== undefined
+                                        ? `Tồn tại kho đã chọn: ${stockInfo.whStock}, Tổng tồn toàn hệ thống: ${stockInfo.totalStock}`
+                                        : `Tổng tồn toàn hệ thống: ${stockInfo.totalStock}`
+                                    }
                                   >
-                                    Tồn: <strong>{selectedPart.stockQty ?? 0}</strong> {selectedPart.unit || 'cái'}
+                                    Tồn: <strong>
+                                      {targetWarehouseId && stockInfo.whStock !== undefined
+                                        ? `${stockInfo.whStock} (Tổng: ${stockInfo.totalStock})`
+                                        : stockInfo.totalStock}
+                                    </strong> {selectedPart.unit || 'cái'}
                                   </span>
                                 </>
                               ) : (
