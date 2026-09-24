@@ -779,7 +779,7 @@ export function SparePartOrderModal({
           background: 'var(--surface-card)',
           borderRadius: 12,
           width: '100%',
-          maxWidth: 'min(1280px, 98vw)',
+          maxWidth: 'min(1000px, 95vw)',
           maxHeight: '94vh',
           flexDirection: 'column',
           boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.2)',
