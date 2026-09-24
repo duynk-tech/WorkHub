@@ -60,7 +60,7 @@ export function SparePartModal({
   part?: any;
   pricingConfig?: SparePartPricingConfig;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess?: (item?: any) => void;
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -147,7 +147,7 @@ export function SparePartModal({
 
     if (res.ok) {
       toast.success(res.message);
-      onSuccess();
+      onSuccess?.(res.item);
       onClose();
     } else {
       toast.error(res.message);
