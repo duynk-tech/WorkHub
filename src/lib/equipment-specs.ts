@@ -4,6 +4,7 @@
  */
 
 export interface EquipmentSpecRow {
+  icon?: string;
   label: string;
   value: string;
 }
@@ -22,19 +23,19 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
 
   const rows: EquipmentSpecRow[] = [];
 
-  // 1. Model / Hãng / Xuất xứ
+  // 1. Model & Hãng / Xuất xứ
   const modelOrigin = [
-    model ? `Model: ${model}` : '',
+    model,
     brand ? `Hãng: ${brand}` : '',
-    madeIn ? `Xuất xứ: ${madeIn}` : '',
+    madeIn && !brand?.toLowerCase().includes(madeIn.toLowerCase()) ? `Xuất xứ: ${madeIn}` : '',
   ]
     .filter(Boolean)
     .join(' • ');
   if (modelOrigin) {
-    rows.push({ label: 'Model & Xuất xứ', value: modelOrigin });
+    rows.push({ icon: '🏷️', label: 'Model', value: modelOrigin });
   }
 
-  // 2. Điện áp & Công suất
+  // 2. Điện & Công suất
   const voltage = specs.voltage || ice.voltage || choco.voltage || kitchen.voltage;
   const rawPower =
     specs.powerWatts ||
@@ -44,13 +45,21 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
       ? `${kitchen.powerKw}${String(kitchen.powerKw).toLowerCase().includes('kw') ? '' : ' kW'}`
       : undefined) ||
     specs.power;
-  const power = rawPower ? `Công suất: ${rawPower}` : '';
+  const power = rawPower ? `CS: ${rawPower}` : '';
   const electrical = [voltage, power].filter(Boolean).join(' • ');
   if (electrical) {
-    rows.push({ label: 'Điện & Công suất', value: electrical });
+    rows.push({ icon: '⚡', label: 'Điện', value: electrical });
   }
 
-  // 3. Năng suất & Dung tích
+  // 3. Kích thước & Trọng lượng
+  const physParts: string[] = [];
+  if (specs.dimensions) physParts.push(specs.dimensions);
+  if (specs.weightKg) physParts.push(`Nặng ${specs.weightKg} kg`);
+  if (physParts.length > 0) {
+    rows.push({ icon: '📐', label: 'KT', value: physParts.join(' • ') });
+  }
+
+  // 4. Cấu hình & Năng suất
   const capacityParts: string[] = [];
   if (ice.capacityPerHour) capacityParts.push(`Năng suất: ${ice.capacityPerHour}`);
   if (choco.outputPerHourKg) capacityParts.push(`Năng suất: ${choco.outputPerHourKg}`);
@@ -59,18 +68,10 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
   if (ice.hopperCapacity) capacityParts.push(`Bồn chứa: ${ice.hopperCapacity}`);
   if (ice.cylinderCapacity) capacityParts.push(`Cối làm kem: ${ice.cylinderCapacity}`);
   if (capacityParts.length > 0) {
-    rows.push({ label: 'Dung tích & Công suất', value: capacityParts.join(' • ') });
+    rows.push({ icon: '⚙️', label: 'Cấu hình', value: capacityParts.join(' • ') });
   }
 
-  // 4. Kích thước & Trọng lượng
-  const physParts: string[] = [];
-  if (specs.dimensions) physParts.push(`KT: ${specs.dimensions}`);
-  if (specs.weightKg) physParts.push(`Trọng lượng: ${specs.weightKg} kg`);
-  if (physParts.length > 0) {
-    rows.push({ label: 'Kích thước & Trọng lượng', value: physParts.join(' • ') });
-  }
-
-  // 5. Tính năng & Công nghệ
+  // 5. Tính năng nổi bật
   const featureParts: string[] = [];
   if (ice.machineType) featureParts.push(ice.machineType);
   if (ice.flavorCount) featureParts.push(ice.flavorCount);
@@ -88,7 +89,7 @@ export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] 
     featureParts.push(`Nhiên liệu: ${kitchen.powerType}`);
   }
   if (featureParts.length > 0) {
-    rows.push({ label: 'Tính năng & Công nghệ', value: featureParts.join(' • ') });
+    rows.push({ icon: '✨', label: 'Tính năng', value: featureParts.join(' • ') });
   }
 
   return rows;

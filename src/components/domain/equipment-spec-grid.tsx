@@ -36,11 +36,21 @@ export function EquipmentSpecGrid({
             style={{
               display: 'flex',
               alignItems: 'baseline',
-              gap: 5,
+              gap: 4,
               color: '#475569',
             }}
           >
-            <span style={{ color: '#94a3b8', fontSize: '8px', lineHeight: 1, flexShrink: 0 }}>▪</span>
+            {r.icon && (
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                {r.icon}
+              </span>
+            )}
             <span
               style={{
                 fontWeight: 650,
@@ -55,6 +65,7 @@ export function EquipmentSpecGrid({
               style={{
                 color: '#1e293b',
                 fontWeight: 450,
+                wordBreak: 'break-word',
               }}
             >
               {r.value}
