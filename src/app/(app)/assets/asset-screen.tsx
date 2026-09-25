@@ -120,7 +120,8 @@ export function AssetScreen({
   // Floating Action Menu state (Dropdown ...)
   const [menuState, setMenuState] = useState<{
     id: number;
-    top: number;
+    top?: number;
+    bottom?: number;
     right: number;
   } | null>(null);
 
@@ -151,22 +152,26 @@ export function AssetScreen({
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    const menuHeight = 350;
+    const estimatedHeight = 220;
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
 
-    let top: number;
-    if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
-      top = Math.max(10, rect.top - menuHeight - 4);
-    } else {
-      top = Math.min(window.innerHeight - menuHeight - 10, rect.bottom + 4);
-    }
+    // Chỉ lật lên trên nếu phía dưới thực sự hẹp (< 220px) VÀ phía trên rộng hơn
+    const openUpwards = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
-    setMenuState({
-      id: item.id,
-      top,
-      right: Math.max(12, window.innerWidth - rect.right),
-    });
+    if (openUpwards) {
+      setMenuState({
+        id: item.id,
+        bottom: Math.max(10, window.innerHeight - rect.top + 4),
+        right: Math.max(12, window.innerWidth - rect.right),
+      });
+    } else {
+      setMenuState({
+        id: item.id,
+        top: Math.max(10, rect.bottom + 4),
+        right: Math.max(12, window.innerWidth - rect.right),
+      });
+    }
   };
 
   const handleDeleteAsset = async () => {
@@ -675,11 +680,11 @@ export function AssetScreen({
             className="dropdown asset-action-menu"
             style={{
               position: 'fixed',
-              top: menuState.top,
-              bottom: 'auto',
+              top: menuState.top !== undefined ? menuState.top : 'auto',
+              bottom: menuState.bottom !== undefined ? menuState.bottom : 'auto',
               right: menuState.right,
               width: 230,
-              maxHeight: 'calc(100vh - 20px)',
+              maxHeight: 'calc(100vh - 40px)',
               overflowY: 'auto',
               zIndex: 9999,
               boxShadow: 'var(--shadow-xl, 0 10px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1))',
