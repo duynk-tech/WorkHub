@@ -360,357 +360,359 @@ export function EquipmentDetailScreen({
       </div>
 
       {/* Tab 1: Specs */}
-      {activeTab === 'specs' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Main Specs (2 cols) */}
-          <div className="md:col-span-2 space-y-6">
-            <Card className="p-6">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
-                <Settings className="w-5 h-5 text-indigo-600" />
-                Thông số Kỹ thuật Chuyên môn
-              </h2>
+      {activeTab === 'specs' && (() => {
+        // Trích xuất danh sách thông số linh hoạt (Dynamic Specs + Legacy)
+        const specItems: { label: string; value: string; highlight?: boolean }[] = [];
 
-              {/* Specialized rendering based on category */}
-              {equipment.category === 'ICE_CREAM_MACHINE' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dòng máy / Loại máy kem</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.machineType || 'Chưa cập nhật'}
-                    </div>
-                  </div>
+        const voltage = specs.voltage || iceCreamSpecs.voltage || chocoSpecs.voltage || kitchenSpecs.voltage;
+        const rawPower =
+          specs.powerWatts ||
+          specs.powerKw ||
+          iceCreamSpecs.powerWatts ||
+          chocoSpecs.powerWatts ||
+          kitchenSpecs.powerKw ||
+          specs.power;
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Số vòi ra kem / Vị kem</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.flavorCount || iceCreamSpecs.flavors || 'Chưa cập nhật'}
-                    </div>
-                  </div>
+        if (voltage) {
+          specItems.push({ label: 'Điện áp vận hành', value: String(voltage) });
+        }
+        if (rawPower) {
+          const pStr = String(rawPower);
+          specItems.push({
+            label: 'Công suất tiêu thụ',
+            value: pStr.includes('W') || pStr.includes('kW') ? pStr : `${pStr}W`,
+          });
+        }
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dung tích phễu chứa (Hopper)</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.hopperCapacity || (iceCreamSpecs.hopperCapacityL ? `${iceCreamSpecs.hopperCapacityL} Lít` : 'Chưa cập nhật')}
-                    </div>
-                  </div>
+        // Ưu tiên mảng attributes động
+        if (Array.isArray(specs.attributes) && specs.attributes.length > 0) {
+          specs.attributes.forEach((attr: any) => {
+            if (attr && attr.label && attr.value) {
+              const label = String(attr.label).trim();
+              const value = String(attr.value).trim();
+              if (label && value) {
+                specItems.push({
+                  label,
+                  value,
+                  highlight:
+                    label.toLowerCase().includes('năng suất') ||
+                    label.toLowerCase().includes('dung tích') ||
+                    label.toLowerCase().includes('group') ||
+                    label.toLowerCase().includes('khay') ||
+                    label.toLowerCase().includes('lưỡi dao'),
+                });
+              }
+            }
+          });
+        } else {
+          // Fallback các trường legacy nếu chưa chuyển đổi
+          if (equipment.category === 'ICE_CREAM_MACHINE') {
+            if (iceCreamSpecs.machineType) specItems.push({ label: 'Dòng máy / Chủng loại', value: iceCreamSpecs.machineType });
+            if (iceCreamSpecs.flavorCount) specItems.push({ label: 'Số vòi / Vị kem', value: iceCreamSpecs.flavorCount });
+            if (iceCreamSpecs.capacityPerHour) specItems.push({ label: 'Năng suất làm kem', value: iceCreamSpecs.capacityPerHour, highlight: true });
+            if (iceCreamSpecs.cylinderCapacity) specItems.push({ label: 'Cối xi lanh làm lạnh', value: iceCreamSpecs.cylinderCapacity });
+            if (iceCreamSpecs.hopperCapacity) specItems.push({ label: 'Dung tích phễu (Hopper)', value: iceCreamSpecs.hopperCapacity });
+            if (iceCreamSpecs.compressor) specItems.push({ label: 'Máy nén (Compressor)', value: iceCreamSpecs.compressor });
+            if (iceCreamSpecs.refrigerant) specItems.push({ label: 'Môi chất lạnh (Gas)', value: iceCreamSpecs.refrigerant });
+            if (iceCreamSpecs.coolingType) specItems.push({ label: 'Hệ thống giải nhiệt', value: iceCreamSpecs.coolingType });
+            if (iceCreamSpecs.preCooling !== undefined) {
+              specItems.push({ label: 'Giữ lạnh ban đêm (Pre-cooling)', value: iceCreamSpecs.preCooling ? 'Có (Chống chua kem)' : 'Không có' });
+            }
+            if (iceCreamSpecs.airPump !== undefined) {
+              specItems.push({ label: 'Bơm tăng xốp (Air Pump)', value: iceCreamSpecs.airPump ? 'Có (Tăng độ phồng kem)' : 'Không có' });
+            }
+          } else if (equipment.category === 'CHOCOLATE_MACHINE') {
+            if (chocoSpecs.machineType) specItems.push({ label: 'Loại máy socola', value: chocoSpecs.machineType });
+            if (chocoSpecs.tankCapacityKg) specItems.push({ label: 'Dung tích bồn chứa', value: chocoSpecs.tankCapacityKg });
+            if (chocoSpecs.outputPerHourKg) specItems.push({ label: 'Năng suất xử lý / rót', value: chocoSpecs.outputPerHourKg, highlight: true });
+            if (chocoSpecs.tempRange) specItems.push({ label: 'Dải nhiệt độ kiểm soát', value: chocoSpecs.tempRange });
+            if (chocoSpecs.heatingMethod) specItems.push({ label: 'Cơ chế gia nhiệt', value: chocoSpecs.heatingMethod });
+            if (chocoSpecs.materialGrade) specItems.push({ label: 'Vật liệu tiếp xúc thực phẩm', value: chocoSpecs.materialGrade });
+            if (chocoSpecs.hasFootPedal !== undefined) {
+              specItems.push({ label: 'Bàn đạp chân ngắt rót', value: chocoSpecs.hasFootPedal ? 'Có trang bị' : 'Không có' });
+            }
+          } else {
+            if (kitchenSpecs.equipmentType) specItems.push({ label: 'Loại thiết bị cụ thể', value: kitchenSpecs.equipmentType });
+            if (kitchenSpecs.powerType) specItems.push({ label: 'Nguồn năng lượng', value: kitchenSpecs.powerType });
+            if (kitchenSpecs.capacity) specItems.push({ label: 'Dung tích / Sức chứa', value: kitchenSpecs.capacity, highlight: true });
+            if (kitchenSpecs.tempRange) specItems.push({ label: 'Dải nhiệt độ làm việc', value: kitchenSpecs.tempRange });
+          }
+        }
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dung tích xi lanh làm lạnh</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.cylinderCapacity || (iceCreamSpecs.cylinderCapacityL ? `${iceCreamSpecs.cylinderCapacityL} Lít` : 'Chưa cập nhật')}
-                    </div>
-                  </div>
+        const physicalInfo: { label: string; value: string }[] = [];
+        if (specs.dimensions) physicalInfo.push({ label: 'Kích thước', value: specs.dimensions });
+        if (specs.weightKg) physicalInfo.push({ label: 'Trọng lượng', value: `${specs.weightKg} kg` });
+        if (specs.madeIn) physicalInfo.push({ label: 'Xuất xứ', value: specs.madeIn });
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Năng suất làm kem</div>
-                    <div className="text-base font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                      {iceCreamSpecs.capacityPerHour || (iceCreamSpecs.outputPerHour ? `${iceCreamSpecs.outputPerHour} Lít/Giờ` : 'Chưa cập nhật')}
-                    </div>
-                  </div>
+        // 3 vé bảo trì gần nhất
+        const recentTickets = [...(equipment.tickets || [])]
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 3);
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Thương hiệu Máy nén (Compressor)</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.compressor || iceCreamSpecs.compressorBrand || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Môi chất lạnh (Gas lạnh)</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.refrigerant || iceCreamSpecs.refrigerantGas || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Hệ thống giải nhiệt</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.coolingType || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Công suất điện & Điện áp</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {iceCreamSpecs.powerWatts ? `${iceCreamSpecs.powerWatts}` : ''}{' '}
-                      {iceCreamSpecs.voltage ? `(${iceCreamSpecs.voltage})` : ''}
-                      {!iceCreamSpecs.powerWatts && !iceCreamSpecs.voltage && 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-slate-500">Giữ lạnh qua đêm (Pre-cooling)</div>
-                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                        {(iceCreamSpecs.preCooling ?? iceCreamSpecs.precoolingNightMode) ? 'Có (Chống chua kem)' : 'Không có'}
-                      </div>
-                    </div>
-                    {(iceCreamSpecs.preCooling ?? iceCreamSpecs.precoolingNightMode) ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-slate-300" />
-                    )}
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-slate-500">Bơm phồng / Tăng xốp (Air Pump)</div>
-                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                        {iceCreamSpecs.airPump ? 'Có (Tăng 30-50% thể tích kem)' : 'Không có'}
-                      </div>
-                    </div>
-                    {iceCreamSpecs.airPump ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-slate-300" />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {equipment.category === 'CHOCOLATE_MACHINE' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Loại máy socola</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {chocoSpecs.machineType || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dung tích bể nấu / bồn chứa</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {chocoSpecs.tankCapacityKg || (chocoSpecs.bowlCapacityKg ? `${chocoSpecs.bowlCapacityKg} kg` : 'Chưa cập nhật')}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Công suất xử lý / Năng suất</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {chocoSpecs.outputPerHourKg || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Cơ chế gia nhiệt / Tôi socola</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {chocoSpecs.heatingMethod || chocoSpecs.temperingType || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dải nhiệt độ kiểm soát (°C)</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {chocoSpecs.tempRange || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Vật liệu bồn & vỏ máy</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {chocoSpecs.materialGrade || 'Inox 304 tiêu chuẩn'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-slate-500">Bàn đạp chân ngắt rót (Foot Pedal)</div>
-                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                        {chocoSpecs.hasFootPedal ? 'Có trang bị' : 'Không có'}
-                      </div>
-                    </div>
-                    {chocoSpecs.hasFootPedal ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-slate-300" />
-                    )}
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-slate-500">Bàn rung khử bọt khí (Vibrating Table)</div>
-                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                        {chocoSpecs.vibratingTable ? 'Có trang bị' : 'Không có'}
-                      </div>
-                    </div>
-                    {chocoSpecs.vibratingTable ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-slate-300" />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {equipment.category !== 'ICE_CREAM_MACHINE' && equipment.category !== 'CHOCOLATE_MACHINE' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Loại thiết bị</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {kitchenSpecs.equipmentType || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Nguồn năng lượng</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {kitchenSpecs.powerType || 'Điện'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dung tích / Số họng chứa</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {kitchenSpecs.capacity || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Công suất điện</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {kitchenSpecs.powerKw || kitchenSpecs.powerWatts || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Điện áp vận hành</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {kitchenSpecs.voltage || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <div className="text-xs text-slate-500">Dải nhiệt độ làm việc</div>
-                    <div className="text-base font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {kitchenSpecs.tempRange || 'Chưa cập nhật'}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Physical Dimensions */}
-              {(specs.dimensions || specs.weightKg || specs.madeIn) && (
-                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {specs.dimensions && (
-                    <div className="p-2 bg-slate-50 dark:bg-slate-800/30 rounded text-xs">
-                      <span className="text-slate-500">Kích thước: </span>
-                      <strong className="text-slate-700 dark:text-slate-300">{specs.dimensions}</strong>
-                    </div>
-                  )}
-                  {specs.weightKg && (
-                    <div className="p-2 bg-slate-50 dark:bg-slate-800/30 rounded text-xs">
-                      <span className="text-slate-500">Trọng lượng: </span>
-                      <strong className="text-slate-700 dark:text-slate-300">{specs.weightKg} kg</strong>
-                    </div>
-                  )}
-                  {specs.madeIn && (
-                    <div className="p-2 bg-slate-50 dark:bg-slate-800/30 rounded text-xs">
-                      <span className="text-slate-500">Xuất xứ: </span>
-                      <strong className="text-slate-700 dark:text-slate-300">{specs.madeIn}</strong>
-                    </div>
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* Cột trái (2 phần): Thông số kỹ thuật + Lịch sử bảo dưỡng gần nhất */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Card 1: Thông số Kỹ thuật */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-indigo-600" />
+                    Thông số Kỹ thuật Chuyên môn
+                  </h2>
+                  {canManage && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setEditModalOpen(true)}
+                      className="text-xs flex items-center gap-1.5"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      Sửa thông số
+                    </Button>
                   )}
                 </div>
-              )}
 
-              {/* Notes */}
-              {equipment.notes && (
-                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="text-xs font-semibold text-slate-500 mb-1">Ghi chú & Lưu ý kỹ thuật:</div>
-                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200/50 dark:border-amber-800/50">
-                    {equipment.notes}
-                  </p>
+                {specItems.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {specItems.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg border transition ${
+                          item.highlight
+                            ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200/70 dark:border-indigo-800/60'
+                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          {item.label}
+                        </div>
+                        <div
+                          className={`text-sm sm:text-base font-semibold mt-0.5 break-words ${
+                            item.highlight
+                              ? 'text-indigo-700 dark:text-indigo-300'
+                              : 'text-slate-800 dark:text-slate-200'
+                          }`}
+                        >
+                          {item.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-lg text-slate-500 text-sm">
+                    Chưa có thông số kỹ thuật nào. Bấm <strong>"Sửa thông số"</strong> để nạp mẫu hoặc nhập thông số cho máy.
+                  </div>
+                )}
+
+                {/* Kích thước & Trọng lượng & Xuất xứ */}
+                {physicalInfo.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {physicalInfo.map((p, idx) => (
+                      <div key={idx} className="p-2.5 bg-slate-50 dark:bg-slate-800/30 rounded-lg text-xs">
+                        <span className="text-slate-500">{p.label}: </span>
+                        <strong className="text-slate-700 dark:text-slate-300 ml-1">{p.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Ghi chú vận hành */}
+                {equipment.notes && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-xs font-semibold text-slate-500 mb-1">Ghi chú & Lưu ý kỹ thuật:</div>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200/50 dark:border-amber-800/50">
+                      {equipment.notes}
+                    </p>
+                  </div>
+                )}
+              </Card>
+
+              {/* Card 2: Lịch sử Sửa chữa & Sự cố gần nhất (Lấp đầy không gian, cung cấp giá trị nghiệp vụ) */}
+              <Card className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-indigo-600" />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Sự cố & Bảo dưỡng gần nhất ({equipment.tickets?.length || 0})
+                    </h3>
+                  </div>
+                  {equipment.tickets && equipment.tickets.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('tickets')}
+                      className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-semibold inline-flex items-center gap-1"
+                    >
+                      Xem toàn bộ ({equipment.tickets.length})
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-              )}
-            </Card>
-          </div>
 
-          {/* Timeline & Life Cycle (1 col) */}
-          <div className="space-y-6">
-            {equipment.imageUrl && (
-              <Card className="p-4 overflow-hidden">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
-                  <Utensils className="w-4 h-4 text-indigo-500" />
-                  Ảnh thiết bị thực tế
-                </h3>
-                <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center p-2">
-                  <img
-                    src={equipment.imageUrl}
-                    alt={equipment.name}
-                    className="w-full max-h-56 object-contain rounded hover:scale-105 transition duration-300"
-                  />
+                {recentTickets.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {recentTickets.map((t: any) => (
+                      <div
+                        key={t.id}
+                        className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs hover:border-slate-300 dark:hover:border-slate-700 transition"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              {t.code}
+                            </span>
+                            <span className="font-semibold text-slate-900 dark:text-white truncate">
+                              {t.title}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-slate-500">
+                            <span>{fmtDate(t.createdAt)}</span>
+                            {t.assignedTo && (
+                              <span>
+                                KTV: <strong className="text-slate-700 dark:text-slate-300">{t.assignedTo.fullName}</strong>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge
+                            tone={
+                              t.priority === 'CRITICAL'
+                                ? 'danger'
+                                : t.priority === 'HIGH'
+                                ? 'warning'
+                                : 'outline'
+                            }
+                          >
+                            {TICKET_PRIORITIES[t.priority]?.label || t.priority}
+                          </Badge>
+                          <Badge
+                            tone={
+                              t.status === 'RESOLVED' || t.status === 'CLOSED'
+                                ? 'success'
+                                : t.status === 'IN_PROGRESS'
+                                ? 'info'
+                                : 'warning'
+                            }
+                          >
+                            {TICKET_STATUSES[t.status]?.label || t.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3.5 p-3.5 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/40 rounded-lg">
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+                        Thiết bị đang vận hành ổn định
+                      </div>
+                      <div className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                        Chưa ghi nhận sự cố hỏng hóc hay lịch sửa chữa phát sinh tại điểm khách hàng.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            {/* Cột phải (1 phần): Nhận diện máy + Bảo hành + Mã QR (Gọn gàng, cân đối) */}
+            <div className="space-y-6">
+              {equipment.imageUrl && (
+                <Card className="p-4 overflow-hidden">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
+                    <Utensils className="w-4 h-4 text-indigo-500" />
+                    Ảnh thiết bị thực tế
+                  </h3>
+                  <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center p-2">
+                    <img
+                      src={equipment.imageUrl}
+                      alt={equipment.name}
+                      className="w-full max-h-48 object-contain rounded hover:scale-105 transition duration-300"
+                    />
+                  </div>
+                </Card>
+              )}
+
+              <Card className="p-5">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3.5">
+                  <Calendar className="w-4 h-4 text-emerald-600" />
+                  Chu kỳ & Hạn Bảo hành
+                </h2>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <div className="text-slate-500">Ngày lắp đặt / Bàn giao</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {equipment.installedDate ? fmtDate(equipment.installedDate) : 'Chưa cập nhật'}
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-slate-500">Thời hạn bảo hành</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {equipment.warrantyExpiresAt ? (
+                        <span
+                          className={
+                            new Date(equipment.warrantyExpiresAt) < new Date()
+                              ? 'text-rose-600 font-bold'
+                              : 'text-emerald-600 font-bold'
+                          }
+                        >
+                          {fmtDate(equipment.warrantyExpiresAt)}{' '}
+                          {new Date(equipment.warrantyExpiresAt) < new Date()
+                            ? '(Đã hết hạn)'
+                            : '(Còn bảo hành)'}
+                        </span>
+                      ) : (
+                        'Không áp dụng'
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-slate-500">Bảo dưỡng định kỳ gần nhất</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {equipment.lastPmDate ? fmtDate(equipment.lastPmDate) : 'Chưa thực hiện'}
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-slate-500">Lịch bảo dưỡng tiếp theo</div>
+                    <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                      {equipment.nextPmDate ? fmtDate(equipment.nextPmDate) : 'Chưa lên lịch'}
+                    </div>
+                  </div>
                 </div>
               </Card>
-            )}
 
-            <Card className="p-6">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
-                <Calendar className="w-5 h-5 text-emerald-600" />
-                Chu kỳ & Hạn Bảo hành
-              </h2>
-
-              <div className="space-y-4">
-                <div>
-                  <div className="text-xs text-slate-500">Ngày lắp đặt / Bàn giao</div>
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                    {equipment.installedDate ? fmtDate(equipment.installedDate) : 'Chưa cập nhật'}
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <div className="text-xs text-slate-500">Thời hạn bảo hành</div>
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                    {equipment.warrantyExpiresAt ? (
-                      <span
-                        className={
-                          new Date(equipment.warrantyExpiresAt) < new Date()
-                            ? 'text-rose-600 font-bold'
-                            : 'text-emerald-600 font-bold'
-                        }
-                      >
-                        {fmtDate(equipment.warrantyExpiresAt)}{' '}
-                        {new Date(equipment.warrantyExpiresAt) < new Date()
-                          ? '(Đã hết hạn)'
-                          : '(Còn bảo hành)'}
-                      </span>
-                    ) : (
-                      'Không áp dụng'
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <div className="text-xs text-slate-500">Bảo dưỡng định kỳ gần nhất</div>
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-                    {equipment.lastPmDate ? fmtDate(equipment.lastPmDate) : 'Chưa thực hiện'}
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <div className="text-xs text-slate-500">Lịch bảo dưỡng tiếp theo</div>
-                  <div className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">
-                    {equipment.nextPmDate ? fmtDate(equipment.nextPmDate) : 'Chưa lên lịch'}
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Quick QR Mini Card */}
-            <Card className="p-6 text-center">
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                Mã QR Tra cứu Nhanh
-              </h3>
-              <div
-                className="flex justify-center p-2 bg-white rounded-lg border border-slate-200 dark:border-slate-700 max-w-[160px] mx-auto cursor-pointer hover:shadow-md transition"
-                onClick={() => setPrintModalOpen(true)}
-                dangerouslySetInnerHTML={{ __html: qrSvg }}
-              />
-              <p className="text-xs text-slate-500 mt-2">
-                Click để mở bản in tem
-              </p>
-            </Card>
+              {/* Quick QR Mini Card */}
+              <Card className="p-5 text-center">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+                  Mã QR Tra cứu Nhanh
+                </h3>
+                <div
+                  className="flex justify-center p-2 bg-white rounded-lg border border-slate-200 dark:border-slate-700 max-w-[130px] mx-auto cursor-pointer hover:shadow-md transition"
+                  onClick={() => setPrintModalOpen(true)}
+                  dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  title="Click để in tem QR"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPrintModalOpen(true)}
+                  className="w-full mt-3 text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" /> In tem QR dán máy
+                </Button>
+              </Card>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Tab 2: Location & Customer */}
       {activeTab === 'location' && (
