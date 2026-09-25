@@ -417,25 +417,6 @@ export function CustomerOrderPrintModal({
                   <div style={{ fontSize: '11px', letterSpacing: '1px', marginTop: 1 }}>
                     - - - - - - - - - o 0 o - - - - - - - - -
                   </div>
-                  {(invoiceNo || invoiceSerial) && (
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: '11px',
-                        color: '#1e3a8a',
-                        textAlign: 'center',
-                        background: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        borderRadius: 4,
-                        padding: '3px 8px',
-                        display: 'inline-block',
-                      }}
-                    >
-                      <span>HĐ GTGT: {invoiceSerial ? `Ký hiệu ${invoiceSerial} • ` : ''}</span>
-                      <span>Số: <strong>{invoiceNo}</strong></span>
-                      {invoiceDate ? <span> • Ngày {new Date(invoiceDate).toLocaleDateString('vi-VN')}</span> : null}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -454,7 +435,7 @@ export function CustomerOrderPrintModal({
               </div>
 
               {/* 3. Thông tin khách hàng */}
-              <div style={{ border: '1px solid #cbd5e1', borderRadius: 5, padding: '7px 12px', background: '#f8fafc', marginBottom: 10, fontSize: '12.5px' }}>
+              <div style={{ border: '1px solid #cbd5e1', borderRadius: 5, padding: '7px 12px', background: 'transparent', marginBottom: 10, fontSize: '12.5px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '4px 16px' }}>
                   <div>Khách hàng: <strong>{customerName}</strong></div>
                   <div>Người liên hệ: <strong>{contactPerson || '—'}</strong></div>
@@ -589,12 +570,12 @@ export function CustomerOrderPrintModal({
                       </tr>
                     )}
 
-                    {/* Dòng 5: Tổng cộng thanh toán */}
-                    <tr style={{ background: '#f1f5f9', fontWeight: 800, fontSize: '13px' }}>
+                    {/* Dòng 5: Tổng thanh toán */}
+                    <tr style={{ fontWeight: 800, fontSize: '13px' }}>
                       <td colSpan={5} style={{ border: '1px solid #000', padding: '7px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
-                        TỔNG CỘNG THANH TOÁN{vatRate > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                        Tổng thanh toán
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '7px 6px', textAlign: 'right', color: '#7c3aed', fontSize: '13.5px', whiteSpace: 'nowrap' }}>
+                      <td style={{ border: '1px solid #000', padding: '7px 6px', textAlign: 'right', color: '#000000', fontSize: '13.5px', whiteSpace: 'nowrap' }}>
                         {fmt(totalAmount)}
                       </td>
                     </tr>
@@ -607,15 +588,10 @@ export function CustomerOrderPrintModal({
                 Số tiền viết bằng chữ: <strong>{readVndInWords(totalAmount)}</strong>
               </div>
 
-              {/* Ghi chú & Điều khoản */}
-              {(notes || order.dueDate) && (
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: 4, padding: '6px 10px', background: '#fafafa', marginBottom: 14, fontSize: '12px' }}>
-                  {order.dueDate && (
-                    <div>Hạn thanh toán: <strong>{new Date(order.dueDate).toLocaleDateString('vi-VN')}</strong></div>
-                  )}
-                  {notes && (
-                    <div style={{ marginTop: 2 }}>Ghi chú: {notes}</div>
-                  )}
+              {/* Hạn thanh toán (nếu có) */}
+              {order.dueDate && (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: 4, padding: '6px 10px', marginBottom: 14, fontSize: '12px' }}>
+                  Hạn thanh toán: <strong>{new Date(order.dueDate).toLocaleDateString('vi-VN')}</strong>
                 </div>
               )}
 
