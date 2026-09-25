@@ -43,6 +43,7 @@ export const NAV_SECTIONS: NavSection[] = [
       // Đơn bán tách khỏi màn kho: khác người dùng, khác quyền, và màn kho đã đủ 6 tab
       { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
       { href: '/assets', label: 'Thiết bị văn phòng', icon: 'Laptop', permission: 'MENU_ASSETS' },
+      { href: '/media', label: 'Thư viện Media', icon: 'Image', permission: 'MENU_EQUIPMENT' },
     ],
   },
   {

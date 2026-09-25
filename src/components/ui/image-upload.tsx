@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Upload, Trash2, Loader2, Image as ImageIcon, Star, Plus, Eye, RefreshCw } from 'lucide-react';
+import { Upload, Trash2, Loader2, Image as ImageIcon, Star, Plus, Eye, RefreshCw, FolderOpen } from 'lucide-react';
 import { Button, Input, Field } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
+import { MediaPickerModal } from '@/components/domain/media-picker-modal';
 
 export interface ImageUploadProps {
   value?: string | null;
@@ -29,6 +30,7 @@ export function ImageUpload({
   hidePath = true,
 }: ImageUploadProps) {
   const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [showManualUrl, setShowManualUrl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
@@ -123,7 +125,7 @@ export function ImageUpload({
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
               Đã lưu trên máy chủ an toàn
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <Button
                 type="button"
                 variant="secondary"
@@ -134,6 +136,17 @@ export function ImageUpload({
               >
                 {uploading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
                 <span>Đổi ảnh khác</span>
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={disabled || uploading}
+                onClick={() => setPickerOpen(true)}
+                style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              >
+                <FolderOpen size={13} />
+                <span>Từ thư viện</span>
               </Button>
               <Button
                 type="button"
@@ -151,39 +164,71 @@ export function ImageUpload({
         </div>
       ) : (
         /* Giao diện chưa có ảnh: Dropzone sạch sẽ */
-        <div
-          onClick={() => !disabled && !uploading && fileInputRef.current?.click()}
-          style={{
-            border: '2px dashed var(--border)',
-            borderRadius: 8,
-            padding: '20px 16px',
-            textAlign: 'center',
-            background: 'var(--surface-subtle)',
-            cursor: disabled || uploading ? 'not-allowed' : 'pointer',
-            transition: 'border-color 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            if (!disabled && !uploading) e.currentTarget.style.borderColor = 'var(--primary)';
-          }}
-          onMouseLeave={(e) => {
-            if (!disabled && !uploading) e.currentTarget.style.borderColor = 'var(--border)';
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            {uploading ? (
-              <Loader2 size={24} className="animate-spin" style={{ color: 'var(--primary)' }} />
-            ) : (
-              <Upload size={24} style={{ color: 'var(--primary)' }} />
-            )}
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-strong)' }}>
-              {uploading ? 'Đang tải ảnh lên máy chủ...' : 'Bấm để tải ảnh lên'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div
+            onClick={() => !disabled && !uploading && fileInputRef.current?.click()}
+            style={{
+              border: '2px dashed var(--border)',
+              borderRadius: 8,
+              padding: '20px 16px',
+              textAlign: 'center',
+              background: 'var(--surface-subtle)',
+              cursor: disabled || uploading ? 'not-allowed' : 'pointer',
+              transition: 'border-color 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (!disabled && !uploading) e.currentTarget.style.borderColor = 'var(--primary)';
+            }}
+            onMouseLeave={(e) => {
+              if (!disabled && !uploading) e.currentTarget.style.borderColor = 'var(--border)';
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              {uploading ? (
+                <Loader2 size={24} className="animate-spin" style={{ color: 'var(--primary)' }} />
+              ) : (
+                <Upload size={24} style={{ color: 'var(--primary)' }} />
+              )}
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-strong)' }}>
+                {uploading ? 'Đang tải ảnh lên máy chủ...' : 'Bấm để tải ảnh lên từ máy'}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                Định dạng PNG, JPG, WebP (Tối đa 5MB)
+              </div>
             </div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-              Định dạng PNG, JPG, WebP (Tối đa 5MB)
-            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <button
+              type="button"
+              disabled={disabled || uploading}
+              onClick={() => setPickerOpen(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: 12,
+                color: 'var(--primary)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 8px',
+              }}
+            >
+              <FolderOpen size={14} />
+              <span>Hoặc chọn ảnh có sẵn từ Thư viện Media</span>
+            </button>
           </div>
         </div>
       )}
+
+      {/* Modal chọn từ Thư viện Media */}
+      <MediaPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(url) => onChange(url as string)}
+      />
 
       {/* Tùy chọn mở nhập link thủ công nếu không hidePath hoặc người dùng chủ động mở */}
       {!hidePath || showManualUrl ? (
@@ -260,6 +305,7 @@ export function MultiImageUpload({
   className,
 }: MultiImageUploadProps) {
   const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
@@ -491,9 +537,35 @@ export function MultiImageUpload({
         )}
       </div>
 
-      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-        💡 Có thể chọn nhiều ảnh cùng lúc (tối đa {maxFiles} ảnh). Ảnh đầu tiên sẽ tự động làm <strong>ảnh đại diện chính</strong>.
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+          💡 Có thể chọn nhiều ảnh cùng lúc (tối đa {maxFiles} ảnh). Ảnh đầu tiên sẽ tự động làm <strong>ảnh đại diện chính</strong>.
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={disabled || uploading || values.length >= maxFiles}
+          onClick={() => setPickerOpen(true)}
+          style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+        >
+          <FolderOpen size={13} />
+          <span>Chọn từ Thư viện Media</span>
+        </Button>
       </div>
+
+      <MediaPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        multiple
+        title="Chọn ảnh từ Thư viện vào Album"
+        onSelect={(selected) => {
+          const newUrls = Array.isArray(selected) ? selected : [selected];
+          const remaining = maxFiles - values.length;
+          const toAdd = newUrls.slice(0, remaining);
+          onChange([...values, ...toAdd]);
+        }}
+      />
     </div>
   );
 
