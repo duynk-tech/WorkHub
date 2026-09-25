@@ -537,13 +537,13 @@ export function SparePartQuotationModal({
             <div style={{ marginBottom: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>Tên linh kiện / Mô tả chi tiết</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>ĐVT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px', textAlign: 'center' }}>Đơn giá</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '120px', textAlign: 'center' }}>Thành tiền</th>
+                  <tr style={{ background: '#cbd5e1' }}>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tên linh kiện / Mô tả chi tiết</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>ĐVT</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Đơn giá</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '120px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Thành tiền</th>
                   </tr>
                 </thead>
                 <tbody>

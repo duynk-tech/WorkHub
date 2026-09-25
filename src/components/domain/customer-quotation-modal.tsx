@@ -903,17 +903,17 @@ export function CustomerQuotationPrintModal({
             {/* Bảng hàng hóa */}
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', marginBottom: 10 }}>
               <thead>
-                <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
-                  <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
-                  <th style={{ border: cellBorder, padding: '5px 7px', textAlign: 'center' }}>Tên hàng hóa / dịch vụ</th>
-                  <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-                  <th style={{ border: cellBorder, padding: '5px 6px', width: '85px', textAlign: 'center', whiteSpace: 'nowrap' }}>Đơn giá</th>
+                <tr style={{ background: '#cbd5e1' }}>
+                  <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
+                  <th style={{ border: cellBorder, padding: '5px 7px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tên hàng hóa / dịch vụ</th>
+                  <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
+                  <th style={{ border: cellBorder, padding: '5px 6px', width: '85px', textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 700, color: '#0f172a' }}>Đơn giá</th>
                   {hasLineDiscount && (
-                    <th style={{ border: cellBorder, padding: '5px 6px', width: '80px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <th style={{ border: cellBorder, padding: '5px 6px', width: '80px', textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 700, color: '#0f172a' }}>
                       Chiết khấu
                     </th>
                   )}
-                  <th style={{ border: cellBorder, padding: '5px 6px', width: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  <th style={{ border: cellBorder, padding: '5px 6px', width: '95px', textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 700, color: '#0f172a' }}>
                     Thành tiền
                   </th>
                 </tr>

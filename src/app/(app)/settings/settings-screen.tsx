@@ -695,11 +695,11 @@ export function SettingsScreen({
 
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: 8 }}>
                           <thead>
-                            <tr style={{ background: 'rgba(241, 245, 249, 0.7)' }}>
-                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>STT</th>
-                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px' }}>Hạng mục / Linh kiện</th>
-                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center' }}>SL</th>
-                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right' }}>Thành tiền</th>
+                            <tr style={{ background: '#cbd5e1' }}>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', fontWeight: 700, color: '#0f172a' }}>Hạng mục / Linh kiện</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
+                              <th style={{ border: '1px solid #cbd5e1', padding: '3px 4px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>Thành tiền</th>
                             </tr>
                           </thead>
                           <tbody>

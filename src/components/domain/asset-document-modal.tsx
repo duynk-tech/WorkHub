@@ -248,13 +248,13 @@ export function AssetDocumentModal({
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', textAlign: 'left' }}>
           <thead>
-            <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
-              <th style={{ border: cellBorder, padding: '5px 7px' }}>Tên tài sản & cấu hình</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '110px' }}>Mã tài sản</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '120px' }}>Số Serial (S/N)</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '150px' }}>Tình trạng</th>
+            <tr style={{ background: '#cbd5e1' }}>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', fontWeight: 700, color: '#0f172a' }}>Tên tài sản & cấu hình</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '110px', fontWeight: 700, color: '#0f172a' }}>Mã tài sản</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '120px', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '150px', fontWeight: 700, color: '#0f172a' }}>Tình trạng</th>
             </tr>
           </thead>
           <tbody>

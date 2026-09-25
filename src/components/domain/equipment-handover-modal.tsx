@@ -385,12 +385,12 @@ export function EquipmentHandoverModal({
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px' }}>Tên thiết bị & Thông số kỹ thuật</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px' }}>Số Serial (S/N)</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '150px' }}>Tình trạng kỹ thuật</th>
+                  <tr style={{ background: '#cbd5e1' }}>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', fontWeight: 700, color: '#0f172a' }}>Tên thiết bị & Thông số kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '150px', fontWeight: 700, color: '#0f172a' }}>Tình trạng kỹ thuật</th>
                   </tr>
                 </thead>
                 <tbody>

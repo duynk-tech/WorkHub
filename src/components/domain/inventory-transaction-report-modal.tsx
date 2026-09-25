@@ -310,15 +310,15 @@ export function InventoryTransactionReportModal({
 
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
-                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '6px 8px' }}>Tên linh kiện / Vật tư</th>
-                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center' }}>ĐVT</th>
-                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center' }}>SL</th>
+                  <tr style={{ background: '#cbd5e1' }}>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', fontWeight: 700, color: '#0f172a' }}>Tên linh kiện / Vật tư</th>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>ĐVT</th>
+                    <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
                     {hasPrices && (
                       <>
-                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right' }}>Đơn giá</th>
-                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right' }}>Thành tiền</th>
+                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>Đơn giá</th>
+                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>Thành tiền</th>
                       </>
                     )}
                   </tr>
