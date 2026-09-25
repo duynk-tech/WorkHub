@@ -77,16 +77,28 @@ export interface KitchenSpecs {
   tempRange?: string;        // 50°C - 300°C
 }
 
+export interface DynamicSpecAttribute {
+  id?: string;
+  label: string;
+  value: string;
+}
+
 export interface EquipmentSpecsInput {
-  // Common
+  // Common physical & electrical
   dimensions?: string;
   weightKg?: string;
   madeIn?: string;
-  // Category specific
+  voltage?: string;
+  powerWatts?: string;
+  powerKw?: string;
+  // Dynamic flexible attributes (Key-Value)
+  attributes?: DynamicSpecAttribute[];
+  // Category specific (legacy support)
   iceCream?: IceCreamSpecs;
   chocolate?: ChocolateSpecs;
   kitchen?: KitchenSpecs;
   otherDescription?: string;
+  [key: string]: any;
 }
 
 export interface SaveEquipmentInput {

@@ -41,7 +41,17 @@ import {
   CheckCircle2,
   IceCreamCone,
   Cookie,
+  Trash2,
+  Sparkles,
+  SlidersHorizontal,
+  Eye,
 } from 'lucide-react';
+import {
+  EQUIPMENT_SPEC_PRESETS,
+  type SpecPreset,
+  getEquipmentSpecRows,
+} from '@/lib/equipment-specs';
+import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
 
 interface EquipmentModalProps {
   open: boolean;
@@ -94,47 +104,118 @@ export function EquipmentModal({
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [locationModalOpen, setLocationModalOpen] = useState(false);
 
-  // Common Specs
+  // Dynamic Specs & Common
   const specsData = (equipment?.specs as EquipmentSpecsInput) || {};
   const [dimensions, setDimensions] = useState(specsData.dimensions || '');
   const [weightKg, setWeightKg] = useState(specsData.weightKg || '');
   const [madeIn, setMadeIn] = useState(specsData.madeIn || '');
 
-  // Ice Cream Specs
-  const iceData = specsData.iceCream || {};
-  const [iceMachineType, setIceMachineType] = useState(iceData.machineType || 'Kem tươi 3 vòi để bàn');
-  const [flavorCount, setFlavorCount] = useState(iceData.flavorCount || '2 vị riêng + 1 vị hỗn hợp');
-  const [capacityPerHour, setCapacityPerHour] = useState(iceData.capacityPerHour || '28 Lít/giờ');
-  const [cylinderCapacity, setCylinderCapacity] = useState(iceData.cylinderCapacity || '1.9 Lít x 2');
-  const [hopperCapacity, setHopperCapacity] = useState(iceData.hopperCapacity || '12.5 Lít x 2');
-  const [compressor, setCompressor] = useState(iceData.compressor || 'Embraco (Ý)');
-  const [refrigerant, setRefrigerant] = useState(iceData.refrigerant || 'R404a');
-  const [icePowerWatts, setIcePowerWatts] = useState(iceData.powerWatts || '2200W');
-  const [iceVoltage, setIceVoltage] = useState(iceData.voltage || '220V / 50Hz');
-  const [coolingType, setCoolingType] = useState(iceData.coolingType || 'Làm mát bằng gió (Air-cooled)');
-  const [preCooling, setPreCooling] = useState(iceData.preCooling ?? true);
-  const [airPump, setAirPump] = useState(iceData.airPump ?? true);
+  const [voltage, setVoltage] = useState(
+    specsData.voltage ||
+    specsData.iceCream?.voltage ||
+    specsData.chocolate?.voltage ||
+    specsData.kitchen?.voltage ||
+    '220V / 50Hz'
+  );
 
-  // Chocolate Specs
-  const chocoData = specsData.chocolate || {};
-  const [chocoMachineType, setChocoMachineType] = useState(chocoData.machineType || 'Máy tôi/nhiệt luyện socola (Tempering)');
-  const [tankCapacityKg, setTankCapacityKg] = useState(chocoData.tankCapacityKg || '25 kg');
-  const [outputPerHourKg, setOutputPerHourKg] = useState(chocoData.outputPerHourKg || '30 kg/h');
-  const [tempRange, setTempRange] = useState(chocoData.tempRange || '20°C - 60°C (±0.1°C)');
-  const [heatingMethod, setHeatingMethod] = useState(chocoData.heatingMethod || 'Gia nhiệt cách thủy tuần hoàn');
-  const [hasFootPedal, setHasFootPedal] = useState(chocoData.hasFootPedal ?? true);
-  const [chocoPowerWatts, setChocoPowerWatts] = useState(chocoData.powerWatts || '1500W');
-  const [chocoVoltage, setChocoVoltage] = useState(chocoData.voltage || '220V / 50Hz');
-  const [materialGrade, setMaterialGrade] = useState(chocoData.materialGrade || 'Inox thực phẩm 304');
+  const [powerWatts, setPowerWatts] = useState(
+    specsData.powerWatts ||
+    specsData.powerKw ||
+    specsData.iceCream?.powerWatts ||
+    specsData.chocolate?.powerWatts ||
+    specsData.kitchen?.powerKw ||
+    ''
+  );
 
-  // Kitchen Specs
-  const kitchenData = specsData.kitchen || {};
-  const [equipmentType, setEquipmentType] = useState(kitchenData.equipmentType || 'Lò nướng đối lưu');
-  const [powerType, setPowerType] = useState(kitchenData.powerType || 'Điện');
-  const [kitchenCapacity, setKitchenCapacity] = useState(kitchenData.capacity || '5 khay GN 1/1');
-  const [powerKw, setPowerKw] = useState(kitchenData.powerKw || '9.2 kW');
-  const [kitchenVoltage, setKitchenVoltage] = useState(kitchenData.voltage || '380V (3 pha)');
-  const [kitchenTempRange, setKitchenTempRange] = useState(kitchenData.tempRange || '50°C - 300°C');
+  // Dynamic Custom Attributes list
+  const [customAttributes, setCustomAttributes] = useState<{ id: string; label: string; value: string }[]>(() => {
+    if (Array.isArray(specsData.attributes) && specsData.attributes.length > 0) {
+      return specsData.attributes.map((a, idx) => ({
+        id: a.id || `attr-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        label: a.label || '',
+        value: a.value || '',
+      }));
+    }
+
+    const items: { id: string; label: string; value: string }[] = [];
+    const add = (label: string, val?: any) => {
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        items.push({
+          id: `attr-${items.length}-${Math.random().toString(36).slice(2, 6)}`,
+          label,
+          value: String(val).trim(),
+        });
+      }
+    };
+
+    if (specsData.iceCream) {
+      const ice = specsData.iceCream;
+      add('Chủng loại máy kem', ice.machineType);
+      add('Số họng / Số vị', ice.flavorCount);
+      add('Năng suất làm kem', ice.capacityPerHour);
+      add('Dung tích cối xi lanh', ice.cylinderCapacity);
+      add('Dung tích bể chứa (Hopper)', ice.hopperCapacity);
+      add('Lốc nén (Compressor)', ice.compressor);
+      add('Loại gas lạnh', ice.refrigerant);
+      add('Hệ thống làm mát', ice.coolingType);
+      if (ice.preCooling !== undefined) add('Giữ tươi qua đêm (Pre-cooling)', ice.preCooling ? 'Có hỗ trợ' : 'Không');
+      if (ice.airPump !== undefined) add('Bơm tăng xốp (Air pump)', ice.airPump ? 'Có bơm xốp' : 'Không');
+    } else if (specsData.chocolate) {
+      const choco = specsData.chocolate;
+      add('Chủng loại máy socola', choco.machineType);
+      add('Dung tích bồn chứa', choco.tankCapacityKg);
+      add('Năng suất tôi / rót', choco.outputPerHourKg);
+      add('Dải nhiệt độ kiểm soát', choco.tempRange);
+      add('Cơ chế gia nhiệt', choco.heatingMethod);
+      add('Chất liệu tiếp xúc', choco.materialGrade);
+      if (choco.hasFootPedal !== undefined) add('Bàn đạp chân ngắt dòng', choco.hasFootPedal ? 'Có bàn đạp' : 'Không');
+    } else if (specsData.kitchen) {
+      const k = specsData.kitchen;
+      add('Loại thiết bị cụ thể', k.equipmentType);
+      add('Nhiên liệu vận hành', k.powerType);
+      add('Dung tích / Sức chứa', k.capacity);
+      add('Dải nhiệt độ hoạt động', k.tempRange);
+    }
+
+    if (items.length === 0) {
+      return [
+        { id: 'attr-1', label: 'Dung tích nồi hơi / Cối', value: '' },
+        { id: 'attr-2', label: 'Năng suất vận hành', value: '' },
+        { id: 'attr-3', label: 'Tính năng / Vật liệu', value: '' },
+      ];
+    }
+    return items;
+  });
+
+  const handleApplyPreset = (preset: SpecPreset) => {
+    if (preset.defaultElectrical?.voltage) setVoltage(preset.defaultElectrical.voltage);
+    if (preset.defaultElectrical?.powerWatts) setPowerWatts(preset.defaultElectrical.powerWatts);
+
+    const newAttrs = preset.attributes.map((a, idx) => ({
+      id: `attr-${Date.now()}-${idx}`,
+      label: a.label,
+      value: a.value,
+    }));
+    setCustomAttributes(newAttrs);
+    toast.success(`Đã áp dụng mẫu thông số: ${preset.name}`);
+  };
+
+  const handleAddAttribute = () => {
+    setCustomAttributes((prev) => [
+      ...prev,
+      { id: `attr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: '', value: '' },
+    ]);
+  };
+
+  const handleUpdateAttribute = (id: string, field: 'label' | 'value', val: string) => {
+    setCustomAttributes((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: val } : item))
+    );
+  };
+
+  const handleRemoveAttribute = (id: string) => {
+    setCustomAttributes((prev) => prev.filter((item) => item.id !== id));
+  };
 
   // Selected customer locations
   const selectedCustomer = customers.find((c) => c.id === customerId);
@@ -153,49 +234,18 @@ export function EquipmentModal({
 
     setLoading(true);
 
+    const validAttributes = customAttributes
+      .filter((a) => a.label.trim() && a.value.trim())
+      .map((a) => ({ label: a.label.trim(), value: a.value.trim() }));
+
     const specsPayload: EquipmentSpecsInput = {
+      voltage: voltage.trim() || undefined,
+      powerWatts: powerWatts.trim() || undefined,
       dimensions: dimensions.trim() || undefined,
       weightKg: weightKg.trim() || undefined,
       madeIn: madeIn.trim() || undefined,
+      attributes: validAttributes,
     };
-
-    if (category === 'ICE_CREAM_MACHINE') {
-      specsPayload.iceCream = {
-        machineType: iceMachineType.trim(),
-        flavorCount: flavorCount.trim(),
-        capacityPerHour: capacityPerHour.trim(),
-        cylinderCapacity: cylinderCapacity.trim(),
-        hopperCapacity: hopperCapacity.trim(),
-        compressor: compressor.trim(),
-        refrigerant: refrigerant.trim(),
-        powerWatts: icePowerWatts.trim(),
-        voltage: iceVoltage.trim(),
-        coolingType: coolingType.trim(),
-        preCooling,
-        airPump,
-      };
-    } else if (category === 'CHOCOLATE_MACHINE') {
-      specsPayload.chocolate = {
-        machineType: chocoMachineType.trim(),
-        tankCapacityKg: tankCapacityKg.trim(),
-        outputPerHourKg: outputPerHourKg.trim(),
-        tempRange: tempRange.trim(),
-        heatingMethod: heatingMethod.trim(),
-        hasFootPedal,
-        powerWatts: chocoPowerWatts.trim(),
-        voltage: chocoVoltage.trim(),
-        materialGrade: materialGrade.trim(),
-      };
-    } else if (category === 'KITCHEN_HOT' || category === 'KITCHEN_COLD') {
-      specsPayload.kitchen = {
-        equipmentType: equipmentType.trim(),
-        powerType: powerType.trim(),
-        capacity: kitchenCapacity.trim(),
-        powerKw: powerKw.trim(),
-        voltage: kitchenVoltage.trim(),
-        tempRange: kitchenTempRange.trim(),
-      };
-    }
 
     const payload: SaveEquipmentInput = {
       name: name.trim(),
@@ -404,278 +454,88 @@ export function EquipmentModal({
           </div>
         )}
 
-        {/* Tab 2: Technical Specs (Dynamic per Category) */}
+        {/* Tab 2: Technical Specs (Hybrid Dynamic Specs with Presets) */}
         {activeTab === 'specs' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Category: Ice Cream Machine */}
-            {category === 'ICE_CREAM_MACHINE' && (
-              <Card style={{ padding: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                  <IceCreamCone style={{ width: 18, height: 18, color: '#e11d48' }} />
-                  <strong style={{ fontSize: 14 }}>Thông số Kỹ thuật Máy làm kem</strong>
+            {/* 1. Mẫu nạp nhanh theo dòng máy F&B */}
+            <Card style={{ padding: 14, background: 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles style={{ width: 16, height: 16, color: 'var(--primary)' }} />
+                  <strong style={{ fontSize: 13 }}>Mẫu Nạp Nhanh Thông Số Chuẩn F&B (Preset Templates)</strong>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Chủng loại máy kem">
-                    <Input
-                      placeholder="VD: Kem tươi 3 vòi để bàn, Máy đứng có bánh xe, Gelato..."
-                      value={iceMachineType}
-                      onChange={(e) => setIceMachineType(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Số họng / Số vòi & Số vị">
-                    <Input
-                      placeholder="VD: 3 vòi (2 vị riêng + 1 vị hỗn hợp), 1 vòi..."
-                      value={flavorCount}
-                      onChange={(e) => setFlavorCount(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Năng suất làm kem (Lít/giờ hoặc kg/h)">
-                    <Input
-                      placeholder="VD: 28 Lít/giờ, 40 Lít/giờ..."
-                      value={capacityPerHour}
-                      onChange={(e) => setCapacityPerHour(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Dung tích xi-lanh cối làm lạnh">
-                    <Input
-                      placeholder="VD: 1.9 Lít x 2, 3.2 Lít..."
-                      value={cylinderCapacity}
-                      onChange={(e) => setCylinderCapacity(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Dung tích bể chứa nguyên liệu (Hopper)">
-                    <Input
-                      placeholder="VD: 12.5 Lít x 2..."
-                      value={hopperCapacity}
-                      onChange={(e) => setHopperCapacity(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Hãng lốc nén / Máy nén (Compressor)">
-                    <Input
-                      placeholder="VD: Embraco / Aspera (Ý), Danfoss, Tecumseh..."
-                      value={compressor}
-                      onChange={(e) => setCompressor(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Loại gas lạnh sử dụng">
-                    <Input
-                      placeholder="VD: R404a, R134a, R290..."
-                      value={refrigerant}
-                      onChange={(e) => setRefrigerant(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Công suất tiêu thụ điện (W / kW)">
-                    <Input
-                      placeholder="VD: 2200W, 2.8 kW..."
-                      value={icePowerWatts}
-                      onChange={(e) => setIcePowerWatts(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Điện áp hoạt động">
-                    <Input
-                      placeholder="VD: 220V / 50Hz (1 pha), 380V (3 pha)..."
-                      value={iceVoltage}
-                      onChange={(e) => setIceVoltage(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Hệ thống làm mát">
-                    <Input
-                      placeholder="VD: Làm mát bằng gió (Air-cooled) / Làm mát nước..."
-                      value={coolingType}
-                      onChange={(e) => setCoolingType(e.target.value)}
-                    />
-                  </Field>
-
-                  <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 24, marginTop: 4 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                      <Checkbox
-                        checked={preCooling}
-                        onChange={(e) => setPreCooling(e.target.checked)}
-                      />
-                      <span>Chế độ giữ tươi qua đêm (Pre-cooling / Night mode)</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                      <Checkbox
-                        checked={airPump}
-                        onChange={(e) => setAirPump(e.target.checked)}
-                      />
-                      <span>Bơm tăng xốp nguyên liệu (Air pump)</span>
-                    </label>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Category: Chocolate Machine */}
-            {category === 'CHOCOLATE_MACHINE' && (
-              <Card style={{ padding: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                  <Cookie style={{ width: 18, height: 18, color: '#b45309' }} />
-                  <strong style={{ fontSize: 14 }}>Thông số Kỹ thuật Máy làm socola</strong>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Chủng loại máy socola">
-                    <Input
-                      placeholder="VD: Máy tôi Tempering, Nồi nấu Melting, Máy phủ Enrobing..."
-                      value={chocoMachineType}
-                      onChange={(e) => setChocoMachineType(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Dung tích bồn chứa (kg hoặc Lít)">
-                    <Input
-                      placeholder="VD: 25 kg, 50 kg, 100 kg..."
-                      value={tankCapacityKg}
-                      onChange={(e) => setTankCapacityKg(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Năng suất tôi / rót (kg/giờ)">
-                    <Input
-                      placeholder="VD: 30 kg/h, 60 kg/h..."
-                      value={outputPerHourKg}
-                      onChange={(e) => setOutputPerHourKg(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Dải nhiệt độ kiểm soát (°C)">
-                    <Input
-                      placeholder="VD: 20°C - 60°C (độ chính xác ±0.1°C)..."
-                      value={tempRange}
-                      onChange={(e) => setTempRange(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Cơ chế gia nhiệt">
-                    <Input
-                      placeholder="VD: Gia nhiệt cách thủy tuần hoàn / Thanh nhiệt..."
-                      value={heatingMethod}
-                      onChange={(e) => setHeatingMethod(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Chất liệu tiếp xúc thực phẩm">
-                    <Input
-                      placeholder="VD: Inox 304 tiêu chuẩn thực phẩm, Inox 316..."
-                      value={materialGrade}
-                      onChange={(e) => setMaterialGrade(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Công suất tiêu thụ điện (W / kW)">
-                    <Input
-                      placeholder="VD: 1500W, 2.2 kW..."
-                      value={chocoPowerWatts}
-                      onChange={(e) => setChocoPowerWatts(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Điện áp hoạt động">
-                    <Input
-                      placeholder="VD: 220V / 50Hz, 380V..."
-                      value={chocoVoltage}
-                      onChange={(e) => setChocoVoltage(e.target.value)}
-                    />
-                  </Field>
-
-                  <div style={{ gridColumn: '1 / -1', marginTop: 4 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                      <Checkbox
-                        checked={hasFootPedal}
-                        onChange={(e) => setHasFootPedal(e.target.checked)}
-                      />
-                      <span>Bàn đạp chân ngắt dòng rót socola (Foot pedal)</span>
-                    </label>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Category: Kitchen Hot / Cold */}
-            {(category === 'KITCHEN_HOT' || category === 'KITCHEN_COLD' || category === 'BEVERAGE_BAR' || category === 'OTHER') && (
-              <Card style={{ padding: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                  <Utensils style={{ width: 18, height: 18, color: 'var(--primary)' }} />
-                  <strong style={{ fontSize: 14 }}>Thông số Kỹ thuật Thiết bị Bếp / Lạnh / Pha chế</strong>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="Loại thiết bị cụ thể">
-                    <Input
-                      placeholder="VD: Lò nướng đối lưu, Bếp chiên nhúng, Bàn mát salad, Máy pha cafe..."
-                      value={equipmentType}
-                      onChange={(e) => setEquipmentType(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Nguồn nhiên liệu">
-                    <Select value={powerType} onChange={(e) => setPowerType(e.target.value)}>
-                      <option value="Điện">Điện</option>
-                      <option value="Gas (LPG)">Gas (LPG)</option>
-                      <option value="Hơi nước (Steam)">Hơi nước (Steam)</option>
-                      <option value="Điện + Gas">Điện + Gas</option>
-                    </Select>
-                  </Field>
-
-                  <Field label="Dung tích / Sức chứa">
-                    <Input
-                      placeholder="VD: 5 khay GN 1/1, 2 họng 28 Lít, 400 Lít..."
-                      value={kitchenCapacity}
-                      onChange={(e) => setKitchenCapacity(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Dải nhiệt độ hoạt động">
-                    <Input
-                      placeholder="VD: 50°C - 300°C (Lò nướng) hoặc -18°C đến -22°C (Tủ đông)..."
-                      value={kitchenTempRange}
-                      onChange={(e) => setKitchenTempRange(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Công suất (kW hoặc BTU/h)">
-                    <Input
-                      placeholder="VD: 9.2 kW, 12 kW..."
-                      value={powerKw}
-                      onChange={(e) => setPowerKw(e.target.value)}
-                    />
-                  </Field>
-
-                  <Field label="Điện áp">
-                    <Input
-                      placeholder="VD: 220V 1 pha, 380V 3 pha..."
-                      value={kitchenVoltage}
-                      onChange={(e) => setKitchenVoltage(e.target.value)}
-                    />
-                  </Field>
-                </div>
-              </Card>
-            )}
-
-            {/* General Dimensions & Origin */}
-            <Card style={{ padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: 'var(--text-muted)' }}>
-                Kích thước, Trọng lượng & Xuất xứ
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  Bấm mẫu bên dưới để tự động điền danh mục thông số tiêu chuẩn
+                </span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                <Field label="Kích thước (Dài x Rộng x Cao cm)">
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {EQUIPMENT_SPEC_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleApplyPreset(preset)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface-card)',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--primary)';
+                      e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                      e.currentTarget.style.backgroundColor = 'var(--surface-card)';
+                    }}
+                  >
+                    <span>{preset.icon}</span>
+                    <span>{preset.name}</span>
+                  </button>
+                ))}
+              </div>
+            </Card>
+
+            {/* 2. Thông số Điện & Kích thước cơ bản */}
+            <Card style={{ padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--text)' }}>
+                Nguồn điện, Kích thước & Xuất xứ
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                <Field label="Điện áp hoạt động">
+                  <Input
+                    placeholder="VD: 220V / 50Hz hoặc 380V (3 pha)..."
+                    value={voltage}
+                    onChange={(e) => setVoltage(e.target.value)}
+                  />
+                </Field>
+
+                <Field label="Công suất tiêu thụ">
+                  <Input
+                    placeholder="VD: 3200W, 4.5 kW, 1500W..."
+                    value={powerWatts}
+                    onChange={(e) => setPowerWatts(e.target.value)}
+                  />
+                </Field>
+
+                <Field label="Kích thước (D x R x C cm)">
                   <Input
                     placeholder="VD: 54 x 78 x 138 cm..."
                     value={dimensions}
                     onChange={(e) => setDimensions(e.target.value)}
                   />
                 </Field>
+
                 <Field label="Trọng lượng máy (kg)">
                   <Input
                     placeholder="VD: 135 kg..."
@@ -683,13 +543,116 @@ export function EquipmentModal({
                     onChange={(e) => setWeightKg(e.target.value)}
                   />
                 </Field>
+
                 <Field label="Xuất xứ / Nơi sản xuất">
                   <Input
-                    placeholder="VD: Ý, Đức, Nhật Bản, Trung Quốc, Việt Nam..."
+                    placeholder="VD: Ý, Đức, Nhật Bản, Việt Nam..."
                     value={madeIn}
                     onChange={(e) => setMadeIn(e.target.value)}
                   />
                 </Field>
+              </div>
+            </Card>
+
+            {/* 3. Danh sách Thông số Kỹ thuật Động (Key-Value) */}
+            <Card style={{ padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div>
+                  <strong style={{ fontSize: 13.5 }}>Danh sách Thông số Kỹ thuật Chi tiết</strong>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Tự do thêm hoặc sửa bất kỳ thông số nào theo đặc thù riêng của máy
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddAttribute}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Plus style={{ width: 14, height: 14 }} /> Thêm thông số
+                </Button>
+              </div>
+
+              {customAttributes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 12px', border: '1px dashed var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 12.5 }}>
+                  Chưa có thông số chi tiết nào. Bấm <strong>"+ Thêm thông số"</strong> hoặc chọn một <strong>Mẫu nạp nhanh</strong> ở trên để bắt đầu.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {customAttributes.map((attr, idx) => (
+                    <div
+                      key={attr.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(140px, 320px) 1fr 36px',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Input
+                        placeholder={`Tên thông số #${idx + 1} (VD: Dung tích nồi hơi, Lốc nén...)`}
+                        value={attr.label}
+                        onChange={(e) => handleUpdateAttribute(attr.id, 'label', e.target.value)}
+                      />
+                      <Input
+                        placeholder="Giá trị (VD: 11 Lít, Embraco Ý, 28 Lít/h...)"
+                        value={attr.value}
+                        onChange={(e) => handleUpdateAttribute(attr.id, 'value', e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAttribute(attr.id)}
+                        title="Xóa dòng thông số này"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 34,
+                          height: 34,
+                          borderRadius: 6,
+                          border: '1px solid transparent',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fee2e2')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        <Trash2 style={{ width: 15, height: 15 }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* 4. Xem trước hiển thị thực tế (Live Preview) */}
+            <Card style={{ padding: 14, background: 'var(--surface-subtle)', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <Eye style={{ width: 15, height: 15, color: 'var(--primary)' }} />
+                <strong style={{ fontSize: 12.5, color: 'var(--primary)' }}>
+                  Xem trước hiển thị (Web / Báo giá / Hóa đơn / Biên bản bàn giao)
+                </strong>
+              </div>
+
+              <div style={{ background: 'var(--surface-card)', padding: 12, borderRadius: 6, border: '1px solid var(--border)' }}>
+                {(() => {
+                  const previewRows = getEquipmentSpecRows({
+                    brand,
+                    model,
+                    specs: {
+                      voltage: voltage.trim() || undefined,
+                      powerWatts: powerWatts.trim() || undefined,
+                      dimensions: dimensions.trim() || undefined,
+                      weightKg: weightKg.trim() || undefined,
+                      madeIn: madeIn.trim() || undefined,
+                      attributes: customAttributes.filter((a) => a.label.trim() && a.value.trim()),
+                    },
+                  });
+                  return <EquipmentSpecGrid rows={previewRows} />;
+                })()}
               </div>
             </Card>
           </div>
