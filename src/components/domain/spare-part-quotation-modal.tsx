@@ -623,7 +623,7 @@ export function SparePartQuotationModal({
                   </tr>
 
                   {/* Tổng cộng thanh toán */}
-                  <tr style={{ background: 'rgba(241, 245, 249, 0.6)', fontWeight: 800, fontSize: '12.5px' }}>
+                  <tr style={{ background: 'transparent', fontWeight: 800, fontSize: '12.5px' }}>
                     <td colSpan={5} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
                       TỔNG CỘNG THANH TOÁN{vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                     </td>

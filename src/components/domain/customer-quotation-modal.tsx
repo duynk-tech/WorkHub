@@ -1025,7 +1025,7 @@ export function CustomerQuotationPrintModal({
                     </td>
                   </tr>
                 )}
-                <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
+                <tr style={{ background: 'transparent' }}>
                   <td
                     colSpan={colSpan}
                     style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 800, textTransform: 'uppercase' }}
