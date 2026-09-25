@@ -301,8 +301,7 @@ export function DocumentPartyBoxes({
     border: '1px solid #cbd5e1',
     borderRadius: 6,
     padding: '10px 14px',
-    background: 'rgba(248, 250, 252, 0.55)',
-    backdropFilter: 'blur(1.5px)',
+    background: 'transparent',
   };
   const heading: React.CSSProperties = {
     fontSize: '12.5px',

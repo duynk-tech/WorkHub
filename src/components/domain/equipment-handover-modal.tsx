@@ -417,7 +417,7 @@ export function EquipmentHandoverModal({
               <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase' }}>
                 II. Linh phụ kiện & Tài liệu bàn giao kèm theo:
               </div>
-              <div style={{ border: '1px solid #000', padding: '8px 14px', fontSize: '12px', background: 'rgba(250, 250, 250, 0.55)', backdropFilter: 'blur(1.5px)' }}>
+              <div style={{ border: '1px solid #000', padding: '8px 14px', fontSize: '12px', background: 'transparent' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <tbody>
                     {Array.from({ length: Math.ceil(accessoriesList.length / 2) }, (_, row) => (
