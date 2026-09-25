@@ -250,3 +250,4 @@ export * from './action-menu';
 export * from './scroll-tabs';
 export * from './modal';
 export * from './image-upload';
+export * from './sticky-action-bar';

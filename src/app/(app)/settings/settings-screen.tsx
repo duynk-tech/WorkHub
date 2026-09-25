@@ -740,6 +740,97 @@ export function SettingsScreen({
             </CardBody>
           </Card>
 
+          {/* Card Quy trình Bán hàng & Xuất kho */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Quy trình Bán hàng & Xuất kho</CardTitle>
+                <div className="card-subtitle">
+                  Lựa chọn cơ chế trừ tồn kho khi chốt đơn bán hàng phù hợp với quy mô và cơ cấu tổ chức của doanh nghiệp
+                </div>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={pending}
+                onClick={() => save('general', ['inventory.salesFulfillmentMode'])}
+              >
+                <Save /> Lưu quy trình
+              </Button>
+            </CardHeader>
+            <CardBody>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+                {/* Lựa chọn 1: Thủ kho duyệt */}
+                <div
+                  onClick={() => set('inventory.salesFulfillmentMode', 'MANUAL_WAREHOUSE_APPROVAL')}
+                  style={{
+                    padding: 16,
+                    borderRadius: 'var(--radius-md)',
+                    border: `2px solid ${(values['inventory.salesFulfillmentMode'] ?? 'MANUAL_WAREHOUSE_APPROVAL') === 'MANUAL_WAREHOUSE_APPROVAL' ? 'var(--primary)' : 'var(--border)'}`,
+                    background: (values['inventory.salesFulfillmentMode'] ?? 'MANUAL_WAREHOUSE_APPROVAL') === 'MANUAL_WAREHOUSE_APPROVAL' ? 'var(--surface-subtle)' : 'var(--surface-card)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="radio"
+                        name="fulfillmentMode"
+                        checked={(values['inventory.salesFulfillmentMode'] ?? 'MANUAL_WAREHOUSE_APPROVAL') === 'MANUAL_WAREHOUSE_APPROVAL'}
+                        onChange={() => set('inventory.salesFulfillmentMode', 'MANUAL_WAREHOUSE_APPROVAL')}
+                      />
+                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-strong)' }}>
+                        Thủ kho duyệt xuất kho (Mô hình 2 bước)
+                      </span>
+                    </div>
+                    <Badge tone="info">Khuyên dùng</Badge>
+                  </div>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                    Kinh doanh tạo đơn và chốt giá -&gt; Hàng vào trạng thái <strong>Tạm giữ</strong>. Thủ kho kiểm đếm, quét số seri thực tế và bấm <strong>Xuất kho giao hàng</strong> thì mới trừ kho vật lý.
+                  </p>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', background: 'var(--surface-sunken)', padding: '6px 10px', borderRadius: 4 }}>
+                    ✓ Phù hợp công ty có kho hàng riêng, kiểm soát chặt chẽ, chống thất thoát.
+                  </div>
+                </div>
+
+                {/* Lựa chọn 2: Tự động trừ kho */}
+                <div
+                  onClick={() => set('inventory.salesFulfillmentMode', 'AUTO_DEDUCT')}
+                  style={{
+                    padding: 16,
+                    borderRadius: 'var(--radius-md)',
+                    border: `2px solid ${values['inventory.salesFulfillmentMode'] === 'AUTO_DEDUCT' ? 'var(--primary)' : 'var(--border)'}`,
+                    background: values['inventory.salesFulfillmentMode'] === 'AUTO_DEDUCT' ? 'var(--surface-subtle)' : 'var(--surface-card)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="radio"
+                        name="fulfillmentMode"
+                        checked={values['inventory.salesFulfillmentMode'] === 'AUTO_DEDUCT'}
+                        onChange={() => set('inventory.salesFulfillmentMode', 'AUTO_DEDUCT')}
+                      />
+                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-strong)' }}>
+                        Tự động trừ kho khi chốt đơn (Mô hình tinh gọn)
+                      </span>
+                    </div>
+                    <Badge tone="neutral">Tinh gọn</Badge>
+                  </div>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                    Khi đơn bán hàng chuyển sang trạng thái <strong>Hoàn tất / Đã giao</strong>, hệ thống tự động trừ kho linh kiện ngay lập tức trong 1 click chuột mà không cần qua thủ kho duyệt.
+                  </p>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', background: 'var(--surface-sunken)', padding: '6px 10px', borderRadius: 4 }}>
+                    ✓ Phù hợp cửa hàng nhỏ, nhân viên kiêm nhiệm bán hàng kiêm xuất hàng, thao tác nhanh.
+                  </div>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
           {/* Card Quản trị Dữ liệu mẫu (Demo Data Seed & Clean) */}
           <Card>
             <CardHeader>
