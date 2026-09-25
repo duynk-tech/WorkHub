@@ -28,4 +28,10 @@ describe('Sinh mã chứng từ', () => {
       nextSequentialCode('CUS-2026-', ['KH-0007', 'CUST-MAROU', 'CUS-2026-0003']),
     ).toBe('CUS-2026-0004');
   });
+
+  it('sinh mã báo giá chuẩn BG-YYYY-MMNNN tự tăng theo tháng', () => {
+    expect(nextSequentialCode('BG-2026-09', [], 3)).toBe('BG-2026-09001');
+    expect(nextSequentialCode('BG-2026-09', ['BG-2026-09001', 'BG-2026-09002'], 3)).toBe('BG-2026-09003');
+  });
 });
+

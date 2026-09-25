@@ -739,12 +739,17 @@ export function CustomerQuotationPrintModal({
               <div style={{ fontSize: '13px', fontWeight: 800, textTransform: 'uppercase' }}>{sellerName}</div>
               {sellerAddress && <div style={{ fontSize: '11px', color: '#475569', marginTop: 2 }}>{sellerAddress}</div>}
               <div style={{ fontSize: '11px', color: '#475569' }}>
+                {sellerTaxCode && (
+                  <>
+                    Mã số thuế: <strong>{sellerTaxCode}</strong>
+                  </>
+                )}
+                {sellerTaxCode && sellerPhone && <> • </>}
                 {sellerPhone && (
                   <>
                     Điện thoại: <strong>{sellerPhone}</strong>
                   </>
                 )}
-                {sellerTaxCode && <> • Mã số thuế: {sellerTaxCode}</>}
               </div>
             </div>
 
@@ -774,7 +779,7 @@ export function CustomerQuotationPrintModal({
             </div>
 
             <div style={{ fontSize: '12.5px', fontStyle: 'italic', marginBottom: 8, color: '#334155' }}>
-              {sellerName} trân trọng gửi Quý khách hàng bảng báo giá các hạng mục như sau:
+              {sellerName} trân trọng gửi Quý khách hàng bảng báo giá như sau:
             </div>
 
             {/* Bảng hàng hóa */}
@@ -782,15 +787,15 @@ export function CustomerQuotationPrintModal({
               <thead>
                 <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                   <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center' }}>STT</th>
-                  <th style={{ border: cellBorder, padding: '5px 7px', textAlign: 'left' }}>Tên hàng hóa / dịch vụ</th>
+                  <th style={{ border: cellBorder, padding: '5px 7px', textAlign: 'center' }}>Tên hàng hóa / dịch vụ</th>
                   <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center' }}>SL</th>
-                  <th style={{ border: cellBorder, padding: '5px 6px', width: '85px', textAlign: 'right', whiteSpace: 'nowrap' }}>Đơn giá</th>
+                  <th style={{ border: cellBorder, padding: '5px 6px', width: '85px', textAlign: 'center', whiteSpace: 'nowrap' }}>Đơn giá</th>
                   {hasLineDiscount && (
-                    <th style={{ border: cellBorder, padding: '5px 6px', width: '80px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <th style={{ border: cellBorder, padding: '5px 6px', width: '80px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       Chiết khấu
                     </th>
                   )}
-                  <th style={{ border: cellBorder, padding: '5px 6px', width: '95px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <th style={{ border: cellBorder, padding: '5px 6px', width: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     Thành tiền
                   </th>
                 </tr>
@@ -815,13 +820,21 @@ export function CustomerQuotationPrintModal({
                         (m.name && item.name && item.name.toLowerCase().includes(m.name.toLowerCase()))
                     );
                   const specRows = eq ? getEquipmentSpecRows(eq) : [];
+                  const displayName = (() => {
+                    const raw = item.name || '';
+                    const match = raw.match(/^(.*?)\s*\[([A-Za-z0-9_-]+)\]$/);
+                    if (match) {
+                      return `[${match[2]}] ${match[1]}`;
+                    }
+                    return raw;
+                  })();
                   return (
                     <tr key={item.id ?? idx} style={{ verticalAlign: 'top' }}>
                       <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center', verticalAlign: 'top' }}>
-                        {String(idx + 1).padStart(2, '0')}
+                        {idx + 1}
                       </td>
                       <td style={{ border: cellBorder, padding: '6px 8px', verticalAlign: 'top' }}>
-                        <div style={{ fontWeight: 650, color: '#0f172a' }}>{item.name}</div>
+                        <div style={{ fontWeight: 650, color: '#0f172a' }}>{displayName}</div>
                         {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                         {item.notes && (
                           <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0, paddingLeft: 8 }}>
@@ -901,7 +914,7 @@ export function CustomerQuotationPrintModal({
                   >
                     Tổng thanh toán
                   </td>
-                  <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 800, color: 'var(--brand)' }}>
+                  <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'right', fontWeight: 800, color: '#000000' }}>
                     {fmt(totalAmount)}
                   </td>
                 </tr>

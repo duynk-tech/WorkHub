@@ -273,7 +273,7 @@ export function useLineItems({
         updated[index] = {
           ...updated[index],
           itemType: 'EQUIPMENT',
-          name: `${m.name}${m.brand ? ` (${m.brand})` : ''}${m.machineCode ? ` [${m.machineCode}]` : ''}`,
+          name: `${m.machineCode ? `[${m.machineCode}] ` : ''}${m.name}${m.brand ? ` (${m.brand})` : ''}`,
           equipmentId: m.id,
           inventoryItemId: undefined,
           unitPrice: price,
@@ -321,7 +321,7 @@ export function useLineItems({
         updated[index] = {
           ...updated[index],
           itemType: 'SPARE_PART',
-          name: `${p.name}${p.itemCode ? ` [${p.itemCode}]` : ''}`,
+          name: `${p.itemCode ? `[${p.itemCode}] ` : ''}${p.name}`,
           equipmentId: undefined,
           inventoryItemId: p.id,
           unitPrice: price,

@@ -483,11 +483,11 @@ export function SparePartQuotationModal({
                 <thead>
                   <tr style={{ background: 'rgba(241, 245, 249, 0.6)' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '35px', textAlign: 'center' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px' }}>Tên linh kiện / Mô tả chi tiết</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', textAlign: 'center' }}>Tên linh kiện / Mô tả chi tiết</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>ĐVT</th>
                     <th style={{ border: '1px solid #000', padding: '5px 6px', width: '45px', textAlign: 'center' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px', textAlign: 'right' }}>Đơn giá</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '120px', textAlign: 'right' }}>Thành tiền</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '110px', textAlign: 'center' }}>Đơn giá</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 6px', width: '120px', textAlign: 'center' }}>Thành tiền</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -495,7 +495,7 @@ export function SparePartQuotationModal({
                     return (
                       <tr key={it.id || idx}>
                         <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
-                          {String(idx + 1).padStart(2, '0')}
+                          {idx + 1}
                         </td>
                         <td style={{ border: '1px solid #000', padding: '4px 6px' }}>
                           <div style={{ fontWeight: 600 }}>{it.item?.name || 'Linh kiện'}</div>

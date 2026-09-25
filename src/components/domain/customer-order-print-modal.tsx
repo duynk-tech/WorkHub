@@ -474,11 +474,11 @@ export function CustomerOrderPrintModal({
                   <thead>
                     <tr style={{ background: 'rgba(241, 245, 249, 0.7)' }}>
                       <th style={{ border: '1px solid #000', padding: '6px 6px', width: '35px', textAlign: 'center' }}>STT</th>
-                      <th style={{ border: '1px solid #000', padding: '6px 8px' }}>Tên mặt hàng & Mô tả</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>Tên mặt hàng & Mô tả</th>
                       <th style={{ border: '1px solid #000', padding: '6px 6px', width: '50px', textAlign: 'center' }}>ĐVT</th>
                       <th style={{ border: '1px solid #000', padding: '6px 6px', width: '45px', textAlign: 'center' }}>SL</th>
-                      <th style={{ border: '1px solid #000', padding: '6px 6px', width: '85px', textAlign: 'right', whiteSpace: 'nowrap' }}>Đơn giá</th>
-                      <th style={{ border: '1px solid #000', padding: '6px 6px', width: '95px', textAlign: 'right', whiteSpace: 'nowrap' }}>Thành tiền</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 6px', width: '85px', textAlign: 'center', whiteSpace: 'nowrap' }}>Đơn giá</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 6px', width: '95px', textAlign: 'center', whiteSpace: 'nowrap' }}>Thành tiền</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -503,13 +503,21 @@ export function CustomerOrderPrintModal({
                             (m.name && it.name && it.name.toLowerCase().includes(m.name.toLowerCase()))
                         );
                       const specRows = eq ? getEquipmentSpecRows(eq) : [];
+                      const displayName = (() => {
+                        const raw = it.name || '';
+                        const match = raw.match(/^(.*?)\s*\[([A-Za-z0-9_-]+)\]$/);
+                        if (match) {
+                          return `[${match[2]}] ${match[1]}`;
+                        }
+                        return raw;
+                      })();
                       return (
                         <tr key={it.id || idx} style={{ verticalAlign: 'top' }}>
                           <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', verticalAlign: 'top' }}>
-                            {String(idx + 1).padStart(2, '0')}
+                            {idx + 1}
                           </td>
                           <td style={{ border: '1px solid #000', padding: '6px 8px', verticalAlign: 'top' }}>
-                            <div style={{ fontWeight: 650, color: '#0f172a' }}>{it.name}</div>
+                            <div style={{ fontWeight: 650, color: '#0f172a' }}>{displayName}</div>
                             {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                             {it.notes && (
                               <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0, paddingLeft: 8 }}>

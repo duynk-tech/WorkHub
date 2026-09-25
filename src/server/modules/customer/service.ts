@@ -845,17 +845,19 @@ export async function deleteCustomerOrder(id: number) {
 // ── Báo giá khách hàng ─────────────────────────────────────────
 
 export async function generateQuoteCode(): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `BG-${year}-`;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = `BG-${year}-${month}`;
   try {
-    if (!prisma.customerQuotation) return `${prefix}0001`;
+    if (!prisma.customerQuotation) return `${prefix}001`;
     const rows = await prisma.customerQuotation.findMany({
       where: { quoteCode: { startsWith: prefix } },
       select: { quoteCode: true },
     });
-    return nextSequentialCode(prefix, rows.map((r) => r.quoteCode));
+    return nextSequentialCode(prefix, rows.map((r) => r.quoteCode), 3);
   } catch {
-    return `${prefix}0001`;
+    return `${prefix}001`;
   }
 }
 
