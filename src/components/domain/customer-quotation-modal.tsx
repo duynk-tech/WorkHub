@@ -427,7 +427,7 @@ export function CustomerQuotationModal({
             </div>
 
             <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
-              Cước vận chuyển
+              Phí giao hàng
               <button
                 type="button"
                 onClick={handleEstimateFreight}
@@ -448,14 +448,37 @@ export function CustomerQuotationModal({
               </button>
             </span>
             <PriceInput
-              placeholder="0"
+              placeholder="0 (chưa gồm phí giao hàng)"
               value={shippingFee}
               onChange={(val) => setShippingFee(val || 0)}
               sizeSm
               style={{ textAlign: 'right' }}
             />
 
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>Thuế VAT</span>
+            <span style={{ color: 'var(--text-muted)', textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+              <span>Thuế VAT</span>
+              <span style={{ display: 'inline-flex', gap: 4 }}>
+                {[0, 8, 10].map((rateVal) => (
+                  <button
+                    key={rateVal}
+                    type="button"
+                    onClick={() => setVatRate(String(rateVal))}
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: Number(vatRate) === rateVal ? 700 : 500,
+                      border: '1px solid var(--border-base)',
+                      background: Number(vatRate) === rateVal ? 'var(--brand)' : 'var(--surface-card)',
+                      color: Number(vatRate) === rateVal ? '#fff' : 'var(--text-strong)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {rateVal}%
+                  </button>
+                ))}
+              </span>
+            </span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <Input
                 type="number"
@@ -512,7 +535,17 @@ export function CustomerQuotationPrintModal({
   const [signerName, setSignerName] = useState(me?.fullName || '');
   const [signerTitle, setSignerTitle] = useState(me?.positionName || 'Phụ trách kinh doanh');
 
-  if (!quotation) return null;
+  const [vatRate, setVatRate] = useState<number>(
+    quotation.vatRate !== undefined && quotation.vatRate !== null ? Number(quotation.vatRate) : 8,
+  );
+  const [freight, setFreight] = useState<number>(Number(quotation.shippingFee || 0));
+  const [deliveryTime, setDeliveryTime] = useState<string>(quotation.deliveryTime || '3-5 ngày');
+  const [paymentTerms, setPaymentTerms] = useState<string>(quotation.paymentTerms || '');
+  const [warrantyTerms, setWarrantyTerms] = useState<string>(quotation.warrantyTerms || '');
+  const [notes, setNotes] = useState<string>(quotation.notes || '');
+  const [validUntil, setValidUntil] = useState<string>(
+    quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('vi-VN') : '',
+  );
 
   const items = quotation.items || [];
   const gross = items.reduce(
@@ -521,12 +554,10 @@ export function CustomerQuotationPrintModal({
   );
   const discountAmount = Number(quotation.discountAmount || 0);
   const discountRate = Number(quotation.discountRate || 0);
-  const freight = Number(quotation.shippingFee || 0);
   const goodsTotal = gross - discountAmount;
-  const subtotal = Number(quotation.subtotal || goodsTotal + freight);
-  const vatRate = Number(quotation.vatRate || 0);
-  const vatAmount = Number(quotation.vatAmount || 0);
-  const totalAmount = Number(quotation.totalAmount || subtotal + vatAmount);
+  const subtotal = goodsTotal + freight;
+  const vatAmount = Math.round((subtotal * vatRate) / 100);
+  const totalAmount = subtotal + vatAmount;
 
   const quoteDate = new Date(quotation.quoteDate);
 
@@ -553,7 +584,7 @@ export function CustomerQuotationPrintModal({
       size="xl"
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button
               variant={activeTab === 'preview' ? 'primary' : 'secondary'}
               size="sm"
@@ -568,6 +599,29 @@ export function CustomerQuotationPrintModal({
             >
               <Wrench style={{ width: 14, height: 14, marginRight: 6 }} /> Tùy chỉnh thông tin
             </Button>
+
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              <span>Thuế VAT:</span>
+              {[0, 8, 10].map((rateVal) => (
+                <button
+                  key={rateVal}
+                  type="button"
+                  onClick={() => setVatRate(rateVal)}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: vatRate === rateVal ? 700 : 500,
+                    border: '1px solid var(--border-base)',
+                    background: vatRate === rateVal ? 'var(--brand)' : 'var(--surface-card)',
+                    color: vatRate === rateVal ? '#fff' : 'var(--text-strong)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {rateVal}%
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -696,6 +750,70 @@ export function CustomerQuotationPrintModal({
             </Field>
             <Field label="Chức vụ">
               <Input value={signerTitle} onChange={(e) => setSignerTitle(e.target.value)} />
+            </Field>
+          </div>
+
+          <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-strong)', marginTop: 8 }}>
+            📋 Thuế VAT, Phí giao hàng & Điều khoản thương mại
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+            <Field label="Thuế VAT">
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={vatRate}
+                  onChange={(e) => setVatRate(Number(e.target.value) || 0)}
+                  style={{ width: 80 }}
+                />
+                <span style={{ fontSize: 13 }}>%</span>
+                <div style={{ display: 'inline-flex', gap: 4, marginLeft: 6 }}>
+                  {[0, 8, 10].map((rateVal) => (
+                    <button
+                      key={rateVal}
+                      type="button"
+                      onClick={() => setVatRate(rateVal)}
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: vatRate === rateVal ? 700 : 500,
+                        border: '1px solid var(--border-base)',
+                        background: vatRate === rateVal ? 'var(--brand)' : 'var(--surface-card)',
+                        color: vatRate === rateVal ? '#fff' : 'var(--text-strong)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {rateVal}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Field>
+            <Field label="Phí giao hàng (để 0 nếu chưa bao gồm)">
+              <PriceInput
+                placeholder="0 (chưa gồm phí giao hàng)"
+                value={freight}
+                onChange={(val) => setFreight(val || 0)}
+              />
+            </Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Thời gian giao hàng">
+              <Input value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+            </Field>
+            <Field label="Điều khoản thanh toán">
+              <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
+            </Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Chính sách bảo hành">
+              <Input value={warrantyTerms} onChange={(e) => setWarrantyTerms(e.target.value)} />
+            </Field>
+            <Field label="Ghi chú thêm">
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </Field>
           </div>
         </div>
@@ -890,7 +1008,7 @@ export function CustomerQuotationPrintModal({
                 {freight > 0 && (
                   <tr>
                     <td colSpan={colSpan} style={{ border: cellBorder, padding: '5px 7px', textAlign: 'right' }}>
-                      Cước vận chuyển
+                      Phí giao hàng
                     </td>
                     <td style={{ border: cellBorder, padding: '5px 7px', textAlign: 'right', fontWeight: 700 }}>
                       {fmt(freight)}
@@ -931,29 +1049,28 @@ export function CustomerQuotationPrintModal({
                 Điều khoản thương mại:
               </div>
               <ul style={{ margin: '4px 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {quotation.validUntil && (
+                {validUntil && (
                   <li>
-                    Báo giá có hiệu lực đến hết ngày{' '}
-                    <strong>{new Date(quotation.validUntil).toLocaleDateString('vi-VN')}</strong>.
+                    Báo giá có hiệu lực đến hết ngày <strong>{validUntil}</strong>.
                   </li>
                 )}
-                {quotation.deliveryTime && (
+                {deliveryTime && (
                   <li>
-                    Thời gian giao hàng: <strong>{quotation.deliveryTime}</strong>.
+                    Thời gian giao hàng: <strong>{deliveryTime}</strong>.
                   </li>
                 )}
-                {quotation.paymentTerms && <li>Thanh toán: {quotation.paymentTerms}</li>}
-                {quotation.warrantyTerms && <li>Bảo hành: {quotation.warrantyTerms}</li>}
+                {paymentTerms && <li>Thanh toán: {paymentTerms}</li>}
+                {warrantyTerms && <li>Bảo hành: {warrantyTerms}</li>}
                 <li>
                   Đơn giá trên {vatRate > 0 ? 'chưa bao gồm' : 'không bao gồm'} thuế VAT
                   {vatRate > 0 ? `, VAT ${vatRate}% đã được tính riêng trong bảng trên` : ''}.
                 </li>
                 <li>
                   {freight > 0
-                    ? 'Cước vận chuyển được báo thành khoản riêng trong bảng trên.'
-                    : 'Báo giá chưa bao gồm cước vận chuyển, sẽ báo riêng theo thực tế giao hàng.'}
+                    ? 'Phí giao hàng được báo thành khoản riêng trong bảng trên.'
+                    : 'Báo giá chưa bao gồm phí giao hàng, sẽ báo riêng theo thực tế giao hàng.'}
                 </li>
-                {quotation.notes && <li>{quotation.notes}</li>}
+                {notes && <li>{notes}</li>}
               </ul>
             </div>
 

@@ -160,7 +160,7 @@ export function SparePartQuotationModal({
       size="xl"
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button
               variant={activeTab === 'preview' ? 'primary' : 'secondary'}
               size="sm"
@@ -175,6 +175,29 @@ export function SparePartQuotationModal({
             >
               <Wrench style={{ width: 14, height: 14, marginRight: 6 }} /> Tùy chỉnh thông tin
             </Button>
+
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              <span>Thuế VAT:</span>
+              {[0, 8, 10].map((rateVal) => (
+                <button
+                  key={rateVal}
+                  type="button"
+                  onClick={() => setVatPercent(String(rateVal))}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontSize: 11,
+                    fontWeight: vatRateNum === rateVal ? 700 : 500,
+                    border: '1px solid var(--border-base)',
+                    background: vatRateNum === rateVal ? 'var(--brand)' : 'var(--surface-card)',
+                    color: vatRateNum === rateVal ? '#fff' : 'var(--text-strong)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {rateVal}%
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -351,14 +374,38 @@ export function SparePartQuotationModal({
               />
             </Field>
             <Field label="Thuế VAT (%)">
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={vatPercent}
-                onChange={(e) => setVatPercent(e.target.value)}
-              />
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={vatPercent}
+                  onChange={(e) => setVatPercent(e.target.value)}
+                  style={{ width: 75 }}
+                />
+                <div style={{ display: 'inline-flex', gap: 4 }}>
+                  {[0, 8, 10].map((rateVal) => (
+                    <button
+                      key={rateVal}
+                      type="button"
+                      onClick={() => setVatPercent(String(rateVal))}
+                      style={{
+                        padding: '2px 7px',
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: vatRateNum === rateVal ? 700 : 500,
+                        border: '1px solid var(--border-base)',
+                        background: vatRateNum === rateVal ? 'var(--brand)' : 'var(--surface-card)',
+                        color: vatRateNum === rateVal ? '#fff' : 'var(--text-strong)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {rateVal}%
+                    </button>
+                  ))}
+                </div>
+              </div>
             </Field>
             <Field label="Họ tên người ký báo giá">
               <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} />
@@ -571,7 +618,7 @@ export function SparePartQuotationModal({
                     <td colSpan={5} style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', textTransform: 'uppercase' }}>
                       TỔNG CỘNG THANH TOÁN{vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', color: '#7c3aed', fontSize: '13.5px' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', color: '#000000', fontSize: '13.5px' }}>
                       {new Intl.NumberFormat('vi-VN').format(totalVnd)}
                     </td>
                   </tr>
@@ -602,6 +649,7 @@ export function SparePartQuotationModal({
                 <li><strong>Thời gian giao hàng:</strong> {deliveryTime}.</li>
                 <li><strong>Phương thức thanh toán:</strong> {paymentTerms}.</li>
                 <li><strong>Bảo hành:</strong> {warrantyTerms}</li>
+                <li><strong>Phí giao hàng:</strong> Báo giá chưa bao gồm phí giao hàng, sẽ báo riêng theo thực tế giao hàng.</li>
                 {notes && <li><strong>Ghi chú:</strong> {notes}</li>}
               </ul>
             </div>
