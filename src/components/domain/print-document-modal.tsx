@@ -301,8 +301,7 @@ export function DocumentPartyBoxes({
     padding: '10px 14px',
     background: 'transparent',
     boxSizing: 'border-box',
-    display: 'flex',
-    flexDirection: 'column',
+    height: '100%',
   };
   const heading: React.CSSProperties = {
     fontSize: '12.5px',
@@ -317,31 +316,36 @@ export function DocumentPartyBoxes({
     flexDirection: 'column',
     gap: 3,
     fontSize: '12.5px',
-    flex: 1,
   };
 
   return (
-    <div
+    <table
       style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 12,
-        marginBottom: 12,
         width: '100%',
-        boxSizing: 'border-box',
+        tableLayout: 'fixed',
+        borderCollapse: 'collapse',
+        marginBottom: 12,
         pageBreakInside: 'avoid',
         breakInside: 'avoid',
       }}
     >
-      <div style={box}>
-        <div style={heading}>{leftTitle}</div>
-        <div style={body}>{left}</div>
-      </div>
-      <div style={box}>
-        <div style={heading}>{rightTitle}</div>
-        <div style={body}>{right}</div>
-      </div>
-    </div>
+      <tbody>
+        <tr>
+          <td style={{ width: '50%', verticalAlign: 'top', padding: 0, paddingRight: 6 }}>
+            <div style={box}>
+              <div style={heading}>{leftTitle}</div>
+              <div style={body}>{left}</div>
+            </div>
+          </td>
+          <td style={{ width: '50%', verticalAlign: 'top', padding: 0, paddingLeft: 6 }}>
+            <div style={box}>
+              <div style={heading}>{rightTitle}</div>
+              <div style={body}>{right}</div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
