@@ -296,12 +296,13 @@ export function DocumentPartyBoxes({
   right: React.ReactNode;
 }) {
   const box: React.CSSProperties = {
-    width: '50%',
-    verticalAlign: 'top',
     border: '1px solid #cbd5e1',
     borderRadius: 6,
     padding: '10px 14px',
     background: 'transparent',
+    boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
   };
   const heading: React.CSSProperties = {
     fontSize: '12.5px',
@@ -316,34 +317,31 @@ export function DocumentPartyBoxes({
     flexDirection: 'column',
     gap: 3,
     fontSize: '12.5px',
+    flex: 1,
   };
 
   return (
-    <table
+    <div
       style={{
-        width: '100%',
-        borderCollapse: 'separate',
-        borderSpacing: '10px 0',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 12,
         marginBottom: 12,
-        marginLeft: -10,
-        marginRight: -10,
+        width: '100%',
+        boxSizing: 'border-box',
         pageBreakInside: 'avoid',
         breakInside: 'avoid',
       }}
     >
-      <tbody>
-        <tr>
-          <td style={box}>
-            <div style={heading}>{leftTitle}</div>
-            <div style={body}>{left}</div>
-          </td>
-          <td style={box}>
-            <div style={heading}>{rightTitle}</div>
-            <div style={body}>{right}</div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+      <div style={box}>
+        <div style={heading}>{leftTitle}</div>
+        <div style={body}>{left}</div>
+      </div>
+      <div style={box}>
+        <div style={heading}>{rightTitle}</div>
+        <div style={body}>{right}</div>
+      </div>
+    </div>
   );
 }
 

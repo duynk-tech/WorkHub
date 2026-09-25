@@ -250,11 +250,11 @@ export function AssetDocumentModal({
           <thead>
             <tr style={{ background: '#cbd5e1' }}>
               <th style={{ border: cellBorder, padding: '5px 7px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', fontWeight: 700, color: '#0f172a' }}>Tên tài sản & cấu hình</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '110px', fontWeight: 700, color: '#0f172a' }}>Mã tài sản</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '120px', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tên tài sản & cấu hình</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '110px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Mã tài sản</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '120px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
               <th style={{ border: cellBorder, padding: '5px 7px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
-              <th style={{ border: cellBorder, padding: '5px 7px', width: '150px', fontWeight: 700, color: '#0f172a' }}>Tình trạng</th>
+              <th style={{ border: cellBorder, padding: '5px 7px', width: '150px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tình trạng</th>
             </tr>
           </thead>
           <tbody>

@@ -387,10 +387,10 @@ export function EquipmentHandoverModal({
                 <thead>
                   <tr style={{ background: '#cbd5e1' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', fontWeight: 700, color: '#0f172a' }}>Tên thiết bị & Thông số kỹ thuật</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tên thiết bị & Thông số kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '150px', fontWeight: 700, color: '#0f172a' }}>Tình trạng kỹ thuật</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '150px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tình trạng kỹ thuật</th>
                   </tr>
                 </thead>
                 <tbody>
