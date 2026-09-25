@@ -85,10 +85,14 @@ export function SparePartQuotationModal({
   const [vatPercent, setVatPercent] = useState<string>(String(initialVatRate));
 
   const handlePrint = () => {
-    setActiveTab('preview');
-    setTimeout(() => {
-      window.print();
-    }, 150);
+    if (activeTab !== 'preview') {
+      setActiveTab('preview');
+      setTimeout(() => {
+        window.print();
+      }, 120);
+      return;
+    }
+    window.print();
   };
 
   const today = new Date();
@@ -155,6 +159,7 @@ export function SparePartQuotationModal({
       open={open}
       onClose={onClose}
       zIndex={600}
+      overlayClassName="print-preview-modal-overlay"
       title={`Xuất Báo Giá Khách Hàng (${quoteCode})`}
       description="Phiếu báo giá linh kiện chuyên nghiệp gửi khách hàng theo tiêu chuẩn A4"
       size="xl"
@@ -227,11 +232,15 @@ export function SparePartQuotationModal({
             overflow: visible !important;
           }
 
-          body > *:not(.modal-overlay) {
+          body > *:not(.print-preview-modal-overlay) {
             display: none !important;
           }
 
-          .modal-overlay {
+          .modal-overlay:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .print-preview-modal-overlay {
             position: static !important;
             display: block !important;
             inset: auto !important;
@@ -241,7 +250,7 @@ export function SparePartQuotationModal({
             animation: none !important;
             z-index: auto !important;
           }
-          .modal-overlay .modal {
+          .print-preview-modal-overlay .modal {
             display: block !important;
             width: 100% !important;
             max-width: none !important;
@@ -254,12 +263,12 @@ export function SparePartQuotationModal({
             margin: 0 !important;
             padding: 0 !important;
           }
-          .modal-overlay .modal-header,
-          .modal-overlay .modal-footer,
+          .print-preview-modal-overlay .modal-header,
+          .print-preview-modal-overlay .modal-footer,
           .no-print {
             display: none !important;
           }
-          .modal-overlay .modal-body {
+          .print-preview-modal-overlay .modal-body {
             padding: 0 !important;
             overflow: visible !important;
             max-height: none !important;

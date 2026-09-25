@@ -108,13 +108,17 @@ export function PrintDocumentModal({
           }
 
           /* Chỉ giữ lại lớp modal đang mở, ẩn toàn bộ giao diện ứng dụng phía sau */
-          body > *:not(.modal-overlay) {
+          body > *:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .modal-overlay:not(.print-preview-modal-overlay) {
             display: none !important;
           }
 
           /* Gỡ mọi ràng buộc layout của modal (fixed / backdrop-filter / overflow)
              vì chúng làm bản in bị lệch và cắt mất nội dung */
-          .modal-overlay {
+          .print-preview-modal-overlay {
             position: static !important;
             display: block !important;
             inset: auto !important;
@@ -124,7 +128,7 @@ export function PrintDocumentModal({
             animation: none !important;
             z-index: auto !important;
           }
-          .modal-overlay .modal {
+          .print-preview-modal-overlay .modal {
             display: block !important;
             width: 100% !important;
             max-width: none !important;
@@ -135,12 +139,12 @@ export function PrintDocumentModal({
             background: #ffffff !important;
             animation: none !important;
           }
-          .modal-overlay .modal-header,
-          .modal-overlay .modal-footer,
+          .print-preview-modal-overlay .modal-header,
+          .print-preview-modal-overlay .modal-footer,
           .no-print {
             display: none !important;
           }
-          .modal-overlay .modal-body {
+          .print-preview-modal-overlay .modal-body {
             padding: 0 !important;
             overflow: visible !important;
             max-height: none !important;
