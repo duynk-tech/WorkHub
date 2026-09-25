@@ -905,15 +905,17 @@ export function AssetPrintStickerModal({
     <Modal
       open={open}
       onClose={onClose}
+      zIndex={600}
+      overlayClassName="print-preview-modal-overlay"
       title={`In tem nhãn QR code dán máy (${assets.length} thiết bị)`}
       description="Chuẩn nhãn nhiệt dán thiết bị (60mm x 35mm), quét mã để tra cứu nhanh"
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} className="no-print">
             Đóng
           </Button>
-          <Button variant="primary" onClick={handlePrint}>
+          <Button variant="primary" onClick={handlePrint} className="no-print">
             <Printer style={{ width: 16, height: 16, marginRight: 6 }} /> In tem nhãn ngay
           </Button>
         </>
@@ -921,23 +923,74 @@ export function AssetPrintStickerModal({
     >
       <style>{`
         @media print {
-          body * {
-            visibility: hidden;
+          @page {
+            size: auto;
+            margin: 5mm;
           }
-          #print-sticker-container, #print-sticker-container * {
-            visibility: visible;
+
+          html, body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
           }
+
+          body > *:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .modal-overlay:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .print-preview-modal-overlay {
+            position: static !important;
+            display: block !important;
+            inset: auto !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            animation: none !important;
+            z-index: auto !important;
+          }
+          .print-preview-modal-overlay .modal {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            background: #ffffff !important;
+            animation: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .print-preview-modal-overlay .modal-header,
+          .print-preview-modal-overlay .modal-footer,
+          .no-print {
+            display: none !important;
+          }
+          .print-preview-modal-overlay .modal-body {
+            padding: 0 !important;
+            overflow: visible !important;
+            max-height: none !important;
+            margin: 0 !important;
+          }
+
           #print-sticker-container {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white !important;
+            position: relative !important;
+            width: 100% !important;
+            background: #ffffff !important;
             padding: 0 !important;
             margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .sticker-badge {
             page-break-inside: avoid;
+            break-inside: avoid;
           }
         }
       `}</style>

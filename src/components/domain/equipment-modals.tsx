@@ -1014,19 +1014,89 @@ export function EquipmentPrintStickerModal({
     <Modal
       open={open}
       onClose={onClose}
+      zIndex={600}
+      overlayClassName="print-preview-modal-overlay"
       title="In Tem Thiết bị (Mã QR)"
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} className="no-print">
             Đóng
           </Button>
-          <Button variant="primary" onClick={handlePrint}>
+          <Button variant="primary" onClick={handlePrint} className="no-print">
             <Printer style={{ width: 14, height: 14, marginRight: 6 }} /> In tem nhãn
           </Button>
         </>
       }
     >
+      <style>{`
+        @media print {
+          @page {
+            size: auto;
+            margin: 5mm;
+          }
+
+          html, body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          body > *:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .modal-overlay:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .print-preview-modal-overlay {
+            position: static !important;
+            display: block !important;
+            inset: auto !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            animation: none !important;
+            z-index: auto !important;
+          }
+          .print-preview-modal-overlay .modal {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            background: #ffffff !important;
+            animation: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .print-preview-modal-overlay .modal-header,
+          .print-preview-modal-overlay .modal-footer,
+          .no-print {
+            display: none !important;
+          }
+          .print-preview-modal-overlay .modal-body {
+            padding: 0 !important;
+            overflow: visible !important;
+            max-height: none !important;
+            margin: 0 !important;
+          }
+
+          #equipment-sticker-print {
+            box-shadow: none !important;
+            margin: 0 auto !important;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 12 }}>
         {/* Printable Sticker Preview Card */}
         <div

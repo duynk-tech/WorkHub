@@ -73,6 +73,8 @@ export function PaymentVoucherModal({
     <Modal
       open={open}
       onClose={onClose}
+      zIndex={600}
+      overlayClassName="print-preview-modal-overlay"
       title={`${isIn ? 'Phiếu thu' : 'Phiếu chi'}: ${payment.paymentCode}`}
       size="lg"
       footer={
@@ -88,23 +90,78 @@ export function PaymentVoucherModal({
     >
       <style>{`
         @media print {
-          body * { visibility: hidden !important; }
-          #payment-voucher-print, #payment-voucher-print * { visibility: visible !important; }
-          #payment-voucher-print {
-            position: absolute !important;
-            left: 0 !important; top: 0 !important;
-            width: 100% !important;
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+
+          html, body {
+            background: #ffffff !important;
             margin: 0 !important;
-            padding: 14mm 16mm !important;
+            padding: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          body > *:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .modal-overlay:not(.print-preview-modal-overlay) {
+            display: none !important;
+          }
+
+          .print-preview-modal-overlay {
+            position: static !important;
+            display: block !important;
+            inset: auto !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            backdrop-filter: none !important;
+            animation: none !important;
+            z-index: auto !important;
+          }
+          .print-preview-modal-overlay .modal {
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            background: #ffffff !important;
+            animation: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .print-preview-modal-overlay .modal-header,
+          .print-preview-modal-overlay .modal-footer,
+          .no-print {
+            display: none !important;
+          }
+          .print-preview-modal-overlay .modal-body {
+            padding: 0 !important;
+            overflow: visible !important;
+            max-height: none !important;
+            margin: 0 !important;
+          }
+
+          #payment-voucher-print {
+            position: relative !important;
+            width: 100% !important;
+            max-width: none !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 10mm 14mm !important;
             background: #ffffff !important;
             color: #000000 !important;
             box-shadow: none !important;
             border: none !important;
             font-family: 'Times New Roman', Times, serif !important;
             font-size: 13pt !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          .no-print { display: none !important; }
-          @page { size: A4 portrait; margin: 10mm; }
         }
       `}</style>
 
