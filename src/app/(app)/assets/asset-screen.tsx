@@ -389,19 +389,33 @@ export function AssetScreen({
                   />
                 </th>
                 <th style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>Mã tài sản</th>
-                <th style={{ padding: '10px 14px', minWidth: 220 }}>Tên thiết bị</th>
-                <th style={{ padding: '10px 14px', minWidth: 130, whiteSpace: 'nowrap' }}>Phân loại</th>
-                <th style={{ padding: '10px 14px', minWidth: 200 }}>Cấu hình tóm tắt</th>
-                <th style={{ padding: '10px 14px', minWidth: 170, whiteSpace: 'nowrap' }}>Người sử dụng</th>
-                <th style={{ padding: '10px 14px', minWidth: 140, whiteSpace: 'nowrap' }}>Trạng thái</th>
-                <th style={{ padding: '10px 14px', minWidth: 130, whiteSpace: 'nowrap' }}>Hạn bảo hành</th>
-                <th style={{ padding: '10px 14px', width: 120, textAlign: 'right', whiteSpace: 'nowrap' }}>Thao tác</th>
+                <th style={{ padding: '10px 14px', minWidth: 200 }}>Tên thiết bị</th>
+                <th style={{ padding: '10px 14px', minWidth: 120, whiteSpace: 'nowrap' }}>Phân loại</th>
+                <th style={{ padding: '10px 14px', minWidth: 160, whiteSpace: 'nowrap' }}>Người sử dụng</th>
+                <th style={{ padding: '10px 14px', minWidth: 130, whiteSpace: 'nowrap' }}>Trạng thái</th>
+                <th style={{ padding: '10px 14px', minWidth: 120, whiteSpace: 'nowrap' }}>Hạn bảo hành</th>
+                <th
+                  style={{
+                    position: 'sticky',
+                    right: 0,
+                    zIndex: 2,
+                    background: 'var(--surface-subtle, #f8fafc)',
+                    padding: '10px 14px',
+                    width: 120,
+                    textAlign: 'right',
+                    whiteSpace: 'nowrap',
+                    borderLeft: '1px solid var(--border)',
+                    boxShadow: '-3px 0 6px rgba(0, 0, 0, 0.04)',
+                  }}
+                >
+                  Thao tác
+                </th>
               </tr>
             </thead>
             <tbody>
               {assets.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--text-muted)' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--text-muted)' }}>
                     Không tìm thấy thiết bị nào phù hợp với điều kiện tìm kiếm.
                   </td>
                 </tr>
@@ -468,7 +482,7 @@ export function AssetScreen({
 
                       {/* Tên thiết bị & Hãng */}
                       <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13.5 }} title={specParts.length > 0 ? `Cấu hình: ${specParts.join(' • ')}` : undefined}>
                           <Link href={`/assets/${item.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                             {item.name}
                           </Link>
@@ -488,28 +502,7 @@ export function AssetScreen({
                         </div>
                       </td>
 
-                      {/* Cấu hình tóm tắt */}
-                      <td style={{ padding: '12px 14px' }}>
-                        {specParts.length > 0 ? (
-                          <div style={{ fontSize: 12, color: 'var(--text-base)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {specParts.map((sp, idx) => (
-                              <span
-                                key={idx}
-                                style={{
-                                  background: 'var(--surface-subtle, #f1f5f9)',
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  fontSize: 11,
-                                }}
-                              >
-                                {sp}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                        )}
-                      </td>
+
 
                       {/* Người sử dụng */}
                       <td style={{ padding: '12px 14px' }}>
@@ -619,8 +612,22 @@ export function AssetScreen({
                         )}
                       </td>
 
-                      {/* Thao tác */}
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                      {/* Thao tác (Cố định - Sticky right) */}
+                      <td
+                        style={{
+                          position: 'sticky',
+                          right: 0,
+                          zIndex: 1,
+                          background: isSelected
+                            ? 'var(--primary-subtle, #f0f9ff)'
+                            : 'var(--surface-card, #ffffff)',
+                          padding: '12px 14px',
+                          textAlign: 'right',
+                          borderLeft: '1px solid var(--border)',
+                          boxShadow: '-3px 0 6px rgba(0, 0, 0, 0.04)',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>
                           <Link
                             href={`/assets/${item.id}`}
