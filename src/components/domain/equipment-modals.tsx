@@ -13,6 +13,7 @@ import {
   Badge,
   SearchableSelect,
   ImageUpload,
+  MultiImageUpload,
 } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -88,7 +89,10 @@ export function EquipmentModal({
   const [ownershipType, setOwnershipType] = useState(equipment?.ownershipType || 'SOLD');
   const [status, setStatus] = useState(equipment?.status || 'OPERATING');
   const [notes, setNotes] = useState(equipment?.notes || '');
-  const [imageUrl, setImageUrl] = useState(equipment?.imageUrl || '');
+  const initialGallery: string[] = Array.isArray(equipment?.specs?.gallery) && equipment.specs.gallery.length > 0
+    ? equipment.specs.gallery
+    : equipment?.imageUrl ? [equipment.imageUrl] : [];
+  const [gallery, setGallery] = useState<string[]>(initialGallery);
 
   // Location & Customer
   const [customerId, setCustomerId] = useState<number | undefined>(equipment?.customerId || undefined);
@@ -245,7 +249,10 @@ export function EquipmentModal({
       weightKg: weightKg.trim() || undefined,
       madeIn: madeIn.trim() || undefined,
       attributes: validAttributes,
+      gallery: gallery.length > 0 ? gallery : undefined,
     };
+
+    const primaryImage = gallery.length > 0 ? gallery[0].trim() : undefined;
 
     const payload: SaveEquipmentInput = {
       name: name.trim(),
@@ -261,7 +268,7 @@ export function EquipmentModal({
       installedDate: installedDate || undefined,
       warrantyExpiresAt: warrantyExpiresAt || undefined,
       notes: notes.trim() || undefined,
-      imageUrl: imageUrl.trim() || undefined,
+      imageUrl: primaryImage || undefined,
       specs: specsPayload,
     };
 
@@ -432,12 +439,11 @@ export function EquipmentModal({
             </Field>
 
             <div style={{ gridColumn: '1 / -1' }}>
-              <ImageUpload
-                label="Hình ảnh máy móc thực tế"
-                hint="Tải ảnh thực tế của máy lên máy chủ để nhân viên kỹ thuật và khách hàng dễ nhận diện"
-                placeholder="https://... hoặc tải ảnh trực tiếp từ máy tính"
-                value={imageUrl}
-                onChange={setImageUrl}
+              <MultiImageUpload
+                label="Album ảnh máy móc thực tế (Nhiều góc chụp)"
+                hint="Tải ảnh tổng thể, tem nhôm Serial/thông số, van cấp nước hoặc hiện trạng lắp đặt tại quán (tối đa 8 ảnh). Ảnh đầu tiên sẽ làm ảnh chính."
+                values={gallery}
+                onChange={setGallery}
               />
             </div>
 

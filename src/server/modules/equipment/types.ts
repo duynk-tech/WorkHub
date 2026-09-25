@@ -93,6 +93,8 @@ export interface EquipmentSpecsInput {
   powerKw?: string;
   // Dynamic flexible attributes (Key-Value)
   attributes?: DynamicSpecAttribute[];
+  // Album ảnh máy (Gallery)
+  gallery?: string[];
   // Category specific (legacy support)
   iceCream?: IceCreamSpecs;
   chocolate?: ChocolateSpecs;

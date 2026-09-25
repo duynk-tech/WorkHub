@@ -38,7 +38,9 @@ import {
   Boxes,
   Building,
   TrendingUp,
+  Eye,
 } from 'lucide-react';
+import { Modal } from '@/components/ui/modal';
 import { Button, Card, Badge, ActionMenu, ConfirmDialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -70,6 +72,122 @@ interface EquipmentDetailScreenProps {
   canManage: boolean;
   /** Thông tin công ty cho tem QR và biên bản bàn giao. */
   company?: { name?: string; shortName?: string; phone?: string };
+}
+
+function EquipmentGalleryCard({
+  images,
+  equipmentName,
+}: {
+  images: string[];
+  equipmentName: string;
+}) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  if (!images || images.length === 0) return null;
+
+  const activeImg = images[activeIdx] || images[0];
+
+  return (
+    <>
+      <Card className="p-4 overflow-hidden">
+        <div className="flex items-center justify-between mb-2.5">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <Utensils className="w-4 h-4 text-indigo-500" />
+            Album ảnh máy ({images.length})
+          </h3>
+          {images.length > 1 && (
+            <span className="text-[11px] text-slate-400 font-medium">
+              {activeIdx + 1} / {images.length}
+            </span>
+          )}
+        </div>
+
+        {/* Ảnh chính hiển thị lớn */}
+        <div
+          className="relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center p-2 group cursor-pointer"
+          onClick={() => setPreviewOpen(true)}
+          title="Bấm để phóng to xem chi tiết"
+        >
+          <img
+            src={activeImg}
+            alt={equipmentName}
+            className="w-full max-h-48 object-contain rounded transition duration-200 group-hover:scale-[1.02]"
+          />
+          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+            <span className="bg-slate-900/85 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-medium shadow">
+              <Eye className="w-3.5 h-3.5" /> Phóng to
+            </span>
+          </div>
+        </div>
+
+        {/* Dải thumbnail bên dưới nếu có nhiều hơn 1 ảnh */}
+        {images.length > 1 && (
+          <div className="flex items-center gap-2 mt-2.5 overflow-x-auto pb-1 pt-0.5">
+            {images.map((img, idx) => (
+              <button
+                key={`${img}-${idx}`}
+                type="button"
+                onClick={() => setActiveIdx(idx)}
+                className={`relative w-12 h-12 rounded-md overflow-hidden border-2 flex-shrink-0 transition ${
+                  idx === activeIdx
+                    ? 'border-indigo-600 dark:border-indigo-400 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 opacity-60 hover:opacity-100'
+                }`}
+                title={`Xem góc chụp #${idx + 1}`}
+              >
+                <img
+                  src={img}
+                  alt={`Thumbnail ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Modal phóng to xem ảnh sắc nét */}
+      {previewOpen && (
+        <Modal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={`Ảnh thiết bị: ${equipmentName} (${activeIdx + 1}/${images.length})`}
+          size="lg"
+        >
+          <div className="flex flex-col items-center justify-center p-2">
+            <img
+              src={activeImg}
+              alt={equipmentName}
+              className="max-w-full max-h-[72vh] object-contain rounded-lg border border-slate-200 dark:border-slate-800"
+            />
+            {images.length > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
+                {images.map((img, idx) => (
+                  <button
+                    key={`${img}-${idx}`}
+                    type="button"
+                    onClick={() => setActiveIdx(idx)}
+                    className={`w-14 h-14 rounded-md overflow-hidden border-2 transition ${
+                      idx === activeIdx
+                        ? 'border-indigo-600 scale-105 shadow'
+                        : 'border-slate-200 dark:border-slate-700 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={img}
+                      alt={`Thumbnail ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }
 
 export function EquipmentDetailScreen({
@@ -619,23 +737,25 @@ export function EquipmentDetailScreen({
               </Card>
             </div>
 
-            {/* Cột phải (1 phần): Nhận diện máy + Bảo hành + Mã QR (Gọn gàng, cân đối) */}
+            {/* Cột phải (1 phần): Album ảnh máy + Bảo hành + Mã QR (Gọn gàng, cân đối) */}
             <div className="space-y-6">
-              {equipment.imageUrl && (
-                <Card className="p-4 overflow-hidden">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
-                    <Utensils className="w-4 h-4 text-indigo-500" />
-                    Ảnh thiết bị thực tế
-                  </h3>
-                  <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center p-2">
-                    <img
-                      src={equipment.imageUrl}
-                      alt={equipment.name}
-                      className="w-full max-h-48 object-contain rounded hover:scale-105 transition duration-300"
+              {(() => {
+                const galleryImages: string[] =
+                  Array.isArray(specs.gallery) && specs.gallery.length > 0
+                    ? specs.gallery
+                    : equipment.imageUrl
+                    ? [equipment.imageUrl]
+                    : [];
+
+                return (
+                  galleryImages.length > 0 && (
+                    <EquipmentGalleryCard
+                      images={galleryImages}
+                      equipmentName={equipment.name}
                     />
-                  </div>
-                </Card>
-              )}
+                  )
+                );
+              })()}
 
               <Card className="p-5">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3.5">
