@@ -48,6 +48,7 @@ export function PurchasesScreen({
   pricingConfig,
   companyInfo,
   customers = [],
+  equipments = [],
   canManage = false,
 }: {
   orders?: any[];
@@ -56,6 +57,7 @@ export function PurchasesScreen({
   pricingConfig?: any;
   companyInfo?: any;
   customers?: any[];
+  equipments?: any[];
   canManage?: boolean;
 }) {
   const router = useRouter();
@@ -758,7 +760,7 @@ export function PurchasesScreen({
                                             color: '#1d4ed8',
                                           }}
                                         >
-                                          <span style={{ fontWeight: 800 }}>TỔNG CỘNG (EUR & VND):</span>
+                                          <span style={{ fontWeight: 800 }}>TỔNG CỘNG :</span>
                                           <div style={{ textAlign: 'right' }}>
                                             {totalEur > 0 && curSym !== '₫' && (
                                               <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 700 }}>
@@ -834,6 +836,7 @@ export function PurchasesScreen({
           spareParts={spareParts}
           warehouses={warehouses}
           customers={customers}
+          equipments={equipments}
           pricingConfig={pricingConfig}
           companyInfo={companyInfo}
           onClose={() => {

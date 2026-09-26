@@ -28,7 +28,7 @@ export default async function PurchasesPage() {
 
   if (!canView) redirect('/dashboard');
 
-  const [orders, warehouses, spareParts, pricingConfig, companyInfo, customers] = await Promise.all([
+  const [orders, warehouses, spareParts, pricingConfig, companyInfo, customers, equipments] = await Promise.all([
     listSparePartOrders(),
     listWarehouses(),
     listSpareParts({}),
@@ -38,6 +38,10 @@ export default async function PurchasesPage() {
       where: { status: 'ACTIVE' },
       select: { id: true, name: true, phone: true, code: true },
       orderBy: { name: 'asc' },
+    }).catch(() => []),
+    prisma.fnbEquipment.findMany({
+      select: { id: true, name: true, machineCode: true },
+      orderBy: { machineCode: 'asc' },
     }).catch(() => []),
   ]);
 
@@ -50,6 +54,7 @@ export default async function PurchasesPage() {
         pricingConfig={JSON.parse(JSON.stringify(pricingConfig))}
         companyInfo={JSON.parse(JSON.stringify(companyInfo))}
         customers={JSON.parse(JSON.stringify(customers))}
+        equipments={JSON.parse(JSON.stringify(equipments))}
         canManage={can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') || ctx.isAdmin}
       />
     </Suspense>
