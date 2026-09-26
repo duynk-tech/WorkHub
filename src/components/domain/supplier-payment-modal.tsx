@@ -31,7 +31,11 @@ export function SupplierPaymentModal({
   const toast = useToast();
   const [loading, setLoading] = useState(false);
 
-  const total = Number(order?.totalVnd || 0);
+  const supplierCost =
+    order?.subtotalVnd !== undefined && order?.subtotalVnd !== null && Number(order.subtotalVnd) > 0
+      ? Math.max(0, Number(order.subtotalVnd) - Number(order.discountVnd || 0))
+      : Number(order?.totalVnd || 0);
+  const total = supplierCost;
   const paid = Number(order?.paidAmount || 0);
   const remaining = Math.max(0, total - paid);
 
@@ -119,7 +123,7 @@ export function SupplierPaymentModal({
           }}
         >
           <span>
-            Giá trị phiếu {fmt(total)} ₫ · đã trả {fmt(paid)} ₫
+            Giá vốn trả NCC {fmt(total)} ₫ · đã trả {fmt(paid)} ₫
           </span>
           <strong>Còn nợ {fmt(remaining)} ₫</strong>
         </div>

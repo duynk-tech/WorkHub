@@ -999,7 +999,7 @@ export function SparePartsScreen({
                     <th style={{ width: 130 }}>Loại</th>
                     <th style={{ width: 160 }}>Trạng thái</th>
                     <th style={{ width: 110 }}>Dự kiến về</th>
-                    <th className="num" style={{ width: 140 }}>Tổng tiền</th>
+                    <th className="num" style={{ width: 140 }}>Giá vốn (Trả NCC)</th>
                     <th className="num" style={{ width: 140 }}>Còn nợ NCC</th>
                     <th style={{ width: 52 }}></th>
                   </tr>
@@ -1079,13 +1079,28 @@ export function SparePartsScreen({
                         {order.etaDate ? fmtDate(order.etaDate) : <span className="text-faint">—</span>}
                       </td>
 
-                      <td className="num" style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
-                        {new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd || 0))} ₫
+                      <td className="num">
+                        <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                          {new Intl.NumberFormat('vi-VN').format(
+                            Number(order.subtotalVnd || 0) > 0
+                              ? Number(order.subtotalVnd) - Number(order.discountVnd || 0)
+                              : Number(order.totalVnd || 0)
+                          )} ₫
+                        </div>
+                        {(Number(order.shippingFee || 0) > 0 || Number(order.customsFee || 0) > 0) && (
+                          <div className="hint" title="Tổng chi phí lô hàng nhập kho bao gồm cước vận chuyển & hải quan">
+                            Về kho: {new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd || 0))} ₫
+                          </div>
+                        )}
                       </td>
 
                       <td className="num">
                         {(() => {
-                          const total = order.status === 'CANCELLED' ? 0 : Number(order.totalVnd || 0);
+                          const supplierCost =
+                            Number(order.subtotalVnd || 0) > 0
+                              ? Number(order.subtotalVnd) - Number(order.discountVnd || 0)
+                              : Number(order.totalVnd || 0);
+                          const total = order.status === 'CANCELLED' ? 0 : supplierCost;
                           const remaining = Math.max(0, total - Number(order.paidAmount || 0));
                           const overdue =
                             remaining > 0 && order.dueDate &&
@@ -1137,7 +1152,9 @@ export function SparePartsScreen({
                                   }]
                                 : []),
                               ...(canManage && order.status !== 'CANCELLED' &&
-                                Number(order.totalVnd || 0) > Number(order.paidAmount || 0)
+                                (Number(order.subtotalVnd || 0) > 0
+                                  ? Number(order.subtotalVnd) - Number(order.discountVnd || 0)
+                                  : Number(order.totalVnd || 0)) > Number(order.paidAmount || 0)
                                 ? [{
                                     key: 'pay',
                                     label: 'Trả tiền nhà cung cấp',
@@ -1327,9 +1344,10 @@ export function SparePartsScreen({
                         {/* Pricing details */}
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
-                            Chi tiết tính giá đơn hàng
+                            Chi tiết tính giá & Chi phí lô hàng
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                            {/* 1. Phần trả NCC (Giá Vốn) */}
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                               <span style={{ color: 'var(--text-muted)' }}>
                                 Tiền hàng ({new Intl.NumberFormat('vi-VN').format(order.exchangeRate)} ₫/{order.currency || 'EUR'}):
@@ -1339,7 +1357,7 @@ export function SparePartsScreen({
                             {Number(order.discountVnd) > 0 && (
                               <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
                                 <span>
-                                  Chiết khấu số lượng
+                                  Chiết khấu NCC
                                   {Number(order.discountRate) > 0 && (
                                     <> ({+(Number(order.discountRate) * 100).toFixed(2)}%)</>
                                   )}
@@ -1348,9 +1366,31 @@ export function SparePartsScreen({
                                 <span>-{new Intl.NumberFormat('vi-VN').format(Number(order.discountVnd))} ₫</span>
                               </div>
                             )}
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                padding: '3px 6px',
+                                background: '#eff6ff',
+                                borderRadius: 4,
+                                color: '#1d4ed8',
+                                fontWeight: 700,
+                                fontSize: 12,
+                              }}
+                            >
+                              <span>Phần trả NCC (Giá vốn):</span>
+                              <span>
+                                {new Intl.NumberFormat('vi-VN').format(
+                                  Math.max(0, Number(order.subtotalVnd || 0) - Number(order.discountVnd || 0))
+                                )}{' '}
+                                ₫
+                              </span>
+                            </div>
+
+                            {/* 2. Chi phí ngoài: Vận chuyển + Hải quan */}
                             {Number(order.shippingFee) > 0 && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                <span>Cước vận chuyển:</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', paddingTop: 2 }}>
+                                <span>Cước vận chuyển (Đơn vị VC):</span>
                                 <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
                               </div>
                             )}
@@ -1378,6 +1418,8 @@ export function SparePartsScreen({
                               }
                               return null;
                             })()}
+
+                            {/* 3. Tổng giá vốn về kho */}
                             <div
                               style={{
                                 display: 'flex',
@@ -1385,12 +1427,14 @@ export function SparePartsScreen({
                                 paddingTop: 6,
                                 marginTop: 4,
                                 borderTop: '1px dashed var(--border-base)',
-                                fontSize: 14,
+                                fontSize: 13.5,
                                 fontWeight: 800,
                                 color: '#7c3aed',
                               }}
                             >
-                              <span>Tổng thanh toán:</span>
+                              <span title="Tổng chi phí lô hàng nhập kho bao gồm giá vốn hàng mua + cước vận chuyển & hải quan">
+                                Tổng giá vốn về kho:
+                              </span>
                               <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
                             </div>
                           </div>

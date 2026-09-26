@@ -1725,14 +1725,24 @@ export async function generateSupplierPaymentCode(): Promise<string> {
   }
 }
 
-/** Công nợ của một phiếu đặt hàng: phải trả, đã trả, còn lại, quá hạn. */
+/** Công nợ của một phiếu đặt hàng: phải trả (giá vốn NCC), đã trả, còn lại, quá hạn. */
 export function supplierOrderDebt(order: {
   totalVnd?: any;
+  subtotalVnd?: any;
+  discountVnd?: any;
+  shippingFee?: any;
+  customsFee?: any;
   paidAmount?: any;
   dueDate?: Date | string | null;
   status?: string;
+  [key: string]: any;
 }) {
-  const total = order.status === 'CANCELLED' ? 0 : Number(order.totalVnd || 0);
+  // Phần trả nhà cung cấp là Giá Vốn (tiền hàng mua từ NCC sau chiết khấu)
+  const supplierCost =
+    order.subtotalVnd !== undefined && order.subtotalVnd !== null && Number(order.subtotalVnd) > 0
+      ? Math.max(0, Number(order.subtotalVnd) - Number(order.discountVnd || 0))
+      : Number(order.totalVnd || 0);
+  const total = order.status === 'CANCELLED' ? 0 : supplierCost;
   const paid = Number(order.paidAmount || 0);
   const remaining = Math.max(0, total - paid);
   const due = order.dueDate ? new Date(order.dueDate) : null;

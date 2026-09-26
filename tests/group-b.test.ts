@@ -32,6 +32,19 @@ describe('Công nợ nhà cung cấp', () => {
     expect(s.overdue).toBe(15_000_000);
     expect(s.overdueOrders).toBe(1);
   });
+
+  it('phần trả nhà cung cấp tính theo giá vốn tiền hàng (subtotal - discount), không tính cước và hải quan', () => {
+    const d = supplierOrderDebt({
+      subtotalVnd: 56_000_000,
+      discountVnd: 0,
+      shippingFee: 6_500_000,
+      customsFee: 2_200_000,
+      totalVnd: 64_700_000,
+      paidAmount: 32_000_000,
+    });
+    expect(d.total).toBe(56_000_000);
+    expect(d.remaining).toBe(24_000_000);
+  });
 });
 
 describe('Trả hàng ảnh hưởng công nợ', () => {
