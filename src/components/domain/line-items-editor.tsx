@@ -3,13 +3,14 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Input, PriceInput } from '@/components/ui';
 import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select';
-import { Plus, Trash2, AlertTriangle, Package } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Package, Info } from 'lucide-react';
 import {
   calculateQuotedUnitPrice,
   type SparePartPricingConfig,
 } from '@/server/modules/spare-parts/types';
 import { getEquipmentSpecRows, getEquipmentQuickPills } from '@/lib/equipment-specs';
 import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
+import { parseFeesFromDescription } from '@/components/domain/spare-parts-modals';
 
 /**
  * Bảng chọn hàng dùng chung cho Đơn hàng và Báo giá khách hàng.
@@ -29,6 +30,14 @@ export interface LineItem {
   /** Giá lấy từ danh mục hay do hệ thống suy ra từ giá vốn. */
   priceSource?: 'LIST' | 'ESTIMATED' | 'NONE';
   notes?: string;
+  /** Giá vốn ngoại tệ EUR (nếu là hàng nhập khẩu Châu Âu) */
+  unitPriceEur?: number;
+  /** Giá vốn đơn vị quy đổi VNĐ */
+  unitCostVnd?: number;
+  /** Cước vận chuyển phân bổ cho dòng (VNĐ) */
+  shippingFee?: number;
+  /** Phí khác / hải quan phân bổ cho dòng (VNĐ) */
+  customsFee?: number;
 }
 
 export const ITEM_TYPE_LABELS: Record<string, string> = {
@@ -38,7 +47,18 @@ export const ITEM_TYPE_LABELS: Record<string, string> = {
 };
 
 export function emptyLineItem(): LineItem {
-  return { itemType: 'EQUIPMENT', name: '', quantity: 1, unitPrice: 0, discountVnd: 0, notes: '' };
+  return {
+    itemType: 'EQUIPMENT',
+    name: '',
+    quantity: 1,
+    unitPrice: 0,
+    discountVnd: 0,
+    unitPriceEur: 0,
+    unitCostVnd: 0,
+    shippingFee: 0,
+    customsFee: 0,
+    notes: '',
+  };
 }
 
 /** Tiền một dòng sau chiết khấu, không bao giờ âm. */
@@ -182,6 +202,9 @@ export function useLineItems({
   spareParts = [],
   pricingConfig,
   strictSellingPrice = false,
+  exchangeRate = 27800,
+  defaultShippingFee = 0,
+  defaultCustomsFee = 0,
   onWarning,
 }: {
   initialItems?: LineItem[];
@@ -192,6 +215,9 @@ export function useLineItems({
   pricingConfig?: Partial<SparePartPricingConfig>;
   /** Khi bật: chỉ lấy giá bán niêm yết/tính sẵn trong danh mục, không tính lại động từ giá vốn */
   strictSellingPrice?: boolean;
+  exchangeRate?: number;
+  defaultShippingFee?: number;
+  defaultCustomsFee?: number;
   /** Callback phát cảnh báo khi chọn sản phẩm chưa có giá bán */
   onWarning?: (msg: string) => void;
 }) {
@@ -225,7 +251,34 @@ export function useLineItems({
 
   const changeItem = (index: number, field: keyof LineItem, value: any) => {
     const updated = [...items];
-    updated[index] = { ...updated[index], [field]: value };
+    const current = { ...updated[index], [field]: value };
+    const rateNum = Number(exchangeRate) || 27800;
+
+    if (field === 'quantity') {
+      const prevQty = Math.max(1, Number(items[index].quantity) || 1);
+      const qty = Math.max(1, Number(value) || 1);
+      current.quantity = qty;
+      const unitShip =
+        items[index].shippingFee !== undefined && prevQty > 0
+          ? Math.round(items[index].shippingFee / prevQty)
+          : defaultShippingFee;
+      const unitOther =
+        items[index].customsFee !== undefined && prevQty > 0
+          ? Math.round(items[index].customsFee / prevQty)
+          : defaultCustomsFee;
+      current.shippingFee = unitShip * qty;
+      current.customsFee = unitOther * qty;
+    } else if (field === 'unitPriceEur') {
+      const eur = Math.max(0, Number(value) || 0);
+      current.unitPriceEur = eur;
+      current.unitCostVnd = Math.round(eur * rateNum);
+    } else if (field === 'unitCostVnd') {
+      const costVnd = Math.max(0, Number(value) || 0);
+      current.unitCostVnd = costVnd;
+      current.unitPriceEur = rateNum > 0 ? Number((costVnd / rateNum).toFixed(2)) : 0;
+    }
+
+    updated[index] = current;
     setItems(updated);
   };
 
@@ -238,6 +291,8 @@ export function useLineItems({
     setCatalogRefs(refs);
 
     const updated = [...items];
+    const rateNum = Number(exchangeRate) || 27800;
+    const currentQty = Math.max(1, Number(updated[index].quantity) || 1);
 
     if (!ref) {
       updated[index] = {
@@ -246,6 +301,10 @@ export function useLineItems({
         equipmentId: undefined,
         inventoryItemId: undefined,
         unitPrice: 0,
+        unitPriceEur: 0,
+        unitCostVnd: 0,
+        shippingFee: 0,
+        customsFee: 0,
       };
       setItems(updated);
       return;
@@ -270,6 +329,8 @@ export function useLineItems({
         machines.find((x: any) => String(x.id) === rawId);
       if (m) {
         const price = Number(m.soldPrice || 0);
+        const cost = Number(m.costPrice || m.importPrice || 0);
+        const eur = rateNum > 0 && cost > 0 ? Number((cost / rateNum).toFixed(2)) : 0;
         updated[index] = {
           ...updated[index],
           itemType: 'EQUIPMENT',
@@ -278,6 +339,10 @@ export function useLineItems({
           inventoryItemId: undefined,
           unitPrice: price,
           priceSource: price > 0 ? 'LIST' : 'NONE',
+          unitPriceEur: eur,
+          unitCostVnd: cost,
+          shippingFee: 0,
+          customsFee: 0,
         };
         if (strictSellingPrice && price <= 0) {
           onWarning?.(`Máy "${m.name}" chưa có giá bán niêm yết. Vui lòng nhập giá bán thủ công!`);
@@ -318,6 +383,14 @@ export function useLineItems({
           source = quoted.source;
         }
 
+        const parsed = parseFeesFromDescription(p.description);
+        const eur = Number(p.priceEur || 0);
+        const costVnd =
+          Number(p.costPrice || p.avgCost || 0) || (eur > 0 ? Math.round(eur * rateNum) : 0);
+        const unitEur = eur > 0 ? eur : rateNum > 0 && costVnd > 0 ? Number((costVnd / rateNum).toFixed(2)) : 0;
+        const unitShip = parsed.shippingFee !== undefined ? parsed.shippingFee : defaultShippingFee;
+        const unitOther = parsed.otherFee !== undefined ? parsed.otherFee : defaultCustomsFee;
+
         updated[index] = {
           ...updated[index],
           itemType: 'SPARE_PART',
@@ -326,6 +399,10 @@ export function useLineItems({
           inventoryItemId: p.id,
           unitPrice: price,
           priceSource: source,
+          unitPriceEur: unitEur,
+          unitCostVnd: costVnd,
+          shippingFee: unitShip * currentQty,
+          customsFee: unitOther * currentQty,
         };
       }
     }
@@ -360,7 +437,9 @@ export function useLineItems({
   };
 }
 
-const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
+const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n || 0));
+const fmtEur = (n: number) =>
+  new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 
 export function LineItemsEditor({
   title = 'Danh sách máy / sản phẩm trong đơn',
@@ -382,8 +461,7 @@ export function LineItemsEditor({
   catalogRefs: string[];
   catalogOptions: SearchableSelectOption[];
   catalogDetailsMap?: Map<string, { itemCode?: string; unit?: string; stockQty?: number; type?: string; name: string }>;
-  /** Giá vốn một đơn vị của dòng hàng. Có hàm này thì hiện cột giá vốn và tỷ suất
-   *  — thông tin nội bộ, không bao giờ xuất hiện trên bản in gửi khách. */
+  /** Fallback tính giá vốn nếu item chưa có unitCostVnd */
   costOf?: (item: LineItem) => number;
   onAdd: () => void;
   onAddNewPart?: () => void;
@@ -393,7 +471,6 @@ export function LineItemsEditor({
   warnMissingPrice?: boolean;
   footerRows?: React.ReactNode;
 }) {
-  const showCost = Boolean(costOf);
   const [expandedSpecIndices, setExpandedSpecIndices] = useState<Record<number, boolean>>({});
 
   return (
@@ -430,22 +507,26 @@ export function LineItemsEditor({
       </div>
 
       <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
-        <table style={{ width: '100%', minWidth: showCost ? 740 : 660, borderCollapse: 'collapse', fontSize: 12 }}>
+        <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
               <th style={{ padding: '7px 4px', textAlign: 'center', width: 34 }}>STT</th>
-              <th style={{ padding: '7px 8px', textAlign: 'left' }}>Máy / Linh kiện / Dịch vụ</th>
+              <th style={{ padding: '7px 8px', textAlign: 'left', minWidth: 200 }}>Mặt hàng / Dịch vụ</th>
               <th style={{ padding: '7px 2px', textAlign: 'center', width: 50 }} title="Số lượng">SL</th>
-              {showCost && (
-                <th style={{ padding: '7px 6px', textAlign: 'right', width: 104 }} title="Giá vốn đơn vị (Nội bộ)">
-                  Giá vốn (₫)
-                </th>
-              )}
-              <th style={{ padding: '7px 6px', textAlign: 'right', width: 130 }} title="Đơn giá bán cho khách">
-                Đơn giá bán (₫)
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Giá vốn đơn vị (EUR & VND)">
+                Giá vốn (EUR · VND)
               </th>
-              <th style={{ padding: '7px 6px', textAlign: 'right', width: 130 }} title="Thành tiền: Số lượng × Đơn giá bán">
-                Thành tiền (₫)
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 96 }} title="Cước vận chuyển phân bổ">
+                Cước VC (đ)
+              </th>
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 96 }} title="Phí khác / hải quan">
+                Phí khác (đ)
+              </th>
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 116 }} title="Đơn giá bán cho khách">
+                Đơn giá bán (đ)
+              </th>
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 124 }} title="Thành tiền: Số lượng × Đơn giá bán">
+                Thành tiền (đ)
               </th>
               <th style={{ padding: '7px 2px', width: 28 }}></th>
             </tr>
@@ -457,10 +538,19 @@ export function LineItemsEditor({
               const detail = catalogDetailsMap?.get(ref) || picked;
               const showNameInput =
                 ref === 'CUSTOM' || (ref !== '' && !picked) || (ref === '' && Boolean(item.name));
-              const cost = costOf ? costOf(item) : 0;
+
+              const unitCost =
+                item.unitCostVnd !== undefined && item.unitCostVnd > 0
+                  ? item.unitCostVnd
+                  : costOf
+                  ? costOf(item)
+                  : 0;
               const unitPrice = Number(item.unitPrice) || 0;
               const qty = Math.max(1, Number(item.quantity) || 1);
+              const ship = Number(item.shippingFee) || 0;
+              const other = Number(item.customsFee) || 0;
               const total = lineTotal(item);
+              const profit = total - (unitCost * qty + ship + other);
               const isMissingPrice = warnMissingPrice && Boolean(item.name.trim()) && unitPrice <= 0;
               const eq = detail?.equipment;
               const specRows = eq ? getEquipmentSpecRows(eq) : [];
@@ -664,21 +754,74 @@ export function LineItemsEditor({
                     </div>
                   </td>
 
-                  {/* 4. Giá vốn */}
-                  {showCost && (
-                    <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
-                          {cost > 0 ? `${fmt(cost)} ₫` : '—'}
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
-                          {cost > 0 && qty > 1 ? `Tổng: ${fmt(cost * qty)} ₫` : null}
-                        </div>
-                      </div>
-                    </td>
-                  )}
+                  {/* 4. Giá vốn EUR & VND */}
+                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                      <PriceInput
+                        sizeSm
+                        currency="EUR"
+                        suffix="€"
+                        allowDecimals
+                        placeholder="0"
+                        value={item.unitPriceEur}
+                        onChange={(val) => onChange(idx, 'unitPriceEur', val ?? 0)}
+                        containerStyle={{ width: 104 }}
+                        style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
+                        title="Giá vốn gốc EUR (€)"
+                      />
+                      <PriceInput
+                        sizeSm
+                        currency="VND"
+                        suffix="₫"
+                        placeholder="0"
+                        value={item.unitCostVnd}
+                        onChange={(val) => onChange(idx, 'unitCostVnd', val ?? 0)}
+                        containerStyle={{ width: 104 }}
+                        style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
+                        title="Giá vốn quy đổi VNĐ"
+                      />
+                    </div>
+                  </td>
 
-                  {/* 5. Giá bán */}
+                  {/* 5. Cước VC */}
+                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                      <PriceInput
+                        sizeSm
+                        currency="VND"
+                        suffix=""
+                        value={item.shippingFee}
+                        onChange={(val) => onChange(idx, 'shippingFee', val ?? 0)}
+                        placeholder="0"
+                        containerStyle={{ width: 90, marginLeft: 'auto' }}
+                        style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
+                      />
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        {qty > 1 && ship > 0 ? `≈ ${fmt(ship / qty)} ₫/cái` : null}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 6. Phí khác */}
+                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                      <PriceInput
+                        sizeSm
+                        currency="VND"
+                        suffix=""
+                        value={item.customsFee}
+                        onChange={(val) => onChange(idx, 'customsFee', val ?? 0)}
+                        placeholder="0"
+                        containerStyle={{ width: 90, marginLeft: 'auto' }}
+                        style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
+                      />
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        {qty > 1 && other > 0 ? `≈ ${fmt(other / qty)} ₫/cái` : null}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 7. Đơn giá bán */}
                   <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                       <PriceInput
@@ -686,7 +829,7 @@ export function LineItemsEditor({
                         value={item.unitPrice}
                         onChange={(val) => onChange(idx, 'unitPrice', val || 0)}
                         sizeSm
-                        containerStyle={{ width: 116, marginLeft: 'auto' }}
+                        containerStyle={{ width: 110, marginLeft: 'auto' }}
                         style={{
                           textAlign: 'right',
                           fontWeight: 700,
@@ -706,16 +849,19 @@ export function LineItemsEditor({
                     </div>
                   </td>
 
-                  {/* 6. Thành tiền */}
+                  {/* 8. Thành tiền */}
                   <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                       <div style={{ fontWeight: 700, color: 'var(--text-strong, #0f172a)', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
                         {fmt(total)} ₫
                       </div>
+                      <div style={{ fontSize: 10, color: profit >= 0 ? '#16a34a' : '#dc2626', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        {profit >= 0 ? `+${fmt(profit)} ₫` : `${fmt(profit)} ₫`}
+                      </div>
                     </div>
                   </td>
 
-                  {/* 8. Xóa dòng */}
+                  {/* 9. Xóa dòng */}
                   <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
                     {items.length > 1 && (
                       <button
@@ -734,7 +880,7 @@ export function LineItemsEditor({
 
             {/* Dòng bấm nhanh để thêm mặt hàng mới ngay dưới row cuối */}
             <tr>
-              <td colSpan={showCost ? 7 : 6} style={{ padding: '6px 8px', background: '#faf5ff', borderTop: '1px dashed #ddd6fe' }}>
+              <td colSpan={9} style={{ padding: '6px 8px', background: '#faf5ff', borderTop: '1px dashed #ddd6fe' }}>
                 <button
                   type="button"
                   onClick={onAdd}
@@ -768,3 +914,383 @@ export function LineItemsEditor({
     </div>
   );
 }
+
+/**
+ * Component chân bảng Footer chuẩn 5 dòng cho Đơn bán khách và Báo giá khách:
+ * 1. Tổng cộng (X mặt hàng): SL, Vốn EUR/VND, Cước VC, Phí khác, Thành tiền
+ * 2. Chiết khấu (X%): quick buttons + input % + tiền trừ
+ * 3. Tiền hàng sau chiết khấu (khi có chiết khấu)
+ * 4. Thuế VAT: quick buttons [0%] [8%] [10%] + input % + tiền thuế
+ * 5. TỔNG CỘNG THANH TOÁN (VND) (ĐÃ GỒM VAT)
+ */
+export function LineItemsSummaryFooter({
+  items,
+  discountRate = 0,
+  onDiscountRateChange,
+  vatRate = 0,
+  onVatRateChange,
+  volumeDiscountTiers,
+}: {
+  items: LineItem[];
+  discountRate: number;
+  onDiscountRateChange: (rate: number) => void;
+  vatRate: number;
+  onVatRateChange: (rate: number) => void;
+  volumeDiscountTiers?: Array<{ min: number; max: number; rate: number; label?: string }>;
+}) {
+  const [showDiscountTooltip, setShowDiscountTooltip] = useState(false);
+
+  const totalQty = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+  const subtotalEur = items.reduce(
+    (sum, it) => sum + (Number(it.unitPriceEur) || 0) * (Number(it.quantity) || 0),
+    0,
+  );
+  const subtotalVnd = items.reduce(
+    (sum, it) => sum + (Number(it.unitCostVnd) || 0) * (Number(it.quantity) || 0),
+    0,
+  );
+  const totalShippingFee = items.reduce((sum, it) => sum + (Number(it.shippingFee) || 0), 0);
+  const totalOtherFee = items.reduce((sum, it) => sum + (Number(it.customsFee) || 0), 0);
+  const grossSellingTotal = items.reduce(
+    (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
+    0,
+  );
+
+  const rateNum = Number(discountRate) || 0;
+  const discountAmount = Math.round((grossSellingTotal * rateNum) / 100);
+  const afterDiscountTotal = Math.max(0, grossSellingTotal - discountAmount);
+
+  const vatNum = Number(vatRate) || 0;
+  const vatAmount = Math.round((afterDiscountTotal * vatNum) / 100);
+  const finalTotalWithVat = afterDiscountTotal + vatAmount;
+
+  const defaultDiscountTiers = [0, 1, 2, 3, 5, 8];
+
+  return (
+    <>
+      {/* 1. Hàng tổng cộng các cột */}
+      <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 600 }}>
+        <td colSpan={2} style={{ padding: '8px 8px', color: 'var(--text-strong)' }}>
+          Tổng cộng ({items.length} mặt hàng):
+        </td>
+        <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
+          {totalQty} cái
+        </td>
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 11 }}>
+          <div style={{ color: '#64748b' }}>{fmtEur(subtotalEur)} €</div>
+          <div style={{ color: '#334155' }}>{fmt(subtotalVnd)} ₫</div>
+        </td>
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7', fontSize: 11.5 }}>
+          {fmt(totalShippingFee)} ₫
+        </td>
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#d97706', fontSize: 11.5 }}>
+          {fmt(totalOtherFee)} ₫
+        </td>
+        <td></td>
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
+          {fmt(grossSellingTotal)} ₫
+        </td>
+        <td></td>
+      </tr>
+
+      {/* 2. Dòng chiết khấu */}
+      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)', position: 'relative', zIndex: 100 }}>
+        <td
+          colSpan={7}
+          style={{
+            padding: '7px 10px',
+            textAlign: 'right',
+            color: rateNum > 0 ? '#b91c1c' : 'var(--text-muted)',
+            fontWeight: 600,
+            position: 'relative',
+          }}
+        >
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                position: 'relative',
+                cursor: volumeDiscountTiers?.length ? 'help' : 'default',
+              }}
+              onMouseEnter={() => volumeDiscountTiers?.length && setShowDiscountTooltip(true)}
+              onMouseLeave={() => setShowDiscountTooltip(false)}
+            >
+              <span
+                style={{
+                  borderBottom: volumeDiscountTiers?.length ? '1px dashed currentColor' : 'none',
+                  paddingBottom: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                Chiết khấu ({rateNum}%):
+                {volumeDiscountTiers?.length ? <Info size={13} style={{ opacity: 0.8 }} /> : null}
+              </span>
+
+              {showDiscountTooltip && volumeDiscountTiers && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 10px)',
+                    right: 0,
+                    zIndex: 99999,
+                    background: 'var(--surface-card, #ffffff)',
+                    color: 'var(--text-base, #1e293b)',
+                    border: '1px solid var(--border-base, #94a3b8)',
+                    borderRadius: 8,
+                    boxShadow: '0 20px 40px -4px rgba(0, 0, 0, 0.28), 0 10px 18px -4px rgba(0, 0, 0, 0.16)',
+                    padding: '10px 14px',
+                    width: 250,
+                    textAlign: 'left',
+                    fontSize: 12,
+                    fontWeight: 400,
+                    lineHeight: 1.5,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      color: 'var(--text-strong, #0f172a)',
+                      marginBottom: 6,
+                      fontSize: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      borderBottom: '1px solid var(--border-subtle, #f1f5f9)',
+                      paddingBottom: 4,
+                    }}
+                  >
+                    <Info size={13} color="#2563eb" /> Chiết khấu theo số lượng:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {volumeDiscountTiers.map((tier, idx) => {
+                      const tierPct = Math.round((tier.rate || 0) * 100 * 10) / 10;
+                      const isMatch = totalQty >= tier.min && totalQty <= tier.max;
+                      const tierLabel =
+                        tier.min === tier.max
+                          ? `${tier.min} cái`
+                          : tier.max >= 99999
+                          ? `≥ ${tier.min} cái`
+                          : `${tier.min} – ${tier.max} cái`;
+
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: isMatch ? '#f0fdf4' : 'transparent',
+                            color: isMatch ? '#15803d' : 'var(--text-muted, #64748b)',
+                            fontWeight: isMatch ? 700 : 400,
+                          }}
+                        >
+                          <span>• {tierLabel}:</span>
+                          <span>
+                            {tierPct}% {isMatch && '✓'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick buttons */}
+            <div style={{ display: 'inline-flex', gap: 4 }}>
+              {(volumeDiscountTiers && volumeDiscountTiers.length > 0
+                ? volumeDiscountTiers.map((t) => Math.round((t.rate || 0) * 100 * 10) / 10)
+                : defaultDiscountTiers
+              ).map((pct) => {
+                const isSelected = rateNum === pct;
+                return (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => onDiscountRateChange(pct)}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      borderRadius: 4,
+                      border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                      background: isSelected ? '#f5f3ff' : '#fff',
+                      color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
+                      fontWeight: isSelected ? 700 : 500,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {pct}%
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Input % */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={discountRate}
+                onChange={(e) => onDiscountRateChange(Number(e.target.value) || 0)}
+                style={{
+                  width: 44,
+                  padding: '2px 4px',
+                  fontSize: 11,
+                  textAlign: 'center',
+                  border: '1px solid var(--border-base, #cbd5e1)',
+                  borderRadius: 4,
+                  background: 'var(--surface-card, #fff)',
+                  color: 'var(--text-strong, #0f172a)',
+                }}
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+            </div>
+          </div>
+        </td>
+        <td
+          style={{
+            padding: '7px 10px',
+            textAlign: 'right',
+            fontWeight: 700,
+            color: rateNum > 0 ? '#b91c1c' : 'var(--text-muted)',
+          }}
+        >
+          {rateNum > 0 ? `-${fmt(discountAmount)} ₫` : '0 ₫'}
+        </td>
+        <td></td>
+      </tr>
+
+      {/* 3. Tiền hàng sau chiết khấu (khi có chiết khấu > 0) */}
+      {rateNum > 0 && (
+        <tr style={{ background: '#f8fafc', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+          <td
+            colSpan={7}
+            style={{
+              padding: '7px 10px',
+              textAlign: 'right',
+              fontWeight: 600,
+              color: 'var(--text-strong)',
+            }}
+          >
+            Tiền hàng sau chiết khấu:
+          </td>
+          <td
+            style={{
+              padding: '7px 10px',
+              textAlign: 'right',
+              fontWeight: 700,
+              color: 'var(--text-strong)',
+            }}
+          >
+            {fmt(afterDiscountTotal)} ₫
+          </td>
+          <td></td>
+        </tr>
+      )}
+
+      {/* 4. Thuế VAT */}
+      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+        <td
+          colSpan={7}
+          style={{
+            padding: '6px 10px',
+            textAlign: 'right',
+            fontWeight: 600,
+            color: 'var(--text-strong)',
+          }}
+        >
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+            <span>Thuế VAT:</span>
+            <div style={{ display: 'inline-flex', gap: 4 }}>
+              {[0, 8, 10].map((rate) => {
+                const isSelected = vatNum === rate;
+                return (
+                  <button
+                    key={rate}
+                    type="button"
+                    onClick={() => onVatRateChange(rate)}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      borderRadius: 4,
+                      border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                      background: isSelected ? '#f5f3ff' : '#fff',
+                      color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
+                      fontWeight: isSelected ? 700 : 500,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={vatRate}
+                onChange={(e) => onVatRateChange(Number(e.target.value) || 0)}
+                style={{
+                  width: 44,
+                  padding: '2px 4px',
+                  fontSize: 11,
+                  textAlign: 'center',
+                  border: '1px solid var(--border-base, #cbd5e1)',
+                  borderRadius: 4,
+                  background: 'var(--surface-card, #fff)',
+                  color: 'var(--text-strong, #0f172a)',
+                }}
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+            </div>
+          </div>
+        </td>
+        <td
+          style={{
+            padding: '6px 10px',
+            textAlign: 'right',
+            fontWeight: 700,
+            color: vatAmount > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+          }}
+        >
+          {vatAmount > 0 ? `+${fmt(vatAmount)} ₫` : '0 ₫'}
+        </td>
+        <td></td>
+      </tr>
+
+      {/* 5. Tổng cộng thanh toán */}
+      <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
+        <td
+          colSpan={7}
+          style={{
+            padding: '10px',
+            textAlign: 'right',
+            textTransform: 'uppercase',
+            color: 'var(--text-strong)',
+            fontSize: 13,
+          }}
+        >
+          TỔNG CỘNG THANH TOÁN (VND){vatNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+        </td>
+        <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
+          {fmt(finalTotalWithVat)} ₫
+        </td>
+        <td></td>
+      </tr>
+    </>
+  );
+}
+

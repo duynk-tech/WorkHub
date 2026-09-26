@@ -7,9 +7,11 @@ import { Field, Input, Select, Textarea, Button, PriceInput } from '@/components
 import { useToast } from '@/components/ui/toast';
 import {
   LineItemsEditor,
+  LineItemsSummaryFooter,
   useLineItems,
   lineTotal,
 } from '@/components/domain/line-items-editor';
+import { SparePartModal } from '@/components/domain/spare-parts-modals';
 import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X, Printer } from 'lucide-react';
 import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
 import {
@@ -257,6 +259,10 @@ export function CustomerOrderModal({
   const [vatRate, setVatRate] = useState(
     order?.vatRate !== undefined && order?.vatRate !== null ? String(order.vatRate) : String(defaultVat),
   );
+  const [exchangeRate, setExchangeRate] = useState<number>(
+    pricingConfig?.defaultExchangeRateEur || 27800,
+  );
+  const [newPartModalOpen, setNewPartModalOpen] = useState(false);
 
   const {
     items,
@@ -277,12 +283,17 @@ export function CustomerOrderModal({
       equipmentId: i.equipmentId || undefined,
       inventoryItemId: i.inventoryItemId || undefined,
       notes: i.notes || '',
+      unitPriceEur: i.unitPriceEur,
+      unitCostVnd: i.unitCostVnd,
+      shippingFee: i.shippingFee,
+      customsFee: i.customsFee,
     })),
     machines,
     stockMachines,
     spareParts,
     pricingConfig,
     strictSellingPrice: true,
+    exchangeRate,
     onWarning: (msg) => toast.warning(msg),
   });
 
@@ -543,7 +554,7 @@ export function CustomerOrderModal({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+              gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
               gap: 8,
               alignItems: 'start',
               padding: '8px 12px',
@@ -585,7 +596,18 @@ export function CustomerOrderModal({
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </Field>
 
-            <div style={{ gridColumn: usableQuotations.length > 0 ? 'span 3' : 'span 5' }}>
+            <Field label="Tỉ giá EUR / VND">
+              <PriceInput
+                sizeSm
+                currency="VND"
+                suffix="₫"
+                value={exchangeRate}
+                onChange={(val) => setExchangeRate(val || 27800)}
+                style={{ height: 38 }}
+              />
+            </Field>
+
+            <div style={{ gridColumn: usableQuotations.length > 0 ? 'span 3' : 'span 6' }}>
               <Field label="Điểm đặt / Chi nhánh nhận máy">
                 <div style={{ display: 'flex', gap: 6 }}>
                   <Select
@@ -615,7 +637,7 @@ export function CustomerOrderModal({
             </div>
 
             {!order && usableQuotations.length > 0 && (
-              <div style={{ gridColumn: 'span 2' }}>
+              <div style={{ gridColumn: 'span 3' }}>
                 <Field label="Lập đơn từ báo giá đã chốt (tùy chọn)">
                   <Select
                     value={quotationId}
@@ -664,197 +686,20 @@ export function CustomerOrderModal({
             catalogRefs={catalogRefs}
             catalogOptions={catalogOptions}
             onAdd={addItem}
+            onAddNewPart={() => setNewPartModalOpen(true)}
             onRemove={handleRemoveItem}
             onChange={changeItem}
             onSelectCatalog={selectCatalog}
             warnMissingPrice={true}
             footerRows={
-              <>
-                {/* 1. Tổng tiền hàng */}
-                <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 700 }}>
-                  <td colSpan={2} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-strong)' }}>
-                    Tổng cộng ({items.length} mặt hàng):
-                  </td>
-                  <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)' }}>
-                    {totalQuantity} cái
-                  </td>
-                  <td></td>
-                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
-                    {grossAmount.toLocaleString('vi-VN')}
-                  </td>
-                  <td></td>
-                </tr>
-
-                {/* 2. Chiết khấu số lượng */}
-                <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: '6px 10px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: 'var(--text-strong)',
-                    }}
-                  >
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      <span>Chiết khấu ({totalQuantity} cái):</span>
-                      <div style={{ display: 'inline-flex', gap: 4 }}>
-                        {tiers.map((tier: any, idx: number) => {
-                          const tierPct = Math.round((tier.rate || 0) * 100 * 10) / 10;
-                          const isSelected = effectiveDiscountRate === tierPct;
-                          const label = tier.label || `${tierPct}%`;
-                          return (
-                            <button
-                              key={`tier-${tier.min ?? idx}-${tier.max ?? idx}-${tierPct}`}
-                              type="button"
-                              onClick={() => setManualDiscountRate(String(tierPct))}
-                              style={{
-                                padding: '2px 8px',
-                                fontSize: 11,
-                                borderRadius: 4,
-                                border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
-                                background: isSelected ? '#f5f3ff' : '#fff',
-                                color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
-                                fontWeight: isSelected ? 700 : 500,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.5"
-                          value={discountRateInput}
-                          onChange={(e) => setManualDiscountRate(e.target.value)}
-                          style={{
-                            width: 44,
-                            padding: '2px 4px',
-                            fontSize: 11,
-                            textAlign: 'center',
-                            border: '1px solid var(--border-base, #cbd5e1)',
-                            borderRadius: 4,
-                            background: 'var(--surface-card, #fff)',
-                            color: 'var(--text-strong, #0f172a)',
-                          }}
-                        />
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td
-                    style={{
-                      padding: '6px 10px',
-                      textAlign: 'right',
-                      fontWeight: 700,
-                      color: discountAmount > 0 ? '#b91c1c' : 'var(--text-muted)',
-                    }}
-                  >
-                    {discountAmount > 0 ? `-${discountAmount.toLocaleString('vi-VN')}` : '0'}
-                  </td>
-                  <td></td>
-                </tr>
-
-                {/* 3. Thuế VAT */}
-                <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: '6px 10px',
-                      textAlign: 'right',
-                      fontWeight: 600,
-                      color: 'var(--text-strong)',
-                    }}
-                  >
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                      <span>Thuế VAT:</span>
-                      <div style={{ display: 'inline-flex', gap: 4 }}>
-                        {[0, 8, 10].map((rate) => {
-                          const isSelected = Number(vatRate) === rate;
-                          return (
-                            <button
-                              key={rate}
-                              type="button"
-                              onClick={() => setVatRate(String(rate))}
-                              style={{
-                                padding: '2px 8px',
-                                fontSize: 11,
-                                borderRadius: 4,
-                                border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
-                                background: isSelected ? '#f5f3ff' : '#fff',
-                                color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
-                                fontWeight: isSelected ? 700 : 500,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.5"
-                          value={vatRate}
-                          onChange={(e) => setVatRate(e.target.value)}
-                          style={{
-                            width: 44,
-                            padding: '2px 4px',
-                            fontSize: 11,
-                            textAlign: 'center',
-                            border: '1px solid var(--border-base, #cbd5e1)',
-                            borderRadius: 4,
-                            background: 'var(--surface-card, #fff)',
-                            color: 'var(--text-strong, #0f172a)',
-                          }}
-                        />
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td
-                    style={{
-                      padding: '6px 10px',
-                      textAlign: 'right',
-                      fontWeight: 700,
-                      color: vatAmount > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {vatAmount > 0 ? vatAmount.toLocaleString('vi-VN') : '0'}
-                  </td>
-                  <td></td>
-                </tr>
-
-                {/* 4. Tổng cộng thanh toán */}
-                <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: '10px',
-                      textAlign: 'right',
-                      textTransform: 'uppercase',
-                      color: 'var(--text-strong)',
-                      fontSize: 13,
-                    }}
-                  >
-                    TỔNG CỘNG THANH TOÁN (VND){Number(vatRate) > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
-                  </td>
-                  <td style={{ padding: '10px 6px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
-                    {totalAmount.toLocaleString('vi-VN')}
-                  </td>
-                  <td></td>
-                </tr>
-              </>
+              <LineItemsSummaryFooter
+                items={items}
+                discountRate={effectiveDiscountRate}
+                onDiscountRateChange={(rate) => setManualDiscountRate(String(rate))}
+                vatRate={Number(vatRate) || 0}
+                onVatRateChange={(rate) => setVatRate(String(rate))}
+                volumeDiscountTiers={tiers}
+              />
             }
           />
 
@@ -1021,6 +866,24 @@ export function CustomerOrderModal({
           location={currentLocations.find((l) => l.id === Number(locationId))}
           companyInfo={companyInfo}
           machines={[...(machines || []), ...(stockMachines || [])]}
+        />
+      )}
+
+      {newPartModalOpen && (
+        <SparePartModal
+          open={newPartModalOpen}
+          pricingConfig={pricingConfig}
+          onClose={() => setNewPartModalOpen(false)}
+          onSuccess={(newPart) => {
+            setNewPartModalOpen(false);
+            if (!newPart?.id) return;
+            toast.success(`Đã thêm phụ tùng "${newPart.name}"`);
+            addItem();
+            setTimeout(() => {
+              selectCatalog(items.length, `SP:${newPart.id}`);
+            }, 50);
+          }}
+          zIndex={1060}
         />
       )}
     </div>,

@@ -8,7 +8,8 @@ import { Printer, FileText, Wrench } from 'lucide-react';
 import { readVndInWords } from '@/lib/number-to-words';
 import { useCurrentUser } from '@/components/layout/current-user';
 import { PrintWatermark } from './print-watermark';
-import { LineItemsEditor, useLineItems, lineTotal } from '@/components/domain/line-items-editor';
+import { LineItemsEditor, LineItemsSummaryFooter, useLineItems, lineTotal } from '@/components/domain/line-items-editor';
+import { SparePartModal } from '@/components/domain/spare-parts-modals';
 import {
   calculateQuotedUnitPrice,
   estimateImportFreight,
@@ -94,6 +95,10 @@ export function CustomerQuotationModal({
       : String(defaultVat),
   );
   const [shippingFee, setShippingFee] = useState<number>(Number(quotation?.shippingFee ?? 0));
+  const [exchangeRate, setExchangeRate] = useState<number>(
+    pricingConfig?.defaultExchangeRateEur || 27800,
+  );
+  const [newPartModalOpen, setNewPartModalOpen] = useState(false);
   const [manualDiscountRate, setManualDiscountRate] = useState<string | null>(
     quotation?.discountRate !== undefined && quotation?.discountRate !== null
       ? String(quotation.discountRate)
@@ -132,11 +137,16 @@ export function CustomerQuotationModal({
       inventoryItemId: i.inventoryItemId || undefined,
       priceSource: i.inventoryItemId ? 'LIST' : undefined,
       notes: i.notes || '',
+      unitPriceEur: i.unitPriceEur,
+      unitCostVnd: i.unitCostVnd,
+      shippingFee: i.shippingFee,
+      customsFee: i.customsFee,
     })),
     machines: activeMachines,
     stockMachines,
     spareParts,
     pricingConfig,
+    exchangeRate,
   });
 
   /** Giá vốn một đơn vị — chỉ dùng nội bộ để soi lãi, không in cho khách. */
@@ -271,7 +281,7 @@ export function CustomerQuotationModal({
           </Field>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
           <Field label="Trạng thái báo giá">
             <Select value={status} onChange={(e) => setStatus(e.target.value)}>
               {Object.entries(QUOTATION_STATUSES).map(([k, v]) => (
@@ -288,6 +298,17 @@ export function CustomerQuotationModal({
 
           <Field label="Hiệu lực đến ngày">
             <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+          </Field>
+
+          <Field label="Tỉ giá EUR / VND">
+            <PriceInput
+              sizeSm
+              currency="VND"
+              suffix="₫"
+              value={exchangeRate}
+              onChange={(val) => setExchangeRate(val || 27800)}
+              style={{ height: 38 }}
+            />
           </Field>
         </div>
 
@@ -338,45 +359,22 @@ export function CustomerQuotationModal({
           catalogRefs={catalogRefs}
           catalogOptions={catalogOptions}
           onAdd={addItem}
+          onAddNewPart={() => setNewPartModalOpen(true)}
           onRemove={handleRemoveItem}
           onChange={changeItem}
           onSelectCatalog={selectCatalog}
-          costOf={costOf}
+          warnMissingPrice={true}
+          footerRows={
+            <LineItemsSummaryFooter
+              items={items}
+              discountRate={effectiveDiscountRate}
+              onDiscountRateChange={(rate) => setManualDiscountRate(String(rate))}
+              vatRate={Number(vatRate) || 0}
+              onVatRateChange={(rate) => setVatRate(String(rate))}
+              volumeDiscountTiers={tiers}
+            />
+          }
         />
-
-        {totalCost > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--surface-sunken)',
-              border: '1px dashed var(--border-base)',
-              fontSize: 12.5,
-              color: 'var(--text-muted)',
-              flexWrap: 'wrap',
-            }}
-          >
-            <strong style={{ color: 'var(--text-strong)' }}>Chi tiết (Nội bộ):</strong>
-            <span>
-              Tổng giá vốn <strong style={{ color: 'var(--text-strong)' }}>{fmt(totalCost)} ₫</strong>
-            </span>
-            <span>
-              Lãi gộp dự kiến{' '}
-              <strong style={{ color: goodsTotal - totalCost >= 0 ? '#16a34a' : '#dc2626' }}>
-                {fmt(goodsTotal - totalCost)} ₫
-              </strong>
-            </span>
-            <span>
-              Tỷ suất{' '}
-              <strong style={{ color: goodsTotal - totalCost >= 0 ? '#16a34a' : '#dc2626' }}>
-                {goodsTotal > 0 ? (((goodsTotal - totalCost) / goodsTotal) * 100).toFixed(1) : '0'}%
-              </strong>
-            </span>
-          </div>
-        )}
 
         {estimatedLines.length > 0 && (
           <div
@@ -399,147 +397,25 @@ export function CustomerQuotationModal({
             </span>
           </div>
         )}
-
-        {/* Khối tổng: ô nhập cước và chiết khấu nằm ngay trong cột tổng */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            paddingTop: 10,
-            borderTop: '1px dashed var(--border-base)',
-          }}
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'auto 200px',
-              gap: '7px 14px',
-              alignItems: 'center',
-              fontSize: 13,
-            }}
-          >
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>Tiền hàng</span>
-            <strong style={{ color: 'var(--text-strong)', textAlign: 'right' }}>{fmt(gross)} ₫</strong>
-
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
-              Chiết khấu
-              {suggestedRate > 0 && effectiveDiscountRate !== suggestedRate && (
-                <button
-                  type="button"
-                  onClick={() => setManualDiscountRate(String(suggestedRate))}
-                  style={{
-                    marginLeft: 6,
-                    padding: '1px 6px',
-                    borderRadius: 999,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    border: '1px solid var(--border-base)',
-                    background: 'var(--surface-card)',
-                    color: 'var(--brand)',
-                    cursor: 'pointer',
-                  }}
-                  title={`Bậc chiết khấu theo cấu hình cho ${totalQty} sản phẩm`}
-                >
-                  {suggestedRate}%
-                </button>
-              )}
-            </span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={discountRateInput}
-                onChange={(e) => setManualDiscountRate(e.target.value)}
-                sizeSm
-                style={{ width: 70, flexShrink: 0, textAlign: 'right' }}
-              />
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>%</span>
-              <span style={{ flex: 1, textAlign: 'right', color: discountAmount > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 600 }}>
-                {discountAmount > 0 ? `-${fmt(discountAmount)} ₫` : '—'}
-              </span>
-            </div>
-
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
-              Phí giao hàng
-              <button
-                type="button"
-                onClick={handleEstimateFreight}
-                style={{
-                  marginLeft: 6,
-                  padding: '1px 6px',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  border: '1px solid var(--border-base)',
-                  background: 'var(--surface-card)',
-                  color: 'var(--brand)',
-                  cursor: 'pointer',
-                }}
-                title="Tính theo cước nhập khẩu của lô hàng"
-              >
-                Tính
-              </button>
-            </span>
-            <PriceInput
-              placeholder="0 (chưa gồm phí giao hàng)"
-              value={shippingFee}
-              onChange={(val) => setShippingFee(val || 0)}
-              sizeSm
-              style={{ textAlign: 'right' }}
-            />
-
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-              <span>Thuế VAT</span>
-              <span style={{ display: 'inline-flex', gap: 4 }}>
-                {[0, 8, 10].map((rateVal) => (
-                  <button
-                    key={rateVal}
-                    type="button"
-                    onClick={() => setVatRate(String(rateVal))}
-                    style={{
-                      padding: '1px 6px',
-                      borderRadius: 999,
-                      fontSize: 11,
-                      fontWeight: Number(vatRate) === rateVal ? 700 : 500,
-                      border: '1px solid var(--border-base)',
-                      background: Number(vatRate) === rateVal ? 'var(--brand)' : 'var(--surface-card)',
-                      color: Number(vatRate) === rateVal ? '#fff' : 'var(--text-strong)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {rateVal}%
-                  </button>
-                ))}
-              </span>
-            </span>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={vatRate}
-                onChange={(e) => setVatRate(e.target.value)}
-                sizeSm
-                style={{ width: 70, flexShrink: 0, textAlign: 'right' }}
-              />
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>%</span>
-              <span style={{ flex: 1, textAlign: 'right', color: 'var(--text-strong)', fontWeight: 600 }}>
-                {vatAmount > 0 ? `${fmt(vatAmount)} ₫` : '—'}
-              </span>
-            </div>
-
-            <span style={{ color: 'var(--text-muted)', textAlign: 'right', fontWeight: 600 }}>
-              Tổng thanh toán
-            </span>
-            <strong style={{ fontSize: 18, fontWeight: 700, color: 'var(--brand)', textAlign: 'right' }}>
-              {fmt(totalAmount)} ₫
-            </strong>
-          </div>
-        </div>
       </div>
+
+      {newPartModalOpen && (
+        <SparePartModal
+          open={newPartModalOpen}
+          pricingConfig={pricingConfig as any}
+          onClose={() => setNewPartModalOpen(false)}
+          onSuccess={(newPart) => {
+            setNewPartModalOpen(false);
+            if (!newPart?.id) return;
+            toast.success(`Đã thêm phụ tùng "${newPart.name}"`);
+            addItem();
+            setTimeout(() => {
+              selectCatalog(items.length, `SP:${newPart.id}`);
+            }, 50);
+          }}
+          zIndex={1060}
+        />
+      )}
     </Modal>
   );
 }
