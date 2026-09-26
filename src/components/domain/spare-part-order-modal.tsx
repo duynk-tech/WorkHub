@@ -1508,7 +1508,7 @@ export function SparePartOrderModal({
                   </tr>
 
                   {!Boolean(customerId) ? (
-                    /* 1. NẾU ĐƠN KHÔNG CÓ KH (NHẬP KHO DỰ TRỮ) -> TỔNG TIỀN LÀ GIÁ VỐN */
+                    /* 1. NẾU ĐƠN KHÔNG CÓ KH (NHẬP KHO DỰ TRỮ) -> TỔNG TIỀN LÀ GIÁ VỐN THEO EURO & VND */
                     <tr style={{ background: '#eff6ff', borderTop: '2px solid #93c5fd', fontWeight: 800 }}>
                       <td
                         colSpan={6}
@@ -1520,16 +1520,21 @@ export function SparePartOrderModal({
                           fontSize: 13,
                         }}
                       >
-                        <div>TỔNG TIỀN ĐƠN HÀNG - GIÁ VỐN VỀ KHO (VND):</div>
+                        <div>TỔNG GIÁ VỐN ĐƠN HÀNG (EURO & VND):</div>
                         <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', textTransform: 'none', marginTop: 2 }}>
-                          Tiền hàng: {calculation.subtotalVnd.toLocaleString('vi-VN')} ₫
+                          Tiền hàng mua: {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'} ({calculation.subtotalVnd.toLocaleString('vi-VN')} ₫)
                           {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
                             <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
                           )}
                         </div>
                       </td>
-                      <td style={{ padding: '10px', textAlign: 'right', color: '#1d4ed8', fontSize: 14 }}>
-                        {calculation.totalVnd.toLocaleString('vi-VN')} ₫
+                      <td style={{ padding: '10px', textAlign: 'right', color: '#1d4ed8' }}>
+                        <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 700 }}>
+                          {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'}
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: '#1d4ed8' }}>
+                          {calculation.totalVnd.toLocaleString('vi-VN')} ₫
+                        </div>
                       </td>
                       <td></td>
                     </tr>
@@ -1555,7 +1560,7 @@ export function SparePartOrderModal({
                             <span>TỔNG TIỀN VỐN (TRẢ NCC & PHÍ VỀ KHO):</span>
                           </div>
                           <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', marginTop: 2 }}>
-                            Tiền hàng: {calculation.subtotalVnd.toLocaleString('vi-VN')} ₫
+                            Tiền hàng: {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'} ({calculation.subtotalVnd.toLocaleString('vi-VN')} ₫)
                             {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
                               <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
                             )}
@@ -1565,12 +1570,15 @@ export function SparePartOrderModal({
                           style={{
                             padding: '8px 10px',
                             textAlign: 'right',
-                            fontWeight: 800,
                             color: '#1d4ed8',
-                            fontSize: 13,
                           }}
                         >
-                          {calculation.totalVnd.toLocaleString('vi-VN')} ₫
+                          <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 700 }}>
+                            {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#1d4ed8' }}>
+                            {calculation.totalVnd.toLocaleString('vi-VN')} ₫
+                          </div>
                         </td>
                         <td></td>
                       </tr>

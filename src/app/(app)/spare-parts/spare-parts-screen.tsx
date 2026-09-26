@@ -1456,18 +1456,38 @@ export function SparePartsScreen({
                                     style={{
                                       display: 'flex',
                                       justifyContent: 'space-between',
+                                      alignItems: 'center',
                                       paddingTop: 8,
                                       marginTop: 6,
                                       borderTop: '2px solid #cbd5e1',
-                                      fontSize: 13.5,
-                                      fontWeight: 800,
+                                      fontSize: 13,
                                       color: '#1d4ed8',
                                     }}
                                   >
-                                    <span title="Tổng chi phí vốn lô hàng nhập kho bao gồm giá vốn hàng mua + cước vận chuyển & hải quan">
-                                      TỔNG GIÁ VỐN VỀ KHO:
+                                    <span style={{ fontWeight: 800 }} title="Tổng chi phí vốn lô hàng nhập kho bao gồm giá vốn hàng mua + cước vận chuyển & hải quan">
+                                      TỔNG GIÁ VỐN (EURO & VND):
                                     </span>
-                                    <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
+                                    <div style={{ textAlign: 'right' }}>
+                                      {(() => {
+                                        const totalEur = (order.items || []).reduce(
+                                          (sum: number, it: any) => sum + (Number(it.unitPriceEur || 0) * (Number(it.quantity) || 1)),
+                                          0
+                                        );
+                                        const curSym = order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€';
+                                        return (
+                                          <>
+                                            {totalEur > 0 && curSym !== '₫' && (
+                                              <div style={{ fontSize: 12.5, color: '#2563eb', fontWeight: 700 }}>
+                                                {totalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {curSym}
+                                              </div>
+                                            )}
+                                            <div style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8' }}>
+                                              {new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫
+                                            </div>
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
                                   </div>
                                 </div>
                               ) : (
@@ -1512,16 +1532,33 @@ export function SparePartsScreen({
                                       style={{
                                         display: 'flex',
                                         justifyContent: 'space-between',
+                                        alignItems: 'center',
                                         paddingTop: 5,
                                         marginTop: 3,
                                         borderTop: '1px dashed #cbd5e1',
-                                        fontWeight: 800,
                                         color: '#1d4ed8',
-                                        fontSize: 12.5,
                                       }}
                                     >
-                                      <span>Tổng giá vốn về kho:</span>
-                                      <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
+                                      <span style={{ fontWeight: 800, fontSize: 12 }}>Tổng giá vốn về kho:</span>
+                                      <div style={{ textAlign: 'right' }}>
+                                        {(() => {
+                                          const totalEur = (order.items || []).reduce(
+                                            (sum: number, it: any) => sum + (Number(it.unitPriceEur || 0) * (Number(it.quantity) || 1)),
+                                            0
+                                          );
+                                          const curSym = order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€';
+                                          return (
+                                            <>
+                                              {totalEur > 0 && curSym !== '₫' && (
+                                                <span style={{ fontSize: 11.5, color: '#2563eb', fontWeight: 700, marginRight: 6 }}>
+                                                  {totalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {curSym} •
+                                                </span>
+                                              )}
+                                              <span style={{ fontWeight: 800, fontSize: 12.5 }}>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
                                     </div>
                                   </div>
 
