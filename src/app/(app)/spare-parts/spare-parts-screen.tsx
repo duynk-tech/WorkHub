@@ -1083,7 +1083,7 @@ export function SparePartsScreen({
                         <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
                           {new Intl.NumberFormat('vi-VN').format(
                             Number(order.subtotalVnd || 0) > 0
-                              ? Number(order.subtotalVnd) - Number(order.discountVnd || 0)
+                              ? Number(order.subtotalVnd)
                               : Number(order.totalVnd || 0)
                           )} ₫
                         </div>
@@ -1098,7 +1098,7 @@ export function SparePartsScreen({
                         {(() => {
                           const supplierCost =
                             Number(order.subtotalVnd || 0) > 0
-                              ? Number(order.subtotalVnd) - Number(order.discountVnd || 0)
+                              ? Number(order.subtotalVnd)
                               : Number(order.totalVnd || 0);
                           const total = order.status === 'CANCELLED' ? 0 : supplierCost;
                           const remaining = Math.max(0, total - Number(order.paidAmount || 0));
@@ -1153,7 +1153,7 @@ export function SparePartsScreen({
                                 : []),
                               ...(canManage && order.status !== 'CANCELLED' &&
                                 (Number(order.subtotalVnd || 0) > 0
-                                  ? Number(order.subtotalVnd) - Number(order.discountVnd || 0)
+                                  ? Number(order.subtotalVnd)
                                   : Number(order.totalVnd || 0)) > Number(order.paidAmount || 0)
                                 ? [{
                                     key: 'pay',
@@ -1354,18 +1354,6 @@ export function SparePartsScreen({
                               </span>
                               <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫</span>
                             </div>
-                            {Number(order.discountVnd) > 0 && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
-                                <span>
-                                  Chiết khấu NCC
-                                  {Number(order.discountRate) > 0 && (
-                                    <> ({+(Number(order.discountRate) * 100).toFixed(2)}%)</>
-                                  )}
-                                  :
-                                </span>
-                                <span>-{new Intl.NumberFormat('vi-VN').format(Number(order.discountVnd))} ₫</span>
-                              </div>
-                            )}
                             <div
                               style={{
                                 display: 'flex',
@@ -1380,10 +1368,7 @@ export function SparePartsScreen({
                             >
                               <span>Phần trả NCC (Giá vốn):</span>
                               <span>
-                                {new Intl.NumberFormat('vi-VN').format(
-                                  Math.max(0, Number(order.subtotalVnd || 0) - Number(order.discountVnd || 0))
-                                )}{' '}
-                                ₫
+                                {new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd || 0))} ₫
                               </span>
                             </div>
 
@@ -1437,6 +1422,30 @@ export function SparePartsScreen({
                               </span>
                               <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
                             </div>
+
+                            {/* 4. Chiết khấu cho khách hàng cuối (nếu có) */}
+                            {Number(order.discountVnd) > 0 && (
+                              <div
+                                style={{
+                                  marginTop: 6,
+                                  paddingTop: 6,
+                                  borderTop: '1px dotted var(--border-base)',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  color: '#16a34a',
+                                  fontSize: 12,
+                                }}
+                              >
+                                <span>
+                                  Chiết khấu cho khách hàng cuối
+                                  {Number(order.discountRate) > 0 && (
+                                    <> ({+(Number(order.discountRate) * 100).toFixed(2)}%)</>
+                                  )}
+                                  :
+                                </span>
+                                <span>-{new Intl.NumberFormat('vi-VN').format(Number(order.discountVnd))} ₫</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 

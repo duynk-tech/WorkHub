@@ -33,7 +33,7 @@ export function SupplierPaymentModal({
 
   const supplierCost =
     order?.subtotalVnd !== undefined && order?.subtotalVnd !== null && Number(order.subtotalVnd) > 0
-      ? Math.max(0, Number(order.subtotalVnd) - Number(order.discountVnd || 0))
+      ? Number(order.subtotalVnd)
       : Number(order?.totalVnd || 0);
   const total = supplierCost;
   const paid = Number(order?.paidAmount || 0);

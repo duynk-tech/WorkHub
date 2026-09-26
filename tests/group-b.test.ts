@@ -33,10 +33,10 @@ describe('Công nợ nhà cung cấp', () => {
     expect(s.overdueOrders).toBe(1);
   });
 
-  it('phần trả nhà cung cấp tính theo giá vốn tiền hàng (subtotal - discount), không tính cước và hải quan', () => {
+  it('phần trả nhà cung cấp tính theo giá vốn tiền hàng (subtotalVnd), không trừ chiết khấu khách hàng và cước hải quan', () => {
     const d = supplierOrderDebt({
       subtotalVnd: 56_000_000,
-      discountVnd: 0,
+      discountVnd: 560_000, // Chiết khấu cho khách hàng cuối, không ảnh hưởng số tiền nợ NCC
       shippingFee: 6_500_000,
       customsFee: 2_200_000,
       totalVnd: 64_700_000,

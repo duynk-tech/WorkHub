@@ -1737,10 +1737,10 @@ export function supplierOrderDebt(order: {
   status?: string;
   [key: string]: any;
 }) {
-  // Phần trả nhà cung cấp là Giá Vốn (tiền hàng mua từ NCC sau chiết khấu)
+  // Phần trả nhà cung cấp là Giá Vốn (tiền hàng mua từ NCC, không tính chiết khấu của khách hàng cuối)
   const supplierCost =
     order.subtotalVnd !== undefined && order.subtotalVnd !== null && Number(order.subtotalVnd) > 0
-      ? Math.max(0, Number(order.subtotalVnd) - Number(order.discountVnd || 0))
+      ? Number(order.subtotalVnd)
       : Number(order.totalVnd || 0);
   const total = order.status === 'CANCELLED' ? 0 : supplierCost;
   const paid = Number(order.paidAmount || 0);
