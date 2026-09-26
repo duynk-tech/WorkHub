@@ -758,7 +758,7 @@ export function PurchasesScreen({
                                             color: '#1d4ed8',
                                           }}
                                         >
-                                          <span style={{ fontWeight: 800 }}>TỔNG GIÁ VỐN VỀ KHO (EUR & VND):</span>
+                                          <span style={{ fontWeight: 800 }}>TỔNG CỘNG (EUR & VND):</span>
                                           <div style={{ textAlign: 'right' }}>
                                             {totalEur > 0 && curSym !== '₫' && (
                                               <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 700 }}>

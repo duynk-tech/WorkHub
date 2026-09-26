@@ -1137,7 +1137,7 @@ export function SparePartOrderModal({
                     <td></td>
                   </tr>
 
-                  {/* Banner TỔNG GIÁ VỐN VỀ KHO (EUR & VND) */}
+                  {/* Banner TỔNG CỘNG (EUR & VND) */}
                   <tr style={{ background: '#eff6ff', borderTop: '2px solid #93c5fd', fontWeight: 800 }}>
                     <td
                       colSpan={5}
@@ -1149,7 +1149,7 @@ export function SparePartOrderModal({
                         fontSize: 13,
                       }}
                     >
-                      <div>TỔNG GIÁ VỐN VỀ KHO (EUR & VND):</div>
+                      <div>TỔNG CỘNG (EUR & VND):</div>
                       <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', textTransform: 'none', marginTop: 2 }}>
                         Tiền hàng mua NCC: {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'} ({calculation.subtotalVnd.toLocaleString('vi-VN')} ₫)
                         {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
