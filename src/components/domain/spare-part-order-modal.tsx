@@ -236,12 +236,16 @@ export function SparePartOrderModal({
       },
     ];
 
+    const targetWhCode = targetWarehouseId ? warehouses.find((w: any) => w.id === Number(targetWarehouseId))?.code : null;
+
     if (machineItems.length > 0) {
       for (const p of machineItems) {
         const { totalStock, whStock } = getPartStockQty(p, targetWarehouseId);
         const stockText = targetWarehouseId && whStock !== undefined
-          ? `Kho: ${whStock} (Tổng: ${totalStock})`
-          : `Tồn: ${totalStock}`;
+          ? (whStock === totalStock
+              ? `Tồn [${targetWhCode || 'Kho'}]: ${whStock}`
+              : `Tồn [${targetWhCode || 'Kho'}]: ${whStock} · Toàn hệ thống: ${totalStock}`)
+          : `Tồn toàn hệ thống: ${totalStock}`;
         list.push({
           value: String(p.id),
           label: `[MÁY] ${p.name}`,
@@ -255,8 +259,10 @@ export function SparePartOrderModal({
     for (const p of partItems) {
       const { totalStock, whStock } = getPartStockQty(p, targetWarehouseId);
       const stockText = targetWarehouseId && whStock !== undefined
-        ? `Kho: ${whStock} (Tổng: ${totalStock})`
-        : `Tồn: ${totalStock}`;
+        ? (whStock === totalStock
+            ? `Tồn [${targetWhCode || 'Kho'}]: ${whStock}`
+            : `Tồn [${targetWhCode || 'Kho'}]: ${whStock} · Toàn hệ thống: ${totalStock}`)
+        : `Tồn toàn hệ thống: ${totalStock}`;
       list.push({
         value: String(p.id),
         label: p.name,
@@ -267,7 +273,7 @@ export function SparePartOrderModal({
     }
 
     return list;
-  }, [machineItems, partItems, targetWarehouseId]);
+  }, [machineItems, partItems, targetWarehouseId, warehouses]);
 
   const [items, setItems] = useState<
     Array<{
@@ -1139,6 +1145,8 @@ export function SparePartOrderModal({
                     const calc = calculation.calculatedItems[idx];
                     const selectedPart = allSpareParts.find((p) => p.id === Number(it.itemId));
                     const stockInfo = getPartStockQty(selectedPart, targetWarehouseId);
+                    const selectedWh = warehouses.find((w: any) => w.id === Number(targetWarehouseId));
+                    const whCode = selectedWh?.code;
                     const isStockPositive = (targetWarehouseId && stockInfo.whStock !== undefined ? stockInfo.whStock : stockInfo.totalStock) > 0 || stockInfo.totalStock > 0;
                     const isManualSelling = calc && it.sellingPrice !== undefined && it.sellingPrice !== calc.formulaSellingPerUnit;
 
@@ -1204,15 +1212,25 @@ export function SparePartOrderModal({
                                     }}
                                     title={
                                       targetWarehouseId && stockInfo.whStock !== undefined
-                                        ? `Tồn tại kho đã chọn: ${stockInfo.whStock}, Tổng tồn toàn hệ thống: ${stockInfo.totalStock}`
-                                        : `Tổng tồn toàn hệ thống: ${stockInfo.totalStock}`
+                                        ? `Tồn hiện tại kho [${whCode || 'Đã chọn'}]: ${stockInfo.whStock} ${selectedPart.unit || 'cái'}\nTổng tồn tất cả các kho trên toàn hệ thống: ${stockInfo.totalStock} ${selectedPart.unit || 'cái'}`
+                                        : `Tổng tồn tất cả các kho trên toàn hệ thống: ${stockInfo.totalStock} ${selectedPart.unit || 'cái'}`
                                     }
                                   >
-                                    Tồn: <strong>
-                                      {targetWarehouseId && stockInfo.whStock !== undefined
-                                        ? `${stockInfo.whStock} (Tổng: ${stockInfo.totalStock})`
-                                        : stockInfo.totalStock}
-                                    </strong> {selectedPart.unit || 'cái'}
+                                    {targetWarehouseId && stockInfo.whStock !== undefined ? (
+                                      stockInfo.whStock === stockInfo.totalStock ? (
+                                        <>
+                                          Tồn kho [{whCode || 'Kho'}]: <strong>{stockInfo.whStock}</strong> {selectedPart.unit || 'cái'}
+                                        </>
+                                      ) : (
+                                        <>
+                                          Tồn kho [{whCode || 'Kho'}]: <strong>{stockInfo.whStock}</strong> · Toàn hệ thống: <strong>{stockInfo.totalStock}</strong> {selectedPart.unit || 'cái'}
+                                        </>
+                                      )
+                                    ) : (
+                                      <>
+                                        Tồn toàn hệ thống: <strong>{stockInfo.totalStock}</strong> {selectedPart.unit || 'cái'}
+                                      </>
+                                    )}
                                   </span>
                                 </>
                               ) : null}
