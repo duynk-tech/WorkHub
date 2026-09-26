@@ -699,12 +699,13 @@ export function CustomerOrderModal({
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       <span>Chiết khấu ({totalQuantity} cái):</span>
                       <div style={{ display: 'inline-flex', gap: 4 }}>
-                        {tiers.map((tier: any) => {
+                        {tiers.map((tier: any, idx: number) => {
                           const tierPct = Math.round((tier.rate || 0) * 100 * 10) / 10;
                           const isSelected = effectiveDiscountRate === tierPct;
+                          const label = tier.label || `${tierPct}%`;
                           return (
                             <button
-                              key={tier.label}
+                              key={`tier-${tier.min ?? idx}-${tier.max ?? idx}-${tierPct}`}
                               type="button"
                               onClick={() => setManualDiscountRate(String(tierPct))}
                               style={{
@@ -719,7 +720,7 @@ export function CustomerOrderModal({
                                 transition: 'all 0.15s ease',
                               }}
                             >
-                              {tier.label}
+                              {label}
                             </button>
                           );
                         })}
