@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronRight,
   Calculator,
+  FileText,
 } from 'lucide-react';
 import { Card, Button, Input, Badge, usePaged, Pagination, ScrollTabs, ActionMenu, ConfirmDialog } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
@@ -64,17 +65,26 @@ import {
 import { SparePartPricingModal } from '@/components/domain/spare-part-pricing-modal';
 import { InventoryTransactionReportModal } from '@/components/domain/inventory-transaction-report-modal';
 import { SparePartQuotationModal } from '@/components/domain/spare-part-quotation-modal';
+import {
+  CustomerQuotationModal,
+  CustomerQuotationPrintModal,
+} from '@/components/domain/customer-quotation-modal';
+import {
+  deleteCustomerQuotationAction,
+  convertQuotationToOrderAction,
+} from '@/server/modules/customer/actions';
+import {
+  QUOTATION_STATUSES,
+  PAYMENT_METHODS,
+  ORDER_STATUSES as SALES_ORDER_STATUSES,
+  ORDER_TYPES as SALES_ORDER_TYPES,
+} from '@/server/modules/customer/types';
 import { InventoryReportPanel } from '@/components/domain/inventory-report-panel';
 import { StockHistoryPanel } from '@/components/domain/stock-history-panel';
 import { StockCountModal } from '@/components/domain/stock-count-modal';
 import { SupplierPaymentModal } from '@/components/domain/supplier-payment-modal';
 import { StockDocumentChooser } from '@/components/domain/stock-document-chooser';
 import { PaymentVoucherModal } from '@/components/domain/payment-voucher-modal';
-import {
-  PAYMENT_METHODS,
-  ORDER_STATUSES as SALES_ORDER_STATUSES,
-  ORDER_TYPES as SALES_ORDER_TYPES,
-} from '@/server/modules/customer/types';
 import { EquipmentScreen } from '@/app/(app)/equipment/equipment-screen';
 import {
   deleteSparePartAction,
@@ -97,6 +107,7 @@ export function SparePartsScreen({
   equipmentList = [],
   equipmentMetrics,
   equipmentCustomers = [],
+  quotations = [],
 }: {
   spareParts: any[];
   warehouses: any[];
@@ -125,13 +136,14 @@ export function SparePartsScreen({
   equipmentList?: any[];
   equipmentMetrics?: any;
   equipmentCustomers?: any[];
+  quotations?: any[];
 }) {
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
 
-  type TabKey = 'parts' | 'machines' | 'orders' | 'warehouses' | 'transactions' | 'report';
-  const TAB_KEYS: TabKey[] = ['parts', 'machines', 'orders', 'warehouses', 'transactions', 'report'];
+  type TabKey = 'parts' | 'machines' | 'quotes' | 'orders' | 'warehouses' | 'transactions' | 'report';
+  const TAB_KEYS: TabKey[] = ['parts', 'machines', 'quotes', 'orders', 'warehouses', 'transactions', 'report'];
   // Link từ dashboard / tem QR mở thẳng tab cần xem, sai key thì về tab mặc định
   const [activeTab, setActiveTab] = useState<TabKey>(
     TAB_KEYS.includes(initialTab as TabKey) ? (initialTab as TabKey) : 'parts',
@@ -242,6 +254,28 @@ export function SparePartsScreen({
   // Chặn số dòng đổ ra DOM: danh mục và phiếu đặt hàng đều lớn dần theo thời gian
   const partsPage = usePaged(filteredParts, 20);
   const ordersPage = usePaged(visibleOrders, 20);
+
+  // Quotations state
+  const [quoteSearchTerm, setQuoteSearchTerm] = useState('');
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState('ALL');
+  const [quotationModalOpen, setQuotationModalOpen] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState<any | null>(null);
+  const [quotationPrintModalOpen, setQuotationPrintModalOpen] = useState(false);
+  const [quotationForPrint, setQuotationForPrint] = useState<any | null>(null);
+
+  const filteredQuotations = (quotations || []).filter((q: any) => {
+    if (quoteStatusFilter !== 'ALL' && q.status !== quoteStatusFilter) return false;
+    if (quoteSearchTerm.trim()) {
+      const s = quoteSearchTerm.toLowerCase().trim();
+      const codeMatch = q.quoteCode?.toLowerCase().includes(s);
+      const custMatch = q.customer?.name?.toLowerCase().includes(s);
+      const phoneMatch = q.customer?.phone?.includes(s);
+      const notesMatch = q.notes?.toLowerCase().includes(s);
+      return codeMatch || custMatch || phoneMatch || notesMatch;
+    }
+    return true;
+  });
+  const quotesPage = usePaged(filteredQuotations, 20);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -407,6 +441,30 @@ export function SparePartsScreen({
           }}
         >
           <Utensils size={16} /> Máy móc ({equipmentList.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('quotes')}
+          style={{
+            padding: '10px 16px',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+            fontWeight: activeTab === 'quotes' ? 700 : 500,
+            fontSize: 14,
+            borderBottom: activeTab === 'quotes' ? '2px solid #2563eb' : '2px solid transparent',
+            color: activeTab === 'quotes' ? '#2563eb' : 'var(--text-muted)',
+            background: 'none',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <FileText size={16} /> Báo giá ({quotations.length})
         </button>
 
         <button
@@ -896,6 +954,323 @@ export function SparePartsScreen({
         </div>
       )}
 
+      {/* ── TAB: BÁO GIÁ KHÁCH HÀNG ── */}
+      {activeTab === 'quotes' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Top Filter and Actions */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 320 }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+                <Search
+                  size={15}
+                  style={{
+                    position: 'absolute',
+                    left: 10,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--text-muted)',
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Tìm mã báo giá, khách hàng, số điện thoại..."
+                  value={quoteSearchTerm}
+                  onChange={(e) => setQuoteSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px 7px 32px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-base)',
+                    background: 'var(--surface-card)',
+                    fontSize: 13,
+                    color: 'var(--text-strong)',
+                  }}
+                />
+              </div>
+
+              <select
+                value={quoteStatusFilter}
+                onChange={(e) => setQuoteStatusFilter(e.target.value)}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-base)',
+                  background: 'var(--surface-card)',
+                  fontSize: 13,
+                  color: 'var(--text-strong)',
+                }}
+              >
+                <option value="ALL">Tất cả trạng thái ({quotations.length})</option>
+                <option value="DRAFT">Bản nháp ({quotations.filter((q: any) => q.status === 'DRAFT').length})</option>
+                <option value="SENT">Đã gửi khách ({quotations.filter((q: any) => q.status === 'SENT').length})</option>
+                <option value="ACCEPTED">Khách đã duyệt ({quotations.filter((q: any) => q.status === 'ACCEPTED').length})</option>
+                <option value="REJECTED">Khách từ chối ({quotations.filter((q: any) => q.status === 'REJECTED').length})</option>
+                <option value="EXPIRED">Hết hiệu lực ({quotations.filter((q: any) => q.status === 'EXPIRED').length})</option>
+              </select>
+            </div>
+
+            {canManage && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingQuotation(null);
+                  setQuotationModalOpen(true);
+                }}
+                style={{
+                  background: '#2563eb',
+                  color: '#fff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Plus size={15} /> Lập báo giá mới
+              </Button>
+            )}
+          </div>
+
+          {/* KPI Metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <Card style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tổng số báo giá</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-strong)', marginTop: 4 }}>
+                {quotations.length}
+              </div>
+            </Card>
+            <Card style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Đang chờ duyệt</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#2563eb', marginTop: 4 }}>
+                {quotations.filter((q: any) => q.status === 'SENT' || q.status === 'DRAFT').length}
+              </div>
+            </Card>
+            <Card style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Khách đã chốt duyệt</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>
+                {quotations.filter((q: any) => q.status === 'ACCEPTED').length}
+              </div>
+            </Card>
+            <Card style={{ padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tổng giá trị báo giá</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-strong)', marginTop: 4 }}>
+                {new Intl.NumberFormat('vi-VN').format(
+                  quotations.reduce((sum: number, q: any) => sum + Number(q.totalAmount || 0), 0)
+                )} ₫
+              </div>
+            </Card>
+          </div>
+
+          {/* Quotations List */}
+          {filteredQuotations.length === 0 ? (
+            <Card style={{ padding: '48px 24px', textAlign: 'center' }}>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: '50%',
+                  background: '#eff6ff',
+                  color: '#2563eb',
+                  display: 'grid',
+                  placeItems: 'center',
+                  margin: '0 auto 16px',
+                }}
+              >
+                <FileText size={28} />
+              </div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-strong)' }}>
+                Chưa có bản báo giá nào
+              </h3>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 460, margin: '0 auto 18px' }}>
+                Lập báo giá chuyên nghiệp gửi khách hàng gồm linh kiện, máy móc, dịch vụ, chiết khấu và thuế VAT. In khổ giấy A4 hoặc chốt thành đơn hàng bán.
+              </p>
+              {canManage && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingQuotation(null);
+                    setQuotationModalOpen(true);
+                  }}
+                  style={{ background: '#2563eb', color: '#fff' }}
+                >
+                  <Plus size={15} style={{ marginRight: 6 }} /> Lập báo giá đầu tiên
+                </Button>
+              )}
+            </Card>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Mã báo giá</th>
+                    <th>Khách hàng</th>
+                    <th style={{ width: 120 }}>Ngày lập</th>
+                    <th style={{ width: 120 }}>Hiệu lực đến</th>
+                    <th style={{ width: 100 }}>Số dòng</th>
+                    <th style={{ width: 140 }}>Trạng thái</th>
+                    <th className="num" style={{ width: 150 }}>Tổng tiền (VND)</th>
+                    <th style={{ width: 120, textAlign: 'right' }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quotesPage.pageRows.map((q: any) => {
+                    const statusCfg = QUOTATION_STATUSES[q.status] || {
+                      label: q.status,
+                      color: '#64748b',
+                      bg: '#f1f5f9',
+                    };
+                    const hasOrder = (q.orders?.length || 0) > 0;
+
+                    return (
+                      <tr key={q.id}>
+                        <td>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
+                            {q.quoteCode}
+                          </span>
+                          {hasOrder && (
+                            <div className="hint" style={{ color: '#16a34a', fontWeight: 600 }}>
+                              ✓ Đã chốt {q.orders[0]?.orderCode}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                            {q.customer?.name || 'Khách vãng lai'}
+                          </div>
+                          <div className="hint">
+                            {q.location?.name ? `${q.location.name} · ` : ''}
+                            {q.customer?.phone || 'Chưa có SĐT'}
+                          </div>
+                        </td>
+                        <td style={{ fontSize: 12.5 }}>{fmtDate(q.quoteDate)}</td>
+                        <td style={{ fontSize: 12.5 }}>
+                          {q.validUntil ? fmtDate(q.validUntil) : <span className="text-faint">—</span>}
+                        </td>
+                        <td style={{ fontSize: 12.5 }}>
+                          {q.items?.length || 0} dòng
+                        </td>
+                        <td>
+                          <Badge style={{ background: statusCfg.bg, color: statusCfg.color }}>
+                            {statusCfg.label}
+                          </Badge>
+                        </td>
+                        <td className="num">
+                          <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                            {new Intl.NumberFormat('vi-VN').format(Number(q.totalAmount || 0))} ₫
+                          </div>
+                          {Number(q.vatAmount || 0) > 0 && (
+                            <div className="hint">Đã gồm {Number(q.vatRate || 0)}% VAT</div>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setQuotationForPrint(q);
+                                setQuotationPrintModalOpen(true);
+                              }}
+                              title="In báo giá khổ A4"
+                              style={{ padding: '4px 8px', height: 'auto' }}
+                            >
+                              <Printer size={15} />
+                            </Button>
+
+                            {canManage && (
+                              <ActionMenu
+                                title={q.quoteCode}
+                                items={[
+                                  {
+                                    key: 'print',
+                                    label: 'Xem / In bản A4',
+                                    icon: <Printer size={15} />,
+                                    onClick: () => {
+                                      setQuotationForPrint(q);
+                                      setQuotationPrintModalOpen(true);
+                                    },
+                                  },
+                                  {
+                                    key: 'edit',
+                                    label: 'Chỉnh sửa báo giá',
+                                    icon: <Edit2 size={15} />,
+                                    onClick: () => {
+                                      setEditingQuotation(q);
+                                      setQuotationModalOpen(true);
+                                    },
+                                  },
+                                  ...(!hasOrder && q.status !== 'REJECTED'
+                                    ? [
+                                        {
+                                          key: 'convert',
+                                          label: 'Chốt thành đơn hàng',
+                                          icon: <CheckCircle2 size={15} />,
+                                          onClick: () => {
+                                            setConfirmDialog({
+                                              open: true,
+                                              title: 'Chốt báo giá thành đơn hàng',
+                                              message: `Bạn có chắc muốn chốt báo giá ${q.quoteCode} của khách "${q.customer?.name}" thành đơn hàng chính thức?`,
+                                              confirmText: 'Chốt đơn hàng',
+                                              onConfirm: async () => {
+                                                const res = await convertQuotationToOrderAction(q.id, q.customerId);
+                                                if (res.ok) {
+                                                  toast.success(res.message);
+                                                  startTransition(() => router.refresh());
+                                                } else {
+                                                  toast.error(res.message);
+                                                }
+                                              },
+                                            });
+                                          },
+                                        },
+                                      ]
+                                    : []),
+                                  {
+                                    key: 'delete',
+                                    label: 'Xóa báo giá',
+                                    icon: <Trash2 size={15} />,
+                                    danger: true,
+                                    onClick: () => {
+                                      setConfirmDialog({
+                                        open: true,
+                                        title: 'Xóa báo giá',
+                                        message: `Bạn có chắc muốn xóa báo giá ${q.quoteCode}? Thao tác này không thể hoàn tác.`,
+                                        confirmText: 'Xóa báo giá',
+                                        danger: true,
+                                        onConfirm: async () => {
+                                          const res = await deleteCustomerQuotationAction(q.id, q.customerId);
+                                          if (res.ok) {
+                                            toast.success(res.message);
+                                            startTransition(() => router.refresh());
+                                          } else {
+                                            toast.error(res.message);
+                                          }
+                                        },
+                                      });
+                                    },
+                                  },
+                                ]}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <Pagination {...quotesPage} unit="bản báo giá" />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── TAB: MUA HÀNG (đặt hàng nhà cung cấp & nhập khẩu) ── */}
       {activeTab === 'orders' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1256,17 +1631,14 @@ export function SparePartsScreen({
 
                     {/* Content 2 columns */}
                     {(() => {
-                      const hasCustomer = Boolean(order.customerId || order.customerOrderId || order.customer);
-                      const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
-                      const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
                       const itemsCount = order.items?.length || 1;
                       const shippingPerLine = (order.items?.length || 0) > 0 ? Number(order.shippingFee || 0) / itemsCount : 0;
                       const otherPerLine = (order.items?.length || 0) > 0 ? Number(order.customsFee || 0) / itemsCount : 0;
                       const exchangeRate = Number(order.exchangeRate || 32500);
+                      const curSym = order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€';
 
-                      const calculatedSellingItems = (order.items || []).map((it: any) => {
+                      const calculatedCostItems = (order.items || []).map((it: any) => {
                         const qty = Number(it.quantity) || 1;
-                        const savedSelling = Number(it.sellingPriceVnd || it.item?.sellingPrice || 0);
                         const baseCost = Number(it.unitPriceVnd || 0) > 0
                           ? Number(it.unitPriceVnd)
                           : Number(it.unitPriceEur || 0) > 0
@@ -1274,39 +1646,26 @@ export function SparePartsScreen({
                             : Number(it.item?.avgCost || it.item?.costPrice || 0);
                         const freightPerUnit = qty > 0 ? Math.round(shippingPerLine / qty) : 0;
                         const otherFeePerUnit = qty > 0 ? Math.round(otherPerLine / qty) : 0;
-                        const formulaPrice = baseCost > 0
-                          ? calculateSellingPriceFromMargin(baseCost, marginPercent, pricingMethod) + freightPerUnit + otherFeePerUnit
-                          : 0;
-                        const unitSelling = savedSelling || formulaPrice;
+                        const unitCostWithFees = baseCost + freightPerUnit + otherFeePerUnit;
                         return {
                           ...it,
-                          unitSelling,
-                          sellingSubtotal: unitSelling * qty,
                           baseCost,
+                          freightPerUnit,
+                          otherFeePerUnit,
+                          unitCostWithFees,
                           costSubtotal: baseCost * qty,
+                          totalCostWithFees: unitCostWithFees * qty,
                         };
                       });
 
-                      const grossSellingTotal = calculatedSellingItems.reduce((s: number, it: any) => s + (Number(it.sellingSubtotal) || 0), 0);
-                      const discountRate = hasCustomer ? (Number(order.discountRate) || 0) : 0;
-                      const discountAmount = hasCustomer
-                        ? (Number(order.discountVnd) > 0 && discountRate === 0
-                            ? Number(order.discountVnd)
-                            : Math.round(grossSellingTotal * discountRate))
-                        : 0;
-                      const sellingAfterDiscount = Math.max(0, grossSellingTotal - discountAmount);
-
-                      const rawNotes = order.notes || '';
-                      const parsedVat = rawNotes.match(/\[VAT:\s*(\d+(?:\.\d+)?)%\]/i)?.[1];
-                      const vatRateNum = hasCustomer
-                        ? (parsedVat !== undefined ? Number(parsedVat) : (order.vatRate !== undefined ? Number(order.vatRate) : 0))
-                        : 0;
-                      const vatAmount = hasCustomer ? Math.round((sellingAfterDiscount * vatRateNum) / 100) : 0;
-                      const finalCustomerTotal = sellingAfterDiscount + vatAmount;
+                      const totalEur = (order.items || []).reduce(
+                        (sum: number, it: any) => sum + (Number(it.unitPriceEur || 0) * (Number(it.quantity) || 1)),
+                        0
+                      );
 
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-                          {/* Left: Items */}
+                          {/* Left: Items list with Cost details */}
                           <div
                             style={{
                               border: '1px solid var(--border-base)',
@@ -1317,7 +1676,7 @@ export function SparePartsScreen({
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
-                                Linh kiện đặt hàng ({order.items?.length || 0})
+                                Danh mục hàng mua NCC ({order.items?.length || 0} mã)
                               </span>
                               {canManage && order.status !== 'STOCKED' && order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
                                 <button
@@ -1341,19 +1700,19 @@ export function SparePartsScreen({
                                   }}
                                   title="Chỉnh sửa danh sách mặt hàng và chi phí đơn hàng"
                                 >
-                                  <Edit2 size={12} /> Sửa đơn hàng
+                                  <Edit2 size={12} /> Sửa phiếu mua
                                 </button>
                               )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {calculatedSellingItems.map((it: any) => (
+                              {calculatedCostItems.map((it: any) => (
                                 <div
                                   key={it.id}
                                   style={{
                                     display: 'flex',
                                     justifyContent: 'space-between',
                                     alignItems: 'center',
-                                    padding: '6px 8px',
+                                    padding: '7px 10px',
                                     borderRadius: 6,
                                     background: 'var(--surface-sunken)',
                                     fontSize: 12.5,
@@ -1361,30 +1720,22 @@ export function SparePartsScreen({
                                 >
                                   <div>
                                     <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                                      {it.item?.name || 'Linh kiện'}
+                                      {it.item?.name || 'Mặt hàng mua'}
                                     </div>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                      Mã: {it.item?.itemCode} • Đơn giá vốn: {order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€'}{Number(it.unitPriceEur || 0).toLocaleString('vi-VN')} ({new Intl.NumberFormat('vi-VN').format(it.baseCost)} ₫)
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                      Mã: {it.item?.itemCode || '—'} • Đơn giá mua NCC: {Number(it.unitPriceEur || 0) > 0 ? `${Number(it.unitPriceEur).toLocaleString('vi-VN')} ${curSym} (` : ''}{new Intl.NumberFormat('vi-VN').format(it.baseCost)} ₫{Number(it.unitPriceEur || 0) > 0 ? ')' : ''}
+                                      {(it.freightPerUnit > 0 || it.otherFeePerUnit > 0) && (
+                                        <span> • Phí phân bổ: +{new Intl.NumberFormat('vi-VN').format(it.freightPerUnit + it.otherFeePerUnit)} ₫/cái</span>
+                                      )}
                                     </div>
                                   </div>
                                   <div style={{ textAlign: 'right' }}>
                                     <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
                                       x{it.quantity} {it.item?.unit || 'cái'}
                                     </div>
-                                    <div style={{ fontSize: 11.5, color: hasCustomer ? '#7c3aed' : 'var(--text-strong)', fontWeight: 700 }}>
-                                      {hasCustomer ? (
-                                        <>
-                                          {new Intl.NumberFormat('vi-VN').format(it.sellingSubtotal)} ₫
-                                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>
-                                            (Giá bán: {new Intl.NumberFormat('vi-VN').format(it.unitSelling)} ₫)
-                                          </div>
-                                        </>
-                                      ) : (
-                                        <>
-                                          {new Intl.NumberFormat('vi-VN').format(it.costSubtotal || Number(it.finalPriceVnd || 0))} ₫
-                                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>(Giá vốn)</div>
-                                        </>
-                                      )}
+                                    <div style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 700 }}>
+                                      {new Intl.NumberFormat('vi-VN').format(it.totalCostWithFees || it.costSubtotal)} ₫
+                                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>(Giá vốn về kho)</div>
                                     </div>
                                   </div>
                                 </div>
@@ -1392,7 +1743,7 @@ export function SparePartsScreen({
                             </div>
                           </div>
 
-                          {/* Right: Pricing & Logistics */}
+                          {/* Right: Cost breakdown & Supplier Payment */}
                           <div
                             style={{
                               border: '1px solid var(--border-base)',
@@ -1404,239 +1755,84 @@ export function SparePartsScreen({
                               gap: 10,
                             }}
                           >
-                            {/* Pricing details */}
                             <div>
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>Chi tiết tính giá & Chi phí lô hàng</span>
-                                <Badge style={{ background: hasCustomer ? '#f5f3ff' : '#eff6ff', color: hasCustomer ? '#7c3aed' : '#1d4ed8', fontSize: 10 }}>
-                                  {hasCustomer ? 'Theo đơn khách hàng' : 'Nhập kho dự trữ'}
+                                <span>Giá vốn nhập hàng & Chi phí lô hàng</span>
+                                <Badge style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: 10 }}>
+                                  Phiếu mua hàng NCC (PO)
                                 </Badge>
                               </div>
 
-                              {!hasCustomer ? (
-                                /* 1. ĐƠN KHÔNG CÓ KH: TỔNG TIỀN LÀ GIÁ VỐN */
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>
-                                      Tiền hàng ({new Intl.NumberFormat('vi-VN').format(order.exchangeRate)} ₫/{order.currency || 'EUR'}):
-                                    </span>
-                                    <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫</span>
-                                  </div>
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      padding: '3px 6px',
-                                      background: '#eff6ff',
-                                      borderRadius: 4,
-                                      color: '#1d4ed8',
-                                      fontWeight: 700,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    <span>Phần trả NCC (Giá vốn):</span>
-                                    <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd || 0))} ₫</span>
-                                  </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <span style={{ color: 'var(--text-muted)' }}>
+                                    Tiền hàng mua ({new Intl.NumberFormat('vi-VN').format(exchangeRate)} ₫/{order.currency || 'EUR'}):
+                                  </span>
+                                  <span style={{ fontWeight: 600 }}>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫</span>
+                                </div>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    padding: '4px 8px',
+                                    background: '#eff6ff',
+                                    borderRadius: 4,
+                                    color: '#1d4ed8',
+                                    fontWeight: 700,
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <span>Phần trả NCC (Giá vốn hàng):</span>
+                                  <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd || 0))} ₫</span>
+                                </div>
 
-                                  {Number(order.shippingFee) > 0 && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', paddingTop: 2 }}>
-                                      <span>Cước vận chuyển (Đơn vị VC):</span>
-                                      <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
-                                    </div>
-                                  )}
-                                  {Number(order.customsFee) > 0 && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                      <span>Phí khác / Hải quan:</span>
-                                      <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
-                                    </div>
-                                  )}
+                                {Number(order.shippingFee) > 0 && (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', paddingTop: 2 }}>
+                                    <span>Cước vận chuyển quốc tế:</span>
+                                    <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
+                                  </div>
+                                )}
+                                {Number(order.customsFee) > 0 && (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                    <span>Phí khác / Hải quan:</span>
+                                    <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
+                                  </div>
+                                )}
 
-                                  {/* Tổng giá vốn về kho */}
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      paddingTop: 8,
-                                      marginTop: 6,
-                                      borderTop: '2px solid #cbd5e1',
-                                      fontSize: 13,
-                                      color: '#1d4ed8',
-                                    }}
-                                  >
-                                    <span style={{ fontWeight: 800 }} title="Tổng chi phí vốn lô hàng nhập kho bao gồm giá vốn hàng mua + cước vận chuyển & hải quan">
-                                      TỔNG GIÁ VỐN (EURO & VND):
-                                    </span>
-                                    <div style={{ textAlign: 'right' }}>
-                                      {(() => {
-                                        const totalEur = (order.items || []).reduce(
-                                          (sum: number, it: any) => sum + (Number(it.unitPriceEur || 0) * (Number(it.quantity) || 1)),
-                                          0
-                                        );
-                                        const curSym = order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€';
-                                        return (
-                                          <>
-                                            {totalEur > 0 && curSym !== '₫' && (
-                                              <div style={{ fontSize: 12.5, color: '#2563eb', fontWeight: 700 }}>
-                                                {totalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {curSym}
-                                              </div>
-                                            )}
-                                            <div style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8' }}>
-                                              {new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫
-                                            </div>
-                                          </>
-                                        );
-                                      })()}
+                                {/* Tổng giá vốn về kho */}
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    paddingTop: 8,
+                                    marginTop: 4,
+                                    borderTop: '2px solid #cbd5e1',
+                                    fontSize: 13,
+                                    color: '#1d4ed8',
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 800 }} title="Tổng chi phí vốn lô hàng nhập kho bao gồm giá mua hàng + cước vận chuyển & thuế phí hải quan">
+                                    TỔNG GIÁ VỐN VỀ KHO (EUR & VND):
+                                  </span>
+                                  <div style={{ textAlign: 'right' }}>
+                                    {totalEur > 0 && curSym !== '₫' && (
+                                      <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 700 }}>
+                                        {totalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {curSym}
+                                      </div>
+                                    )}
+                                    <div style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8' }}>
+                                      {new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫
                                     </div>
                                   </div>
                                 </div>
-                              ) : (
-                                /* 2. ĐƠN CÓ KH: CHIA RÕ 2 MỤC: TỔNG TIỀN VỐN & TỔNG TIỀN KH (THEO GIÁ BÁN) */
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                  {/* MỤC 1: TỔNG TIỀN VỐN */}
-                                  <div
-                                    style={{
-                                      background: '#f8fafc',
-                                      border: '1px solid #cbd5e1',
-                                      borderRadius: 6,
-                                      padding: '8px 10px',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: 4,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 700, color: '#1e40af', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                                      <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 5px', borderRadius: 3, fontSize: 10, fontWeight: 800 }}>MỤC 1</span>
-                                      <span>TỔNG TIỀN VỐN (CHI PHÍ NHẬP HÀNG)</span>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                      <span>Tiền hàng trả NCC (Giá vốn):</span>
-                                      <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                                        {new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫
-                                      </span>
-                                    </div>
-                                    {Number(order.shippingFee) > 0 && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                        <span>Cước vận chuyển quốc tế:</span>
-                                        <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
-                                      </div>
-                                    )}
-                                    {Number(order.customsFee) > 0 && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                        <span>Phí khác / Hải quan:</span>
-                                        <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
-                                      </div>
-                                    )}
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        paddingTop: 5,
-                                        marginTop: 3,
-                                        borderTop: '1px dashed #cbd5e1',
-                                        color: '#1d4ed8',
-                                      }}
-                                    >
-                                      <span style={{ fontWeight: 800, fontSize: 12 }}>Tổng giá vốn về kho:</span>
-                                      <div style={{ textAlign: 'right' }}>
-                                        {(() => {
-                                          const totalEur = (order.items || []).reduce(
-                                            (sum: number, it: any) => sum + (Number(it.unitPriceEur || 0) * (Number(it.quantity) || 1)),
-                                            0
-                                          );
-                                          const curSym = order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€';
-                                          return (
-                                            <>
-                                              {totalEur > 0 && curSym !== '₫' && (
-                                                <span style={{ fontSize: 11.5, color: '#2563eb', fontWeight: 700, marginRight: 6 }}>
-                                                  {totalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {curSym} •
-                                                </span>
-                                              )}
-                                              <span style={{ fontWeight: 800, fontSize: 12.5 }}>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
-                                            </>
-                                          );
-                                        })()}
-                                      </div>
-                                    </div>
+
+                                {order.customer && (
+                                  <div style={{ fontSize: 11, color: '#6b7280', paddingTop: 4 }}>
+                                    🎯 Đặt cho khách hàng: <span style={{ fontWeight: 600, color: '#374151' }}>{order.customer.name}</span>
                                   </div>
-
-                                  {/* MỤC 2: TỔNG TIỀN KHÁCH HÀNG (THEO GIÁ BÁN) */}
-                                  <div
-                                    style={{
-                                      background: '#faf5ff',
-                                      border: '1px solid #d8b4fe',
-                                      borderRadius: 6,
-                                      padding: '8px 10px',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: 4,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 700, color: '#6b21a8', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                                      <span style={{ background: '#f3e8ff', color: '#6b21a8', padding: '1px 5px', borderRadius: 3, fontSize: 10, fontWeight: 800 }}>MỤC 2</span>
-                                      <span>TỔNG TIỀN KHÁCH HÀNG (THEO GIÁ BÁN)</span>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                      <span>Tiền hàng (Theo giá bán):</span>
-                                      <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                                        {new Intl.NumberFormat('vi-VN').format(grossSellingTotal)} ₫
-                                      </span>
-                                    </div>
-
-                                    {/* Chiết khấu trên tổng tiền KH theo giá bán */}
-                                    {discountAmount > 0 && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
-                                        <span>
-                                          Chiết khấu cho khách hàng {discountRate > 0 ? `(${+(discountRate * 100).toFixed(0)}%)` : ''}:
-                                        </span>
-                                        <span style={{ fontWeight: 700 }}>
-                                          -{new Intl.NumberFormat('vi-VN').format(discountAmount)} ₫
-                                        </span>
-                                      </div>
-                                    )}
-
-                                    {/* Tiền hàng sau chiết khấu */}
-                                    {discountAmount > 0 && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                        <span>Tiền hàng sau chiết khấu:</span>
-                                        <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                                          {new Intl.NumberFormat('vi-VN').format(sellingAfterDiscount)} ₫
-                                        </span>
-                                      </div>
-                                    )}
-
-                                    {/* Thuế VAT */}
-                                    {vatRateNum > 0 && (
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                        <span>Thuế VAT ({vatRateNum}%):</span>
-                                        <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                                          +{new Intl.NumberFormat('vi-VN').format(vatAmount)} ₫
-                                        </span>
-                                      </div>
-                                    )}
-
-                                    {/* TỔNG CỘNG KHÁCH THANH TOÁN */}
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        paddingTop: 6,
-                                        marginTop: 4,
-                                        borderTop: '1px dashed #d8b4fe',
-                                        fontWeight: 800,
-                                        color: '#7c3aed',
-                                        fontSize: 13,
-                                      }}
-                                    >
-                                      <span>TỔNG CỘNG KHÁCH THANH TOÁN{vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:</span>
-                                      <span>{new Intl.NumberFormat('vi-VN').format(finalCustomerTotal)} ₫</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
 
                         {/* Logistics tracking info */}
@@ -2188,6 +2384,34 @@ export function SparePartsScreen({
           companyInfo={companyInfo}
           pricingConfig={pricingConfig}
           onClose={() => setSelectedOrderForQuote(null)}
+        />
+      )}
+
+      {quotationModalOpen && (
+        <CustomerQuotationModal
+          open={quotationModalOpen}
+          onClose={() => {
+            setQuotationModalOpen(false);
+            setEditingQuotation(null);
+          }}
+          quotation={editingQuotation}
+          customers={customers}
+          spareParts={spareParts}
+          pricingConfig={pricingConfig}
+          onSuccess={() => startTransition(() => router.refresh())}
+        />
+      )}
+
+      {quotationPrintModalOpen && quotationForPrint && (
+        <CustomerQuotationPrintModal
+          open={quotationPrintModalOpen}
+          onClose={() => {
+            setQuotationPrintModalOpen(false);
+            setQuotationForPrint(null);
+          }}
+          quotation={quotationForPrint}
+          customer={quotationForPrint.customer}
+          companyInfo={companyInfo}
         />
       )}
 

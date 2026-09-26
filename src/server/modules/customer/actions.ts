@@ -105,6 +105,7 @@ export async function saveCustomerQuotationAction(
       createdById: input.createdById ?? ctx.employeeId,
     });
     revalidatePath(`/customers/${input.customerId}`);
+    revalidatePath('/spare-parts');
     return {
       ok: true,
       message: id ? 'Cập nhật báo giá thành công' : 'Tạo báo giá mới thành công',
@@ -125,6 +126,7 @@ export async function deleteCustomerQuotationAction(id: number, customerId: numb
   try {
     await deleteCustomerQuotation(id);
     revalidatePath(`/customers/${customerId}`);
+    revalidatePath('/spare-parts');
     return { ok: true, message: 'Đã xóa báo giá' };
   } catch (error: any) {
     console.error('[deleteCustomerQuotationAction error]:', error);
@@ -146,6 +148,7 @@ export async function convertQuotationToOrderAction(
     const order = await convertQuotationToOrder(quotationId, orderType);
     revalidatePath('/customers');
     revalidatePath(`/customers/${customerId}`);
+    revalidatePath('/spare-parts');
     return { ok: true, message: `Đã chốt báo giá thành đơn ${order.orderCode}`, order };
   } catch (error: any) {
     console.error('[convertQuotationToOrderAction error]:', error);

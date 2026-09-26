@@ -39,8 +39,9 @@ function defaultValidUntil(days = 15): string {
 export function CustomerQuotationModal({
   open,
   onClose,
-  customerId,
-  customerName,
+  customerId: propCustomerId,
+  customerName: propCustomerName,
+  customers = [],
   locations = [],
   machines = [],
   stockMachines = [],
@@ -51,8 +52,9 @@ export function CustomerQuotationModal({
 }: {
   open: boolean;
   onClose: () => void;
-  customerId: number;
-  customerName: string;
+  customerId?: number;
+  customerName?: string;
+  customers?: any[];
   locations?: any[];
   machines?: any[];
   stockMachines?: any[];
@@ -64,6 +66,14 @@ export function CustomerQuotationModal({
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | ''>(
+    propCustomerId || quotation?.customerId || (customers.length === 1 ? customers[0].id : '')
+  );
+
+  const activeCustomer = customers.find((c) => c.id === Number(selectedCustomerId));
+  const activeLocations = activeCustomer?.locations || locations;
+  const activeMachines = activeCustomer?.machines || machines;
+  const displayCustomerName = propCustomerName || activeCustomer?.name || quotation?.customer?.name || '';
 
   const [status, setStatus] = useState(quotation?.status || 'DRAFT');
   const [locationId, setLocationId] = useState<number | ''>(quotation?.locationId || '');
@@ -123,7 +133,7 @@ export function CustomerQuotationModal({
       priceSource: i.inventoryItemId ? 'LIST' : undefined,
       notes: i.notes || '',
     })),
-    machines,
+    machines: activeMachines,
     stockMachines,
     spareParts,
     pricingConfig,
@@ -181,6 +191,12 @@ export function CustomerQuotationModal({
   };
 
   const handleSave = async () => {
+    const targetCustId = Number(selectedCustomerId || propCustomerId);
+    if (!targetCustId) {
+      toast.error('Vui lòng chọn khách hàng nhận báo giá');
+      return;
+    }
+
     const rows = validItems();
     if (rows.length === 0) {
       toast.error('Vui lòng nhập tên ít nhất một hàng hóa hoặc dịch vụ');
@@ -189,7 +205,7 @@ export function CustomerQuotationModal({
 
     setLoading(true);
     const payload: SaveCustomerQuotationInput = {
-      customerId,
+      customerId: targetCustId,
       locationId: locationId ? Number(locationId) : undefined,
       status,
       quoteDate,
@@ -220,7 +236,7 @@ export function CustomerQuotationModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={quotation ? `Chỉnh sửa báo giá: ${quotation.quoteCode}` : `Lập báo giá cho: ${customerName}`}
+      title={quotation ? `Chỉnh sửa báo giá: ${quotation.quoteCode}` : `Lập báo giá cho: ${displayCustomerName || 'Khách hàng'}`}
       description="Báo giá gửi khách trước khi chốt đơn. Khi khách duyệt có thể chuyển thẳng thành đơn hàng."
       size="xl"
       footer={
@@ -235,6 +251,26 @@ export function CustomerQuotationModal({
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {customers.length > 0 && !propCustomerId && (
+          <Field label="Khách hàng nhận báo giá" required>
+            <SearchableSelect
+              value={String(selectedCustomerId ?? '')}
+              onChange={(val) => {
+                setSelectedCustomerId(val ? Number(val) : '');
+                setLocationId('');
+              }}
+              options={customers.map((c: any) => ({
+                value: String(c.id),
+                label: c.name,
+                subLabel: c.phone || c.code || undefined,
+                keywords: `${c.name} ${c.phone || ''} ${c.code || ''}`,
+              }))}
+              placeholder="-- Chọn khách hàng nhận báo giá --"
+              searchPlaceholder="Tìm theo tên hoặc số điện thoại…"
+            />
+          </Field>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
           <Field label="Trạng thái báo giá">
             <Select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -253,7 +289,6 @@ export function CustomerQuotationModal({
           <Field label="Hiệu lực đến ngày">
             <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
           </Field>
-
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -263,7 +298,7 @@ export function CustomerQuotationModal({
               onChange={(val) => setLocationId(val ? Number(val) : '')}
               options={[
                 { value: '', label: '-- Trụ sở chính / Chưa gán chi nhánh --' },
-                ...locations.map((loc: any) => ({
+                ...activeLocations.map((loc: any) => ({
                   value: String(loc.id),
                   label: loc.name,
                   subLabel: loc.address || undefined,

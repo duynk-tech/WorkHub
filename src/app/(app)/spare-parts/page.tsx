@@ -49,7 +49,7 @@ export default async function SparePartsPage({
 
   const [
     spareParts, warehouses, transactions, stats, orders, pricingConfig, companyInfo, customers, equipments,
-    equipmentList, equipmentMetrics, equipmentCustomers,
+    equipmentList, equipmentMetrics, equipmentCustomers, quotations,
   ] = await Promise.all([
     listSpareParts(),
     listWarehouses(),
@@ -58,11 +58,35 @@ export default async function SparePartsPage({
     listSparePartOrders(),
     getSparePartPricingConfig(),
     getCompanyInfo(),
-    prisma.customer.findMany({ select: { id: true, name: true, phone: true }, orderBy: { name: 'asc' } }).catch(() => []),
+    prisma.customer.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        code: true,
+        locations: { select: { id: true, name: true, address: true } },
+        machines: { select: { id: true, name: true, machineCode: true } },
+      },
+      orderBy: { name: 'asc' },
+    }).catch(() => []),
     prisma.fnbEquipment.findMany({ select: { id: true, name: true, machineCode: true }, orderBy: { machineCode: 'asc' } }).catch(() => []),
     listEquipment({}),
     getEquipmentMetrics(),
     listCustomersWithLocations(),
+    prisma.customerQuotation.findMany({
+      include: {
+        customer: { select: { id: true, name: true, phone: true, code: true } },
+        location: { select: { id: true, name: true, address: true } },
+        items: {
+          include: {
+            inventoryItem: { select: { id: true, name: true, itemCode: true, unit: true } },
+          },
+        },
+        orders: { select: { id: true, orderCode: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }).catch(() => []),
   ]);
 
   return (
@@ -82,6 +106,7 @@ export default async function SparePartsPage({
       equipmentList={JSON.parse(JSON.stringify(equipmentList))}
       equipmentMetrics={JSON.parse(JSON.stringify(equipmentMetrics))}
       equipmentCustomers={JSON.parse(JSON.stringify(equipmentCustomers))}
+      quotations={JSON.parse(JSON.stringify(quotations))}
     />
   );
 }

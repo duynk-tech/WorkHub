@@ -59,15 +59,12 @@ function getPartPriceInfo(
   part: any,
   exchangeRate: number,
   defaultShippingFee: number,
-  defaultCustomsFee: number,
-  marginPercent = 30,
-  pricingMethod: 'MARGIN' | 'MARKUP' = 'MARGIN'
+  defaultCustomsFee: number
 ) {
   if (!part) {
     return {
       unitPriceEur: 0,
       unitCost: 0,
-      sellingPrice: 0,
       unitShip: defaultShippingFee,
       unitOther: defaultCustomsFee,
     };
@@ -84,7 +81,6 @@ function getPartPriceInfo(
   const unitCost = eur > 0 ? Math.round(eur * rateNum) : costVnd;
   const unitPriceEur = eur > 0 ? eur : (unitCost > 0 ? Math.round((unitCost / rateNum) * 100) / 100 : 0);
 
-  // Parse custom fees from description if any
   let unitShip = defaultShippingFee;
   let unitOther = defaultCustomsFee;
   if (part.description) {
@@ -98,17 +94,9 @@ function getPartPriceInfo(
     }
   }
 
-  const listSelling = part.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
-  const baseSelling = unitCost > 0 ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod) : 0;
-  const formulaSelling = baseSelling > 0 ? baseSelling + unitShip + unitOther : 0;
-
-  // Ưu tiên giá bán niêm yết của mặt hàng nếu đã có, nếu chưa thì dùng giá bán theo công thức Margin + cước
-  const sellingPrice = listSelling > 0 ? listSelling : formulaSelling;
-
   return {
     unitPriceEur,
     unitCost,
-    sellingPrice,
     unitShip,
     unitOther,
   };
@@ -139,17 +127,12 @@ export function SparePartOrderModal({
   onClose,
   spareParts,
   warehouses,
-  customers = [],
-  equipments = [],
   pricingConfig,
-  companyInfo,
   initialOrder,
   onSuccess,
 }: SparePartOrderModalProps) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
-  const [quotationOpen, setQuotationOpen] = useState(false);
-  const [showDiscountTooltip, setShowDiscountTooltip] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Portals need a browser document. Waiting until hydration also keeps the
@@ -169,45 +152,15 @@ export function SparePartOrderModal({
     initialOrder?.targetWarehouseId ? Number(initialOrder.targetWarehouseId) : ''
   );
 
-  const [customerId, setCustomerId] = useState<number | ''>(
-    initialOrder?.customerId ? Number(initialOrder.customerId) : ''
-  );
-  const [equipmentId, setEquipmentId] = useState<number | ''>(
-    initialOrder?.equipmentId ? Number(initialOrder.equipmentId) : ''
-  );
   const [trackingNumber, setTrackingNumber] = useState(initialOrder?.trackingNumber || '');
   const [etaDate, setEtaDate] = useState(
     initialOrder?.etaDate ? new Date(initialOrder.etaDate).toISOString().slice(0, 10) : ''
   );
 
   const rawNotes = initialOrder?.notes || '';
-  const parsedVatFromNotes = rawNotes.match(/\[VAT:\s*(\d+)%\]/i)?.[1];
   const cleanNotes = rawNotes.replace(/\[VAT:\s*\d+%\]/gi, '').trim();
-
   const [notes, setNotes] = useState(cleanNotes);
-  const hasCustomerOnInit = Boolean(initialOrder?.customerId || (!initialOrder && customerId));
-  const [vatRate, setVatRate] = useState<number>(
-    initialOrder?.vatRate !== undefined && initialOrder?.vatRate !== null
-      ? Number(initialOrder.vatRate)
-      : parsedVatFromNotes !== undefined
-      ? Number(parsedVatFromNotes)
-      : hasCustomerOnInit
-      ? (pricingConfig?.defaultVatRate ?? 8)
-      : 0
-  );
 
-  useEffect(() => {
-    if (!initialOrder && pricingConfig?.defaultVatRate !== undefined) {
-      if (customerId) {
-        setVatRate(pricingConfig.defaultVatRate);
-      } else {
-        setVatRate(0);
-      }
-    }
-  }, [initialOrder, pricingConfig?.defaultVatRate, customerId]);
-
-  const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
-  const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
   const defaultShippingFee = pricingConfig?.defaultShippingFee ?? 3500000;
   const defaultCustomsFee = pricingConfig?.defaultCustomsFee ?? 1000000;
 
@@ -288,7 +241,6 @@ export function SparePartOrderModal({
       quantity: number;
       unitPriceEur: number;
       unitCostVnd?: number;
-      sellingPrice?: number;
       shippingFee?: number;
       otherFee?: number;
     }>
@@ -326,7 +278,6 @@ export function SparePartOrderModal({
           quantity: qty,
           unitPriceEur: Number(it.unitPriceEur || 0),
           unitCostVnd: Number(it.unitPriceVnd || 0),
-          sellingPrice: it.sellingPrice !== undefined ? Number(it.sellingPrice) : undefined,
           shippingFee: lineShipping,
           otherFee: lineOther,
         };
@@ -338,7 +289,6 @@ export function SparePartOrderModal({
         quantity: 1,
         unitPriceEur: 0,
         unitCostVnd: 0,
-        sellingPrice: undefined,
         shippingFee: undefined,
         otherFee: undefined,
       },
@@ -369,7 +319,6 @@ export function SparePartOrderModal({
         quantity: 1,
         unitPriceEur: 0,
         unitCostVnd: 0,
-        sellingPrice: undefined,
         shippingFee: undefined,
         otherFee: undefined,
       },
@@ -383,12 +332,9 @@ export function SparePartOrderModal({
       newPart,
       exchangeRate,
       defaultShippingFee,
-      defaultCustomsFee,
-      marginPercent,
-      pricingMethod
+      defaultCustomsFee
     );
     setItems((prev) => {
-      // Nếu mở tạo mã từ một dòng cụ thể thì gán vào dòng đó
       if (targetRowForNewPart !== null && targetRowForNewPart < prev.length) {
         const next = [...prev];
         const qty = Math.max(1, Number(next[targetRowForNewPart].quantity) || 1);
@@ -397,13 +343,11 @@ export function SparePartOrderModal({
           itemId: newPart.id,
           unitPriceEur: prices.unitPriceEur,
           unitCostVnd: prices.unitCost,
-          sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
           shippingFee: prices.unitShip * qty,
           otherFee: prices.unitOther * qty,
         };
         return next;
       }
-      // Hoặc nếu dòng cuối cùng chưa chọn mặt hàng thì gán vào dòng đó
       const lastIndex = prev.length - 1;
       if (lastIndex >= 0 && !prev[lastIndex].itemId) {
         const next = [...prev];
@@ -412,7 +356,6 @@ export function SparePartOrderModal({
           quantity: 1,
           unitPriceEur: prices.unitPriceEur,
           unitCostVnd: prices.unitCost,
-          sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
           shippingFee: prices.unitShip,
           otherFee: prices.unitOther,
         };
@@ -425,7 +368,6 @@ export function SparePartOrderModal({
           quantity: 1,
           unitPriceEur: prices.unitPriceEur,
           unitCostVnd: prices.unitCost,
-          sellingPrice: prices.sellingPrice > 0 ? prices.sellingPrice : undefined,
           shippingFee: prices.unitShip,
           otherFee: prices.unitOther,
         },
@@ -462,14 +404,11 @@ export function SparePartOrderModal({
             found,
             exchangeRate,
             defaultShippingFee,
-            defaultCustomsFee,
-            marginPercent,
-            pricingMethod
+            defaultCustomsFee
           );
           current.itemId = found.id;
           current.unitPriceEur = prices.unitPriceEur;
           current.unitCostVnd = prices.unitCost;
-          current.sellingPrice = prices.sellingPrice > 0 ? prices.sellingPrice : undefined;
           const qty = Math.max(1, Number(current.quantity) || 1);
           current.shippingFee = prices.unitShip * qty;
           current.otherFee = prices.unitOther * qty;
@@ -477,7 +416,6 @@ export function SparePartOrderModal({
           current.itemId = '';
           current.unitPriceEur = 0;
           current.unitCostVnd = 0;
-          delete current.sellingPrice;
         }
       }
 
@@ -486,18 +424,6 @@ export function SparePartOrderModal({
         const qty = Math.max(1, Number(val) || 1);
         current.quantity = qty;
 
-        const part = allSpareParts.find((p) => p.id === Number(current.itemId) || String(p.id) === String(current.itemId));
-        const eur = current.unitPriceEur !== undefined && Number(current.unitPriceEur) > 0
-          ? Number(current.unitPriceEur)
-          : Number(part?.priceEur || 0);
-        const unitCost = current.unitCostVnd !== undefined && Number(current.unitCostVnd) > 0
-          ? Number(current.unitCostVnd)
-          : (eur > 0 ? Math.round(eur * rateNum) : Number(part?.costPrice || part?.avgCost || 0));
-        const baseSelling = unitCost > 0
-          ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod)
-          : 0;
-
-        // Cước vận chuyển và phí khác tính theo số lượng (cước định mức cấu hình theo đơn vị mỗi cái)
         const unitShip = current.shippingFee !== undefined && prevQty > 0
           ? Math.round(current.shippingFee / prevQty)
           : defaultShippingFee;
@@ -505,18 +431,8 @@ export function SparePartOrderModal({
           ? Math.round(current.otherFee / prevQty)
           : defaultCustomsFee;
 
-        // Tự động nhân theo số lượng mới: số lượng x2 = cước x2 (ví dụ 2 cái = 7tr)
         current.shippingFee = unitShip * qty;
         current.otherFee = unitOther * qty;
-
-        const freightPerUnit = unitShip;
-        const otherFeePerUnit = unitOther;
-        const listSelling = part?.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
-        const formulaSelling = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
-        const newSellingPrice = listSelling > 0 ? listSelling : formulaSelling;
-        if (newSellingPrice > 0 && (current.sellingPrice === undefined || current.sellingPrice === 0)) {
-          current.sellingPrice = newSellingPrice;
-        }
       }
 
       if (field === 'unitPriceEur') {
@@ -524,17 +440,6 @@ export function SparePartOrderModal({
         const costVnd = Math.round(eur * rateNum);
         current.unitPriceEur = eur;
         current.unitCostVnd = costVnd;
-
-        const qty = Math.max(1, Number(current.quantity) || 1);
-        const baseSelling = costVnd > 0
-          ? calculateSellingPriceFromMargin(costVnd, marginPercent, pricingMethod)
-          : 0;
-        const ship = current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee * qty;
-        const other = current.otherFee !== undefined ? current.otherFee : defaultCustomsFee * qty;
-        const freightPerUnit = Math.round(ship / qty);
-        const otherFeePerUnit = Math.round(other / qty);
-        const formulaSelling = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
-        current.sellingPrice = formulaSelling > 0 ? formulaSelling : 0;
       }
 
       if (field === 'unitCostVnd') {
@@ -542,41 +447,10 @@ export function SparePartOrderModal({
         const eur = rateNum > 0 ? Number((costVnd / rateNum).toFixed(2)) : 0;
         current.unitCostVnd = costVnd;
         current.unitPriceEur = eur;
-
-        const qty = Math.max(1, Number(current.quantity) || 1);
-        const baseSelling = costVnd > 0
-          ? calculateSellingPriceFromMargin(costVnd, marginPercent, pricingMethod)
-          : 0;
-        const ship = current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee * qty;
-        const other = current.otherFee !== undefined ? current.otherFee : defaultCustomsFee * qty;
-        const freightPerUnit = Math.round(ship / qty);
-        const otherFeePerUnit = Math.round(other / qty);
-        const formulaSelling = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
-        current.sellingPrice = formulaSelling > 0 ? formulaSelling : 0;
       }
 
       if (field === 'shippingFee' || field === 'otherFee') {
-        const numVal = Math.max(0, Number(val) || 0);
-        current[field] = numVal;
-
-        const part = allSpareParts.find((p) => p.id === Number(current.itemId) || String(p.id) === String(current.itemId));
-        const qty = Math.max(1, Number(current.quantity) || 1);
-        const eur = current.unitPriceEur !== undefined && Number(current.unitPriceEur) > 0
-          ? Number(current.unitPriceEur)
-          : Number(part?.priceEur || 0);
-        const costVnd = current.unitCostVnd !== undefined && Number(current.unitCostVnd) > 0
-          ? Number(current.unitCostVnd)
-          : (eur > 0 ? Math.round(eur * rateNum) : Number(part?.costPrice || part?.avgCost || 0));
-
-        const baseSelling = costVnd > 0
-          ? calculateSellingPriceFromMargin(costVnd, marginPercent, pricingMethod)
-          : 0;
-        const ship = field === 'shippingFee' ? numVal : (current.shippingFee !== undefined ? current.shippingFee : defaultShippingFee * qty);
-        const other = field === 'otherFee' ? numVal : (current.otherFee !== undefined ? current.otherFee : defaultCustomsFee * qty);
-        const freightPerUnit = Math.round(ship / qty);
-        const otherFeePerUnit = Math.round(other / qty);
-        const formulaSelling = baseSelling > 0 ? baseSelling + freightPerUnit + otherFeePerUnit : 0;
-        current.sellingPrice = formulaSelling > 0 ? formulaSelling : 0;
+        current[field] = Math.max(0, Number(val) || 0);
       }
 
       next[index] = current;
@@ -584,22 +458,10 @@ export function SparePartOrderModal({
     });
   };
 
-  // Live calculation based on order pricing formulas
+  // Live calculation: thuần túy giá vốn mua và cước phí về kho
   const calculation = useMemo(() => {
     const validItemsForQty = items.filter((it) => Boolean(it.itemId));
     const totalQty = validItemsForQty.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-
-    const hasCustomer = Boolean(customerId);
-    let discountRate = 0;
-    if (hasCustomer) {
-      const tiers = pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS;
-      for (const tier of tiers) {
-        if (totalQty >= tier.min && totalQty <= tier.max) {
-          discountRate = tier.rate;
-          break;
-        }
-      }
-    }
 
     const calculatedItems = items.map((it) => {
       if (!it.itemId) {
@@ -607,18 +469,10 @@ export function SparePartOrderModal({
           ...it,
           eur: 0,
           priceVnd: 0,
-          subtotal: 0,
-          discount: 0,
-          finalPrice: 0,
-          unitCost: 0,
+          subtotalVnd: 0,
           shippingFee: 0,
           otherFee: 0,
-          freightPerUnit: 0,
-          otherFeePerUnit: 0,
-          baseSellingPerUnit: 0,
-          formulaSellingPerUnit: 0,
-          sellingPerUnit: 0,
-          sellingSubtotal: 0,
+          lineTotalVnd: 0,
         };
       }
 
@@ -632,9 +486,7 @@ export function SparePartOrderModal({
         ? Number(it.unitCostVnd)
         : (eur > 0 ? Math.round(eur * rateNum) : Number(part?.costPrice || part?.avgCost || 0));
       const priceVnd = unitCost;
-      const subtotal = priceVnd * qty;
-      const discount = Math.round(subtotal * discountRate);
-      const finalPrice = subtotal - discount;
+      const subtotalVnd = priceVnd * qty;
 
       const lineShipping = it.shippingFee !== undefined
         ? Math.max(0, Number(it.shippingFee) || 0)
@@ -643,47 +495,16 @@ export function SparePartOrderModal({
         ? Math.max(0, Number(it.otherFee) || 0)
         : (pricingConfig?.defaultCustomsFee ?? 1000000) * qty;
 
-      const freightPerUnit = qty > 0 ? Math.round(lineShipping / qty) : 0;
-      const otherFeePerUnit = qty > 0 ? Math.round(lineOther / qty) : 0;
-
-      /**
-       * Giá bán đề xuất theo quy tắc:
-       * Margin (từ giá vốn gốc) + Phí vận chuyển + Phí khác.
-       */
-      const baseSellingPerUnit =
-        unitCost > 0
-          ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod)
-          : 0;
-
-      const formulaSellingPerUnit =
-        baseSellingPerUnit > 0
-          ? baseSellingPerUnit + freightPerUnit + otherFeePerUnit
-          : 0;
-
-      const listSelling = part?.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
-      const sellingPerUnit =
-        it.sellingPrice !== undefined && it.sellingPrice > 0
-          ? Number(it.sellingPrice)
-          : (listSelling > 0 ? listSelling : formulaSellingPerUnit);
-
-      const sellingSubtotal = qty * sellingPerUnit;
+      const lineTotalVnd = subtotalVnd + lineShipping + lineOther;
 
       return {
         ...it,
         eur,
         priceVnd,
-        subtotal,
-        discount,
-        finalPrice,
-        unitCost,
+        subtotalVnd,
         shippingFee: lineShipping,
         otherFee: lineOther,
-        freightPerUnit,
-        otherFeePerUnit,
-        baseSellingPerUnit,
-        formulaSellingPerUnit,
-        sellingPerUnit,
-        sellingSubtotal,
+        lineTotalVnd,
       };
     });
 
@@ -691,50 +512,21 @@ export function SparePartOrderModal({
       (sum, it) => sum + (it.itemId ? (Number(it.unitPriceEur) || 0) * (Number(it.quantity) || 1) : 0),
       0
     );
-    const subtotalVnd = calculatedItems.reduce((sum, it) => sum + it.subtotal, 0);
-    const discountVnd = calculatedItems.reduce((sum, it) => sum + it.discount, 0);
-
-    // Tổng cước VC và phí khác của toàn đơn:
+    const subtotalVnd = calculatedItems.reduce((sum, it) => sum + it.subtotalVnd, 0);
     const totalShippingFee = calculatedItems.reduce((sum, it) => sum + it.shippingFee, 0);
     const totalOtherFee = calculatedItems.reduce((sum, it) => sum + it.otherFee, 0);
-
-    // Tổng tiền hàng bán trước chiết khấu:
-    const grossSellingTotalVnd = calculatedItems.reduce(
-      (sum, it) => sum + it.sellingSubtotal,
-      0
-    );
-
-    // Chiết khấu bán hàng theo tỷ lệ discountRate trên tổng tiền hàng:
-    const sellingDiscountVnd = Math.round(grossSellingTotalVnd * discountRate);
-
-    // Tiền hàng bán sau chiết khấu (Tổng cộng thanh toán trước VAT):
-    const finalSellingTotalVnd = grossSellingTotalVnd - sellingDiscountVnd;
-
-    // Thuế VAT: nếu không chọn khách hàng (nhập kho dự trữ) thì thuế = 0%
-    const vatPercentNum = hasCustomer ? Math.max(0, Number(vatRate) || 0) : 0;
-    const vatAmountVnd = Math.round((finalSellingTotalVnd * vatPercentNum) / 100);
-    const finalSellingTotalWithVatVnd = finalSellingTotalVnd + vatAmountVnd;
-
-    const totalVnd = subtotalVnd - discountVnd + totalShippingFee + totalOtherFee;
+    const totalVnd = subtotalVnd + totalShippingFee + totalOtherFee;
 
     return {
       totalQty,
-      discountRate,
       subtotalEur,
       subtotalVnd,
-      discountVnd,
       totalShippingFee,
       totalOtherFee,
       totalVnd,
-      grossSellingTotalVnd,
-      sellingDiscountVnd,
-      sellingTotalVnd: finalSellingTotalVnd,
-      vatPercentNum,
-      vatAmountVnd,
-      finalSellingTotalWithVatVnd,
       calculatedItems,
     };
-  }, [items, exchangeRate, pricingConfig, vatRate, allSpareParts, marginPercent, pricingMethod, customerId]);
+  }, [items, exchangeRate, pricingConfig, allSpareParts]);
 
   if (!open) return null;
 
@@ -748,30 +540,24 @@ export function SparePartOrderModal({
 
     const validItems = items.filter((it) => it.itemId && Number(it.quantity) > 0);
     if (validItems.length === 0) {
-      toast.error('Vui lòng chọn ít nhất một linh kiện hợp lệ');
+      toast.error('Vui lòng chọn ít nhất một linh kiện hoặc máy móc hợp lệ');
       return;
     }
-
-    const trimmedNotes = notes.trim();
-    const vatRateNum = Math.max(0, Number(vatRate) || 0);
-    const notesWithVat = vatRateNum > 0
-      ? (trimmedNotes ? `${trimmedNotes} [VAT: ${vatRateNum}%]` : `[VAT: ${vatRateNum}%]`)
-      : trimmedNotes;
 
     setLoading(true);
     try {
       const payload = {
-        supplier,
+        supplier: supplier.trim() || 'Selmi (Ý)',
         currency,
         exchangeRate: Number(exchangeRate),
         shippingFee: calculation.totalShippingFee,
         customsFee: calculation.totalOtherFee,
         targetWarehouseId: targetWarehouseId ? Number(targetWarehouseId) : null,
-        customerId: customerId ? Number(customerId) : null,
-        equipmentId: equipmentId ? Number(equipmentId) : null,
+        customerId: null,
+        equipmentId: null,
         trackingNumber: trackingNumber.trim() || null,
         etaDate: etaDate || null,
-        notes: notesWithVat || null,
+        notes: notes.trim() || null,
         items: validItems.map((it) => ({
           itemId: Number(it.itemId),
           quantity: Number(it.quantity),
@@ -788,48 +574,13 @@ export function SparePartOrderModal({
         onSuccess?.();
         onClose();
       } else {
-        toast.error(res.message || (initialOrder?.id ? 'Lỗi khi cập nhật đơn hàng order' : 'Lỗi khi tạo đơn hàng order'));
+        toast.error(res.message || (initialOrder?.id ? 'Lỗi khi cập nhật phiếu mua hàng' : 'Lỗi khi lập phiếu mua hàng'));
       }
     } catch (err: any) {
       toast.error(err?.message || 'Có lỗi xảy ra');
     } finally {
       setLoading(false);
     }
-  };
-
-  const selectedCustomer = customers.find((c) => c.id === Number(customerId));
-  const selectedEquipment = equipments.find((e) => e.id === Number(equipmentId));
-
-  const previewOrder = {
-    orderCode: `NHAP-${new Date().getFullYear()}`,
-    supplier,
-    currency,
-    exchangeRate,
-    shippingFee: calculation.totalShippingFee,
-    customsFee: calculation.totalOtherFee,
-    discountRate: calculation.discountRate,
-    discountVnd: calculation.sellingDiscountVnd,
-    subtotalVnd: calculation.grossSellingTotalVnd,
-    vatRate: calculation.vatPercentNum,
-    vatAmountVnd: calculation.vatAmountVnd,
-    totalVnd: calculation.finalSellingTotalWithVatVnd,
-    customer: selectedCustomer,
-    equipment: selectedEquipment,
-    notes,
-    items: calculation.calculatedItems.map((cIt) => {
-      const found = allSpareParts.find((p) => p.id === Number(cIt.itemId));
-      return {
-        id: cIt.itemId,
-        quantity: cIt.quantity,
-        unitPriceEur: cIt.unitPriceEur,
-        unitPriceVnd: cIt.priceVnd,
-        sellingPriceVnd: cIt.sellingPerUnit,
-        subtotalVnd: cIt.sellingSubtotal,
-        shippingFee: cIt.shippingFee,
-        customsFee: cIt.otherFee,
-        item: found || { name: 'Linh kiện', itemCode: 'FK' },
-      };
-    }),
   };
 
   if (!mounted) return null;
@@ -847,9 +598,9 @@ export function SparePartOrderModal({
         position: 'fixed',
         inset: 0,
         zIndex: 500,
-        background: quotationOpen ? 'transparent' : 'rgba(0, 0, 0, 0.55)',
-        backdropFilter: quotationOpen ? 'none' : 'blur(3px)',
-        pointerEvents: quotationOpen ? 'none' : 'auto',
+        background: 'rgba(0, 0, 0, 0.55)',
+        backdropFilter: 'blur(3px)',
+        pointerEvents: 'auto',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -858,7 +609,7 @@ export function SparePartOrderModal({
     >
       <div
         style={{
-          display: quotationOpen ? 'none' : 'flex',
+          display: 'flex',
           background: 'var(--surface-card)',
           borderRadius: 12,
           width: '100%',
@@ -885,48 +636,42 @@ export function SparePartOrderModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div
               style={{
-                width: 32,
-                height: 32,
+                width: 36,
+                height: 36,
                 borderRadius: 8,
-                background: '#f5f3ff',
-                color: '#7c3aed',
+                background: '#eff6ff',
+                color: '#2563eb',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
               }}
             >
-              <ShoppingCart size={18} />
+              <Truck size={20} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
-                  {initialOrder?.id ? `Chỉnh sửa Đơn hàng: ${initialOrder.orderCode}` : 'Tạo Đơn Hàng Order / Lô Hàng Mới'}
+                <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+                  {initialOrder?.id ? `Chỉnh sửa Phiếu Mua Hàng: ${initialOrder.orderCode}` : 'Tạo Phiếu Mua Hàng Nhà Cung Cấp (PO)'}
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setBatchGuideOpen((prev) => !prev)}
-                  title="Bấm để xem hướng dẫn quy trình lô hàng"
+                <span
                   style={{
                     fontSize: 11,
-                    background: batchGuideOpen ? '#ddd6fe' : '#ede9fe',
-                    color: '#6d28d9',
+                    background: '#dbeafe',
+                    color: '#1d4ed8',
                     padding: '2px 8px',
                     borderRadius: 999,
                     fontWeight: 700,
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 4,
-                    cursor: 'pointer',
-                    border: '1px solid #c4b5fd',
                   }}
                 >
-                  PO Nhập Kho
-                  <Info size={11} />
-                </button>
+                  PO Nhập Kho NCC
+                </span>
               </div>
-              <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
-                Hiển thị và nhập trực tiếp Giá Vốn, Cước VC, Phí khác trên từng dòng hàng — Tự động tính giá bán đề xuất & hạch toán tồn kho khi về
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                Quản lý đặt hàng quốc tế / trong nước từ NCC — Tự động tính giá vốn về kho, cước vận chuyển và công nợ NCC
               </p>
             </div>
           </div>
@@ -1014,53 +759,6 @@ export function SparePartOrderModal({
                 onChange={(e) => setEtaDate(e.target.value)}
               />
             </Field>
-
-            {customers.length > 0 && (
-              <Field label="Khách nhận báo giá" className="span-2">
-                <SearchableSelect
-                  value={String(customerId ?? '')}
-                  onChange={(val) => {
-                    const newId = val ? Number(val) : '';
-                    setCustomerId(newId);
-                    if (!newId) {
-                      setVatRate(0);
-                    } else if (vatRate === 0) {
-                      setVatRate(pricingConfig?.defaultVatRate ?? 8);
-                    }
-                  }}
-                  options={[
-                    { value: '', label: '-- Không gán khách (Nhập kho dự trữ) --' },
-                    ...customers.map((c) => ({
-                      value: String(c.id),
-                      label: c.name,
-                      subLabel: c.phone || undefined,
-                    })),
-                  ]}
-                  placeholder="-- Không gán khách (Nhập kho dự trữ) --"
-                  searchPlaceholder="Tìm khách hàng…"
-                />
-              </Field>
-            )}
-
-            {equipments.length > 0 && (
-              <Field label="Máy móc áp dụng" className="span-2">
-                <SearchableSelect
-                  value={String(equipmentId ?? '')}
-                  onChange={(val) => setEquipmentId(val ? Number(val) : '')}
-                  options={[
-                    { value: '', label: '-- Không gán máy cụ thể --' },
-                    ...equipments.map((eq) => ({
-                      value: String(eq.id),
-                      label: eq.name,
-                      subLabel: eq.machineCode,
-                      keywords: eq.machineCode,
-                    })),
-                  ]}
-                  placeholder="-- Không gán máy cụ thể --"
-                  searchPlaceholder="Tìm máy…"
-                />
-              </Field>
-            )}
           </div>
 
           {/* Hướng dẫn quy trình Lô hàng khi bấm click */}
@@ -1109,11 +807,11 @@ export function SparePartOrderModal({
             </div>
           )}
 
-          {/* Bảng danh sách mặt hàng cần order (Máy móc & Phụ tùng) */}
+          {/* Bảng danh sách mặt hàng đặt mua */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
               <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Package size={14} color="#7c3aed" /> Danh sách mặt hàng trong lô ({items.length} mặt hàng)
+                <Package size={15} color="#2563eb" /> Danh sách mặt hàng đặt mua ({items.length} mặt hàng)
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Button
@@ -1121,7 +819,7 @@ export function SparePartOrderModal({
                   size="sm"
                   variant="secondary"
                   onClick={() => setNewPartModalOpen(true)}
-                  style={{ borderColor: '#ddd6fe', color: '#7c3aed', background: '#faf5ff', fontSize: 11.5, height: 28, padding: '0 8px' }}
+                  style={{ borderColor: '#bfdbfe', color: '#1d4ed8', background: '#eff6ff', fontSize: 11.5, height: 28, padding: '0 8px' }}
                 >
                   <Plus size={12} /> Thêm phụ tùng mới
                 </Button>
@@ -1158,32 +856,29 @@ export function SparePartOrderModal({
             </div>
 
             <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
-              <table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse', fontSize: 12 }}>
+              <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '7px 8px', textAlign: 'left' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>
                       Mặt hàng
                     </th>
-                    <th style={{ padding: '7px 2px', textAlign: 'center', width: 48 }} title="Số lượng">
+                    <th style={{ padding: '8px 4px', textAlign: 'center', width: 60 }} title="Số lượng">
                       SL
                     </th>
-                    <th style={{ padding: '5px 6px', textAlign: 'right', width: 112 }} title={`Giá vốn: Dòng trên nhập EUR (€), dòng dưới quy đổi VNĐ (₫) theo tỉ giá ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}>
-                      <div>Giá vốn</div>
-                      <div style={{ fontSize: 9.5, fontWeight: 500, color: 'var(--text-muted)' }}>EUR · VNĐ</div>
+                    <th style={{ padding: '6px 8px', textAlign: 'right', width: 130 }} title={`Giá vốn: Nhập EUR (€), tự động quy đổi VNĐ theo tỉ giá ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}>
+                      <div>Giá mua NCC</div>
+                      <div style={{ fontSize: 9.5, fontWeight: 500, color: 'var(--text-muted)' }}>EUR (€) · VNĐ (₫)</div>
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 98 }} title="Cước vận chuyển phân bổ cho dòng">
+                    <th style={{ padding: '8px 8px', textAlign: 'right', width: 110 }} title="Cước vận chuyển quốc tế phân bổ cho dòng">
                       Cước VC (₫)
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 98 }} title="Phí khác / hải quan phân bổ cho dòng">
+                    <th style={{ padding: '8px 8px', textAlign: 'right', width: 110 }} title="Phí khác / hải quan phân bổ cho dòng">
                       Phí khác (₫)
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Giá bán đề xuất: Vốn + Margin + Cước + Phí">
-                      {Boolean(customerId) ? 'Đơn giá bán (₫)' : 'Giá bán t.khảo (₫)'}
+                    <th style={{ padding: '8px 10px', textAlign: 'right', width: 140 }} title="Thành tiền vốn về kho = (Giá mua VNĐ x SL) + Cước VC + Phí khác">
+                      Thành tiền vốn (₫)
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 110 }} title="Thành tiền bán hoặc giá vốn theo loại đơn">
-                      {Boolean(customerId) ? 'Thành tiền bán (₫)' : 'Thành tiền vốn (₫)'}
-                    </th>
-                    <th style={{ padding: '7px 2px', width: 28 }}></th>
+                    <th style={{ padding: '8px 4px', width: 32 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1194,7 +889,6 @@ export function SparePartOrderModal({
                     const selectedWh = warehouses.find((w: any) => w.id === Number(targetWarehouseId));
                     const whCode = selectedWh?.code;
                     const isStockPositive = (targetWarehouseId && stockInfo.whStock !== undefined ? stockInfo.whStock : stockInfo.totalStock) > 0 || stockInfo.totalStock > 0;
-                    const isManualSelling = calc && it.sellingPrice !== undefined && it.sellingPrice !== calc.formulaSellingPerUnit;
 
                     return (
                       <tr
@@ -1223,7 +917,7 @@ export function SparePartOrderModal({
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 6,
-                                height: 26,
+                                height: 24,
                                 fontSize: 10.5,
                                 color: 'var(--text-muted)',
                               }}
@@ -1256,20 +950,15 @@ export function SparePartOrderModal({
                                       border: `1px solid ${isStockPositive ? '#bbf7d0' : '#fecaca'}`,
                                       lineHeight: 1.2,
                                     }}
-                                    title={
-                                      targetWarehouseId && stockInfo.whStock !== undefined
-                                        ? `Tồn hiện tại kho [${whCode || 'Đã chọn'}]: ${stockInfo.whStock} ${selectedPart.unit || 'cái'}\nTổng tồn tất cả các kho trên toàn hệ thống: ${stockInfo.totalStock} ${selectedPart.unit || 'cái'}`
-                                        : `Tổng tồn tất cả các kho trên toàn hệ thống: ${stockInfo.totalStock} ${selectedPart.unit || 'cái'}`
-                                    }
                                   >
                                     {targetWarehouseId && stockInfo.whStock !== undefined ? (
                                       stockInfo.whStock === stockInfo.totalStock ? (
                                         <>
-                                          Tồn kho [{whCode || 'Kho'}]: <strong>{stockInfo.whStock}</strong> {selectedPart.unit || 'cái'}
+                                          Tồn [{whCode || 'Kho'}]: <strong>{stockInfo.whStock}</strong> {selectedPart.unit || 'cái'}
                                         </>
                                       ) : (
                                         <>
-                                          Tồn kho [{whCode || 'Kho'}]: <strong>{stockInfo.whStock}</strong> · Toàn hệ thống: <strong>{stockInfo.totalStock}</strong> {selectedPart.unit || 'cái'}
+                                          Tồn [{whCode || 'Kho'}]: <strong>{stockInfo.whStock}</strong> · Toàn hệ thống: <strong>{stockInfo.totalStock}</strong> {selectedPart.unit || 'cái'}
                                         </>
                                       )
                                     ) : (
@@ -1292,15 +981,15 @@ export function SparePartOrderModal({
                               min="1"
                               value={it.quantity}
                               onChange={(e) => handleItemChange(idx, 'quantity', Math.max(1, Number(e.target.value)))}
-                              style={{ width: 44, textAlign: 'center', height: 26, padding: '0 2px', margin: '0 auto', fontSize: 12 }}
+                              style={{ width: 50, textAlign: 'center', height: 26, padding: '0 2px', margin: '0 auto', fontSize: 12 }}
                             />
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {selectedPart?.unit || 'cái'}
                             </div>
                           </div>
                         </td>
 
-                        {/* 3. Giá vốn: 2 dòng EURO (€) và VNĐ (₫) */}
+                        {/* 3. Giá mua NCC: EURO (€) và VNĐ (₫) */}
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
                             <PriceInput
@@ -1311,9 +1000,9 @@ export function SparePartOrderModal({
                               placeholder="0"
                               value={it.unitPriceEur}
                               onChange={(val) => handleItemChange(idx, 'unitPriceEur', val ?? 0)}
-                              containerStyle={{ width: 104 }}
+                              containerStyle={{ width: 116 }}
                               style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
-                              title={`Giá vốn gốc EUR (€). Tỉ giá: ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}
+                              title={`Giá mua gốc EUR (€). Tỉ giá: ${exchangeRate.toLocaleString('vi-VN')} ₫/€`}
                             />
                             <PriceInput
                               sizeSm
@@ -1322,9 +1011,9 @@ export function SparePartOrderModal({
                               placeholder="0"
                               value={it.unitCostVnd}
                               onChange={(val) => handleItemChange(idx, 'unitCostVnd', val ?? 0)}
-                              containerStyle={{ width: 104 }}
+                              containerStyle={{ width: 116 }}
                               style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
-                              title="Giá vốn quy đổi VNĐ. Nhập để tự động quy đổi ngược lại EUR"
+                              title="Giá mua quy đổi VNĐ"
                             />
                           </div>
                         </td>
@@ -1339,10 +1028,10 @@ export function SparePartOrderModal({
                               value={it.shippingFee !== undefined ? it.shippingFee : defaultShippingFee * it.quantity}
                               onChange={(val) => handleItemChange(idx, 'shippingFee', val ?? 0)}
                               placeholder="0"
-                              containerStyle={{ width: 92, marginLeft: 'auto' }}
+                              containerStyle={{ width: 100, marginLeft: 'auto' }}
                               style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
                             />
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 24, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {it.quantity > 1 ? `≈ ${Math.round((it.shippingFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : null}
                             </div>
                           </div>
@@ -1358,83 +1047,28 @@ export function SparePartOrderModal({
                               value={it.otherFee !== undefined ? it.otherFee : defaultCustomsFee * it.quantity}
                               onChange={(val) => handleItemChange(idx, 'otherFee', val ?? 0)}
                               placeholder="0"
-                              containerStyle={{ width: 92, marginLeft: 'auto' }}
+                              containerStyle={{ width: 100, marginLeft: 'auto' }}
                               style={{ textAlign: 'right', fontWeight: 600, height: 26, fontSize: 11.5 }}
                             />
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 24, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                               {it.quantity > 1 ? `≈ ${Math.round((it.otherFee || 0) / it.quantity).toLocaleString('vi-VN')} ₫/cái` : null}
                             </div>
                           </div>
                         </td>
 
-                        {/* 6. Đơn giá bán */}
-                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
-                            <PriceInput
-                              sizeSm
-                              currency="VND"
-                              suffix=""
-                              placeholder={calc && calc.formulaSellingPerUnit > 0 ? calc.formulaSellingPerUnit.toLocaleString('vi-VN') : '0'}
-                              value={it.sellingPrice !== undefined ? it.sellingPrice : (calc?.sellingPerUnit || 0)}
-                              onChange={(val) => handleItemChange(idx, 'sellingPrice', val ?? 0)}
-                              containerStyle={{ width: 106, marginLeft: 'auto' }}
-                              style={{
-                                textAlign: 'right',
-                                fontWeight: 700,
-                                height: 26,
-                                fontSize: 11.5,
-                                color: isManualSelling ? '#b45309' : '#0f9960',
-                                borderColor: isManualSelling ? '#f59e0b' : undefined,
-                              }}
-                            />
-                            <div style={{ fontSize: 10, lineHeight: 1.3, whiteSpace: 'nowrap', textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {isManualSelling && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleItemChange(idx, 'sellingPrice', calc.formulaSellingPerUnit)}
-                                  title="Bấm để khôi phục giá đề xuất"
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    padding: 0,
-                                    cursor: 'pointer',
-                                    color: '#b45309',
-                                    fontSize: 10,
-                                    fontWeight: 600,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 2,
-                                    textDecoration: 'underline',
-                                  }}
-                                >
-                                  <RotateCcw size={9} />
-                                  <span>Gốc: {calc.formulaSellingPerUnit.toLocaleString('vi-VN')}₫</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* 7. Thành tiền */}
-                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
+                        {/* 6. Thành tiền vốn */}
+                        <td style={{ padding: '6px 8px', textAlign: 'right', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3 }}>
-                            <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {Boolean(customerId)
-                                ? `${calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫`
-                                : `${calc ? (calc.subtotal + (calc.shippingFee || 0) + (calc.otherFee || 0)).toLocaleString('vi-VN') : 0} ₫`
-                              }
+                            <div style={{ fontWeight: 700, color: '#1e40af', whiteSpace: 'nowrap', fontSize: 12.5, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                              {calc ? calc.lineTotalVnd.toLocaleString('vi-VN') : 0} ₫
                             </div>
-                            <div style={{ fontSize: 10, color: Boolean(customerId) ? '#16a34a' : 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {Boolean(customerId) ? (
-                                `+${(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')} ₫ (lãi)`
-                              ) : (
-                                `Tiền hàng: ${(calc ? calc.subtotal : 0).toLocaleString('vi-VN')} ₫`
-                              )}
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 24, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                              Tiền hàng: {(calc ? calc.subtotalVnd : 0).toLocaleString('vi-VN')} ₫
                             </div>
                           </div>
                         </td>
 
-                        {/* 8. Xóa dòng */}
+                        {/* 7. Xóa dòng */}
                         <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
                           {items.length > 1 && (
                             <button
@@ -1453,7 +1087,7 @@ export function SparePartOrderModal({
 
                   {/* Dòng bấm nhanh để thêm mặt hàng mới ngay dưới row cuối */}
                   <tr>
-                    <td colSpan={8} style={{ padding: '6px 8px', background: '#faf5ff', borderTop: '1px dashed #ddd6fe' }}>
+                    <td colSpan={7} style={{ padding: '6px 8px', background: '#eff6ff', borderTop: '1px dashed #bfdbfe' }}>
                       <button
                         type="button"
                         onClick={handleAddItem}
@@ -1464,7 +1098,7 @@ export function SparePartOrderModal({
                           background: 'none',
                           border: 'none',
                           cursor: 'pointer',
-                          color: '#7c3aed',
+                          color: '#2563eb',
                           fontWeight: 600,
                           fontSize: 12,
                           padding: '4px 6px',
@@ -1488,7 +1122,7 @@ export function SparePartOrderModal({
                       {calculation.totalQty} cái
                     </td>
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 11 }}>
-                      <div style={{ color: '#64748b' }}>{calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</div>
+                      <div style={{ color: '#2563eb' }}>{calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</div>
                       <div style={{ color: '#334155' }}>{calculation.subtotalVnd.toLocaleString('vi-VN')} ₫</div>
                     </td>
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7', fontSize: 11.5 }}>
@@ -1497,408 +1131,42 @@ export function SparePartOrderModal({
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#d97706', fontSize: 11.5 }}>
                       {calculation.totalOtherFee.toLocaleString('vi-VN')} ₫
                     </td>
-                    <td></td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
-                      {Boolean(customerId)
-                        ? `${calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫`
-                        : `${calculation.totalVnd.toLocaleString('vi-VN')} ₫`
-                      }
+                    <td style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700, color: '#1e40af', fontSize: 12.5 }}>
+                      {calculation.totalVnd.toLocaleString('vi-VN')} ₫
                     </td>
                     <td></td>
                   </tr>
 
-                  {!Boolean(customerId) ? (
-                    /* 1. NẾU ĐƠN KHÔNG CÓ KH (NHẬP KHO DỰ TRỮ) -> TỔNG TIỀN LÀ GIÁ VỐN THEO EURO & VND */
-                    <tr style={{ background: '#eff6ff', borderTop: '2px solid #93c5fd', fontWeight: 800 }}>
-                      <td
-                        colSpan={6}
-                        style={{
-                          padding: '10px',
-                          textAlign: 'right',
-                          textTransform: 'uppercase',
-                          color: '#1e40af',
-                          fontSize: 13,
-                        }}
-                      >
-                        <div>TỔNG GIÁ VỐN ĐƠN HÀNG (EURO & VND):</div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', textTransform: 'none', marginTop: 2 }}>
-                          Tiền hàng mua: {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'} ({calculation.subtotalVnd.toLocaleString('vi-VN')} ₫)
-                          {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
-                            <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px', textAlign: 'right', color: '#1d4ed8' }}>
-                        <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 700 }}>
-                          {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'}
-                        </div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: '#1d4ed8' }}>
-                          {calculation.totalVnd.toLocaleString('vi-VN')} ₫
-                        </div>
-                      </td>
-                      <td></td>
-                    </tr>
-                  ) : (
-                    /* 2. NẾU ĐƠN CÓ KH -> CHIA RÕ 2 MỤC: TỔNG TIỀN VỐN & TỔNG TIỀN KH (THEO GIÁ BÁN) */
-                    <>
-                      {/* MỤC 1: TỔNG TIỀN VỐN */}
-                      <tr style={{ background: '#eff6ff', borderTop: '1px solid #bfdbfe' }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: '8px 10px',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                            color: '#1e40af',
-                            fontSize: 12,
-                          }}
-                        >
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ padding: '1px 6px', background: '#dbeafe', borderRadius: 4, fontSize: 10.5, fontWeight: 800 }}>
-                              MỤC 1
-                            </span>
-                            <span>TỔNG TIỀN VỐN (TRẢ NCC & PHÍ VỀ KHO):</span>
-                          </div>
-                          <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', marginTop: 2 }}>
-                            Tiền hàng: {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'} ({calculation.subtotalVnd.toLocaleString('vi-VN')} ₫)
-                            {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
-                              <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 10px',
-                            textAlign: 'right',
-                            color: '#1d4ed8',
-                          }}
-                        >
-                          <div style={{ fontSize: 12, color: '#2563eb', fontWeight: 700 }}>
-                            {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'}
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: '#1d4ed8' }}>
-                            {calculation.totalVnd.toLocaleString('vi-VN')} ₫
-                          </div>
-                        </td>
-                        <td></td>
-                      </tr>
-
-                      {/* MỤC 2: TỔNG TIỀN KHÁCH HÀNG (THEO GIÁ BÁN) */}
-                      <tr style={{ background: '#faf5ff', borderTop: '1px solid #e9d5ff' }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: '7px 10px',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                            color: '#6b21a8',
-                            fontSize: 12,
-                          }}
-                        >
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ padding: '1px 6px', background: '#f3e8ff', borderRadius: 4, fontSize: 10.5, fontWeight: 800 }}>
-                              MỤC 2
-                            </span>
-                            <span>TỔNG TIỀN HÀNG KH (THEO GIÁ BÁN):</span>
-                          </div>
-                        </td>
-                        <td
-                          style={{
-                            padding: '7px 10px',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                            color: '#7c3aed',
-                            fontSize: 12.5,
-                          }}
-                        >
-                          {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫
-                        </td>
-                        <td></td>
-                      </tr>
-
-                      {/* Chiết khấu trên tổng tiền KH theo giá bán */}
-                      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)', position: 'relative', zIndex: 100 }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: '7px 10px',
-                            textAlign: 'right',
-                            color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
-                            fontWeight: 600,
-                            position: 'relative',
-                            zIndex: 100,
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              position: 'relative',
-                              cursor: 'help',
-                              zIndex: 1000,
-                            }}
-                            onMouseEnter={() => setShowDiscountTooltip(true)}
-                            onMouseLeave={() => setShowDiscountTooltip(false)}
-                            onClick={() => setShowDiscountTooltip((prev) => !prev)}
-                          >
-                            <span
-                              style={{
-                                borderBottom: '1px dashed currentColor',
-                                paddingBottom: 1,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                              }}
-                            >
-                              Chiết khấu cho khách hàng ({(calculation.discountRate * 100).toFixed(0)}%):
-                              <Info size={13} style={{ opacity: 0.8 }} />
-                            </span>
-
-                            {showDiscountTooltip && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  bottom: 'calc(100% + 10px)',
-                                  right: 0,
-                                  zIndex: 99999,
-                                  background: 'var(--surface-card, #ffffff)',
-                                  color: 'var(--text-base, #1e293b)',
-                                  border: '1px solid var(--border-base, #94a3b8)',
-                                  borderRadius: 8,
-                                  boxShadow: '0 20px 40px -4px rgba(0, 0, 0, 0.28), 0 10px 18px -4px rgba(0, 0, 0, 0.16)',
-                                  padding: '10px 14px',
-                                  width: 250,
-                                  textAlign: 'left',
-                                  fontSize: 12,
-                                  fontWeight: 400,
-                                  lineHeight: 1.5,
-                                  pointerEvents: 'none',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontWeight: 700,
-                                    color: 'var(--text-strong, #0f172a)',
-                                    marginBottom: 6,
-                                    fontSize: 12,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 5,
-                                    borderBottom: '1px solid var(--border-subtle, #f1f5f9)',
-                                    paddingBottom: 4,
-                                  }}
-                                >
-                                  <Info size={13} color="#2563eb" /> Chiết khấu theo số lượng:
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                  {(pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS).map((tier, idx) => {
-                                    const isMatch =
-                                      calculation.totalQty >= tier.min && calculation.totalQty <= tier.max;
-                                    const tierLabel =
-                                      tier.min === tier.max
-                                        ? `${tier.min} cái`
-                                        : tier.max >= 99999
-                                        ? `≥ ${tier.min} cái`
-                                        : `${tier.min} – ${tier.max} cái`;
-                                    const rateLabel = `${(tier.rate * 100).toFixed(0)}%`;
-
-                                    return (
-                                      <div
-                                        key={idx}
-                                        style={{
-                                          display: 'flex',
-                                          justifyContent: 'space-between',
-                                          padding: '2px 6px',
-                                          borderRadius: 4,
-                                          background: isMatch ? '#f0fdf4' : 'transparent',
-                                          color: isMatch ? '#15803d' : 'var(--text-muted, #64748b)',
-                                          fontWeight: isMatch ? 700 : 400,
-                                        }}
-                                      >
-                                        <span>• {tierLabel}:</span>
-                                        <span>
-                                          {rateLabel} {isMatch && '✓'}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                                <div
-                                  style={{
-                                    marginTop: 6,
-                                    paddingTop: 4,
-                                    borderTop: '1px dashed var(--border-base, #e2e8f0)',
-                                    fontSize: 11,
-                                    color: 'var(--text-muted, #64748b)',
-                                  }}
-                                >
-                                  Tổng đơn: <strong>{calculation.totalQty} cái</strong>{' '}
-                                  {calculation.discountRate > 0
-                                    ? `(giảm ${(calculation.discountRate * 100).toFixed(0)}%)`
-                                    : '(chưa áp dụng chiết khấu)'}
-                                </div>
-                                {/* Arrow pointing down */}
-                                <div
-                                  style={{
-                                    position: 'absolute',
-                                    bottom: -6,
-                                    right: 18,
-                                    width: 10,
-                                    height: 10,
-                                    background: 'inherit',
-                                    borderRight: '1px solid var(--border-base, #94a3b8)',
-                                    borderBottom: '1px solid var(--border-base, #94a3b8)',
-                                    transform: 'rotate(45deg)',
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          style={{
-                            padding: '7px 10px',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                            color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
-                          }}
-                        >
-                          {calculation.discountRate > 0
-                            ? `-${calculation.sellingDiscountVnd.toLocaleString('vi-VN')} ₫`
-                            : '0 ₫'}
-                        </td>
-                        <td></td>
-                      </tr>
-
-                      {/* Tiền hàng sau chiết khấu (chỉ hiển thị khi có chiết khấu > 0) */}
-                      {calculation.discountRate > 0 && (
-                        <tr style={{ background: '#f8fafc', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                          <td
-                            colSpan={6}
-                            style={{
-                              padding: '7px 10px',
-                              textAlign: 'right',
-                              fontWeight: 600,
-                              color: 'var(--text-strong)',
-                            }}
-                          >
-                            Tiền hàng sau chiết khấu:
-                          </td>
-                          <td
-                            style={{
-                              padding: '7px 10px',
-                              textAlign: 'right',
-                              fontWeight: 700,
-                              color: 'var(--text-strong)',
-                            }}
-                          >
-                            {calculation.sellingTotalVnd.toLocaleString('vi-VN')} ₫
-                          </td>
-                          <td></td>
-                        </tr>
-                      )}
-
-                      {/* Thuế VAT */}
-                      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: '6px 10px',
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color: 'var(--text-strong)',
-                          }}
-                        >
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                            <span>Thuế VAT:</span>
-                            <div style={{ display: 'inline-flex', gap: 4 }}>
-                              {[0, 8, 10].map((rate) => {
-                                const isSelected = Number(vatRate) === rate;
-                                return (
-                                  <button
-                                    key={rate}
-                                    type="button"
-                                    onClick={() => setVatRate(rate)}
-                                    style={{
-                                      padding: '2px 8px',
-                                      fontSize: 11,
-                                      borderRadius: 4,
-                                      border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
-                                      background: isSelected ? '#f5f3ff' : '#fff',
-                                      color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
-                                      fontWeight: isSelected ? 700 : 500,
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s ease',
-                                    }}
-                                  >
-                                    {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.5"
-                                value={vatRate}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setVatRate(val === '' ? (0 as any) : Number(val));
-                                }}
-                                style={{
-                                  width: 44,
-                                  padding: '2px 4px',
-                                  fontSize: 11,
-                                  textAlign: 'center',
-                                  border: '1px solid var(--border-base, #cbd5e1)',
-                                  borderRadius: 4,
-                                  background: 'var(--surface-card, #fff)',
-                                  color: 'var(--text-strong, #0f172a)',
-                                }}
-                              />
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td
-                          style={{
-                            padding: '6px 10px',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                            color: calculation.vatAmountVnd > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
-                          }}
-                        >
-                          {calculation.vatAmountVnd > 0
-                            ? `+${calculation.vatAmountVnd.toLocaleString('vi-VN')} ₫`
-                            : '0 ₫'}
-                        </td>
-                        <td></td>
-                      </tr>
-
-                      {/* TỔNG CỘNG KHÁCH THANH TOÁN */}
-                      <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
-                        <td
-                          colSpan={6}
-                          style={{
-                            padding: '10px',
-                            textAlign: 'right',
-                            textTransform: 'uppercase',
-                            color: 'var(--text-strong)',
-                            fontSize: 13,
-                          }}
-                        >
-                          TỔNG CỘNG KHÁCH THANH TOÁN (VND){calculation.vatPercentNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
-                          {calculation.finalSellingTotalWithVatVnd.toLocaleString('vi-VN')} ₫
-                        </td>
-                        <td></td>
-                      </tr>
-                    </>
-                  )}
+                  {/* Banner TỔNG GIÁ VỐN VỀ KHO (EUR & VND) */}
+                  <tr style={{ background: '#eff6ff', borderTop: '2px solid #93c5fd', fontWeight: 800 }}>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: '10px 14px',
+                        textAlign: 'right',
+                        textTransform: 'uppercase',
+                        color: '#1e40af',
+                        fontSize: 13,
+                      }}
+                    >
+                      <div>TỔNG GIÁ VỐN VỀ KHO (EUR & VND):</div>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', textTransform: 'none', marginTop: 2 }}>
+                        Tiền hàng mua NCC: {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'} ({calculation.subtotalVnd.toLocaleString('vi-VN')} ₫)
+                        {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
+                          <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 8px', textAlign: 'right', color: '#1d4ed8' }}>
+                      <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 700 }}>
+                        {calculation.subtotalEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency === 'USD' ? '$' : currency === 'VND' ? '₫' : '€'}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: '#1d4ed8' }}>
+                        {calculation.totalVnd.toLocaleString('vi-VN')} ₫
+                      </div>
+                    </td>
+                    <td></td>
+                  </tr>
                 </tfoot>
               </table>
             </div>
@@ -1934,17 +1202,8 @@ export function SparePartOrderModal({
             <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
               Hủy
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setQuotationOpen(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #ddd6fe', color: '#6d28d9', background: '#faf5ff' }}
-              title="Xem và in phiếu báo giá (A4 / PDF)"
-            >
-              <Printer size={15} /> In Báo Giá
-            </Button>
-            <Button type="submit" loading={loading} style={{ background: '#7c3aed', color: '#fff' }}>
-              {initialOrder?.id ? 'Cập nhật đơn hàng' : 'Xác nhận'}
+            <Button type="submit" loading={loading} style={{ background: '#2563eb', color: '#fff' }}>
+              {initialOrder?.id ? 'Cập nhật phiếu mua hàng' : 'Lập phiếu mua hàng (PO)'}
             </Button>
           </div>
         </form>
@@ -1956,16 +1215,6 @@ export function SparePartOrderModal({
           pricingConfig={pricingConfig}
           onClose={() => setNewPartModalOpen(false)}
           onSuccess={handlePartCreated}
-        />
-      )}
-
-      {quotationOpen && (
-        <SparePartQuotationModal
-          open={quotationOpen}
-          onClose={() => setQuotationOpen(false)}
-          order={previewOrder}
-          companyInfo={companyInfo}
-          pricingConfig={pricingConfig}
         />
       )}
     </div>,
