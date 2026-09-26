@@ -330,28 +330,14 @@ export function CustomerQuotationModal({
             />
           </Field>
 
-          <Field label="Thời gian giao hàng dự kiến">
-            <Input value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} />
+          <Field label="Ghi chú báo giá">
+            <Input
+              placeholder="VD: Giá đã bao gồm chi phí lắp đặt và vận chuyển nội thành"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
           </Field>
         </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Điều khoản thanh toán">
-            <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
-          </Field>
-
-          <Field label="Điều khoản bảo hành">
-            <Input value={warrantyTerms} onChange={(e) => setWarrantyTerms(e.target.value)} />
-          </Field>
-        </div>
-
-        <Field label="Ghi chú báo giá">
-          <Input
-            placeholder="VD: Giá đã bao gồm chi phí lắp đặt và vận chuyển nội thành"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </Field>
 
         <LineItemsEditor
           title="Danh sách hàng hóa / dịch vụ báo giá"
