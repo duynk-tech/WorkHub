@@ -287,15 +287,43 @@ export function SparePartOrderModal({
     }>
   >(() => {
     if (initialOrder?.items && initialOrder.items.length > 0) {
-      return initialOrder.items.map((it: any) => ({
-        itemId: it.itemId || it.item?.id || '',
-        quantity: Number(it.quantity) || 1,
-        unitPriceEur: Number(it.unitPriceEur || 0),
-        unitCostVnd: Number(it.unitPriceVnd || 0),
-        sellingPrice: it.sellingPrice !== undefined ? Number(it.sellingPrice) : undefined,
-        shippingFee: it.shippingFee !== undefined ? Number(it.shippingFee) : undefined,
-        otherFee: it.otherFee !== undefined ? Number(it.otherFee) : undefined,
-      }));
+      const orderShippingFee = initialOrder.shippingFee !== undefined && initialOrder.shippingFee !== null ? Number(initialOrder.shippingFee) : undefined;
+      const orderCustomsFee = initialOrder.customsFee !== undefined && initialOrder.customsFee !== null ? Number(initialOrder.customsFee) : undefined;
+      const totalQty = initialOrder.items.reduce((s: number, it: any) => s + (Number(it.quantity) || 1), 0);
+
+      let allocatedShippingSum = 0;
+      let allocatedOtherSum = 0;
+
+      return initialOrder.items.map((it: any, idx: number) => {
+        const qty = Number(it.quantity) || 1;
+        const isLast = idx === initialOrder.items.length - 1;
+
+        let lineShipping = it.shippingFee !== undefined && it.shippingFee !== null ? Number(it.shippingFee) : undefined;
+        if (lineShipping === undefined && orderShippingFee !== undefined) {
+          lineShipping = isLast ? Math.max(0, orderShippingFee - allocatedShippingSum) : Math.round((orderShippingFee * qty) / (totalQty || 1));
+          allocatedShippingSum += lineShipping;
+        }
+
+        let lineOther = it.otherFee !== undefined && it.otherFee !== null
+          ? Number(it.otherFee)
+          : it.customsFee !== undefined && it.customsFee !== null
+            ? Number(it.customsFee)
+            : undefined;
+        if (lineOther === undefined && orderCustomsFee !== undefined) {
+          lineOther = isLast ? Math.max(0, orderCustomsFee - allocatedOtherSum) : Math.round((orderCustomsFee * qty) / (totalQty || 1));
+          allocatedOtherSum += lineOther;
+        }
+
+        return {
+          itemId: it.itemId || it.item?.id || '',
+          quantity: qty,
+          unitPriceEur: Number(it.unitPriceEur || 0),
+          unitCostVnd: Number(it.unitPriceVnd || 0),
+          sellingPrice: it.sellingPrice !== undefined ? Number(it.sellingPrice) : undefined,
+          shippingFee: lineShipping,
+          otherFee: lineOther,
+        };
+      });
     }
     return [
       {
@@ -311,7 +339,7 @@ export function SparePartOrderModal({
   });
 
   useEffect(() => {
-    if (pricingConfig) {
+    if (pricingConfig && !initialOrder) {
       setItems((prev) =>
         prev.map((it) => {
           if (!it.itemId) return it;
@@ -324,7 +352,7 @@ export function SparePartOrderModal({
         })
       );
     }
-  }, [pricingConfig?.defaultShippingFee, pricingConfig?.defaultCustomsFee]);
+  }, [pricingConfig?.defaultShippingFee, pricingConfig?.defaultCustomsFee, initialOrder]);
 
   const handleAddItem = () => {
     setItems((prev) => [

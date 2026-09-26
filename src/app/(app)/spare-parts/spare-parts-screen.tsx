@@ -1296,7 +1296,7 @@ export function SparePartsScreen({
                                   {it.item?.name || 'Linh kiện'}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  Mã: {it.item?.itemCode} • Đơn giá: €{Number(it.unitPriceEur).toLocaleString('vi-VN')}
+                                  Mã: {it.item?.itemCode} • Đơn giá: {order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€'}{Number(it.unitPriceEur || 0).toLocaleString('vi-VN')}
                                 </div>
                               </div>
                               <div style={{ textAlign: 'right' }}>
@@ -1331,7 +1331,9 @@ export function SparePartsScreen({
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>Tiền hàng ({new Intl.NumberFormat('vi-VN').format(order.exchangeRate)} ₫/EUR):</span>
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                Tiền hàng ({new Intl.NumberFormat('vi-VN').format(order.exchangeRate)} ₫/{order.currency || 'EUR'}):
+                              </span>
                               <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫</span>
                             </div>
                             {Number(order.discountVnd) > 0 && (
@@ -1346,10 +1348,36 @@ export function SparePartsScreen({
                                 <span>-{new Intl.NumberFormat('vi-VN').format(Number(order.discountVnd))} ₫</span>
                               </div>
                             )}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                              <span>Cước vận chuyển:</span>
-                              <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
-                            </div>
+                            {Number(order.shippingFee) > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                <span>Cước vận chuyển:</span>
+                                <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
+                              </div>
+                            )}
+                            {Number(order.customsFee) > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                <span>Phí khác / Hải quan:</span>
+                                <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
+                              </div>
+                            )}
+                            {(() => {
+                              const subtotal = Number(order.subtotalVnd || 0);
+                              const discount = Number(order.discountVnd || 0);
+                              const shipping = Number(order.shippingFee || 0);
+                              const customs = Number(order.customsFee || 0);
+                              const calcTotal = subtotal - discount + shipping + customs;
+                              const currentTotal = Number(order.totalVnd || 0);
+                              const diff = currentTotal - calcTotal;
+                              if (Math.abs(diff) > 0) {
+                                return (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                    <span>Chi phí / Thuế khác:</span>
+                                    <span>{diff > 0 ? '+' : ''}{new Intl.NumberFormat('vi-VN').format(diff)} ₫</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                             <div
                               style={{
                                 display: 'flex',
