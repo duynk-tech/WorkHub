@@ -312,7 +312,7 @@ export function PurchasesScreen({
             <thead>
               <tr>
                 <th style={{ width: 36 }}></th>
-                <th>Mã phiếu</th>
+                <th style={{ width: 140, whiteSpace: 'nowrap' }}>Mã phiếu</th>
                 <th>Nhà cung cấp / Kho</th>
                 <th style={{ width: 130 }}>Loại</th>
                 <th style={{ width: 160 }}>Trạng thái</th>
@@ -343,7 +343,7 @@ export function PurchasesScreen({
                         {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                       </td>
 
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#7c3aed' }}>
                           {order.orderCode}
                         </span>

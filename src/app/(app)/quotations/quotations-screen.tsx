@@ -246,7 +246,7 @@ export function QuotationsScreen({
           <table className="table">
             <thead>
               <tr>
-                <th>Mã báo giá</th>
+                <th style={{ width: 140, whiteSpace: 'nowrap' }}>Mã báo giá</th>
                 <th>Khách hàng</th>
                 <th style={{ width: 120 }}>Ngày lập</th>
                 <th style={{ width: 120 }}>Hiệu lực đến</th>
@@ -267,7 +267,7 @@ export function QuotationsScreen({
 
                 return (
                   <tr key={q.id}>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
                         {q.quoteCode}
                       </span>
