@@ -507,7 +507,7 @@ export function LineItemsEditor({
       </div>
 
       <div style={{ border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8, overflowX: 'auto', background: '#ffffff' }}>
-        <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 12 }}>
+        <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: 'var(--surface-sunken, #f8fafc)', borderBottom: '1px solid var(--border-base, #e2e8f0)', color: 'var(--text-muted)' }}>
               <th style={{ padding: '7px 4px', textAlign: 'center', width: 34 }}>STT</th>
@@ -525,7 +525,7 @@ export function LineItemsEditor({
               <th style={{ padding: '7px 6px', textAlign: 'right', width: 116 }} title="Đơn giá bán cho khách">
                 Đơn giá bán (đ)
               </th>
-              <th style={{ padding: '7px 6px', textAlign: 'right', width: 124 }} title="Thành tiền: Số lượng × Đơn giá bán">
+              <th style={{ padding: '7px 6px', textAlign: 'right', width: 135, minWidth: 135, whiteSpace: 'nowrap' }} title="Thành tiền: Số lượng × Đơn giá bán">
                 Thành tiền (đ)
               </th>
               <th style={{ padding: '7px 2px', width: 28 }}></th>
@@ -850,10 +850,10 @@ export function LineItemsEditor({
                   </td>
 
                   {/* 8. Thành tiền */}
-                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end' }}>
+                  <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', width: 135, minWidth: 135, whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end', whiteSpace: 'nowrap' }}>
                       <div style={{ fontWeight: 700, color: 'var(--text-strong, #0f172a)', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
-                        {fmt(total)} ₫
+                        {fmt(total)}&nbsp;₫
                       </div>
                       <div style={{ fontSize: 10, color: profit >= 0 ? '#16a34a' : '#dc2626', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                         {profit >= 0 ? `+${fmt(profit)} ₫` : `${fmt(profit)} ₫`}
@@ -976,19 +976,19 @@ export function LineItemsSummaryFooter({
         <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
           {totalQty} cái
         </td>
-        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 11 }}>
-          <div style={{ color: '#64748b' }}>{fmtEur(subtotalEur)} €</div>
-          <div style={{ color: '#334155' }}>{fmt(subtotalVnd)} ₫</div>
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>
+          <div style={{ color: '#64748b' }}>{fmtEur(subtotalEur)}&nbsp;€</div>
+          <div style={{ color: '#334155' }}>{fmt(subtotalVnd)}&nbsp;₫</div>
         </td>
-        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7', fontSize: 11.5 }}>
-          {fmt(totalShippingFee)} ₫
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#0284c7', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          {fmt(totalShippingFee)}&nbsp;₫
         </td>
-        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#d97706', fontSize: 11.5 }}>
-          {fmt(totalOtherFee)} ₫
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#d97706', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          {fmt(totalOtherFee)}&nbsp;₫
         </td>
         <td></td>
-        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
-          {fmt(grossSellingTotal)} ₫
+        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+          {fmt(grossSellingTotal)}&nbsp;₫
         </td>
         <td></td>
       </tr>
@@ -1162,9 +1162,10 @@ export function LineItemsSummaryFooter({
             textAlign: 'right',
             fontWeight: 700,
             color: rateNum > 0 ? '#b91c1c' : 'var(--text-muted)',
+            whiteSpace: 'nowrap',
           }}
         >
-          {rateNum > 0 ? `-${fmt(discountAmount)} ₫` : '0 ₫'}
+          {rateNum > 0 ? `-${fmt(discountAmount)}\u00A0₫` : '0\u00A0₫'}
         </td>
         <td></td>
       </tr>
@@ -1189,9 +1190,10 @@ export function LineItemsSummaryFooter({
               textAlign: 'right',
               fontWeight: 700,
               color: 'var(--text-strong)',
+              whiteSpace: 'nowrap',
             }}
           >
-            {fmt(afterDiscountTotal)} ₫
+            {fmt(afterDiscountTotal)}&nbsp;₫
           </td>
           <td></td>
         </tr>
@@ -1264,9 +1266,10 @@ export function LineItemsSummaryFooter({
             textAlign: 'right',
             fontWeight: 700,
             color: vatAmount > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+            whiteSpace: 'nowrap',
           }}
         >
-          {vatAmount > 0 ? `+${fmt(vatAmount)} ₫` : '0 ₫'}
+          {vatAmount > 0 ? `+${fmt(vatAmount)}\u00A0₫` : '0\u00A0₫'}
         </td>
         <td></td>
       </tr>
@@ -1281,12 +1284,13 @@ export function LineItemsSummaryFooter({
             textTransform: 'uppercase',
             color: 'var(--text-strong)',
             fontSize: 13,
+            whiteSpace: 'nowrap',
           }}
         >
-          TỔNG CỘNG THANH TOÁN (VND){vatNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+          TỔNG CỘNG{vatNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
         </td>
-        <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
-          {fmt(finalTotalWithVat)} ₫
+        <td style={{ padding: '10px 8px', textAlign: 'right', color: '#7c3aed', fontSize: 14, whiteSpace: 'nowrap' }}>
+          {fmt(finalTotalWithVat)}&nbsp;₫
         </td>
         <td></td>
       </tr>

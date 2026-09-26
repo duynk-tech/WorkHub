@@ -448,9 +448,9 @@ export function SalesOrderDetailModal({
                           fontSize: 13,
                         }}
                       >
-                        TỔNG CỘNG THANH TOÁN (VND){Number(order.vatRate) > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                        TỔNG CỘNG{Number(order.vatRate) > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                       </td>
-                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#7c3aed', fontSize: 14, whiteSpace: 'nowrap' }}>
                         {money(order.total)}
                       </td>
                     </tr>

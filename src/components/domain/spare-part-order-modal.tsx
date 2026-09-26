@@ -1134,7 +1134,7 @@ export function SparePartOrderModal({
                     <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Giá bán đề xuất: Vốn + Margin + Cước + Phí">
                       Đơn giá bán (₫)
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 110 }} title="Thành tiền bán: Số lượng × Đơn giá bán">
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 135, minWidth: 135, whiteSpace: 'nowrap' }} title="Thành tiền bán: Số lượng × Đơn giá bán">
                       Thành tiền (₫)
                     </th>
                     <th style={{ padding: '7px 2px', width: 28 }}></th>
@@ -1366,13 +1366,13 @@ export function SparePartOrderModal({
                         </td>
 
                         {/* 7. Thành tiền */}
-                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3 }}>
+                        <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', width: 135, minWidth: 135, whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3, alignItems: 'flex-end', whiteSpace: 'nowrap' }}>
                             <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
+                              {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0}&nbsp;₫
                             </div>
                             <div style={{ fontSize: 10, color: '#16a34a', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              +{(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')} ₫
+                              +{(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')}&nbsp;₫
                             </div>
                           </div>
                         </td>
@@ -1441,8 +1441,8 @@ export function SparePartOrderModal({
                       {calculation.totalOtherFee.toLocaleString('vi-VN')} ₫
                     </td>
                     <td></td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
-                      {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                      {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')}&nbsp;₫
                     </td>
                     <td></td>
                   </tr>
@@ -1593,11 +1593,12 @@ export function SparePartOrderModal({
                         textAlign: 'right',
                         fontWeight: 700,
                         color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {calculation.discountRate > 0
-                        ? `-${calculation.sellingDiscountVnd.toLocaleString('vi-VN')} ₫`
-                        : '0 ₫'}
+                        ? `-${calculation.sellingDiscountVnd.toLocaleString('vi-VN')}\u00A0₫`
+                        : '0\u00A0₫'}
                     </td>
                     <td></td>
                   </tr>
@@ -1622,9 +1623,10 @@ export function SparePartOrderModal({
                           textAlign: 'right',
                           fontWeight: 700,
                           color: 'var(--text-strong)',
+                          whiteSpace: 'nowrap',
                         }}
                       >
-                        {calculation.sellingTotalVnd.toLocaleString('vi-VN')} ₫
+                        {calculation.sellingTotalVnd.toLocaleString('vi-VN')}&nbsp;₫
                       </td>
                       <td></td>
                     </tr>
@@ -1700,11 +1702,12 @@ export function SparePartOrderModal({
                         textAlign: 'right',
                         fontWeight: 700,
                         color: calculation.vatAmountVnd > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {calculation.vatAmountVnd > 0
-                        ? `+${calculation.vatAmountVnd.toLocaleString('vi-VN')} ₫`
-                        : '0 ₫'}
+                        ? `+${calculation.vatAmountVnd.toLocaleString('vi-VN')}\u00A0₫`
+                        : '0\u00A0₫'}
                     </td>
                     <td></td>
                   </tr>
@@ -1719,12 +1722,13 @@ export function SparePartOrderModal({
                         textTransform: 'uppercase',
                         color: 'var(--text-strong)',
                         fontSize: 13,
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      TỔNG CỘNG THANH TOÁN (VND){calculation.vatPercentNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                      TỔNG CỘNG{calculation.vatPercentNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
-                      {calculation.finalSellingTotalWithVatVnd.toLocaleString('vi-VN')} ₫
+                    <td style={{ padding: '10px 8px', textAlign: 'right', color: '#7c3aed', fontSize: 14, whiteSpace: 'nowrap' }}>
+                      {calculation.finalSellingTotalWithVatVnd.toLocaleString('vi-VN')}&nbsp;₫
                     </td>
                     <td></td>
                   </tr>
