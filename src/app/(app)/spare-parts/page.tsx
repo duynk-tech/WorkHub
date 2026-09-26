@@ -47,15 +47,21 @@ export default async function SparePartsPage({
     can(ctx, 'FEATURE_EQUIPMENT_MANAGE') ||
     ctx.isAdmin;
 
+  if (sp.tab === 'orders' || sp.tab === 'purchases') {
+    redirect('/purchases');
+  }
+  if (sp.tab === 'quotes') {
+    redirect('/quotations');
+  }
+
   const [
-    spareParts, warehouses, transactions, stats, orders, pricingConfig, companyInfo, customers, equipments,
-    equipmentList, equipmentMetrics, equipmentCustomers, quotations,
+    spareParts, warehouses, transactions, stats, pricingConfig, companyInfo, customers, equipments,
+    equipmentList, equipmentMetrics, equipmentCustomers,
   ] = await Promise.all([
     listSpareParts(),
     listWarehouses(),
     listStockTransactions({ pageSize: 50 }),
     getSparePartsStats(),
-    listSparePartOrders(),
     getSparePartPricingConfig(),
     getCompanyInfo(),
     prisma.customer.findMany({
@@ -74,19 +80,6 @@ export default async function SparePartsPage({
     listEquipment({}),
     getEquipmentMetrics(),
     listCustomersWithLocations(),
-    prisma.customerQuotation.findMany({
-      include: {
-        customer: { select: { id: true, name: true, phone: true, code: true } },
-        location: { select: { id: true, name: true, address: true } },
-        items: {
-          include: {
-            inventoryItem: { select: { id: true, name: true, itemCode: true, unit: true } },
-          },
-        },
-        orders: { select: { id: true, orderCode: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    }).catch(() => []),
   ]);
 
   return (
@@ -95,7 +88,6 @@ export default async function SparePartsPage({
       warehouses={JSON.parse(JSON.stringify(warehouses))}
       transactions={JSON.parse(JSON.stringify(transactions.rows))}
       transactionTotal={transactions.total}
-      orders={JSON.parse(JSON.stringify(orders))}
       stats={JSON.parse(JSON.stringify(stats))}
       canManage={canManage}
       pricingConfig={JSON.parse(JSON.stringify(pricingConfig))}
@@ -106,7 +98,7 @@ export default async function SparePartsPage({
       equipmentList={JSON.parse(JSON.stringify(equipmentList))}
       equipmentMetrics={JSON.parse(JSON.stringify(equipmentMetrics))}
       equipmentCustomers={JSON.parse(JSON.stringify(equipmentCustomers))}
-      quotations={JSON.parse(JSON.stringify(quotations))}
     />
   );
 }
+

@@ -38,9 +38,10 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Thiết bị & Dịch vụ',
     items: [
       { href: '/spare-parts', label: 'Máy móc & Phụ tùng', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
+      { href: '/purchases', label: 'Mua hàng NCC', icon: 'Plane', permission: 'MENU_EQUIPMENT' },
       { href: '/tickets', label: 'Sự cố & Sửa chữa', icon: 'Wrench', permission: 'MENU_EQUIPMENT' },
       { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },
-      // Đơn bán tách khỏi màn kho: khác người dùng, khác quyền, và màn kho đã đủ 6 tab
+      { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: 'MENU_CUSTOMERS' },
       { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
       { href: '/assets', label: 'Thiết bị văn phòng', icon: 'Laptop', permission: 'MENU_ASSETS' },
       { href: '/media', label: 'Thư viện Media', icon: 'Image', permission: 'MENU_EQUIPMENT' },
