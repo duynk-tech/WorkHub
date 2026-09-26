@@ -59,6 +59,24 @@ describe('Spare Part Order Pricing & Formulas (Alluvia Excel)', () => {
     expect(pricing.totalVnd).toBe(11543750);
   });
 
+  it('should not calculate volume discount when hasCustomer is false (nhập kho dự trữ)', () => {
+    // 5 items * €50 = 8,125,000 VND
+    // hasCustomer = false => discountRate = 0, discountVnd = 0
+    const pricing = calculateOrderPricing(
+      [{ itemId: 1, quantity: 5, unitPriceEur: 50 }],
+      {
+        exchangeRate: 32500,
+        shippingFee: 3500000,
+        hasCustomer: false,
+      }
+    );
+
+    expect(pricing.subtotalVnd).toBe(8125000);
+    expect(pricing.discountRate).toBe(0);
+    expect(pricing.discountVnd).toBe(0);
+    expect(pricing.totalVnd).toBe(8125000 + 3500000);
+  });
+
   it('should calculate 2% volume discount for 10-29 total items', () => {
     // 20 items * €10 = €200 * 32,500 = 6,500,000 VND
     // Discount: 2% * 6,500,000 = 130,000 VND

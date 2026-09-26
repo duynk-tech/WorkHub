@@ -934,20 +934,24 @@ export function calculateOrderPricing(
     exchangeRate?: number;
     shippingFee?: number;
     volumeDiscountTiers?: { min: number; max: number; rate: number }[];
+    hasCustomer?: boolean;
   } = {}
 ) {
   const exchangeRate = options.exchangeRate ?? 32500;
   const shippingFee = options.shippingFee ?? 3500000;
   const tiers = options.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS;
+  const hasCustomer = options.hasCustomer ?? true;
 
   const totalItemsQty = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
 
-  // Tra cứu % chiết khấu theo tổng số lượng đơn hàng
+  // Tra cứu % chiết khấu theo tổng số lượng đơn hàng (chỉ áp dụng khi bán / đặt cho khách hàng)
   let discountRate = 0;
-  for (const tier of tiers) {
-    if (totalItemsQty >= tier.min && totalItemsQty <= tier.max) {
-      discountRate = tier.rate;
-      break;
+  if (hasCustomer) {
+    for (const tier of tiers) {
+      if (totalItemsQty >= tier.min && totalItemsQty <= tier.max) {
+        discountRate = tier.rate;
+        break;
+      }
     }
   }
 
@@ -1035,9 +1039,11 @@ export async function createSparePartOrder(input: SaveSparePartOrderInput, userI
     };
   });
 
+  const hasCustomer = Boolean(input.customerId || input.customerOrderId);
   const pricing = calculateOrderPricing(enrichedItems, {
     exchangeRate: input.exchangeRate,
     shippingFee: input.shippingFee,
+    hasCustomer,
   });
 
   return prisma.sparePartOrder.create({
@@ -1049,13 +1055,13 @@ export async function createSparePartOrder(input: SaveSparePartOrderInput, userI
       shippingFee: input.shippingFee !== undefined ? input.shippingFee : pricing.shippingFee,
       customsFee: input.customsFee !== undefined ? input.customsFee : 0,
       extraShippingRate: 0,
-      discountRate: pricing.discountRate,
+      discountRate: hasCustomer ? pricing.discountRate : 0,
       totalItemsQty: pricing.totalItemsQty,
       subtotalVnd: pricing.subtotalVnd,
-      discountVnd: pricing.discountVnd,
+      discountVnd: hasCustomer ? pricing.discountVnd : 0,
       totalVnd:
         pricing.subtotalVnd -
-        pricing.discountVnd +
+        (hasCustomer ? pricing.discountVnd : 0) +
         (input.shippingFee !== undefined ? input.shippingFee : pricing.shippingFee) +
         (input.customsFee !== undefined ? input.customsFee : 0),
       targetWarehouseId: input.targetWarehouseId,
@@ -1130,14 +1136,16 @@ export async function updateSparePartOrder(
     };
   });
 
+  const hasCustomer = Boolean(input.customerId || input.customerOrderId);
   const pricing = calculateOrderPricing(enrichedItems, {
     exchangeRate: input.exchangeRate,
     shippingFee: input.shippingFee,
+    hasCustomer,
   });
 
   const totalVnd =
     pricing.subtotalVnd -
-    pricing.discountVnd +
+    (hasCustomer ? pricing.discountVnd : 0) +
     (input.shippingFee !== undefined ? input.shippingFee : pricing.shippingFee) +
     (input.customsFee !== undefined ? input.customsFee : 0);
 
@@ -1155,10 +1163,10 @@ export async function updateSparePartOrder(
         exchangeRate: input.exchangeRate,
         shippingFee: input.shippingFee !== undefined ? input.shippingFee : pricing.shippingFee,
         customsFee: input.customsFee !== undefined ? input.customsFee : 0,
-        discountRate: pricing.discountRate,
+        discountRate: hasCustomer ? pricing.discountRate : 0,
         totalItemsQty: pricing.totalItemsQty,
         subtotalVnd: pricing.subtotalVnd,
-        discountVnd: pricing.discountVnd,
+        discountVnd: hasCustomer ? pricing.discountVnd : 0,
         totalVnd,
         targetWarehouseId: input.targetWarehouseId,
         customerId: input.customerId,
