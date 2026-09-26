@@ -1329,7 +1329,20 @@ export async function listSparePartOrders(filter: { status?: string; supplier?: 
     include: {
       items: {
         include: {
-          item: { select: { id: true, itemCode: true, name: true, unit: true, category: true, supplyType: true } },
+          item: {
+            select: {
+              id: true,
+              itemCode: true,
+              name: true,
+              unit: true,
+              category: true,
+              supplyType: true,
+              costPrice: true,
+              avgCost: true,
+              sellingPrice: true,
+              priceEur: true,
+            },
+          },
         },
       },
       targetWarehouse: { select: { id: true, code: true, name: true } },

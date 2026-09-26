@@ -45,6 +45,7 @@ import {
   TRANSACTION_TYPES,
   ORDER_STATUSES,
   orderStatusLabel,
+  calculateSellingPriceFromMargin,
   type SparePartPricingConfig,
 } from '@/server/modules/spare-parts/types';
 import type { CompanyInfo } from '@/server/modules/settings/branding';
@@ -1254,200 +1255,352 @@ export function SparePartsScreen({
                     </div>
 
                     {/* Content 2 columns */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-                      {/* Left: Items */}
-                      <div
-                        style={{
-                          border: '1px solid var(--border-base)',
-                          borderRadius: 8,
-                          padding: 12,
-                          background: 'var(--surface-card)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
-                            Linh kiện đặt hàng ({order.items?.length || 0})
-                          </span>
-                          {canManage && order.status !== 'STOCKED' && order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingOrder(order);
-                                setOrderModalOpen(true);
-                              }}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                border: 'none',
-                                background: '#f5f3ff',
-                                color: '#7c3aed',
-                                padding: '3px 8px',
-                                borderRadius: 4,
-                                fontSize: 11,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                              title="Chỉnh sửa danh sách mặt hàng và chi phí đơn hàng"
-                            >
-                              <Edit2 size={12} /> Sửa đơn hàng
-                            </button>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {order.items?.map((it: any) => (
-                            <div
-                              key={it.id}
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                padding: '6px 8px',
-                                borderRadius: 6,
-                                background: 'var(--surface-sunken)',
-                                fontSize: 12.5,
-                              }}
-                            >
-                              <div>
-                                <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
-                                  {it.item?.name || 'Linh kiện'}
-                                </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  Mã: {it.item?.itemCode} • Đơn giá: {order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€'}{Number(it.unitPriceEur || 0).toLocaleString('vi-VN')}
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
-                                  x{it.quantity} {it.item?.unit || 'cái'}
-                                </div>
-                                <div style={{ fontSize: 11.5, color: '#7c3aed', fontWeight: 600 }}>
-                                  {new Intl.NumberFormat('vi-VN').format(Number(it.finalPriceVnd || 0))} ₫
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                    {(() => {
+                      const hasCustomer = Boolean(order.customerId || order.customerOrderId || order.customer);
+                      const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
+                      const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
+                      const itemsCount = order.items?.length || 1;
+                      const shippingPerLine = (order.items?.length || 0) > 0 ? Number(order.shippingFee || 0) / itemsCount : 0;
+                      const otherPerLine = (order.items?.length || 0) > 0 ? Number(order.customsFee || 0) / itemsCount : 0;
+                      const exchangeRate = Number(order.exchangeRate || 32500);
 
-                      {/* Right: Pricing & Logistics */}
-                      <div
-                        style={{
-                          border: '1px solid var(--border-base)',
-                          borderRadius: 8,
-                          padding: 12,
-                          background: 'var(--surface-card)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 10,
-                        }}
-                      >
-                        {/* Pricing details */}
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
-                            Chi tiết tính giá & Chi phí lô hàng
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-                            {/* 1. Phần trả NCC (Giá Vốn) */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>
-                                Tiền hàng ({new Intl.NumberFormat('vi-VN').format(order.exchangeRate)} ₫/{order.currency || 'EUR'}):
-                              </span>
-                              <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫</span>
-                            </div>
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                padding: '3px 6px',
-                                background: '#eff6ff',
-                                borderRadius: 4,
-                                color: '#1d4ed8',
-                                fontWeight: 700,
-                                fontSize: 12,
-                              }}
-                            >
-                              <span>Phần trả NCC (Giá vốn):</span>
-                              <span>
-                                {new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd || 0))} ₫
-                              </span>
-                            </div>
+                      const calculatedSellingItems = (order.items || []).map((it: any) => {
+                        const qty = Number(it.quantity) || 1;
+                        const savedSelling = Number(it.sellingPriceVnd || it.item?.sellingPrice || 0);
+                        const baseCost = Number(it.unitPriceVnd || 0) > 0
+                          ? Number(it.unitPriceVnd)
+                          : Number(it.unitPriceEur || 0) > 0
+                            ? Math.round(Number(it.unitPriceEur) * exchangeRate)
+                            : Number(it.item?.avgCost || it.item?.costPrice || 0);
+                        const freightPerUnit = qty > 0 ? Math.round(shippingPerLine / qty) : 0;
+                        const otherFeePerUnit = qty > 0 ? Math.round(otherPerLine / qty) : 0;
+                        const formulaPrice = baseCost > 0
+                          ? calculateSellingPriceFromMargin(baseCost, marginPercent, pricingMethod) + freightPerUnit + otherFeePerUnit
+                          : 0;
+                        const unitSelling = savedSelling || formulaPrice;
+                        return {
+                          ...it,
+                          unitSelling,
+                          sellingSubtotal: unitSelling * qty,
+                          baseCost,
+                          costSubtotal: baseCost * qty,
+                        };
+                      });
 
-                            {/* 2. Chi phí ngoài: Vận chuyển + Hải quan */}
-                            {Number(order.shippingFee) > 0 && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', paddingTop: 2 }}>
-                                <span>Cước vận chuyển (Đơn vị VC):</span>
-                                <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
-                              </div>
-                            )}
-                            {Number(order.customsFee) > 0 && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                <span>Phí khác / Hải quan:</span>
-                                <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
-                              </div>
-                            )}
-                            {(() => {
-                              const subtotal = Number(order.subtotalVnd || 0);
-                              const discount = Number(order.discountVnd || 0);
-                              const shipping = Number(order.shippingFee || 0);
-                              const customs = Number(order.customsFee || 0);
-                              const calcTotal = subtotal - discount + shipping + customs;
-                              const currentTotal = Number(order.totalVnd || 0);
-                              const diff = currentTotal - calcTotal;
-                              if (Math.abs(diff) > 0) {
-                                return (
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                    <span>Chi phí / Thuế khác:</span>
-                                    <span>{diff > 0 ? '+' : ''}{new Intl.NumberFormat('vi-VN').format(diff)} ₫</span>
+                      const grossSellingTotal = calculatedSellingItems.reduce((s: number, it: any) => s + (Number(it.sellingSubtotal) || 0), 0);
+                      const discountRate = hasCustomer ? (Number(order.discountRate) || 0) : 0;
+                      const discountAmount = hasCustomer
+                        ? (Number(order.discountVnd) > 0 && discountRate === 0
+                            ? Number(order.discountVnd)
+                            : Math.round(grossSellingTotal * discountRate))
+                        : 0;
+                      const sellingAfterDiscount = Math.max(0, grossSellingTotal - discountAmount);
+
+                      const rawNotes = order.notes || '';
+                      const parsedVat = rawNotes.match(/\[VAT:\s*(\d+(?:\.\d+)?)%\]/i)?.[1];
+                      const vatRateNum = hasCustomer
+                        ? (parsedVat !== undefined ? Number(parsedVat) : (order.vatRate !== undefined ? Number(order.vatRate) : 0))
+                        : 0;
+                      const vatAmount = hasCustomer ? Math.round((sellingAfterDiscount * vatRateNum) / 100) : 0;
+                      const finalCustomerTotal = sellingAfterDiscount + vatAmount;
+
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+                          {/* Left: Items */}
+                          <div
+                            style={{
+                              border: '1px solid var(--border-base)',
+                              borderRadius: 8,
+                              padding: 12,
+                              background: 'var(--surface-card)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
+                                Linh kiện đặt hàng ({order.items?.length || 0})
+                              </span>
+                              {canManage && order.status !== 'STOCKED' && order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingOrder(order);
+                                    setOrderModalOpen(true);
+                                  }}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    border: 'none',
+                                    background: '#f5f3ff',
+                                    color: '#7c3aed',
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Chỉnh sửa danh sách mặt hàng và chi phí đơn hàng"
+                                >
+                                  <Edit2 size={12} /> Sửa đơn hàng
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {calculatedSellingItems.map((it: any) => (
+                                <div
+                                  key={it.id}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '6px 8px',
+                                    borderRadius: 6,
+                                    background: 'var(--surface-sunken)',
+                                    fontSize: 12.5,
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                      {it.item?.name || 'Linh kiện'}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                      Mã: {it.item?.itemCode} • Đơn giá vốn: {order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€'}{Number(it.unitPriceEur || 0).toLocaleString('vi-VN')} ({new Intl.NumberFormat('vi-VN').format(it.baseCost)} ₫)
+                                    </div>
                                   </div>
-                                );
-                              }
-                              return null;
-                            })()}
-
-                            {/* 3. Tổng giá vốn về kho */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                paddingTop: 6,
-                                marginTop: 4,
-                                borderTop: '1px dashed var(--border-base)',
-                                fontSize: 13.5,
-                                fontWeight: 800,
-                                color: '#7c3aed',
-                              }}
-                            >
-                              <span title="Tổng chi phí lô hàng nhập kho bao gồm giá vốn hàng mua + cước vận chuyển & hải quan">
-                                Tổng giá vốn về kho:
-                              </span>
-                              <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
+                                      x{it.quantity} {it.item?.unit || 'cái'}
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: hasCustomer ? '#7c3aed' : 'var(--text-strong)', fontWeight: 700 }}>
+                                      {hasCustomer ? (
+                                        <>
+                                          {new Intl.NumberFormat('vi-VN').format(it.sellingSubtotal)} ₫
+                                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>
+                                            (Giá bán: {new Intl.NumberFormat('vi-VN').format(it.unitSelling)} ₫)
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <>
+                                          {new Intl.NumberFormat('vi-VN').format(it.costSubtotal || Number(it.finalPriceVnd || 0))} ₫
+                                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>(Giá vốn)</div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-
-                            {/* 4. Chiết khấu cho khách hàng cuối (nếu có) */}
-                            {Number(order.discountVnd) > 0 && (
-                              <div
-                                style={{
-                                  marginTop: 6,
-                                  paddingTop: 6,
-                                  borderTop: '1px dotted var(--border-base)',
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  color: '#16a34a',
-                                  fontSize: 12,
-                                }}
-                              >
-                                <span>
-                                  Chiết khấu cho khách hàng cuối
-                                  {Number(order.discountRate) > 0 && (
-                                    <> ({+(Number(order.discountRate) * 100).toFixed(2)}%)</>
-                                  )}
-                                  :
-                                </span>
-                                <span>-{new Intl.NumberFormat('vi-VN').format(Number(order.discountVnd))} ₫</span>
-                              </div>
-                            )}
                           </div>
-                        </div>
+
+                          {/* Right: Pricing & Logistics */}
+                          <div
+                            style={{
+                              border: '1px solid var(--border-base)',
+                              borderRadius: 8,
+                              padding: 12,
+                              background: 'var(--surface-card)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 10,
+                            }}
+                          >
+                            {/* Pricing details */}
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span>Chi tiết tính giá & Chi phí lô hàng</span>
+                                <Badge style={{ background: hasCustomer ? '#f5f3ff' : '#eff6ff', color: hasCustomer ? '#7c3aed' : '#1d4ed8', fontSize: 10 }}>
+                                  {hasCustomer ? 'Theo đơn khách hàng' : 'Nhập kho dự trữ'}
+                                </Badge>
+                              </div>
+
+                              {!hasCustomer ? (
+                                /* 1. ĐƠN KHÔNG CÓ KH: TỔNG TIỀN LÀ GIÁ VỐN */
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ color: 'var(--text-muted)' }}>
+                                      Tiền hàng ({new Intl.NumberFormat('vi-VN').format(order.exchangeRate)} ₫/{order.currency || 'EUR'}):
+                                    </span>
+                                    <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫</span>
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      padding: '3px 6px',
+                                      background: '#eff6ff',
+                                      borderRadius: 4,
+                                      color: '#1d4ed8',
+                                      fontWeight: 700,
+                                      fontSize: 12,
+                                    }}
+                                  >
+                                    <span>Phần trả NCC (Giá vốn):</span>
+                                    <span>{new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd || 0))} ₫</span>
+                                  </div>
+
+                                  {Number(order.shippingFee) > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', paddingTop: 2 }}>
+                                      <span>Cước vận chuyển (Đơn vị VC):</span>
+                                      <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
+                                    </div>
+                                  )}
+                                  {Number(order.customsFee) > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                      <span>Phí khác / Hải quan:</span>
+                                      <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
+                                    </div>
+                                  )}
+
+                                  {/* Tổng giá vốn về kho */}
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      paddingTop: 8,
+                                      marginTop: 6,
+                                      borderTop: '2px solid #cbd5e1',
+                                      fontSize: 13.5,
+                                      fontWeight: 800,
+                                      color: '#1d4ed8',
+                                    }}
+                                  >
+                                    <span title="Tổng chi phí vốn lô hàng nhập kho bao gồm giá vốn hàng mua + cước vận chuyển & hải quan">
+                                      TỔNG GIÁ VỐN VỀ KHO:
+                                    </span>
+                                    <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* 2. ĐƠN CÓ KH: CHIA RÕ 2 MỤC: TỔNG TIỀN VỐN & TỔNG TIỀN KH (THEO GIÁ BÁN) */
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                  {/* MỤC 1: TỔNG TIỀN VỐN */}
+                                  <div
+                                    style={{
+                                      background: '#f8fafc',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      padding: '8px 10px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 4,
+                                      fontSize: 12,
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 700, color: '#1e40af', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                                      <span style={{ background: '#dbeafe', color: '#1e40af', padding: '1px 5px', borderRadius: 3, fontSize: 10, fontWeight: 800 }}>MỤC 1</span>
+                                      <span>TỔNG TIỀN VỐN (CHI PHÍ NHẬP HÀNG)</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                      <span>Tiền hàng trả NCC (Giá vốn):</span>
+                                      <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                        {new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫
+                                      </span>
+                                    </div>
+                                    {Number(order.shippingFee) > 0 && (
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                        <span>Cước vận chuyển quốc tế:</span>
+                                        <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
+                                      </div>
+                                    )}
+                                    {Number(order.customsFee) > 0 && (
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                        <span>Phí khác / Hải quan:</span>
+                                        <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
+                                      </div>
+                                    )}
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        paddingTop: 5,
+                                        marginTop: 3,
+                                        borderTop: '1px dashed #cbd5e1',
+                                        fontWeight: 800,
+                                        color: '#1d4ed8',
+                                        fontSize: 12.5,
+                                      }}
+                                    >
+                                      <span>Tổng giá vốn về kho:</span>
+                                      <span>{new Intl.NumberFormat('vi-VN').format(Number(order.totalVnd))} ₫</span>
+                                    </div>
+                                  </div>
+
+                                  {/* MỤC 2: TỔNG TIỀN KHÁCH HÀNG (THEO GIÁ BÁN) */}
+                                  <div
+                                    style={{
+                                      background: '#faf5ff',
+                                      border: '1px solid #d8b4fe',
+                                      borderRadius: 6,
+                                      padding: '8px 10px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 4,
+                                      fontSize: 12,
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 700, color: '#6b21a8', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                                      <span style={{ background: '#f3e8ff', color: '#6b21a8', padding: '1px 5px', borderRadius: 3, fontSize: 10, fontWeight: 800 }}>MỤC 2</span>
+                                      <span>TỔNG TIỀN KHÁCH HÀNG (THEO GIÁ BÁN)</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                      <span>Tiền hàng (Theo giá bán):</span>
+                                      <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                        {new Intl.NumberFormat('vi-VN').format(grossSellingTotal)} ₫
+                                      </span>
+                                    </div>
+
+                                    {/* Chiết khấu trên tổng tiền KH theo giá bán */}
+                                    {discountAmount > 0 && (
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
+                                        <span>
+                                          Chiết khấu cho khách hàng {discountRate > 0 ? `(${+(discountRate * 100).toFixed(0)}%)` : ''}:
+                                        </span>
+                                        <span style={{ fontWeight: 700 }}>
+                                          -{new Intl.NumberFormat('vi-VN').format(discountAmount)} ₫
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {/* Tiền hàng sau chiết khấu */}
+                                    {discountAmount > 0 && (
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                        <span>Tiền hàng sau chiết khấu:</span>
+                                        <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                          {new Intl.NumberFormat('vi-VN').format(sellingAfterDiscount)} ₫
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {/* Thuế VAT */}
+                                    {vatRateNum > 0 && (
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                        <span>Thuế VAT ({vatRateNum}%):</span>
+                                        <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                          +{new Intl.NumberFormat('vi-VN').format(vatAmount)} ₫
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {/* TỔNG CỘNG KHÁCH THANH TOÁN */}
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        paddingTop: 6,
+                                        marginTop: 4,
+                                        borderTop: '1px dashed #d8b4fe',
+                                        fontWeight: 800,
+                                        color: '#7c3aed',
+                                        fontSize: 13,
+                                      }}
+                                    >
+                                      <span>TỔNG CỘNG KHÁCH THANH TOÁN{vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:</span>
+                                      <span>{new Intl.NumberFormat('vi-VN').format(finalCustomerTotal)} ₫</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
 
                         {/* Logistics tracking info */}
                         <div
@@ -1505,6 +1658,8 @@ export function SparePartsScreen({
                         </div>
                       </div>
                     </div>
+                  );
+                })()}
 
                     {/* Lịch sử chi tiền cho phiếu này — chỗ duy nhất in lại được
                         phiếu chi cũ, vì hệ thống chưa có sổ phiếu chi riêng */}

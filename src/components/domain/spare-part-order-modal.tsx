@@ -1178,10 +1178,10 @@ export function SparePartOrderModal({
                       Phí khác (₫)
                     </th>
                     <th style={{ padding: '7px 6px', textAlign: 'right', width: 112 }} title="Giá bán đề xuất: Vốn + Margin + Cước + Phí">
-                      Đơn giá bán (₫)
+                      {Boolean(customerId) ? 'Đơn giá bán (₫)' : 'Giá bán t.khảo (₫)'}
                     </th>
-                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 110 }} title="Thành tiền bán: Số lượng × Đơn giá bán">
-                      Thành tiền (₫)
+                    <th style={{ padding: '7px 6px', textAlign: 'right', width: 110 }} title="Thành tiền bán hoặc giá vốn theo loại đơn">
+                      {Boolean(customerId) ? 'Thành tiền bán (₫)' : 'Thành tiền vốn (₫)'}
                     </th>
                     <th style={{ padding: '7px 2px', width: 28 }}></th>
                   </tr>
@@ -1419,10 +1419,17 @@ export function SparePartOrderModal({
                         <td style={{ padding: '6px 6px', textAlign: 'right', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 3 }}>
                             <div style={{ fontWeight: 700, color: 'var(--brand)', whiteSpace: 'nowrap', fontSize: 12, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              {calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫
+                              {Boolean(customerId)
+                                ? `${calc ? calc.sellingSubtotal.toLocaleString('vi-VN') : 0} ₫`
+                                : `${calc ? (calc.subtotal + (calc.shippingFee || 0) + (calc.otherFee || 0)).toLocaleString('vi-VN') : 0} ₫`
+                              }
                             </div>
-                            <div style={{ fontSize: 10, color: '#16a34a', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                              +{(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')} ₫
+                            <div style={{ fontSize: 10, color: Boolean(customerId) ? '#16a34a' : 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: 1.3, textAlign: 'right', height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                              {Boolean(customerId) ? (
+                                `+${(calc ? calc.sellingSubtotal - (calc.unitCost * it.quantity + (it.shippingFee || 0) + (it.otherFee || 0)) : 0).toLocaleString('vi-VN')} ₫ (lãi)`
+                              ) : (
+                                `Tiền hàng: ${(calc ? calc.subtotal : 0).toLocaleString('vi-VN')} ₫`
+                              )}
                             </div>
                           </div>
                         </td>
@@ -1492,296 +1499,398 @@ export function SparePartOrderModal({
                     </td>
                     <td></td>
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)', fontSize: 11.5 }}>
-                      {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫
+                      {Boolean(customerId)
+                        ? `${calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫`
+                        : `${calculation.totalVnd.toLocaleString('vi-VN')} ₫`
+                      }
                     </td>
                     <td></td>
                   </tr>
 
-                  {/* 2. Dòng chiết khấu: chỉ hiển thị khi có gán khách hàng cụ thể */}
-                  {Boolean(customerId) && (
-                    <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)', position: 'relative', zIndex: 100 }}>
+                  {!Boolean(customerId) ? (
+                    /* 1. NẾU ĐƠN KHÔNG CÓ KH (NHẬP KHO DỰ TRỮ) -> TỔNG TIỀN LÀ GIÁ VỐN */
+                    <tr style={{ background: '#eff6ff', borderTop: '2px solid #93c5fd', fontWeight: 800 }}>
                       <td
                         colSpan={6}
                         style={{
-                          padding: '7px 10px',
+                          padding: '10px',
                           textAlign: 'right',
-                          color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
-                          fontWeight: 600,
-                          position: 'relative',
-                          zIndex: 100,
+                          textTransform: 'uppercase',
+                          color: '#1e40af',
+                          fontSize: 13,
                         }}
                       >
-                        <div
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            position: 'relative',
-                            cursor: 'help',
-                            zIndex: 1000,
-                          }}
-                          onMouseEnter={() => setShowDiscountTooltip(true)}
-                          onMouseLeave={() => setShowDiscountTooltip(false)}
-                          onClick={() => setShowDiscountTooltip((prev) => !prev)}
-                        >
-                          <span
-                            style={{
-                              borderBottom: '1px dashed currentColor',
-                              paddingBottom: 1,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            Chiết khấu cho khách hàng ({(calculation.discountRate * 100).toFixed(0)}%):
-                            <Info size={13} style={{ opacity: 0.8 }} />
-                          </span>
-
-                          {showDiscountTooltip && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                bottom: 'calc(100% + 10px)',
-                                right: 0,
-                                zIndex: 99999,
-                                background: 'var(--surface-card, #ffffff)',
-                                color: 'var(--text-base, #1e293b)',
-                                border: '1px solid var(--border-base, #94a3b8)',
-                                borderRadius: 8,
-                                boxShadow: '0 20px 40px -4px rgba(0, 0, 0, 0.28), 0 10px 18px -4px rgba(0, 0, 0, 0.16)',
-                                padding: '10px 14px',
-                                width: 250,
-                                textAlign: 'left',
-                                fontSize: 12,
-                                fontWeight: 400,
-                                lineHeight: 1.5,
-                                pointerEvents: 'none',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontWeight: 700,
-                                  color: 'var(--text-strong, #0f172a)',
-                                  marginBottom: 6,
-                                  fontSize: 12,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 5,
-                                  borderBottom: '1px solid var(--border-subtle, #f1f5f9)',
-                                  paddingBottom: 4,
-                                }}
-                              >
-                                <Info size={13} color="#2563eb" /> Chiết khấu theo số lượng:
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                {(pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS).map((tier, idx) => {
-                                  const isMatch =
-                                    calculation.totalQty >= tier.min && calculation.totalQty <= tier.max;
-                                  const tierLabel =
-                                    tier.min === tier.max
-                                      ? `${tier.min} cái`
-                                      : tier.max >= 99999
-                                      ? `≥ ${tier.min} cái`
-                                      : `${tier.min} – ${tier.max} cái`;
-                                  const rateLabel = `${(tier.rate * 100).toFixed(0)}%`;
-
-                                  return (
-                                    <div
-                                      key={idx}
-                                      style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        padding: '2px 6px',
-                                        borderRadius: 4,
-                                        background: isMatch ? '#f0fdf4' : 'transparent',
-                                        color: isMatch ? '#15803d' : 'var(--text-muted, #64748b)',
-                                        fontWeight: isMatch ? 700 : 400,
-                                      }}
-                                    >
-                                      <span>• {tierLabel}:</span>
-                                      <span>
-                                        {rateLabel} {isMatch && '✓'}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              <div
-                                style={{
-                                  marginTop: 6,
-                                  paddingTop: 4,
-                                  borderTop: '1px dashed var(--border-base, #e2e8f0)',
-                                  fontSize: 11,
-                                  color: 'var(--text-muted, #64748b)',
-                                }}
-                              >
-                                Tổng đơn: <strong>{calculation.totalQty} cái</strong>{' '}
-                                {calculation.discountRate > 0
-                                  ? `(giảm ${(calculation.discountRate * 100).toFixed(0)}%)`
-                                  : '(chưa áp dụng chiết khấu)'}
-                              </div>
-                              {/* Arrow pointing down */}
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  bottom: -6,
-                                  right: 18,
-                                  width: 10,
-                                  height: 10,
-                                  background: 'inherit',
-                                  borderRight: '1px solid var(--border-base, #94a3b8)',
-                                  borderBottom: '1px solid var(--border-base, #94a3b8)',
-                                  transform: 'rotate(45deg)',
-                                }}
-                              />
-                            </div>
+                        <div>TỔNG TIỀN ĐƠN HÀNG - GIÁ VỐN VỀ KHO (VND):</div>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', textTransform: 'none', marginTop: 2 }}>
+                          Tiền hàng: {calculation.subtotalVnd.toLocaleString('vi-VN')} ₫
+                          {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
+                            <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
                           )}
                         </div>
                       </td>
-                      <td
-                        style={{
-                          padding: '7px 10px',
-                          textAlign: 'right',
-                          fontWeight: 700,
-                          color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
-                        }}
-                      >
-                        {calculation.discountRate > 0
-                          ? `-${calculation.sellingDiscountVnd.toLocaleString('vi-VN')} ₫`
-                          : '0 ₫'}
+                      <td style={{ padding: '10px', textAlign: 'right', color: '#1d4ed8', fontSize: 14 }}>
+                        {calculation.totalVnd.toLocaleString('vi-VN')} ₫
                       </td>
                       <td></td>
                     </tr>
-                  )}
+                  ) : (
+                    /* 2. NẾU ĐƠN CÓ KH -> CHIA RÕ 2 MỤC: TỔNG TIỀN VỐN & TỔNG TIỀN KH (THEO GIÁ BÁN) */
+                    <>
+                      {/* MỤC 1: TỔNG TIỀN VỐN */}
+                      <tr style={{ background: '#eff6ff', borderTop: '1px solid #bfdbfe' }}>
+                        <td
+                          colSpan={6}
+                          style={{
+                            padding: '8px 10px',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: '#1e40af',
+                            fontSize: 12,
+                          }}
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ padding: '1px 6px', background: '#dbeafe', borderRadius: 4, fontSize: 10.5, fontWeight: 800 }}>
+                              MỤC 1
+                            </span>
+                            <span>TỔNG TIỀN VỐN (TRẢ NCC & PHÍ VỀ KHO):</span>
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 500, color: '#3b82f6', marginTop: 2 }}>
+                            Tiền hàng: {calculation.subtotalVnd.toLocaleString('vi-VN')} ₫
+                            {(calculation.totalShippingFee > 0 || calculation.totalOtherFee > 0) && (
+                              <> · Cước VC & Phí: {(calculation.totalShippingFee + calculation.totalOtherFee).toLocaleString('vi-VN')} ₫</>
+                            )}
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 10px',
+                            textAlign: 'right',
+                            fontWeight: 800,
+                            color: '#1d4ed8',
+                            fontSize: 13,
+                          }}
+                        >
+                          {calculation.totalVnd.toLocaleString('vi-VN')} ₫
+                        </td>
+                        <td></td>
+                      </tr>
 
-                  {/* 3. Tiền hàng sau chiết khấu (chỉ hiển thị khi có chiết khấu > 0) */}
-                  {Boolean(customerId) && calculation.discountRate > 0 && (
-                    <tr style={{ background: '#f8fafc', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                      <td
-                        colSpan={6}
-                        style={{
-                          padding: '7px 10px',
-                          textAlign: 'right',
-                          fontWeight: 600,
-                          color: 'var(--text-strong)',
-                        }}
-                      >
-                        Tiền hàng sau chiết khấu:
-                      </td>
-                      <td
-                        style={{
-                          padding: '7px 10px',
-                          textAlign: 'right',
-                          fontWeight: 700,
-                          color: 'var(--text-strong)',
-                        }}
-                      >
-                        {calculation.sellingTotalVnd.toLocaleString('vi-VN')} ₫
-                      </td>
-                      <td></td>
-                    </tr>
-                  )}
+                      {/* MỤC 2: TỔNG TIỀN KHÁCH HÀNG (THEO GIÁ BÁN) */}
+                      <tr style={{ background: '#faf5ff', borderTop: '1px solid #e9d5ff' }}>
+                        <td
+                          colSpan={6}
+                          style={{
+                            padding: '7px 10px',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: '#6b21a8',
+                            fontSize: 12,
+                          }}
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ padding: '1px 6px', background: '#f3e8ff', borderRadius: 4, fontSize: 10.5, fontWeight: 800 }}>
+                              MỤC 2
+                            </span>
+                            <span>TỔNG TIỀN HÀNG KH (THEO GIÁ BÁN):</span>
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: '7px 10px',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: '#7c3aed',
+                            fontSize: 12.5,
+                          }}
+                        >
+                          {calculation.grossSellingTotalVnd.toLocaleString('vi-VN')} ₫
+                        </td>
+                        <td></td>
+                      </tr>
 
-                  {/* 4. Thuế VAT (ẩn và set 0% khi không chọn khách hàng) */}
-                  {Boolean(customerId) && (
-                    <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                      <td
-                        colSpan={6}
-                        style={{
-                          padding: '6px 10px',
-                          textAlign: 'right',
-                          fontWeight: 600,
-                          color: 'var(--text-strong)',
-                        }}
-                      >
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                          <span>Thuế VAT:</span>
-                          <div style={{ display: 'inline-flex', gap: 4 }}>
-                            {[0, 8, 10].map((rate) => {
-                              const isSelected = Number(vatRate) === rate;
-                              return (
-                                <button
-                                  key={rate}
-                                  type="button"
-                                  onClick={() => setVatRate(rate)}
+                      {/* Chiết khấu trên tổng tiền KH theo giá bán */}
+                      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)', position: 'relative', zIndex: 100 }}>
+                        <td
+                          colSpan={6}
+                          style={{
+                            padding: '7px 10px',
+                            textAlign: 'right',
+                            color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
+                            fontWeight: 600,
+                            position: 'relative',
+                            zIndex: 100,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              position: 'relative',
+                              cursor: 'help',
+                              zIndex: 1000,
+                            }}
+                            onMouseEnter={() => setShowDiscountTooltip(true)}
+                            onMouseLeave={() => setShowDiscountTooltip(false)}
+                            onClick={() => setShowDiscountTooltip((prev) => !prev)}
+                          >
+                            <span
+                              style={{
+                                borderBottom: '1px dashed currentColor',
+                                paddingBottom: 1,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              Chiết khấu cho khách hàng ({(calculation.discountRate * 100).toFixed(0)}%):
+                              <Info size={13} style={{ opacity: 0.8 }} />
+                            </span>
+
+                            {showDiscountTooltip && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  bottom: 'calc(100% + 10px)',
+                                  right: 0,
+                                  zIndex: 99999,
+                                  background: 'var(--surface-card, #ffffff)',
+                                  color: 'var(--text-base, #1e293b)',
+                                  border: '1px solid var(--border-base, #94a3b8)',
+                                  borderRadius: 8,
+                                  boxShadow: '0 20px 40px -4px rgba(0, 0, 0, 0.28), 0 10px 18px -4px rgba(0, 0, 0, 0.16)',
+                                  padding: '10px 14px',
+                                  width: 250,
+                                  textAlign: 'left',
+                                  fontSize: 12,
+                                  fontWeight: 400,
+                                  lineHeight: 1.5,
+                                  pointerEvents: 'none',
+                                }}
+                              >
+                                <div
                                   style={{
-                                    padding: '2px 8px',
-                                    fontSize: 11,
-                                    borderRadius: 4,
-                                    border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
-                                    background: isSelected ? '#f5f3ff' : '#fff',
-                                    color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
-                                    fontWeight: isSelected ? 700 : 500,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
+                                    fontWeight: 700,
+                                    color: 'var(--text-strong, #0f172a)',
+                                    marginBottom: 6,
+                                    fontSize: 12,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    borderBottom: '1px solid var(--border-subtle, #f1f5f9)',
+                                    paddingBottom: 4,
                                   }}
                                 >
-                                  {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.5"
-                              value={vatRate}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setVatRate(val === '' ? (0 as any) : Number(val));
-                              }}
-                              style={{
-                                width: 44,
-                                padding: '2px 4px',
-                                fontSize: 11,
-                                textAlign: 'center',
-                                border: '1px solid var(--border-base, #cbd5e1)',
-                                borderRadius: 4,
-                                background: 'var(--surface-card, #fff)',
-                                color: 'var(--text-strong, #0f172a)',
-                              }}
-                            />
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          padding: '6px 10px',
-                          textAlign: 'right',
-                          fontWeight: 700,
-                          color: calculation.vatAmountVnd > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
-                        }}
-                      >
-                        {calculation.vatAmountVnd > 0
-                          ? `+${calculation.vatAmountVnd.toLocaleString('vi-VN')} ₫`
-                          : '0 ₫'}
-                      </td>
-                      <td></td>
-                    </tr>
-                  )}
+                                  <Info size={13} color="#2563eb" /> Chiết khấu theo số lượng:
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  {(pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS).map((tier, idx) => {
+                                    const isMatch =
+                                      calculation.totalQty >= tier.min && calculation.totalQty <= tier.max;
+                                    const tierLabel =
+                                      tier.min === tier.max
+                                        ? `${tier.min} cái`
+                                        : tier.max >= 99999
+                                        ? `≥ ${tier.min} cái`
+                                        : `${tier.min} – ${tier.max} cái`;
+                                    const rateLabel = `${(tier.rate * 100).toFixed(0)}%`;
 
-                  {/* 5. Tổng cộng thanh toán */}
-                  <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
-                    <td
-                      colSpan={6}
-                      style={{
-                        padding: '10px',
-                        textAlign: 'right',
-                        textTransform: 'uppercase',
-                        color: 'var(--text-strong)',
-                        fontSize: 13,
-                      }}
-                    >
-                      TỔNG CỘNG THANH TOÁN (VND){Boolean(customerId) && calculation.vatPercentNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
-                    </td>
-                    <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
-                      {calculation.finalSellingTotalWithVatVnd.toLocaleString('vi-VN')} ₫
-                    </td>
-                    <td></td>
-                  </tr>
+                                    return (
+                                      <div
+                                        key={idx}
+                                        style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          padding: '2px 6px',
+                                          borderRadius: 4,
+                                          background: isMatch ? '#f0fdf4' : 'transparent',
+                                          color: isMatch ? '#15803d' : 'var(--text-muted, #64748b)',
+                                          fontWeight: isMatch ? 700 : 400,
+                                        }}
+                                      >
+                                        <span>• {tierLabel}:</span>
+                                        <span>
+                                          {rateLabel} {isMatch && '✓'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: 6,
+                                    paddingTop: 4,
+                                    borderTop: '1px dashed var(--border-base, #e2e8f0)',
+                                    fontSize: 11,
+                                    color: 'var(--text-muted, #64748b)',
+                                  }}
+                                >
+                                  Tổng đơn: <strong>{calculation.totalQty} cái</strong>{' '}
+                                  {calculation.discountRate > 0
+                                    ? `(giảm ${(calculation.discountRate * 100).toFixed(0)}%)`
+                                    : '(chưa áp dụng chiết khấu)'}
+                                </div>
+                                {/* Arrow pointing down */}
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    bottom: -6,
+                                    right: 18,
+                                    width: 10,
+                                    height: 10,
+                                    background: 'inherit',
+                                    borderRight: '1px solid var(--border-base, #94a3b8)',
+                                    borderBottom: '1px solid var(--border-base, #94a3b8)',
+                                    transform: 'rotate(45deg)',
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: '7px 10px',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: calculation.discountRate > 0 ? '#b91c1c' : 'var(--text-muted)',
+                          }}
+                        >
+                          {calculation.discountRate > 0
+                            ? `-${calculation.sellingDiscountVnd.toLocaleString('vi-VN')} ₫`
+                            : '0 ₫'}
+                        </td>
+                        <td></td>
+                      </tr>
+
+                      {/* Tiền hàng sau chiết khấu (chỉ hiển thị khi có chiết khấu > 0) */}
+                      {calculation.discountRate > 0 && (
+                        <tr style={{ background: '#f8fafc', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                          <td
+                            colSpan={6}
+                            style={{
+                              padding: '7px 10px',
+                              textAlign: 'right',
+                              fontWeight: 600,
+                              color: 'var(--text-strong)',
+                            }}
+                          >
+                            Tiền hàng sau chiết khấu:
+                          </td>
+                          <td
+                            style={{
+                              padding: '7px 10px',
+                              textAlign: 'right',
+                              fontWeight: 700,
+                              color: 'var(--text-strong)',
+                            }}
+                          >
+                            {calculation.sellingTotalVnd.toLocaleString('vi-VN')} ₫
+                          </td>
+                          <td></td>
+                        </tr>
+                      )}
+
+                      {/* Thuế VAT */}
+                      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                        <td
+                          colSpan={6}
+                          style={{
+                            padding: '6px 10px',
+                            textAlign: 'right',
+                            fontWeight: 600,
+                            color: 'var(--text-strong)',
+                          }}
+                        >
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                            <span>Thuế VAT:</span>
+                            <div style={{ display: 'inline-flex', gap: 4 }}>
+                              {[0, 8, 10].map((rate) => {
+                                const isSelected = Number(vatRate) === rate;
+                                return (
+                                  <button
+                                    key={rate}
+                                    type="button"
+                                    onClick={() => setVatRate(rate)}
+                                    style={{
+                                      padding: '2px 8px',
+                                      fontSize: 11,
+                                      borderRadius: 4,
+                                      border: isSelected ? '1px solid #7c3aed' : '1px solid var(--border-base, #cbd5e1)',
+                                      background: isSelected ? '#f5f3ff' : '#fff',
+                                      color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
+                                      fontWeight: isSelected ? 700 : 500,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                  >
+                                    {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.5"
+                                value={vatRate}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setVatRate(val === '' ? (0 as any) : Number(val));
+                                }}
+                                style={{
+                                  width: 44,
+                                  padding: '2px 4px',
+                                  fontSize: 11,
+                                  textAlign: 'center',
+                                  border: '1px solid var(--border-base, #cbd5e1)',
+                                  borderRadius: 4,
+                                  background: 'var(--surface-card, #fff)',
+                                  color: 'var(--text-strong, #0f172a)',
+                                }}
+                              />
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: '6px 10px',
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: calculation.vatAmountVnd > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
+                          }}
+                        >
+                          {calculation.vatAmountVnd > 0
+                            ? `+${calculation.vatAmountVnd.toLocaleString('vi-VN')} ₫`
+                            : '0 ₫'}
+                        </td>
+                        <td></td>
+                      </tr>
+
+                      {/* TỔNG CỘNG KHÁCH THANH TOÁN */}
+                      <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
+                        <td
+                          colSpan={6}
+                          style={{
+                            padding: '10px',
+                            textAlign: 'right',
+                            textTransform: 'uppercase',
+                            color: 'var(--text-strong)',
+                            fontSize: 13,
+                          }}
+                        >
+                          TỔNG CỘNG KHÁCH THANH TOÁN (VND){calculation.vatPercentNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'right', color: '#7c3aed', fontSize: 14 }}>
+                          {calculation.finalSellingTotalWithVatVnd.toLocaleString('vi-VN')} ₫
+                        </td>
+                        <td></td>
+                      </tr>
+                    </>
+                  )}
                 </tfoot>
               </table>
             </div>
