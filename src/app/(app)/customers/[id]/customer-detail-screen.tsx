@@ -396,7 +396,7 @@ export function CustomerDetailScreen({
             gap: 6,
           }}
         >
-          <Utensils size={16} /> Thiết bị & Máy móc ({customer.machines?.length || 0})
+          <Utensils size={16} /> Thiết bị đã mua ({customer.machines?.length || 0})
         </button>
 
         <button
@@ -1184,7 +1184,7 @@ export function CustomerDetailScreen({
                           }}
                         >
                           {expandedOrderItems[String(o.id)] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                          <span>Chi tiết sản phẩm / máy móc ({o.items.length})</span>
+                          <span>Chi tiết sản phẩm / thiết bị ({o.items.length})</span>
                         </span>
                         <span
                           style={{
@@ -1223,7 +1223,7 @@ export function CustomerDetailScreen({
                                     color: it.itemType === 'EQUIPMENT' ? '#0369a1' : '#6d28d9',
                                   }}
                                 >
-                                  {it.itemType === 'EQUIPMENT' ? 'Máy móc' : it.itemType === 'SPARE_PART' ? 'Linh kiện' : 'Dịch vụ'}
+                                  {it.itemType === 'EQUIPMENT' ? 'Thiết bị' : it.itemType === 'SPARE_PART' ? 'Linh kiện' : 'Dịch vụ'}
                                 </span>
                                 <span style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{it.name}</span>
                                 <span style={{ color: 'var(--text-muted)' }}>x {it.quantity}</span>
@@ -1663,6 +1663,7 @@ export function CustomerDetailScreen({
           stockMachines={stockMachines}
           spareParts={spareParts}
           pricingConfig={pricingConfig}
+          companyInfo={companyInfo}
           onClose={() => setCreateQuotationOpen(false)}
           onSuccess={() => {
             setActiveTab('quotations');
@@ -1681,6 +1682,7 @@ export function CustomerDetailScreen({
           stockMachines={stockMachines}
           spareParts={spareParts}
           pricingConfig={pricingConfig}
+          companyInfo={companyInfo}
           quotation={editingQuotation}
           onClose={() => setEditingQuotation(null)}
           onSuccess={() => router.refresh()}

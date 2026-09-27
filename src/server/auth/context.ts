@@ -1,4 +1,5 @@
 import 'server-only';
+import { sha256 } from '@/lib/crypto';
 import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import type { DataScope } from '@prisma/client';
@@ -63,7 +64,8 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     },
   });
 
-  if (!user || !user.isActive) return null;
+  if (!user || !user.isActive || user.employee.status === 'RESIGNED') return null;
+  if (session.credentialVersion !== sha256(user.passwordHash)) return null;
   if (user.lockedUntil && user.lockedUntil > new Date()) return null;
 
   const permissions = new Set<string>();

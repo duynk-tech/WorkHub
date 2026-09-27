@@ -146,7 +146,7 @@ async function main() {
   }
 }
 
-if (process.argv[1]?.includes('seed')) {
+if (process.argv[1] && /(?:^|[\\/])index\.(?:ts|js)$/.test(process.argv[1])) {
   main()
     .catch((e) => {
       console.error('❌ Seed thất bại:', e);

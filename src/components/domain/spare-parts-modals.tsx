@@ -163,9 +163,9 @@ export function SparePartModal({
     form.category === 'MACHINE';
 
   const modalTitle = part
-    ? `${isMachinePart ? 'Sửa máy móc' : 'Sửa phụ tùng'}: ${part.itemCode}`
+    ? `${isMachinePart ? 'Sửa thiết bị' : 'Sửa phụ tùng'}: ${part.itemCode}`
     : isMachinePart
-    ? 'Thêm mới Máy móc'
+    ? 'Thêm mới Thiết bị'
     : 'Thêm mới Phụ tùng / Linh kiện';
 
   return (

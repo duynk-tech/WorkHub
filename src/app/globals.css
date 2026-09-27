@@ -446,6 +446,51 @@
   .table .num { text-align: right; font-variant-numeric: tabular-nums; }
   .table-compact tbody td { padding: 7px 12px; }
 
+  /* Bảng báo cáo kho: giữ nhận diện mặt hàng khi cuộn xem các chỉ số ở bên phải. */
+  .inventory-report-scroll {
+    max-height: min(62vh, 640px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--surface-card);
+    border-top: 1px solid var(--border-base);
+    scrollbar-width: thin;
+  }
+  .inventory-report-grid {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+  .inventory-report-grid thead th {
+    z-index: 3;
+    box-shadow: 0 1px 0 var(--border-base);
+  }
+  .inventory-report-grid .report-sticky-code,
+  .inventory-report-grid .report-sticky-name {
+    position: sticky;
+    z-index: 2;
+    background: var(--surface-card);
+  }
+  .inventory-report-grid .report-sticky-code { left: 0; }
+  .inventory-report-grid .report-sticky-name {
+    left: 164px;
+    border-right: 1px solid var(--border-base);
+  }
+  .inventory-report-grid thead .report-sticky-code,
+  .inventory-report-grid thead .report-sticky-name {
+    z-index: 5;
+    background: var(--surface-sunken);
+  }
+  .inventory-report-grid tbody tr:nth-child(even),
+  .inventory-report-grid tbody tr:nth-child(even) .report-sticky-code,
+  .inventory-report-grid tbody tr:nth-child(even) .report-sticky-name {
+    background: color-mix(in srgb, var(--surface-sunken) 42%, var(--surface-card));
+  }
+  .inventory-report-grid tbody tr:hover .report-sticky-code,
+  .inventory-report-grid tbody tr:hover .report-sticky-name {
+    background: var(--surface-hover);
+  }
+
   /* ---- Điều hướng ---- */
   .nav-item {
     display: flex; align-items: center; gap: 10px;

@@ -1,3 +1,5 @@
+import 'server-only';
+import { outboundToolRequest } from '@/server/security/outbound-http';
 import { getSetting, setSetting } from '@/server/modules/settings/service';
 
 export type ToolParamType = 'string' | 'number' | 'boolean';
@@ -34,7 +36,8 @@ const SETTING_KEY = 'ai.customTools';
 
 /** Lấy danh sách tất cả Custom Tools */
 export async function getCustomTools(): Promise<CustomAgentTool[]> {
-  const tools = await getSetting<CustomAgentTool[]>(SETTING_KEY, []);
+  const stored = await getSetting<CustomAgentTool[] | string>(SETTING_KEY, []);
+  const tools = typeof stored === 'string' ? JSON.parse(stored) as CustomAgentTool[] : stored;
   if (!Array.isArray(tools)) return [];
   return tools;
 }
@@ -47,6 +50,7 @@ export async function getActiveCustomTools(): Promise<CustomAgentTool[]> {
 
 /** Lưu hoặc cập nhật một Custom Tool */
 export async function saveCustomTool(toolData: Omit<CustomAgentTool, 'id'> & { id?: string }): Promise<CustomAgentTool> {
+  if (toolData.actionType === 'CODE') throw new Error('Công cụ JavaScript đã bị vô hiệu hóa vì chạy mã trực tiếp trên máy chủ');
   const tools = await getCustomTools();
   const id = toolData.id || `ct_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
@@ -72,7 +76,7 @@ export async function saveCustomTool(toolData: Omit<CustomAgentTool, 'id'> & { i
     tools.push(tool);
   }
 
-  await setSetting(SETTING_KEY, tools, { group: 'ai' });
+  await setSetting(SETTING_KEY, JSON.stringify(tools), { group: 'ai', isSecret: true });
   return tool;
 }
 
@@ -81,7 +85,7 @@ export async function deleteCustomTool(id: string): Promise<boolean> {
   const tools = await getCustomTools();
   const filtered = tools.filter((t) => t.id !== id);
   if (filtered.length === tools.length) return false;
-  await setSetting(SETTING_KEY, filtered, { group: 'ai' });
+  await setSetting(SETTING_KEY, JSON.stringify(filtered), { group: 'ai', isSecret: true });
   return true;
 }
 
@@ -92,7 +96,7 @@ export async function toggleCustomTool(id: string, isActive: boolean): Promise<b
   if (!target) return false;
   target.isActive = isActive;
   target.updatedAt = new Date().toISOString();
-  await setSetting(SETTING_KEY, tools, { group: 'ai' });
+  await setSetting(SETTING_KEY, JSON.stringify(tools), { group: 'ai', isSecret: true });
   return true;
 }
 
@@ -114,6 +118,15 @@ export async function executeCustomTool(
   args: Record<string, unknown>,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   try {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tham số không hợp lệ');
+    for (const param of tool.parameters) {
+      const value = args[param.name];
+      if (value === undefined && !param.required) continue;
+      if (typeof value !== param.type || (typeof value === 'number' && !Number.isFinite(value))) {
+        throw new Error(`Tham số ${param.name} không hợp lệ`);
+      }
+    }
+    if (Object.keys(args).some((key) => !tool.parameters.some((p) => p.name === key))) throw new Error('Tham số không được khai báo');
     if (tool.actionType === 'HTTP') {
       const http = tool.httpConfig;
       if (!http || !http.url) {
@@ -143,51 +156,12 @@ export async function executeCustomTool(
         }
       }
 
-      // Gọi Fetch với timeout 15s
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      const res = await fetch(finalUrl, {
-        method,
-        headers,
-        body,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      const contentType = res.headers.get('content-type') || '';
-      let responseData: unknown;
-      if (contentType.includes('application/json')) {
-        responseData = await res.json();
-      } else {
-        responseData = await res.text();
-      }
-
-      if (!res.ok) {
-        return {
-          success: false,
-          error: `HTTP ${res.status}: ${typeof responseData === 'string' ? responseData.slice(0, 300) : JSON.stringify(responseData).slice(0, 300)}`,
-          data: responseData,
-        };
-      }
-
-      return { success: true, data: responseData };
+      const data = await outboundToolRequest(finalUrl, method, headers, body);
+      return { success: true, data };
     }
 
     if (tool.actionType === 'CODE') {
-      if (!tool.codeSnippet) {
-        return { success: false, error: 'Chưa có mã JavaScript xử lý' };
-      }
-
-      // Chạy code JavaScript với args truyền vào
-      // Code có dạng: "return { result: args.x + 1 };"
-      const runner = new Function('args', `
-        "use strict";
-        ${tool.codeSnippet}
-      `);
-
-      const result = await Promise.resolve(runner(args));
-      return { success: true, data: result };
+      return { success: false, error: 'Công cụ JavaScript đã bị vô hiệu hóa vì chạy mã trực tiếp trên máy chủ' };
     }
 
     return { success: false, error: `Loại hành động "${tool.actionType}" không được hỗ trợ` };

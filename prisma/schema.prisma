@@ -154,6 +154,7 @@ model User {
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
+  externalIdentities ExternalIdentity[]
   roles         UserRole[]
   auditLogs     AuditLog[]
   inAppNotifs   InAppNotification[]
@@ -1147,6 +1148,7 @@ model Customer {
 }
 
 model CustomerOrder {
+  allocations CustomerPaymentAllocation[]
   id              Int       @id @default(autoincrement())
   orderCode       String    @unique @db.VarChar(64)
   customerId      Int
@@ -1261,6 +1263,8 @@ model CustomerQuotationItem {
 }
 
 model CustomerPayment {
+  allocationVersion Int @default(0)
+  allocations CustomerPaymentAllocation[]
   id          Int      @id @default(autoincrement())
   paymentCode String   @unique @db.VarChar(64) // TT-YYYY-XXXX
   customerId  Int
@@ -1282,6 +1286,8 @@ model CustomerPayment {
 }
 
 model SupplierPayment {
+  allocationVersion Int @default(0)
+  allocations SupplierPaymentAllocation[]
   id          Int      @id @default(autoincrement())
   paymentCode String   @unique @db.VarChar(64) // CTT-YYYY-XXXX
   supplier    String   @db.VarChar(128)
@@ -1617,6 +1623,7 @@ model StockCountItem {
 }
 
 model SparePartOrder {
+  allocations SupplierPaymentAllocation[]
   id                Int       @id @default(autoincrement())
   orderCode         String    @unique @db.VarChar(64) // PO-YYYY-XXXX
   supplier          String    @default("Selmi") @db.VarChar(128)
@@ -1679,4 +1686,38 @@ model SparePartOrderItem {
 
   @@index([orderId])
   @@index([itemId])
+}
+
+/// Provider subject is stable; email is informational, never an account-linking key.
+model ExternalIdentity {
+  id Int @id @default(autoincrement())
+  userId Int
+  provider String @db.VarChar(32)
+  subject String @db.VarChar(191)
+  email String @db.VarChar(191)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, subject])
+  @@unique([userId, provider])
+}
+
+model CustomerPaymentAllocation {
+  id Int @id @default(autoincrement())
+  paymentId Int
+  orderId Int
+  amount Decimal @db.Decimal(15, 2)
+  payment CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@unique([paymentId, orderId])
+  @@index([orderId])
+}
+model SupplierPaymentAllocation {
+  id Int @id @default(autoincrement())
+  paymentId Int
+  orderId Int
+  amount Decimal @db.Decimal(15, 2)
+  payment SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order SparePartOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@unique([paymentId, orderId])
+  @@index([orderId])
 }

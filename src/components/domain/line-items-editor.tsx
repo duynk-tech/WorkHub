@@ -41,7 +41,7 @@ export interface LineItem {
 }
 
 export const ITEM_TYPE_LABELS: Record<string, string> = {
-  EQUIPMENT: 'Máy móc F&B',
+  EQUIPMENT: 'Thiết bị',
   SPARE_PART: 'Linh kiện / Phụ tùng',
   SERVICE: 'Dịch vụ',
 };
@@ -1232,7 +1232,7 @@ export function LineItemsSummaryFooter({
                       transition: 'all 0.15s ease',
                     }}
                   >
-                    {rate === 0 ? '0% (Không VAT)' : `${rate}%`}
+                    {rate}%
                   </button>
                 );
               })}

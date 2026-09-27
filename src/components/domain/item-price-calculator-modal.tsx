@@ -61,7 +61,7 @@ export function ItemPriceCalculatorModal({
 
   const isMachine = category === 'EQUIPMENT' || category === 'MACHINE';
   const catInfo = PART_CATEGORIES[category] || {
-    label: isMachine ? 'Máy móc' : 'Phụ tùng',
+    label: isMachine ? 'Thiết bị' : 'Phụ tùng',
     color: '#2563eb',
     bg: '#eff6ff',
   };
@@ -163,7 +163,7 @@ export function ItemPriceCalculatorModal({
               Tính Giá
             </span>
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>
-              ({isMachine ? 'Máy móc' : 'Phụ tùng'})
+              ({isMachine ? 'Thiết bị' : 'Phụ tùng'})
             </span>
           </div>
         </div>

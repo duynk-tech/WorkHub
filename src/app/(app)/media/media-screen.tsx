@@ -196,7 +196,7 @@ export function MediaScreen() {
       {/* Page Header */}
       <PageHeader
         title="Thư viện Media & Tệp tải lên"
-        description="Quản lý tập trung hình ảnh thiết bị, máy móc, linh kiện và tệp tin trên máy chủ"
+        description="Quản lý tập trung hình ảnh thiết bị, linh kiện và tệp tin trên máy chủ"
         actions={
           <div className="flex items-center gap-2">
             <input

@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
+import { outboundToolRequest } from '@/server/security/outbound-http';
+vi.mock('@/server/security/outbound-http', () => ({ outboundToolRequest: vi.fn() }));
 import { executeCustomTool, type CustomAgentTool } from '@/server/modules/zalo/custom-tools';
 
 describe('Custom Tools Execution', () => {
-  it('thực thi thành công Custom Tool loại CODE với tham số', async () => {
+  it('chặn Custom Tool CODE kể cả mã hợp lệ', async () => {
     const tool: CustomAgentTool = {
       id: 'tool_code_1',
       name: 'calculate_bonus',
@@ -22,11 +24,8 @@ describe('Custom Tools Execution', () => {
     };
 
     const res = await executeCustomTool(tool, { salary: 10000000, rate: 0.2 });
-    expect(res.success).toBe(true);
-    expect(res.data).toEqual({
-      bonus: 2000000,
-      formatted: '2.000.000 đ',
-    });
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('vô hiệu hóa');
   });
 
   it('thực thi thành công Custom Tool loại HTTP GET với URL interpolation', async () => {
@@ -35,7 +34,10 @@ describe('Custom Tools Execution', () => {
       headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({ trackingNumber: 'VN123', status: 'DELIVERED', recipient: 'Nguyen Van A' }),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    vi.mocked(outboundToolRequest).mockImplementation(async (url, method, headers, body) => {
+      const response = await mockFetch(url, { method, headers, body });
+      return response.json();
+    });
 
     const tool: CustomAgentTool = {
       id: 'tool_http_1',
@@ -83,7 +85,10 @@ describe('Custom Tools Execution', () => {
       headers: new Headers({ 'content-type': 'application/json' }),
       json: async () => ({ success: true, orderId: 'ORD_999' }),
     });
-    vi.stubGlobal('fetch', mockFetch);
+    vi.mocked(outboundToolRequest).mockImplementation(async (url, method, headers, body) => {
+      const response = await mockFetch(url, { method, headers, body });
+      return response.json();
+    });
 
     const tool: CustomAgentTool = {
       id: 'tool_http_post',
@@ -134,6 +139,6 @@ describe('Custom Tools Execution', () => {
 
     const res = await executeCustomTool(tool, {});
     expect(res.success).toBe(false);
-    expect(res.error).toContain('Lỗi giả lập trong script');
+    expect(res.error).toContain('vô hiệu hóa');
   });
 });

@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
-const PRISMA_CLIENT_VERSION = '2026-09-21-v3';
+const PRISMA_CLIENT_VERSION = '2026-09-27-v5';
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; prismaVersion?: string };
 
 // In development, if Prisma schema was recently generated or version changed,

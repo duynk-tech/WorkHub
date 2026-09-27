@@ -37,7 +37,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Thiết bị & Dịch vụ',
     items: [
-      { href: '/spare-parts', label: 'Máy móc & Phụ tùng', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
+      { href: '/spare-parts', label: 'Thiết bị & Phụ tùng', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
       { href: '/purchases', label: 'Mua hàng NCC', icon: 'Plane', permission: 'MENU_EQUIPMENT' },
       { href: '/tickets', label: 'Sự cố & Sửa chữa', icon: 'Wrench', permission: 'MENU_EQUIPMENT' },
       { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },

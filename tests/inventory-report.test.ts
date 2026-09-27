@@ -47,15 +47,19 @@ describe('Xuất file báo cáo', () => {
   const report: InventoryProfitReport = {
     range: { from: '2026-05-01', to: '2026-05-31', label: 'Tháng 5/2026' },
     summary: {
-      inQty: 10, inValue: 20_000_000, soldQty: 4, revenue: 16_000_000, cogs: 8_000_000,
-      grossProfit: 8_000_000, marginPercent: 50, nonSaleCost: 1_000_000, netProfit: 7_000_000,
-      transactionCount: 3,
+      inQty: 10, inValue: 20_000_000, soldQty: 4, revenue: 16_000_000,
+      discount: 500_000, vatAmount: 1_600_000, returnedAmount: 0,
+      cogs: 8_000_000, grossProfit: 8_000_000, marginPercent: 50,
+      nonSaleCost: 1_000_000, netProfit: 7_000_000,
+      transactionCount: 3, orderCount: 2,
     },
     costByReason: [{ code: 'SCRAP', label: 'Hủy hàng hư hỏng', qty: 1, value: 1_000_000 }],
     items: [{
       itemId: 1, itemCode: 'SP-0001', name: 'Gioăng cao su; loại A', unit: 'Cái',
-      inQty: 10, inValue: 20_000_000, soldQty: 4, revenue: 16_000_000, cogs: 8_000_000,
-      grossProfit: 8_000_000, marginPercent: 50, nonSaleQty: 1, nonSaleCost: 1_000_000, closingStock: 5,
+      inQty: 10, inValue: 20_000_000, soldQty: 4, revenue: 16_000_000,
+      discount: 500_000, cogs: 8_000_000,
+      grossProfit: 8_000_000, marginPercent: 50, actualUnitCost: 2_000_000,
+      avgSellPrice: 4_000_000, nonSaleQty: 1, nonSaleCost: 1_000_000, closingStock: 5,
     }],
   };
 
@@ -71,8 +75,13 @@ describe('Xuất file báo cáo', () => {
     const csv = reportToCsv(report);
     expect(csv).toContain('Lãi gộp;8000000');
     expect(csv).toContain('Lãi thuần;7000000');
+    expect(csv).toContain('Chiết khấu;500000');
+    expect(csv).toContain('Thuế VAT;1600000');
+    expect(csv).toContain('Số đơn bán hàng;2');
     expect(csv).toContain('CHI PHÍ XUẤT KHO THEO LÝ DO');
     expect(csv).toContain('Hủy hàng hư hỏng');
     expect(csv).toContain('CHI TIẾT THEO MẶT HÀNG');
+    expect(csv).toContain('Giá bán TB');
+    expect(csv).toContain('Đơn giá vốn thực tế (đã gồm phí)');
   });
 });

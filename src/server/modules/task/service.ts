@@ -48,6 +48,7 @@ export async function taskScopeWhere(ctx: AuthContext): Promise<Prisma.TaskWhere
   const or: Prisma.TaskWhereInput[] = [
     { assigneeId: ctx.employeeId },
     { creatorId: ctx.employeeId },
+    { reviewerId: ctx.employeeId },
     { watchers: { some: { employeeId: ctx.employeeId } } },
   ];
   if (empIds?.length) or.push({ assigneeId: { in: empIds } }, { creatorId: { in: empIds } });

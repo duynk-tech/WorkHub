@@ -280,10 +280,10 @@ export function SparePartsScreen({
             </div>
             <div>
               <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
-                Máy móc & Phụ tùng
+                Thiết bị & Phụ tùng
               </h1>
               <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-                Danh mục phụ tùng và máy nguyên chiếc, tồn kho, xuất nhập kho và máy đang lắp tại khách
+                Danh mục phụ tùng và thiết bị nguyên chiếc, tồn kho, xuất nhập kho và thiết bị đang lắp tại khách
               </p>
             </div>
           </div>
@@ -368,7 +368,7 @@ export function SparePartsScreen({
             gap: 8,
           }}
         >
-          <Utensils size={16} /> Máy móc ({equipmentList.length})
+          <Utensils size={16} /> Thiết bị ({equipmentList.length})
         </button>
 
         <button
@@ -952,11 +952,11 @@ export function SparePartsScreen({
                     </div>
                   </div>
 
-                  {/* Máy móc đang lưu trong kho */}
+                  {/* Thiết bị đang lưu trong kho */}
                   {w.equipments?.length > 0 && (
                     <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border-base)' }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-                        Máy F&B đang lưu tại kho ({w.equipments.length}):
+                        Thiết bị đang lưu tại kho ({w.equipments.length}):
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {w.equipments.map((eq: any) => (

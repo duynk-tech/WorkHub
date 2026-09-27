@@ -1,7 +1,8 @@
+import { outboundProviderFetch } from '@/server/security/outbound-http';
 import { prisma } from '@/lib/prisma';
 import { getSetting } from '@/server/modules/settings/service';
 import { getAppBranding } from '@/server/modules/settings/branding';
-import { MCP_TOOLS, TOOLS_BY_NAME, hasToolPermission } from '@/server/mcp/tools';
+import { MCP_TOOLS, TOOLS_BY_NAME, hasToolPermission, checkToolAccess } from '@/server/mcp/tools';
 import { getDisabledMcpModules } from '@/server/mcp/module-config';
 import type { McpIdentity } from '@/server/mcp/auth';
 import { can, type AuthContext } from '@/server/auth/context';
@@ -41,38 +42,8 @@ export async function buildAuthContextForEmployee(employeeId: number): Promise<A
     },
   });
 
-  if (!user) {
-    // Nếu nhân sự chưa có tài khoản User đăng nhập web, tạo context cơ bản quyền SELF
-    const emp = await prisma.employee.findUnique({
-      where: { id: employeeId },
-      include: {
-        department: { select: { id: true, name: true, path: true } },
-        position: { select: { name: true } },
-      },
-    });
-    if (!emp) return null;
-
-    return {
-      userId: 0,
-      username: emp.code,
-      employeeId: emp.id,
-      fullName: emp.fullName,
-      email: emp.email,
-      avatarUrl: emp.avatarUrl,
-      departmentId: emp.departmentId,
-      departmentName: emp.department?.name ?? null,
-      departmentPath: emp.department?.path ?? null,
-      positionName: emp.position?.name ?? null,
-      managerId: emp.managerId,
-      zaloLinked: Boolean(emp.zaloUserId),
-      roleCodes: [],
-      roleNames: [],
-      permissions: new Set(['MENU_TASKS', 'FEATURE_TASK_CREATE', 'MENU_LEAVES', 'FEATURE_LEAVE_REQUEST', 'FEATURE_ATTENDANCE_CHECKIN']),
-      dataScope: 'SELF',
-      customDeptIds: [],
-      isAdmin: false,
-    };
-  }
+  if (!user || !user.isActive || user.employee.status === 'RESIGNED' ||
+      (user.lockedUntil && user.lockedUntil > new Date())) return null;
 
   const permissions = new Set<string>();
   const customDeptIds = new Set<number>();
@@ -173,7 +144,7 @@ async function callGeminiApi(
 
   while (attempt <= maxRetries) {
     try {
-      const res = await fetch(completionsUrl, {
+      const res = await outboundProviderFetch(completionsUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -320,7 +291,7 @@ export async function handleZaloAiQuery(
   const identity: McpIdentity = {
     clientId: 0,
     clientName: 'ZaloBotAgent',
-    readOnly: false,
+    readOnly: process.env.AI_AGENT_ALLOW_WRITES !== 'true',
     scopes: [],
     ctx,
   };
@@ -328,7 +299,7 @@ export async function handleZaloAiQuery(
   // Lọc danh sách MCP tool theo quyền hạn của nhân sự
   const offModules = await getDisabledMcpModules();
   const allowedTools = MCP_TOOLS.filter(
-    (t) => !offModules.includes(t.module) && hasToolPermission(ctx, t),
+    (t) => !offModules.includes(t.module) && hasToolPermission(ctx, t) && (!identity.readOnly || !t.mutating),
   );
 
   const mcpGeminiTools = allowedTools.map((t) => ({
@@ -341,7 +312,7 @@ export async function handleZaloAiQuery(
   }));
 
   // Nạp thêm các Custom Tools do người dùng tạo
-  const customTools = await getActiveCustomTools();
+  const customTools = ctx.isAdmin ? (await getActiveCustomTools()).filter((tool) => tool.actionType === 'HTTP' && (!identity.readOnly || tool.httpConfig?.method === 'GET') && !TOOLS_BY_NAME.has(tool.name)) : [];
   const customToolsMap = new Map<string, CustomAgentTool>();
   const customGeminiTools = customTools.map((ct) => {
     customToolsMap.set(ct.name, ct);
@@ -463,7 +434,7 @@ export async function handleZaloAiQuery(
               toolResultStr = `Lỗi khi thực thi Custom Tool "${toolName}": ${err instanceof Error ? err.message : String(err)}`;
             }
           } else if (mcpTool) {
-            if (mcpTool.permission && !can(ctx, mcpTool.permission)) {
+            if (!allowedTools.some((t) => t.name === toolName) || checkToolAccess(identity, toolName)) {
               toolResultStr = `Lỗi: Bạn không có quyền "${mcpTool.permission}" để thực hiện công cụ này.`;
             } else {
               try {
@@ -578,14 +549,14 @@ export async function runAiAgentTest(
   const identity: McpIdentity = {
     clientId: 0,
     clientName: 'PlaygroundTester',
-    readOnly: false,
+    readOnly: process.env.AI_AGENT_ALLOW_WRITES !== 'true',
     scopes: [],
     ctx,
   };
 
   const offModules = await getDisabledMcpModules();
   const allowedTools = MCP_TOOLS.filter(
-    (t) => !offModules.includes(t.module) && hasToolPermission(ctx, t),
+    (t) => !offModules.includes(t.module) && hasToolPermission(ctx, t) && (!identity.readOnly || !t.mutating),
   );
   const mcpGeminiTools = allowedTools.map((t) => ({
     type: 'function' as const,
@@ -596,7 +567,7 @@ export async function runAiAgentTest(
     },
   }));
 
-  const customTools = await getActiveCustomTools();
+  const customTools = ctx.isAdmin ? (await getActiveCustomTools()).filter((tool) => tool.actionType === 'HTTP' && (!identity.readOnly || tool.httpConfig?.method === 'GET') && !TOOLS_BY_NAME.has(tool.name)) : [];
   const customToolsMap = new Map<string, CustomAgentTool>();
   const customGeminiTools = customTools.map((ct) => {
     customToolsMap.set(ct.name, ct);
@@ -721,7 +692,7 @@ export async function runAiAgentTest(
               toolResultStr = JSON.stringify(toolResultRaw);
             }
           } else if (mcpTool) {
-            if (mcpTool.permission && !can(ctx, mcpTool.permission)) {
+            if (!allowedTools.some((t) => t.name === toolName) || checkToolAccess(identity, toolName)) {
               toolResultRaw = { error: `Không có quyền "${mcpTool.permission}"` };
               toolResultStr = JSON.stringify(toolResultRaw);
             } else {

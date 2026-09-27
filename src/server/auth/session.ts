@@ -8,6 +8,7 @@ const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 ngày
 export interface SessionPayload {
   userId: number;
   username: string;
+  credentialVersion: string;
 }
 
 function secretKey(): Uint8Array {
@@ -29,9 +30,9 @@ export async function signSession(payload: SessionPayload): Promise<string> {
 
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secretKey(), { issuer: 'workhub' });
-    if (typeof payload.userId !== 'number') return null;
-    return { userId: payload.userId, username: String(payload.username ?? '') };
+    const { payload } = await jwtVerify(token, secretKey(), { issuer: 'workhub', algorithms: ['HS256'] });
+    if (typeof payload.userId !== 'number' || typeof payload.credentialVersion !== 'string') return null;
+    return { userId: payload.userId, username: String(payload.username ?? ''), credentialVersion: payload.credentialVersion };
   } catch {
     return null;
   }

@@ -300,7 +300,7 @@ export async function deleteCustomerPaymentAction(id: number, customerId: number
 
   try {
     const { deleteCustomerPayment } = await import('./service');
-    await deleteCustomerPayment(id);
+    await deleteCustomerPayment(id, ctx.userId);
     revalidatePath('/customers');
     revalidatePath(`/customers/${customerId}`);
     return { ok: true, message: 'Đã xóa phiếu thu và hoàn lại công nợ' };

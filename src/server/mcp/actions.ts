@@ -68,7 +68,7 @@ export async function saveWebhookAction(id: number | null, data: {
 
   const payload = {
     name: data.name, url: data.url, events: data.events.join(','),
-    secret: data.secret || null, isActive: data.isActive,
+    ...(data.secret === '********' && id ? {} : { secret: data.secret || null }), isActive: data.isActive,
   };
 
   if (id) await prisma.outboundWebhook.update({ where: { id }, data: payload });

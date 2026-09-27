@@ -180,38 +180,24 @@ export function SalesScreen({
         />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {CHIPS.map((c) => {
-          const count = orders.filter(c.match).length;
-          const on = chip === c.key;
-          return (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => setChip(c.key)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '6px 12px', borderRadius: 999, fontSize: 12.5,
-                fontWeight: on ? 700 : 500, cursor: 'pointer',
-                border: '1px solid',
-                borderColor: on ? c.color : 'var(--border-base)',
-                background: on ? `color-mix(in srgb, ${c.color} 12%, transparent)` : 'var(--surface-card)',
-                color: on ? c.color : 'var(--text-muted)',
-              }}
-            >
-              {c.label}
-              <span style={{ fontWeight: 700, color: count > 0 ? c.color : 'var(--text-faint)' }}>{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <SearchInput
           placeholder="Tìm theo mã đơn, tên khách, mã khách, số điện thoại…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ flex: 1, minWidth: 260, maxWidth: 420 }}
+        />
+        <SearchableSelect
+          sizeSm
+          style={{ width: 'auto', minWidth: 190 }}
+          value={chip}
+          onChange={(val) => setChip(val || 'ALL')}
+          options={CHIPS.map((c) => ({
+            value: c.key,
+            label: `${c.label} (${orders.filter(c.match).length})`,
+          }))}
+          placeholder="Tất cả trạng thái"
+          searchPlaceholder="Lọc trạng thái…"
         />
         <SearchableSelect
           sizeSm

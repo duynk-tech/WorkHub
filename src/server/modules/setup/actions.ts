@@ -1,5 +1,7 @@
 'use server';
 
+import { sha256 } from '@/lib/crypto';
+
 import { prisma } from '@/lib/prisma';
 import { hashPassword, checkPasswordStrength } from '@/server/auth/password';
 import { createSessionCookie } from '@/server/auth/session';
@@ -106,7 +108,7 @@ export async function runInstallAction(payload: InstallPayload): Promise<Install
       data: { actorId: user.id, entityType: 'System', entityId: 'install', action: 'CREATE', diffJson: { withDemo: payload.withDemo } as never },
     });
 
-    await createSessionCookie({ userId: user.id, username: user.username });
+    await createSessionCookie({ userId: user.id, username: user.username, credentialVersion: sha256(user.passwordHash) });
     return { ok: true, message: 'Cài đặt hoàn tất' };
   } catch (e) {
     return { ok: false, message: `Cài đặt thất bại: ${e instanceof Error ? e.message : 'lỗi không xác định'}` };

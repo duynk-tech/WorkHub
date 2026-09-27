@@ -1,4 +1,4 @@
-import type { AttendanceStatus, PrismaClient, RecordSource } from '@prisma/client';
+import type { AttendanceStatus, Prisma, PrismaClient, RecordSource } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { dateOnly, isWorkDay, minutesBetweenTimes, timeOnDate } from '@/lib/date';
 import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
@@ -59,21 +59,31 @@ export function computeMetrics(params: {
   isHoliday?: boolean;
   isOnLeave?: boolean;
   leavePortion?: number;
+  leaveDuration?: string;
 }): { lateMinutes: number; earlyLeaveMinutes: number; workedMinutes: number; otMinutes: number; status: AttendanceStatus } {
-  const { workDate, checkInAt, checkOutAt, shift, isHoliday, isOnLeave, leavePortion } = params;
+  const { workDate, checkInAt, checkOutAt, shift, isHoliday, isOnLeave, leavePortion, leaveDuration } = params;
 
-  if (isHoliday) return { lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: 0, otMinutes: 0, status: 'HOLIDAY' };
+  const actualMinutes = checkInAt && checkOutAt ? Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000) - shift.breakMinutes) : 0;
+  if (isHoliday) return { lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: actualMinutes, otMinutes: 0, status: 'HOLIDAY' };
   if (isOnLeave && (leavePortion ?? 1) >= 1) {
     return { lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: 0, otMinutes: 0, status: 'LEAVE' };
   }
   if (!isWorkDay(workDate, shift.workDays)) {
-    return { lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: 0, otMinutes: 0, status: 'WEEKEND' };
+    return { lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: actualMinutes, otMinutes: 0, status: 'WEEKEND' };
   }
   if (!checkInAt) return { lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: 0, otMinutes: 0, status: 'ABSENT' };
 
-  const shiftStart = timeOnDate(workDate, shift.startTime);
-  const shiftEnd = timeOnDate(workDate, shift.endTime);
-  const standardMinutes = minutesBetweenTimes(shift.startTime, shift.endTime) - shift.breakMinutes;
+  let shiftStart = timeOnDate(workDate, shift.startTime);
+  let shiftEnd = timeOnDate(workDate, shift.endTime);
+  if (shiftEnd <= shiftStart) shiftEnd.setDate(shiftEnd.getDate() + 1);
+  let standardMinutes = minutesBetweenTimes(shift.startTime, shift.endTime) - shift.breakMinutes;
+  let breakMinutes = shift.breakMinutes;
+  if (isOnLeave && leavePortion === 0.5 && ['HALF_DAY_MORNING', 'HALF_DAY_AFTERNOON'].includes(leaveDuration || '')) {
+    standardMinutes /= 2;
+    if (leaveDuration === 'HALF_DAY_MORNING') shiftStart = new Date(shiftEnd.getTime() - standardMinutes * 60000);
+    else shiftEnd = new Date(shiftStart.getTime() + standardMinutes * 60000);
+    breakMinutes = 0;
+  }
 
   const lateRaw = Math.round((checkInAt.getTime() - shiftStart.getTime()) / 60000);
   const lateMinutes = lateRaw > shift.lateToleranceMin ? lateRaw : 0;
@@ -90,7 +100,7 @@ export function computeMetrics(params: {
   const otMinutes = earlyRaw < -15 ? Math.abs(earlyRaw) : 0;
 
   const grossMinutes = Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000);
-  const workedMinutes = Math.max(0, grossMinutes - shift.breakMinutes);
+  const workedMinutes = Math.max(0, grossMinutes - breakMinutes);
 
   let status: AttendanceStatus = 'PRESENT';
   if (isOnLeave && (leavePortion ?? 1) < 1) status = 'HALF_DAY';
@@ -102,11 +112,22 @@ export function computeMetrics(params: {
   return { lateMinutes, earlyLeaveMinutes, workedMinutes, otMinutes, status };
 }
 
-export async function getTodayRecord(employeeId: number) {
-  const workDate = dateOnly(new Date());
-  return prisma.attendanceRecord.findUnique({
-    where: { employeeId_workDate: { employeeId, workDate } },
-  });
+export function attendanceWorkDate(at: Date, shift: ShiftInfo) {
+  const day = dateOnly(at);
+  const [endHour, endMinute] = shift.endTime.split(':').map(Number);
+  if (shift.endTime <= shift.startTime && at.getHours() * 60 + at.getMinutes() < endHour * 60 + endMinute) day.setUTCDate(day.getUTCDate() - 1);
+  return day;
+}
+export async function getTodayRecord(employeeId: number, at = new Date()) {
+  const shift = await resolveShift(employeeId);
+  const workDate = attendanceWorkDate(at, shift);
+  const record = await prisma.attendanceRecord.findUnique({ where: { employeeId_workDate: { employeeId, workDate } } });
+  if (!record?.checkInAt && shift.endTime <= shift.startTime) {
+    const previous = dateOnly(at); previous.setUTCDate(previous.getUTCDate() - 1);
+    const overnight = await prisma.attendanceRecord.findUnique({ where: { employeeId_workDate: { employeeId, workDate: previous } } });
+    if (overnight?.checkInAt && !overnight.checkOutAt) return overnight;
+  }
+  return record;
 }
 
 export interface CheckPayload {
@@ -122,8 +143,8 @@ export interface CheckPayload {
 
 export async function performCheckIn(payload: CheckPayload) {
   const now = payload.at ?? new Date();
-  const workDate = dateOnly(now);
   const shift = await resolveShift(payload.employeeId);
+  const workDate = attendanceWorkDate(now, shift);
 
   const existing = await prisma.attendanceRecord.findUnique({
     where: { employeeId_workDate: { employeeId: payload.employeeId, workDate } },
@@ -134,7 +155,7 @@ export async function performCheckIn(payload: CheckPayload) {
 
   const holiday = await prisma.holiday.findUnique({ where: { date: workDate } });
   const metrics = computeMetrics({
-    workDate: now, checkInAt: now, checkOutAt: null, shift, isHoliday: Boolean(holiday),
+    workDate, checkInAt: now, checkOutAt: null, shift, isHoliday: Boolean(holiday),
   });
 
   const data = {
@@ -174,11 +195,7 @@ export async function performCheckIn(payload: CheckPayload) {
 
 export async function performCheckOut(payload: CheckPayload) {
   const now = payload.at ?? new Date();
-  const workDate = dateOnly(now);
-
-  const existing = await prisma.attendanceRecord.findUnique({
-    where: { employeeId_workDate: { employeeId: payload.employeeId, workDate } },
-  });
+  const existing = await getTodayRecord(payload.employeeId, now);
   if (!existing?.checkInAt) {
     return { ok: false as const, message: 'Chưa có dữ liệu check-in cho hôm nay' };
   }
@@ -186,10 +203,11 @@ export async function performCheckOut(payload: CheckPayload) {
     return { ok: false as const, message: 'Bạn đã check-out hôm nay rồi', record: existing };
   }
 
+  const workDate = existing.workDate;
   const shift = await resolveShift(payload.employeeId);
   const holiday = await prisma.holiday.findUnique({ where: { date: workDate } });
   const metrics = computeMetrics({
-    workDate: now, checkInAt: existing.checkInAt, checkOutAt: now, shift, isHoliday: Boolean(holiday),
+    workDate, checkInAt: existing.checkInAt, checkOutAt: now, shift, isHoliday: Boolean(holiday),
   });
 
   const record = await prisma.attendanceRecord.update({
@@ -209,18 +227,25 @@ export async function performCheckOut(payload: CheckPayload) {
  * Chốt công một ngày: tạo bản ghi còn thiếu, đánh dấu nghỉ phép/ngày lễ/vắng.
  * Chạy bởi job hằng đêm hoặc gọi lại thủ công từ màn hình chấm công.
  */
-export async function rollupDay(date: Date, db: PrismaClient = prisma) {
+export async function rollupDay(date: Date, db: PrismaClient | Prisma.TransactionClient = prisma, employeeIds?: number[]) {
   const workDate = dateOnly(date);
   const employees = await db.employee.findMany({
-    where: { status: { in: ['ACTIVE', 'ON_LEAVE'] } },
+    where: {
+      ...(employeeIds ? { id: { in: employeeIds } } : { status: { in: ['ACTIVE', 'ON_LEAVE'] as never } }),
+      AND: [{ OR: [{ joinDate: null }, { joinDate: { lte: workDate } }] }, { OR: [{ leaveDate: null }, { leaveDate: { gte: workDate } }] }],
+    },
     select: { id: true, workShift: true },
   });
   const holiday = await db.holiday.findUnique({ where: { date: workDate } });
   const leaveDays = await db.leaveRequestDay.findMany({
     where: { date: workDate, request: { status: 'APPROVED' } },
-    select: { portion: true, request: { select: { employeeId: true } } },
+    select: { portion: true, request: { select: { employeeId: true, durationType: true } } },
   });
-  const leaveMap = new Map(leaveDays.map((d) => [d.request.employeeId, Number(d.portion)]));
+  const leaveMap = new Map<number, { portion: number; duration: string }>();
+  for (const day of leaveDays) {
+    const previous = leaveMap.get(day.request.employeeId);
+    leaveMap.set(day.request.employeeId, { portion: Math.min(1, (previous?.portion || 0) + Number(day.portion)), duration: day.request.durationType });
+  }
 
   let created = 0;
   let updated = 0;
@@ -238,7 +263,8 @@ export async function rollupDay(date: Date, db: PrismaClient = prisma) {
       where: { employeeId_workDate: { employeeId: emp.id, workDate } },
     });
 
-    const leavePortion = leaveMap.get(emp.id);
+    const leave = leaveMap.get(emp.id);
+    const leavePortion = leave?.portion;
     const metrics = computeMetrics({
       workDate: date,
       checkInAt: existing?.checkInAt ?? null,
@@ -247,6 +273,7 @@ export async function rollupDay(date: Date, db: PrismaClient = prisma) {
       isHoliday: Boolean(holiday),
       isOnLeave: leavePortion !== undefined,
       leavePortion,
+      leaveDuration: leave?.duration,
     });
 
     if (existing) {

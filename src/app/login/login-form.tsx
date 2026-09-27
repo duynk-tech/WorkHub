@@ -13,7 +13,7 @@ const HIGHLIGHTS = [
   { icon: GitBranch, title: 'Phân quyền theo cây', desc: 'Phạm vi dữ liệu bám theo cấu trúc phòng ban phân cấp' },
 ];
 
-export function LoginForm({
+export function LoginForm({ googleEnabled = false, ssoError,
   appName, logoUrl, logoText, appDescription, next,
 }: {
   appName: string;
@@ -21,6 +21,8 @@ export function LoginForm({
   logoText?: string;
   appDescription?: string;
   next?: string;
+  googleEnabled?: boolean;
+  ssoError?: string;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(loginAction, {});
   const [username, setUsername] = useState('');
@@ -143,6 +145,9 @@ export function LoginForm({
                 <div>{state.error}</div>
               </div>
             )}
+
+            {ssoError && <p role="alert" className="alert alert-danger">Không thể đăng nhập Google. Hãy đăng nhập bằng mật khẩu, kiểm tra liên kết Google tại Hồ sơ cá nhân hoặc liên hệ quản trị viên.</p>}
+            {googleEnabled && <a className="btn btn-secondary" style={{ width: '100%', marginBottom: 16 }} href={`/api/auth/google?next=${encodeURIComponent(next || '/dashboard')}`}>Đăng nhập bằng Google</a>}
 
             <form action={formAction} style={{ display: 'grid', gap: 15 }}>
               <input type="hidden" name="next" value={next ?? '/dashboard'} />

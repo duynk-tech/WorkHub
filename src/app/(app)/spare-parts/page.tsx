@@ -20,8 +20,8 @@ import { SparePartsScreen } from './spare-parts-screen';
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'Máy móc & Phụ tùng',
-  description: 'Danh mục phụ tùng, máy nguyên chiếc, tồn kho, xuất nhập kho và máy đang lắp tại khách',
+  title: 'Thiết bị & Phụ tùng',
+  description: 'Danh mục phụ tùng, thiết bị nguyên chiếc, tồn kho, xuất nhập kho và thiết bị đang lắp tại khách',
 };
 
 export default async function SparePartsPage({

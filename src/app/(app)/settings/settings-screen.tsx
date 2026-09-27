@@ -21,10 +21,12 @@ import {
   registerZaloWebhookAction, getZaloWebhookInfoAction, deleteZaloWebhookAction,
   resetDemoDataAction,
 } from '@/server/modules/settings/actions';
+import { SsoPanel } from './sso-panel';
+import { ScrollTabs } from '@/components/ui/scroll-tabs';
 import { PrintWatermark } from '@/components/domain/print-watermark';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type Tab = 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports';
+type Tab = 'branding' | 'documents' | 'sales' | 'data' | 'sso' | 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports';
 
 function ImageUploadInput({
   value,
@@ -164,10 +166,11 @@ function ImageUploadInput({
 }
 
 export function SettingsScreen({
-  settings, holidays, shifts, leaveTypes, webhookUrl, permissions,
+  settings, holidays, shifts, leaveTypes, webhookUrl, permissions, googleCallbackUrl,
   initialTab = 'general',
 }: {
   initialTab?: string;
+  googleCallbackUrl: string;
   settings: Record<string, any>;
   holidays: any[];
   shifts: any[];
@@ -179,8 +182,8 @@ export function SettingsScreen({
   const toast = useToast();
   const [pending, startTransition] = useTransition();
 
-  const validTabs: Tab[] = ['general', 'zalo', 'leave', 'attendance', 'holidays', 'reports'];
-  const initialValidTab: Tab = validTabs.includes(initialTab as Tab) ? (initialTab as Tab) : 'general';
+  const validTabs = (['general', 'branding', 'documents', 'sales', 'data', 'sso', 'zalo', 'leave', 'attendance', 'holidays', 'reports'] as Tab[]).filter((key) => ({ branding: permissions.general, documents: permissions.general, sales: permissions.general, data: permissions.general, sso: permissions.sso, general: permissions.general, zalo: permissions.zalo, leave: permissions.leaveType || permissions.general, attendance: permissions.shift || permissions.general, holidays: permissions.holiday, reports: permissions.general })[key]);
+  const initialValidTab: Tab = validTabs.includes(initialTab as Tab) ? (initialTab as Tab) : (validTabs[0] ?? 'general');
   const [tab, setTab] = useState<Tab>(initialValidTab);
 
   useEffect(() => {
@@ -188,9 +191,7 @@ export function SettingsScreen({
       if (typeof window === 'undefined') return;
       const params = new URLSearchParams(window.location.search);
       const t = params.get('tab') as Tab | null;
-      if (t && validTabs.includes(t)) {
-        setTab(t);
-      }
+      setTab(t && validTabs.includes(t) ? t : (validTabs[0] ?? 'general'));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -201,11 +202,19 @@ export function SettingsScreen({
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', newTab);
-      window.history.replaceState(null, '', url.toString());
+      window.history.pushState(null, '', url.toString());
     }
   };
 
   const [values, setValues] = useState<Record<string, any>>(settings);
+  const valuesRef = useRef(values);
+  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (!dirtyKeys.size) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirtyKeys]);
   const [showSecret, setShowSecret] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
 
@@ -251,19 +260,32 @@ export function SettingsScreen({
     });
   };
 
-  const set = (key: string, value: any) => setValues((v) => ({ ...v, [key]: value }));
+  const set = (key: string, value: any) => {
+    valuesRef.current = { ...valuesRef.current, [key]: value };
+    setValues(valuesRef.current);
+    setDirtyKeys((keys) => new Set([...keys, key]));
+  };
 
   const save = (group: string, keys: string[]) => {
     startTransition(async () => {
       const payload = Object.fromEntries(keys.map((k) => [k, values[k]]));
-      const res = await saveSettingsAction(group, payload);
-      res.ok ? toast.success(res.message) : toast.error(res.message);
-      router.refresh();
+      try {
+        const res = await saveSettingsAction(group, payload);
+        if (!res.ok) { toast.error(res.message); return; }
+        setDirtyKeys((dirty) => new Set([...dirty].filter((key) => !keys.includes(key) || valuesRef.current[key] !== payload[key])));
+        toast.success(res.message);
+        router.refresh();
+      } catch { toast.error('Không thể lưu cấu hình. Vui lòng thử lại.'); }
     });
   };
 
   const TABS: { key: Tab; label: string; icon: any; visible: boolean }[] = [
-    { key: 'general', label: 'Thông tin chung', icon: Building2, visible: permissions.general },
+    { key: 'general', label: 'Công ty', icon: Building2, visible: permissions.general },
+    { key: 'branding', label: 'Giao diện', icon: Sparkles, visible: permissions.general },
+    { key: 'documents', label: 'Chứng từ', icon: Copy, visible: permissions.general },
+    { key: 'sales', label: 'Bán hàng', icon: Building2, visible: permissions.general },
+    { key: 'sso', label: 'SSO', icon: Check, visible: permissions.sso },
+    { key: 'data', label: 'Dữ liệu', icon: Database, visible: permissions.general },
     { key: 'zalo', label: 'Zalo Bot', icon: MessageCircle, visible: permissions.zalo },
     { key: 'leave', label: 'Nghỉ phép', icon: Plane, visible: permissions.leaveType || permissions.general },
     { key: 'attendance', label: 'Ca làm việc', icon: Clock, visible: permissions.shift || permissions.general },
@@ -275,19 +297,22 @@ export function SettingsScreen({
     <div className="stack">
       <PageHeader title="Cấu hình hệ thống" description="Thông tin công ty, kênh thông báo, chính sách nghỉ phép và chấm công" />
 
-      <div className="tabs">
+      {dirtyKeys.size > 0 && <p role="status" className="hint">Có thay đổi chưa lưu. Dữ liệu nhập được giữ khi chuyển tab.</p>}
+      <ScrollTabs>
         {TABS.filter((t) => t.visible).map((t) => (
-          <div key={t.key} className="tab" data-active={tab === t.key} onClick={() => handleTabChange(t.key)}>
+          <button type="button" key={t.key} className="tab" data-active={tab === t.key} aria-pressed={tab === t.key} onClick={() => handleTabChange(t.key)}>
             <t.icon size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
             {t.label}
-          </div>
+          </button>
         ))}
-      </div>
+      </ScrollTabs>
 
-      {tab === 'general' && (
+      {tab === 'sso' && permissions.sso && <SsoPanel values={values} set={set} save={save} pending={pending} callbackUrl={googleCallbackUrl} />}
+
+      {['general', 'branding', 'documents', 'sales', 'data'].includes(tab) && permissions.general && (
         <div className="stack" style={{ gap: 16 }}>
           {/* Card Thương hiệu & Giao diện */}
-          <Card>
+          {tab === 'branding' && (<Card>
             <CardHeader>
               <div>
                 <CardTitle>Thương hiệu & Giao diện</CardTitle>
@@ -306,7 +331,7 @@ export function SettingsScreen({
             </CardHeader>
             <CardBody>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <Field label="Tên ứng dụng (App Name)" hint="Hiển thị trên thanh menu Sidebar, trang Đăng nhập và các báo cáo" required>
+                <Field label="Tên ứng dụng" hint="Hiển thị trên thanh menu Sidebar, trang Đăng nhập và các báo cáo" required>
                   <Input
                     value={values['app.name'] ?? ''}
                     placeholder="WorkHub"
@@ -314,7 +339,7 @@ export function SettingsScreen({
                   />
                 </Field>
 
-                <Field label="Ký tự đại diện Logo (Monogram)" hint="Chữ cái hiển thị trên logo khi thu gọn menu hoặc chưa có ảnh logo (ví dụ: W, S, WH)">
+                <Field label="Chữ viết tắt" hint="Chữ cái hiển thị trên logo khi thu gọn menu hoặc chưa có ảnh logo (ví dụ: W, S, WH)">
                   <Input
                     value={values['app.logoText'] ?? ''}
                     placeholder="W"
@@ -324,7 +349,7 @@ export function SettingsScreen({
                 </Field>
 
                 <Field
-                  label="Ảnh Logo ứng dụng (Logo URL)"
+                  label="Logo"
                   hint="Tải ảnh trực tiếp lên máy chủ hoặc nhập URL (VD: /uploads/... hoặc https://...). Tệp tải lên được lưu trong Docker volume persistent để không mất khi deploy lại."
                   className="span-2"
                 >
@@ -337,7 +362,7 @@ export function SettingsScreen({
                 </Field>
 
                 <Field
-                  label="Khẩu hiệu / Mô tả ngắn"
+                  label="Mô tả ngắn"
                   hint="Hiển thị dưới tên hệ thống hoặc trong mô tả AI"
                   className="span-2"
                 >
@@ -501,10 +526,10 @@ export function SettingsScreen({
                 </div>
               </div>
             </CardBody>
-          </Card>
+          </Card>)}
 
           {/* Card Thông tin công ty */}
-          <Card>
+          {tab === 'general' && (<Card>
             <CardHeader>
               <CardTitle>Thông tin công ty</CardTitle>
               <Button variant="primary" size="sm" loading={pending}
@@ -538,13 +563,13 @@ export function SettingsScreen({
                 </Field>
               </div>
             </CardBody>
-          </Card>
+          </Card>)}
 
-          {/* Card Cấu hình in ấn & Logo Watermark */}
-          <Card>
+          {/* Card Chứng từ */}
+          {tab === 'documents' && (<Card>
             <CardHeader>
               <div>
-                <CardTitle>Cấu hình in ấn & Logo Watermark</CardTitle>
+                <CardTitle>Chứng từ</CardTitle>
                 <div className="card-subtitle">
                   Tự động chèn logo chìm (watermark) dưới nền của tất cả các phiếu in, bảng báo giá và biên bản A4
                 </div>
@@ -582,7 +607,7 @@ export function SettingsScreen({
                 </div>
 
                 <Field
-                  label="Ảnh Logo Watermark riêng (Tùy chọn)"
+                  label="Logo watermark"
                   hint="Tải ảnh lên máy chủ hoặc nhập URL. Để trống hệ thống sẽ tự động lấy theo Logo thương hiệu (app.logoUrl) hoặc con dấu pháp nhân."
                   className="span-2"
                 >
@@ -618,7 +643,7 @@ export function SettingsScreen({
                 </Field>
 
                 <Field
-                  label="Tên hiển thị trên con dấu (Mặc định)"
+                  label="Tên trên con dấu"
                   hint="Dùng làm nội dung con dấu vector khi chưa cấu hình ảnh logo riêng"
                 >
                   <Input
@@ -738,13 +763,13 @@ export function SettingsScreen({
                 </div>
               </div>
             </CardBody>
-          </Card>
+          </Card>)}
 
-          {/* Card Quy trình Bán hàng & Xuất kho */}
-          <Card>
+          {/* Card Bán hàng và xuất kho */}
+          {tab === 'sales' && (<Card>
             <CardHeader>
               <div>
-                <CardTitle>Quy trình Bán hàng & Xuất kho</CardTitle>
+                <CardTitle>Bán hàng và xuất kho</CardTitle>
                 <div className="card-subtitle">
                   Lựa chọn cơ chế trừ tồn kho khi chốt đơn bán hàng phù hợp với quy mô và cơ cấu tổ chức của doanh nghiệp
                 </div>
@@ -829,15 +854,15 @@ export function SettingsScreen({
                 </div>
               </div>
             </CardBody>
-          </Card>
+          </Card>)}
 
           {/* Card Quản trị Dữ liệu mẫu (Demo Data Seed & Clean) */}
-          <Card>
+          {tab === 'data' && (<Card>
             <CardHeader>
               <div>
                 <CardTitle style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Database size={18} style={{ color: 'var(--brand)' }} />
-                  Dữ liệu mẫu hệ thống (Demo Data Seed)
+                  Dữ liệu mẫu
                 </CardTitle>
                 <div className="card-subtitle">
                   Khởi tạo hoặc làm mới bộ dữ liệu mẫu chuẩn cho tất cả các tính năng: chuỗi F&B, thiết bị, phụ tùng kho, đơn hàng, chấm công 30 ngày, công việc và phê duyệt.
@@ -905,11 +930,11 @@ export function SettingsScreen({
                 </div>
               </div>
             </CardBody>
-          </Card>
+          </Card>)}
         </div>
       )}
 
-      {tab === 'zalo' && (
+      {tab === 'zalo' && validTabs.includes('zalo') && (
         <div className="stack">
           <Card>
             <CardHeader>
@@ -1115,7 +1140,7 @@ export function SettingsScreen({
         </div>
       )}
 
-      {tab === 'leave' && (
+      {tab === 'leave' && validTabs.includes('leave') && (
         <div className="stack">
           <Card>
             <CardHeader>
@@ -1209,7 +1234,7 @@ export function SettingsScreen({
         </div>
       )}
 
-      {tab === 'attendance' && (
+      {tab === 'attendance' && validTabs.includes('attendance') && (
         <div className="stack">
           <Card>
             <CardHeader>
@@ -1283,7 +1308,7 @@ export function SettingsScreen({
         </div>
       )}
 
-      {tab === 'holidays' && (
+      {tab === 'holidays' && validTabs.includes('holidays') && (
         <Card>
           <CardHeader>
             <div>
@@ -1320,7 +1345,7 @@ export function SettingsScreen({
         </Card>
       )}
 
-      {tab === 'reports' && (
+      {tab === 'reports' && validTabs.includes('reports') && (
         <Card>
           <CardHeader>
             <div>

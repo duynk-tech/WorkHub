@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Card, Button, Field, Input, Select } from '@/components/ui';
+import { Card, Button, Field, Input, SearchInput, Select } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
 import { FileDown, TrendingUp, TrendingDown, Package, AlertTriangle } from 'lucide-react';
 import {
@@ -15,6 +15,12 @@ type Preset = 'MONTH' | 'QUARTER' | 'YEAR' | 'CUSTOM';
 
 const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n || 0));
 const today = () => new Date().toISOString().slice(0, 10);
+const normalizeSearch = (value: unknown) => String(value ?? '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .trim();
 
 export function InventoryReportPanel() {
   const toast = useToast();
@@ -22,6 +28,7 @@ export function InventoryReportPanel() {
   const [anchor, setAnchor] = useState(today());
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
+  const [itemSearch, setItemSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
 
@@ -55,6 +62,12 @@ export function InventoryReportPanel() {
   };
 
   const s = report?.summary;
+  const searchTerm = normalizeSearch(itemSearch);
+  const visibleItems = (report?.items ?? []).filter((item: any) => {
+    if (!searchTerm) return true;
+    return [item.itemCode, item.name, item.unit]
+      .some((value) => normalizeSearch(value).includes(searchTerm));
+  });
 
   const cards = s
     ? [
@@ -67,17 +80,18 @@ export function InventoryReportPanel() {
           icon: Package,
         },
         {
-          label: 'Doanh thu bán ra',
+          label: 'Doanh thu bán ra (chưa VAT)',
           value: `${fmt(s.revenue)} ₫`,
-          sub: `${s.soldQty} đơn vị đã bán`,
+          sub: `${s.orderCount} đơn · ${s.soldQty} đơn vị đã bán`,
+          detail: s.vatAmount > 0 ? `VAT phát sinh: +${fmt(s.vatAmount)} ₫` : undefined,
           color: '#0f766e',
           bg: '#f0fdfa',
           icon: TrendingUp,
         },
         {
-          label: 'Giá vốn hàng bán',
+          label: 'Giá vốn hàng bán (đã gồm phí)',
           value: `${fmt(s.cogs)} ₫`,
-          sub: 'Chốt theo giá tại lúc xuất',
+          sub: 'Giá mua NCC + phí khác',
           color: '#d97706',
           bg: '#fffbeb',
           icon: TrendingDown,
@@ -93,8 +107,8 @@ export function InventoryReportPanel() {
       ]
     : [];
 
-  const th: React.CSSProperties = { padding: '10px 12px', whiteSpace: 'nowrap', textAlign: 'right' };
-  const td: React.CSSProperties = { padding: '9px 12px', whiteSpace: 'nowrap', textAlign: 'right' };
+  const th: React.CSSProperties = { padding: '10px 12px', whiteSpace: 'normal', lineHeight: 1.25, textAlign: 'right' };
+  const td: React.CSSProperties = { padding: '9px 12px', whiteSpace: 'nowrap', textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -178,10 +192,62 @@ export function InventoryReportPanel() {
                   <div style={{ fontSize: 17, fontWeight: 800, color: c.color }}>{c.value}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>{c.label}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-faint, var(--text-muted))' }}>{c.sub}</div>
+                  {c.detail && (
+                    <div style={{ fontSize: 11.5, color: '#2563eb', fontWeight: 700, marginTop: 3 }}>{c.detail}</div>
+                  )}
                 </div>
               </Card>
             ))}
           </div>
+
+          {/* Điều chỉnh làm giảm doanh thu; VAT được hiển thị ngay trong thẻ Doanh thu. */}
+          {(s.discount > 0 || s.returnedAmount > 0) && (
+            <Card style={{ padding: 14 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: 'var(--text-strong)',
+                  marginBottom: 10,
+                }}
+              >
+                Điều chỉnh doanh thu ({s.orderCount} đơn)
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {s.discount > 0 && (
+                  <div
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <div style={{ color: '#b91c1c' }}>Chiết khấu</div>
+                    <div style={{ fontWeight: 700, color: '#b91c1c' }}>−{fmt(s.discount)} ₫</div>
+                  </div>
+                )}
+                {s.returnedAmount > 0 && (
+                  <div
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <div style={{ color: '#b45309' }}>Hàng trả lại</div>
+                    <div style={{ fontWeight: 700, color: '#b45309' }}>−{fmt(s.returnedAmount)} ₫</div>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+                Doanh thu đã phản ánh các khoản điều chỉnh này, chưa bao gồm VAT.
+              </div>
+            </Card>
+          )}
 
           {/* Chi phí xuất không thu tiền */}
           {report.costByReason.length > 0 && (
@@ -230,11 +296,45 @@ export function InventoryReportPanel() {
 
           {/* Chi tiết theo mặt hàng */}
           <Card style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 16px', fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
-              Chi tiết theo mặt hàng ({report.items.length})
+            <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
+                Chi tiết theo mặt hàng ({visibleItems.length}{itemSearch ? `/${report.items.length}` : ''})
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', minWidth: 'min(100%, 330px)' }}>
+                <div style={{ width: 290, maxWidth: '100%' }}>
+                  <SearchInput
+                    aria-label="Tìm mặt hàng trong báo cáo"
+                    placeholder="Tìm mã hoặc tên hàng…"
+                    value={itemSearch}
+                    onChange={(event) => setItemSearch(event.target.value)}
+                  />
+                </div>
+                {itemSearch && (
+                  <Button size="sm" variant="ghost" onClick={() => setItemSearch('')}>
+                    Xóa
+                  </Button>
+                )}
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  Cố định mã & tên hàng · Cuộn để xem số liệu
+                </div>
+              </div>
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <div className="inventory-report-scroll">
+              <table className="table table-compact inventory-report-grid" style={{ minWidth: 1834, fontSize: 12.5 }}>
+                <colgroup>
+                  <col style={{ width: 164 }} />
+                  <col style={{ width: 340 }} />
+                  <col style={{ width: 80 }} />
+                  <col style={{ width: 80 }} />
+                  <col style={{ width: 135 }} />
+                  <col style={{ width: 125 }} />
+                  <col style={{ width: 150 }} />
+                  <col style={{ width: 215 }} />
+                  <col style={{ width: 230 }} />
+                  <col style={{ width: 150 }} />
+                  <col style={{ width: 75 }} />
+                  <col style={{ width: 90 }} />
+                </colgroup>
                 <thead>
                   <tr
                     style={{
@@ -246,32 +346,34 @@ export function InventoryReportPanel() {
                       fontWeight: 700,
                     }}
                   >
-                    <th style={{ ...th, textAlign: 'left' }}>Mã hàng</th>
-                    <th style={{ ...th, textAlign: 'left', width: '100%' }}>Tên hàng</th>
-                    <th style={th}>SL nhập</th>
-                    <th style={th}>Giá trị nhập</th>
-                    <th style={th}>SL bán</th>
-                    <th style={th}>Doanh thu</th>
-                    <th style={th}>Giá vốn</th>
-                    <th style={th}>Lãi gộp</th>
-                    <th style={th}>Tỷ suất</th>
-                    <th style={th}>Tồn cuối</th>
+                    <th className="report-sticky-code" style={{ ...th, textAlign: 'left' }}>Mã hàng</th>
+                    <th className="report-sticky-name" style={{ ...th, textAlign: 'left' }}>Tên hàng</th>
+                    <th style={th} title="Tổng số lượng nhập kho trong kỳ">SL nhập</th>
+                    <th style={th} title="SL bán ra từ đơn bán hàng">SL bán</th>
+                    <th style={th} title="Đơn giá bán trung bình (Doanh thu ÷ SL bán)">Giá bán TB</th>
+                    <th style={th} title="Chiết khấu = Giá gốc − Thành tiền thực thu">CK</th>
+                    <th style={th} title="Doanh thu thuần (đã trừ chiết khấu dòng, từ chi tiết đơn bán hàng)">Doanh thu</th>
+                    <th style={{ ...th, whiteSpace: 'nowrap' }} title="Đơn giá vốn thực tế PO: giá mua NCC + cước VC + hải quan và các phí được phân bổ">Giá vốn/cái (đã gồm phí)</th>
+                    <th style={{ ...th, whiteSpace: 'nowrap' }} title="Tổng giá vốn hàng bán = Đơn giá vốn thực tế đã gồm phí × SL bán">Tổng giá vốn (đã gồm phí)</th>
+                    <th style={th} title="Lãi gộp = Doanh thu − Giá vốn">Lãi gộp</th>
+                    <th style={th} title="Tỷ suất = Lãi gộp ÷ Doanh thu">%</th>
+                    <th style={th} title="Tồn kho hiện tại">Tồn</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {report.items.length === 0 ? (
+                  {visibleItems.length === 0 ? (
                     <tr>
-                      <td colSpan={10} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
-                        Kỳ này chưa có phát sinh nhập xuất kho
+                      <td colSpan={12} style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>
+                        {itemSearch ? `Không tìm thấy mặt hàng “${itemSearch}”` : 'Kỳ này chưa có phát sinh nhập xuất kho'}
                       </td>
                     </tr>
                   ) : (
-                    report.items.map((r: any) => (
+                    visibleItems.map((r: any) => (
                       <tr key={r.itemId} style={{ borderBottom: '1px solid var(--border-base)' }}>
-                        <td style={{ ...td, textAlign: 'left', fontFamily: 'monospace', color: 'var(--brand)' }}>
+                        <td className="report-sticky-code" style={{ ...td, textAlign: 'left', fontFamily: 'monospace', color: 'var(--brand)', fontSize: 11.5, fontWeight: 700 }}>
                           {r.itemCode}
                         </td>
-                        <td style={{ ...td, textAlign: 'left', whiteSpace: 'normal', fontWeight: 600 }}>
+                        <td className="report-sticky-name" style={{ ...td, textAlign: 'left', whiteSpace: 'normal', fontWeight: 600, lineHeight: 1.4 }}>
                           {r.name}
                           {r.nonSaleQty > 0 && (
                             <span style={{ color: '#d97706', fontWeight: 500 }}>
@@ -281,10 +383,33 @@ export function InventoryReportPanel() {
                           )}
                         </td>
                         <td style={td}>{r.inQty || '—'}</td>
-                        <td style={td}>{r.inValue ? fmt(r.inValue) : '—'}</td>
-                        <td style={td}>{r.soldQty || '—'}</td>
+                        <td style={td}>{r.soldQty ? fmt(r.soldQty) : '—'}</td>
+                        <td style={td}>
+                          {r.avgSellPrice ? (
+                            <span style={{ color: '#0f766e', fontWeight: 600 }}>{fmt(r.avgSellPrice)}</span>
+                          ) : '—'}
+                        </td>
+                        <td style={td}>
+                          {r.discount > 0 ? (
+                            <span style={{ color: '#b91c1c' }}>−{fmt(r.discount)}</span>
+                          ) : '—'}
+                        </td>
                         <td style={td}>{r.revenue ? fmt(r.revenue) : '—'}</td>
-                        <td style={td}>{r.cogs ? fmt(r.cogs) : '—'}</td>
+                        <td style={td}>
+                          {r.actualUnitCost > 0 ? (
+                            <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>{fmt(r.actualUnitCost)}</span>
+                          ) : '—'}
+                        </td>
+                        <td style={td}>
+                          {r.cogs ? (
+                            <span style={{ fontWeight: 600 }}>{fmt(r.cogs)}</span>
+                          ) : r.actualUnitCost > 0 ? (
+                            <div title="Đơn giá vốn PO (chưa phát sinh bán)">
+                              <div style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{fmt(r.actualUnitCost)}</div>
+                              <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>Vốn PO/cái</div>
+                            </div>
+                          ) : '—'}
+                        </td>
                         <td style={{ ...td, fontWeight: 700, color: r.grossProfit >= 0 ? '#16a34a' : '#dc2626' }}>
                           {r.soldQty ? fmt(r.grossProfit) : '—'}
                         </td>

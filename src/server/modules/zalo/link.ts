@@ -21,12 +21,23 @@ export async function createLinkCode(userId: number) {
 
 /** Đối chiếu mã do người dùng gửi từ Zalo và gắn zaloUserId vào hồ sơ nhân sự. */
 export async function consumeLinkCode(code: string, zaloUserId: string) {
+  if (!/^[A-Z2-9]{6}$/.test(code.trim().toUpperCase())) return { ok: false as const, message: 'Mã liên kết không hợp lệ' };
+  const attempts = await prisma.zaloInboundLog.count({
+    where: { zaloUserId, createdAt: { gte: new Date(Date.now() - 10 * 60_000) },
+      OR: [{ text: { startsWith: '/lienket' } }, { text: { startsWith: '/link' } }],
+    },
+  });
+  if (attempts > 5) return { ok: false as const, message: 'Quá nhiều lần liên kết. Thử lại sau 10 phút.' };
   const record = await prisma.zaloLinkCode.findUnique({
     where: { code: code.trim().toUpperCase() },
-    include: { user: { include: { employee: { select: { id: true, fullName: true } } } } },
+    include: { user: { include: { employee: { select: { id: true, fullName: true, status: true } } } } },
   });
 
   if (!record) return { ok: false as const, message: 'Mã liên kết không đúng. Hãy lấy mã mới trong mục Hồ sơ cá nhân.' };
+  if (!record.user.isActive || record.user.employee.status === 'RESIGNED' ||
+      (record.user.lockedUntil && record.user.lockedUntil > new Date())) {
+    return { ok: false as const, message: 'Tài khoản không được phép liên kết' };
+  }
   if (record.usedAt) return { ok: false as const, message: 'Mã này đã được sử dụng.' };
   if (record.expiresAt < new Date()) return { ok: false as const, message: 'Mã đã hết hạn. Hãy lấy mã mới.' };
 
@@ -36,10 +47,16 @@ export async function consumeLinkCode(code: string, zaloUserId: string) {
   });
   if (taken) return { ok: false as const, message: `Tài khoản Zalo này đã liên kết với ${taken.fullName}.` };
 
-  await prisma.$transaction([
-    prisma.employee.update({ where: { id: record.user.employeeId }, data: { zaloUserId } }),
-    prisma.zaloLinkCode.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.zaloLinkCode.updateMany({
+      where: { id: record.id, usedAt: null, expiresAt: { gt: new Date() } },
+      data: { usedAt: new Date() },
+    });
+    if (claimed.count !== 1) throw new Error('Mã đã được sử dụng hoặc hết hạn');
+    await tx.employee.update({ where: { id: record.user.employeeId }, data: { zaloUserId } });
+    // A new link starts a new context, preventing access to the previous owner's chat.
+    await tx.zaloInboundLog.create({ data: { zaloUserId, text: '/reset', response: 'Đã liên kết tài khoản', handled: true } });
+  });
 
   return { ok: true as const, employee: record.user.employee, message: `Liên kết thành công với ${record.user.employee.fullName}` };
 }
@@ -52,11 +69,14 @@ export async function unlinkZalo(userId: number) {
 }
 
 export async function findEmployeeByZaloId(zaloUserId: string) {
-  return prisma.employee.findUnique({
+  const employee = await prisma.employee.findUnique({
     where: { zaloUserId },
     include: {
       user: { include: { roles: { include: { role: { include: { permissions: true } } } } } },
       department: { select: { id: true, name: true, path: true } },
     },
   });
+  if (!employee?.user?.isActive || employee.status === 'RESIGNED' ||
+      (employee.user.lockedUntil && employee.user.lockedUntil > new Date())) return null;
+  return employee;
 }

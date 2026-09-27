@@ -440,7 +440,7 @@ export async function deleteSupplierPaymentAction(id: number) {
 
   try {
     const { deleteSupplierPayment } = await import('./service');
-    await deleteSupplierPayment(id);
+    await deleteSupplierPayment(id, ctx.userId);
     revalidatePath('/spare-parts');
     return { ok: true, message: 'Đã xóa phiếu chi và hoàn lại công nợ' };
   } catch (error: any) {
@@ -448,11 +448,11 @@ export async function deleteSupplierPaymentAction(id: number) {
   }
 }
 
-export async function listSupplierPaymentsAction(supplier?: string) {
+export async function listSupplierPaymentsAction(supplier?: string, orderId?: number) {
   await requireAuth();
   try {
     const { listSupplierPayments } = await import('./service');
-    const payments = await listSupplierPayments(supplier);
+    const payments = await listSupplierPayments(supplier, orderId);
     return { ok: true, message: '', payments: JSON.parse(JSON.stringify(payments)) };
   } catch (error: any) {
     return { ok: false, message: error.message || 'Lỗi khi đọc lịch sử thanh toán' };

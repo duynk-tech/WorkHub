@@ -31,7 +31,7 @@ import { CustomerOrderPrintModal } from '@/components/domain/customer-order-prin
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(n || 0))} ₫`;
 
 const ITEM_TYPES: Record<string, string> = {
-  EQUIPMENT: 'Máy móc',
+  EQUIPMENT: 'Thiết bị',
   SPARE_PART: 'Phụ tùng',
   SERVICE: 'Dịch vụ',
 };

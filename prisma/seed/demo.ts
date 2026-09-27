@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { hashPassword } from '../../src/server/auth/password';
 
 /** Cây phòng ban mẫu 3 cấp + nhân sự demo. Chỉ chạy khi DB còn trống. */
@@ -623,8 +623,30 @@ export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<st
   const now = new Date();
   let count = 0;
 
+  async function upsertAttendance(employeeId: number, workDate: Date, data: Omit<Prisma.AttendanceRecordUncheckedCreateInput, 'employeeId' | 'workDate'>) {
+    const dateKey = `${workDate.getFullYear()}-${String(workDate.getMonth() + 1).padStart(2, '0')}-${String(workDate.getDate()).padStart(2, '0')}`;
+    const key = { employeeId_workDate: { employeeId, workDate } };
+    const findByCalendarDate = async () => {
+      const rows = await prisma.$queryRaw<Array<{ id: number }>>`SELECT id FROM AttendanceRecord WHERE employeeId = ${employeeId} AND DATEDIFF(workDate, STR_TO_DATE(${dateKey}, '%Y-%m-%d')) = 0 LIMIT 1`;
+      return rows[0] ?? null;
+    };
+    const existing = await findByCalendarDate();
+    if (existing) return prisma.attendanceRecord.update({ where: { id: existing.id }, data });
+    try {
+      return await prisma.attendanceRecord.create({ data: { ...data, employeeId, workDate } });
+    } catch (error) {
+      if ((error as { code?: string })?.code !== 'P2002') throw error;
+      const raced = await findByCalendarDate();
+      if (!raced) {
+        const candidates = await prisma.$queryRaw<Array<{ id: number; day: string }>>`SELECT id, DATE_FORMAT(workDate, '%Y-%m-%d') AS day FROM AttendanceRecord WHERE employeeId = ${employeeId} ORDER BY workDate DESC LIMIT 3`;
+        throw new Error(`Attendance seed unique conflict: employee=${employeeId} requested=${dateKey} candidates=${JSON.stringify(candidates)}`);
+      }
+      return prisma.attendanceRecord.update({ where: { id: raced.id }, data });
+    }
+  }
+
   for (let dayOffset = 30; dayOffset >= 0; dayOffset--) {
-    const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
+    const targetDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset));
     const dayOfWeek = targetDate.getDay(); // 0: CN, 6: T7
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
@@ -634,12 +656,7 @@ export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<st
         if (dayOfWeek === 6 && (code === 'NV005' || code === 'NV008') && dayOffset % 2 === 0) {
           const inTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 8, 30);
           const outTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 17, 30);
-          await prisma.attendanceRecord.upsert({
-            where: { employeeId_workDate: { employeeId: empId, workDate: targetDate } },
-            update: {},
-            create: {
-              employeeId: empId,
-              workDate: targetDate,
+          await upsertAttendance(empId, targetDate, {
               shiftId,
               checkInAt: inTime,
               checkOutAt: outTime,
@@ -651,7 +668,6 @@ export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<st
               otMinutes: 240,
               status: 'PRESENT',
               note: 'Trực cứu hộ kỹ thuật máy pha cafe cuối tuần',
-            },
           });
           count++;
         }
@@ -701,36 +717,11 @@ export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<st
       const outTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), outHour, outMin);
       const workedMinutes = Math.max(0, Math.round((outTime.getTime() - inTime.getTime()) / 60000) - 90);
 
-      await prisma.attendanceRecord.upsert({
-        where: { employeeId_workDate: { employeeId: empId, workDate: targetDate } },
-        update: {
-          shiftId,
-          checkInAt: inTime,
-          checkOutAt: outTime,
-          workedMinutes,
-          lateMinutes,
-          earlyLeaveMinutes,
-          otMinutes,
-          status: status as never,
-          note,
-        },
-        create: {
-          employeeId: empId,
-          workDate: targetDate,
-          shiftId,
-          checkInAt: inTime,
-          checkOutAt: outTime,
-          source: 'WEB',
-          checkInLat: 10.762622,
-          checkInLng: 106.660172,
-          checkInAddress: 'Văn phòng Công ty WorkHub',
-          workedMinutes,
-          lateMinutes,
-          earlyLeaveMinutes,
-          otMinutes,
-          status: status as never,
-          note,
-        },
+      await upsertAttendance(empId, targetDate, {
+        shiftId, checkInAt: inTime, checkOutAt: outTime, workedMinutes, lateMinutes,
+        earlyLeaveMinutes, otMinutes, source: 'WEB', checkInLat: 10.762622,
+        checkInLng: 106.660172, checkInAddress: 'Văn phòng Công ty WorkHub',
+        status: status as never, note,
       });
       count++;
     }

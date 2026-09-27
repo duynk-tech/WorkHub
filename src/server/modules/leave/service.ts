@@ -33,6 +33,9 @@ export async function calculateLeaveDays(
 ): Promise<{ days: WorkingDay[]; totalDays: number; skipped: { date: Date; reason: string }[] }> {
   const start = dateOnly(startDate);
   const end = dateOnly(endDate);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) throw new Error('Ngày nghỉ không hợp lệ');
+  if (!['FULL_DAY', 'HALF_DAY_MORNING', 'HALF_DAY_AFTERNOON'].includes(durationType)) throw new Error('Thời lượng nghỉ không hợp lệ');
+  if (durationType !== 'FULL_DAY' && start.getTime() !== end.getTime()) throw new Error('Đơn nghỉ nửa ngày chỉ áp dụng trong một ngày');
   if (end < start) throw new Error('Ngày kết thúc phải sau ngày bắt đầu');
 
   const employee = await db.employee.findUnique({
@@ -216,12 +219,13 @@ export async function adjustBalance(
 }
 
 /** Kiểm tra trùng lịch nghỉ đã duyệt hoặc đang chờ duyệt. */
-export async function findOverlapping(employeeId: number, startDate: Date, endDate: Date, excludeId?: number) {
-  return prisma.leaveRequest.findFirst({
+export async function findOverlapping(employeeId: number, startDate: Date, endDate: Date, excludeId?: number, durationType = 'FULL_DAY', db: Db = prisma) {
+  return db.leaveRequest.findFirst({
     where: {
       employeeId,
       id: excludeId ? { not: excludeId } : undefined,
       status: { in: ['PENDING', 'APPROVED'] },
+      ...(durationType === 'FULL_DAY' ? {} : { durationType: { in: ['FULL_DAY', durationType] as never } }),
       startDate: { lte: dateOnly(endDate) },
       endDate: { gte: dateOnly(startDate) },
     },

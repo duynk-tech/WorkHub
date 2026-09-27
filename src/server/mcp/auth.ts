@@ -39,7 +39,7 @@ export async function authenticateMcp(authHeader: string | null, ip?: string | n
       },
     });
 
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || user.employee.status === 'RESIGNED' || (user.lockedUntil && user.lockedUntil > new Date())) {
       return { ok: false, error: 'Tài khoản người dùng đã bị vô hiệu hóa' };
     }
 
@@ -105,13 +105,13 @@ export async function authenticateMcp(authHeader: string | null, ip?: string | n
   if (client.expiresAt && client.expiresAt < new Date()) return { ok: false, error: 'API key đã hết hạn' };
   if (sha256(key) !== client.keyHash) return { ok: false, error: 'API key không hợp lệ' };
 
-  if (client.allowedIps && ip) {
+  if (client.allowedIps) {
     const allowed = client.allowedIps.split(',').map((s) => s.trim()).filter(Boolean);
-    if (allowed.length && !allowed.includes(ip)) return { ok: false, error: `IP ${ip} không nằm trong danh sách cho phép` };
+    if (allowed.length && (!ip || !allowed.includes(ip))) return { ok: false, error: `IP ${ip} không nằm trong danh sách cho phép` };
   }
 
   const user = client.actAsUser;
-  if (!user.isActive) return { ok: false, error: 'Tài khoản đại diện đã bị vô hiệu hóa' };
+  if (!user.isActive || user.employee.status === 'RESIGNED' || (user.lockedUntil && user.lockedUntil > new Date())) return { ok: false, error: 'Tài khoản đại diện đã bị vô hiệu hóa' };
 
   const permissions = new Set<string>();
   const customDeptIds = new Set<number>();

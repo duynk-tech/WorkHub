@@ -1,8 +1,12 @@
 'use server';
 
+import { outboundProviderFetch } from '@/server/security/outbound-http';
+
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
+import { encryptSecret } from '@/lib/crypto';
+import { settingsPolicy, SECRET_SETTING_KEYS } from './policy';
 import { setSetting, getSetting } from './service';
 import { getAppBranding } from './branding';
 import { runFullDemoSeed, cleanBusinessData } from '../../../../prisma/seed/index';
@@ -32,28 +36,43 @@ export type { LlmModelItem, PromptVariable, PromptTemplate, AiAgentTestResult, A
 
 export interface Result { ok: boolean; message: string }
 
-const SECRET_KEYS = new Set(['zalo.botToken', 'zalo.webhookSecret', 'ai.geminiApiKey']);
+const SECRET_KEYS = SECRET_SETTING_KEYS;
 
 export async function saveSettingsAction(group: string, values: Record<string, unknown>): Promise<Result> {
-  const permission =
-    group === 'zalo' || group === 'ai'
-      ? 'FEATURE_SETTING_ZALO'
-      : group === 'mcp'
-        ? 'FEATURE_MCP_MANAGE'
-        : 'FEATURE_SETTING_GENERAL';
-  const ctx = await requirePermission(permission);
-
-  for (const [key, value] of Object.entries(values)) {
-    // Bỏ qua ô secret người dùng không sửa (hiển thị dạng ********)
-    if (SECRET_KEYS.has(key) && value === '********') continue;
-    await setSetting(key, value, { group, isSecret: SECRET_KEYS.has(key) });
+  const policy = settingsPolicy(group);
+  const ctx = await requirePermission(policy.permission);
+  if (group === 'sso' && !ctx.isAdmin) return { ok: false, message: 'Chỉ quản trị viên được cấu hình SSO' };
+  const parsed = policy.schema.safeParse(values);
+  if (!parsed.success) return { ok: false, message: 'Cấu hình chứa trường hoặc giá trị không hợp lệ' };
+  if (group === 'sso') {
+    const input = parsed.data as Record<string, unknown>;
+    if (input['sso.google.enabled'] === true) {
+      const id = String(input['sso.google.clientId'] ?? await getSetting('sso.google.clientId', '')).trim();
+      const rawSecret = input['sso.google.clientSecret'];
+      const secret = rawSecret === undefined || rawSecret === '********' ? await getSetting('sso.google.clientSecret', '') : String(rawSecret).trim();
+      if (!id.endsWith('.apps.googleusercontent.com') || !secret) return { ok: false, message: 'Nhập Client ID và Client Secret Google hợp lệ' };
+      const domains = String(input['sso.google.domains'] ?? '').split(',').map((d) => d.trim()).filter(Boolean);
+      if (domains.some((d) => !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(d))) return { ok: false, message: 'Miền Workspace không hợp lệ' };
+      try { await prisma.externalIdentity.count(); }
+      catch { return { ok: false, message: 'Cần triển khai migration Google SSO trước khi bật' }; }
+    }
   }
-
-  await prisma.auditLog.create({
-    data: {
+  const entries = Object.entries(parsed.data).filter(([, value]) => value !== undefined);
+  await prisma.$transaction(async (tx) => {
+    for (const [key, value] of entries) {
+      const isSecret = SECRET_KEYS.has(key);
+      if (isSecret && value === '********') continue;
+      const stored = isSecret && typeof value === 'string' && value ? encryptSecret(value) : value;
+      await tx.systemSetting.upsert({
+        where: { key },
+        update: { valueJson: stored as never, groupName: group, isSecret },
+        create: { key, valueJson: stored as never, groupName: group, isSecret },
+      });
+    }
+    await tx.auditLog.create({ data: {
       actorId: ctx.userId, entityType: 'SystemSetting', entityId: group, action: 'UPDATE',
-      diffJson: Object.fromEntries(Object.keys(values).map((k) => [k, SECRET_KEYS.has(k) ? '***' : values[k]])) as never,
-    },
+      diffJson: Object.fromEntries(entries.map(([key, value]) => [key, SECRET_KEYS.has(key) ? '***' : value])) as never,
+    } });
   });
 
   revalidatePath('/settings');
@@ -283,14 +302,16 @@ export async function deleteZaloInboundLogAction(id: number): Promise<Result> {
 }
 
 export async function getCustomToolsAction(): Promise<CustomAgentTool[]> {
-  await requirePermission('FEATURE_SETTING_ZALO');
+  const ctx = await requirePermission('FEATURE_SETTING_ZALO');
+  if (!ctx.isAdmin) throw new Error('Chỉ quản trị viên được quản lý công cụ tùy chỉnh');
   return await getCustomTools();
 }
 
 export async function saveCustomToolAction(
   toolData: Omit<CustomAgentTool, 'id'> & { id?: string },
 ): Promise<Result & { tool?: CustomAgentTool }> {
-  await requirePermission('FEATURE_SETTING_ZALO');
+  const ctx = await requirePermission('FEATURE_SETTING_ZALO');
+  if (!ctx.isAdmin) throw new Error('Chỉ quản trị viên được quản lý công cụ tùy chỉnh');
   try {
     const saved = await saveCustomTool(toolData);
     revalidatePath('/settings/integrations');
@@ -301,7 +322,8 @@ export async function saveCustomToolAction(
 }
 
 export async function deleteCustomToolAction(toolId: string): Promise<Result> {
-  await requirePermission('FEATURE_SETTING_ZALO');
+  const ctx = await requirePermission('FEATURE_SETTING_ZALO');
+  if (!ctx.isAdmin) throw new Error('Chỉ quản trị viên được quản lý công cụ tùy chỉnh');
   try {
     const ok = await deleteCustomTool(toolId);
     revalidatePath('/settings/integrations');
@@ -312,7 +334,8 @@ export async function deleteCustomToolAction(toolId: string): Promise<Result> {
 }
 
 export async function toggleCustomToolAction(toolId: string, isActive: boolean): Promise<Result> {
-  await requirePermission('FEATURE_SETTING_ZALO');
+  const ctx = await requirePermission('FEATURE_SETTING_ZALO');
+  if (!ctx.isAdmin) throw new Error('Chỉ quản trị viên được quản lý công cụ tùy chỉnh');
   try {
     const ok = await toggleCustomTool(toolId, isActive);
     revalidatePath('/settings/integrations');
@@ -326,7 +349,8 @@ export async function testCustomToolAction(
   toolData: CustomAgentTool,
   testArgs: Record<string, unknown>,
 ): Promise<Result & { data?: unknown; error?: string }> {
-  await requirePermission('FEATURE_SETTING_ZALO');
+  const ctx = await requirePermission('FEATURE_SETTING_ZALO');
+  if (!ctx.isAdmin) throw new Error('Chỉ quản trị viên được quản lý công cụ tùy chỉnh');
   try {
     const result = await executeCustomTool(toolData, testArgs);
     if (!result.success) {
@@ -366,7 +390,7 @@ export async function fetchLlmModelsAction(
       // OpenAI / OpenRouter / Custom endpoint
       const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
       const modelsUrl = cleanBaseUrl.endsWith('/models') ? cleanBaseUrl : `${cleanBaseUrl}/models`;
-      const res = await fetch(modelsUrl, {
+      const res = await outboundProviderFetch(modelsUrl, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
@@ -400,7 +424,7 @@ export async function fetchLlmModelsAction(
       // Google Gemini API
       // 1. Thử gọi Google Generative Language models API chính thức
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(geminiUrl);
+      const res = await outboundProviderFetch(geminiUrl);
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json.models)) {
@@ -442,7 +466,7 @@ export async function fetchLlmModelsAction(
 
       // 2. Dự phòng: Thử gọi qua OpenAI compatible endpoint của Gemini
       const openaiModelsUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/models';
-      const resOpenAi = await fetch(openaiModelsUrl, {
+      const resOpenAi = await outboundProviderFetch(openaiModelsUrl, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (resOpenAi.ok) {
@@ -488,12 +512,15 @@ export async function testAiAgentAction(
   prompt: string,
   employeeId?: number,
 ): Promise<Result & { result?: AiAgentTestResult }> {
-  await requirePermission('FEATURE_SETTING_ZALO');
+  const ctx = await requirePermission('FEATURE_SETTING_ZALO');
+  if (employeeId && employeeId !== ctx.employeeId && !ctx.isAdmin) {
+    return { ok: false, message: 'Chỉ quản trị viên được kiểm thử dưới danh tính khác' };
+  }
   const cleanPrompt = prompt.trim();
   if (!cleanPrompt) {
     return { ok: false, message: 'Vui lòng nhập câu hỏi thử nghiệm cho AI Agent' };
   }
-  const testRes = await runAiAgentTest(cleanPrompt, employeeId);
+  const testRes = await runAiAgentTest(cleanPrompt, employeeId ?? ctx.employeeId);
   if (!testRes.ok) {
     return { ok: false, message: testRes.error || testRes.reply || 'Kiểm thử Agent thất bại', result: testRes };
   }

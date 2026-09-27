@@ -283,7 +283,7 @@ export function DocumentLetterhead({
   );
 }
 
-/** Hai ô thông tin bên giao / bên nhận, luôn cao bằng nhau nhờ dùng ô bảng. */
+/** Hai ô thông tin bên giao / bên nhận, luôn cao bằng nhau nhờ CSS Grid. */
 export function DocumentPartyBoxes({
   leftTitle,
   left,
@@ -301,6 +301,8 @@ export function DocumentPartyBoxes({
     padding: '10px 14px',
     background: 'transparent',
     boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
     height: '100%',
   };
   const heading: React.CSSProperties = {
@@ -316,36 +318,30 @@ export function DocumentPartyBoxes({
     flexDirection: 'column',
     gap: 3,
     fontSize: '12.5px',
+    flex: 1,
   };
 
   return (
-    <table
+    <div
       style={{
-        width: '100%',
-        tableLayout: 'fixed',
-        borderCollapse: 'collapse',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        alignItems: 'stretch',
+        gap: 12,
         marginBottom: 12,
         pageBreakInside: 'avoid',
         breakInside: 'avoid',
       }}
     >
-      <tbody>
-        <tr>
-          <td style={{ width: '50%', verticalAlign: 'top', padding: 0, paddingRight: 6 }}>
-            <div style={box}>
-              <div style={heading}>{leftTitle}</div>
-              <div style={body}>{left}</div>
-            </div>
-          </td>
-          <td style={{ width: '50%', verticalAlign: 'top', padding: 0, paddingLeft: 6 }}>
-            <div style={box}>
-              <div style={heading}>{rightTitle}</div>
-              <div style={body}>{right}</div>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+      <div style={box}>
+        <div style={heading}>{leftTitle}</div>
+        <div style={body}>{left}</div>
+      </div>
+      <div style={box}>
+        <div style={heading}>{rightTitle}</div>
+        <div style={body}>{right}</div>
+      </div>
+    </div>
   );
 }
 

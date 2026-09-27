@@ -228,7 +228,7 @@ export function EquipmentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast.error('Vui lòng nhập tên thiết bị / máy móc');
+      toast.error('Vui lòng nhập tên thiết bị');
       return;
     }
     if (!serialNumber.trim()) {
@@ -289,7 +289,7 @@ export function EquipmentModal({
       <Modal
         open={open}
         onClose={onClose}
-        title={equipment ? `Chỉnh sửa máy: ${equipment.machineCode}` : 'Thêm Thiết bị & Máy móc'}
+        title={equipment ? `Chỉnh sửa thiết bị: ${equipment.machineCode}` : 'Thêm Thiết bị'}
         description="Quản lý hồ sơ máy làm kem, máy socola, thiết bị bếp và điểm lắp đặt"
         size="lg"
         footer={
@@ -359,7 +359,7 @@ export function EquipmentModal({
         {activeTab === 'general' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div style={{ gridColumn: '1 / -1' }}>
-              <Field label="Tên thiết bị / máy móc" required>
+              <Field label="Tên thiết bị" required>
                 <Input
                   placeholder="VD: Máy làm kem tươi Spaceman 6240, Máy tôi socola Chocoma 25kg..."
                   value={name}
@@ -440,7 +440,7 @@ export function EquipmentModal({
 
             <div style={{ gridColumn: '1 / -1' }}>
               <MultiImageUpload
-                label="Album ảnh máy móc thực tế (Nhiều góc chụp)"
+                label="Album ảnh thiết bị thực tế (Nhiều góc chụp)"
                 hint="Tải ảnh tổng thể, tem nhôm Serial/thông số, van cấp nước hoặc hiện trạng lắp đặt tại quán (tối đa 8 ảnh). Ảnh đầu tiên sẽ làm ảnh chính."
                 values={gallery}
                 onChange={setGallery}

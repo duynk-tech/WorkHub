@@ -91,16 +91,15 @@ export async function handleZaloCommand(zaloUserId: string, text: string): Promi
       if (!args[0]) return { handled: true, reply: 'Cú pháp: /xong <mã công việc>, vd: /xong TSK-2026-0001' };
       const task = await prisma.task.findUnique({ where: { code: args[0].toUpperCase() } });
       if (!task) return { handled: true, reply: `❌ Không tìm thấy công việc ${args[0]}` };
-      if (task.assigneeId !== employee.id && task.creatorId !== employee.id) {
+      if (task.assigneeId !== employee.id && task.creatorId !== employee.id && task.reviewerId !== employee.id) {
         return { handled: true, reply: '❌ Bạn không phải người thực hiện hoặc người tạo công việc này.' };
       }
-      await prisma.task.update({
-        where: { id: task.id },
-        data: { status: 'DONE', progress: 100, completedAt: new Date() },
-      });
-      await prisma.taskActivity.create({
-        data: { taskId: task.id, actorId: employee.id, action: 'STATUS', field: 'status', oldValue: TASK_STATUS[task.status]?.label, newValue: 'Hoàn thành' },
-      });
+      const { buildAuthContextForEmployee } = await import('./ai-agent');
+      const { transitionTask } = await import('@/server/modules/task/mutations');
+      const ctx = await buildAuthContextForEmployee(employee.id);
+      if (!ctx) return { handled: true, reply: 'Tài khoản không được phép thực hiện' };
+      try { await transitionTask(ctx, task.id, 'DONE'); }
+      catch (error) { return { handled: true, reply: error instanceof Error ? error.message : 'Không thể cập nhật công việc' }; }
       return { handled: true, reply: `✅ Đã đánh dấu hoàn thành [${task.code}] ${task.title}` };
     }
 
@@ -196,7 +195,7 @@ export async function handleZaloCommand(zaloUserId: string, text: string): Promi
       });
       if (!result.ok) return { handled: true, reply: `❌ ${result.message}` };
 
-      const { finalizeLeave, notifyPendingApprovers } = await import('@/server/modules/leave/actions');
+      const { finalizeLeave, notifyPendingApprovers } = await import('@/server/modules/leave/internal-actions');
       if (result.instanceStatus === 'APPROVED') await finalizeLeave(leave.id, 'APPROVED', employee.fullName);
       else if (result.instanceStatus === 'REJECTED') await finalizeLeave(leave.id, 'REJECTED', note || employee.fullName);
       else await notifyPendingApprovers(leave.id);

@@ -61,14 +61,14 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'FEATURE_ROLE_MANAGE', name: 'Cấu hình vai trò & quyền', group: 'Tổ chức', category: 'FEATURE', sortOrder: 531 },
 
   // ── Thiết bị F&B & Dịch vụ Kỹ thuật ──
-  { code: 'MENU_EQUIPMENT', name: 'Menu Thiết bị & Máy móc', group: 'Thiết bị & Máy móc', category: 'MENU', sortOrder: 540 },
+  { code: 'MENU_EQUIPMENT', name: 'Menu Thiết bị & Phụ tùng', group: 'Thiết bị & Dịch vụ', category: 'MENU', sortOrder: 540 },
   { code: 'FEATURE_EQUIPMENT_MANAGE', name: 'Quản lý thiết bị F&B', group: 'Thiết bị F&B', category: 'FEATURE', sortOrder: 541 },
-  { code: 'FEATURE_EQUIPMENT_MAINTENANCE', name: 'Bảo dưỡng & Sửa chữa máy F&B', group: 'Thiết bị F&B', category: 'FEATURE', sortOrder: 542 },
-  { code: 'MENU_CUSTOMERS', name: 'Menu Khách hàng', group: 'Thiết bị & Máy móc', category: 'MENU', sortOrder: 543 },
-  { code: 'FEATURE_CUSTOMER_MANAGE', name: 'Quản lý khách hàng', group: 'Thiết bị & Máy móc', category: 'FEATURE', sortOrder: 544 },
-  { code: 'MENU_SPARE_PARTS', name: 'Menu Quản lý Phụ tùng', group: 'Thiết bị & Máy móc', category: 'MENU', sortOrder: 545 },
-  { code: 'FEATURE_SPARE_PARTS_MANAGE', name: 'Quản lý phụ tùng & kho linh kiện', group: 'Thiết bị & Máy móc', category: 'FEATURE', sortOrder: 546 },
-  { code: 'FEATURE_SPARE_PARTS_APPROVE', name: 'Duyệt phiếu hủy / thanh lý / kiểm kê kho', group: 'Thiết bị & Máy móc', category: 'FEATURE', sortOrder: 547 },
+  { code: 'FEATURE_EQUIPMENT_MAINTENANCE', name: 'Bảo dưỡng & Sửa chữa thiết bị F&B', group: 'Thiết bị F&B', category: 'FEATURE', sortOrder: 542 },
+  { code: 'MENU_CUSTOMERS', name: 'Menu Khách hàng', group: 'Thiết bị & Dịch vụ', category: 'MENU', sortOrder: 543 },
+  { code: 'FEATURE_CUSTOMER_MANAGE', name: 'Quản lý khách hàng', group: 'Thiết bị & Dịch vụ', category: 'FEATURE', sortOrder: 544 },
+  { code: 'MENU_SPARE_PARTS', name: 'Menu Quản lý Phụ tùng', group: 'Thiết bị & Dịch vụ', category: 'MENU', sortOrder: 545 },
+  { code: 'FEATURE_SPARE_PARTS_MANAGE', name: 'Quản lý phụ tùng & kho linh kiện', group: 'Thiết bị & Dịch vụ', category: 'FEATURE', sortOrder: 546 },
+  { code: 'FEATURE_SPARE_PARTS_APPROVE', name: 'Duyệt phiếu hủy / thanh lý / kiểm kê kho', group: 'Thiết bị & Dịch vụ', category: 'FEATURE', sortOrder: 547 },
 
   // ── Thiết bị & Tài sản Văn phòng ──
   { code: 'MENU_ASSETS', name: 'Menu Thiết bị văn phòng', group: 'Thiết bị', category: 'MENU', sortOrder: 550 },

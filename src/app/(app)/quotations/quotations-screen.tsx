@@ -91,7 +91,7 @@ export function QuotationsScreen({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <PageHeader
         title="Báo giá khách hàng"
-        description="Lập báo giá linh kiện, máy móc, dịch vụ; phê duyệt và chốt đơn bán chính thức."
+        description="Lập báo giá linh kiện, thiết bị, dịch vụ; phê duyệt và chốt đơn bán chính thức."
         actions={
           canManage && (
             <Button
@@ -226,7 +226,7 @@ export function QuotationsScreen({
             Chưa có bản báo giá nào
           </h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 460, margin: '0 auto 20px' }}>
-            Lập báo giá chuyên nghiệp gửi khách hàng gồm linh kiện, máy móc, dịch vụ, chiết khấu và thuế VAT. In khổ giấy A4 hoặc chốt thành đơn hàng bán.
+            Lập báo giá chuyên nghiệp gửi khách hàng gồm linh kiện, thiết bị, dịch vụ, chiết khấu và thuế VAT. In khổ giấy A4 hoặc chốt thành đơn hàng bán.
           </p>
           {canManage && (
             <Button
@@ -419,6 +419,7 @@ export function QuotationsScreen({
           spareParts={spareParts}
           pricingConfig={pricingConfig}
           stockMachines={stockMachines}
+          companyInfo={companyInfo}
           onSuccess={() => startTransition(() => router.refresh())}
         />
       )}

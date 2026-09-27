@@ -9,8 +9,7 @@ done
 echo "✓ MySQL đã sẵn sàng"
 
 echo "→ Áp dụng migration & đồng bộ schema…"
-npx prisma migrate deploy || true
-npx prisma db push --skip-generate
+npx prisma migrate deploy
 
 if [ "$AUTO_SEED" = "true" ]; then
   echo "→ Nạp dữ liệu khởi tạo (AUTO_SEED=true)…"

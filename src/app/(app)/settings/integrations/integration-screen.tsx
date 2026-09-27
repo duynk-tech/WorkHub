@@ -2966,7 +2966,7 @@ export function IntegrationScreen({
                       onChange={(e) => setToolModal({ ...toolModal, actionType: e.target.value as 'HTTP' | 'CODE' })}
                     >
                       <option value="HTTP">HTTP Request (REST API)</option>
-                      <option value="CODE">JavaScript Code</option>
+                      <option value="CODE" disabled>JavaScript (đã vô hiệu hóa)</option>
                     </Select>
                   </Field>
                   <Field label="Trạng thái">

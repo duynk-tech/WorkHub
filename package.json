@@ -21,7 +21,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "scheduler": "tsx scripts/scheduler.ts",
-    "job": "tsx scripts/scheduler.ts"
+    "job": "tsx scripts/scheduler.ts",
+    "db:seed:business-demo": "tsx scripts/seed-business-demo.ts",
+    "db:seed:hr-demo": "tsx scripts/seed-business-demo.ts --include-hr"
   },
   "prisma": {
     "seed": "tsx prisma/seed/index.ts"
@@ -58,6 +60,15 @@
     "tailwindcss": "^4.1.8",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.4"
+    "vitest": "^5.0.2"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "^8.0.2"
+    },
+    "exceljs": {
+      "uuid": "^11.1.1"
+    },
+    "postcss": "^8.5.28"
   }
 }

@@ -1,3 +1,4 @@
+import { allocatePayment } from '@/lib/payment-allocation';
 import { prisma } from '@/lib/prisma';
 import { nextSequentialCode } from '@/lib/code-sequence';
 import { getSetting, setSetting } from '@/server/modules/settings/service';
@@ -256,6 +257,10 @@ export async function saveWarehouse(id: number | null, input: SaveWarehouseInput
 
 /** Thực hiện Giao dịch Kho: Nhập kho (IN) / Xuất kho (OUT) / Điều chuyển (TRANSFER) */
 export async function createStockTransaction(input: SaveStockTransactionInput, userId: number) {
+  if (!input.items.length || input.items.some((item) => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
+    throw new Error('Số lượng hàng phải là số nguyên dương');
+  }
+  if (new Set(input.items.map((item) => item.itemId)).size !== input.items.length) throw new Error('Mỗi mặt hàng chỉ xuất hiện một lần trên phiếu');
   const transCode = await generateTransCode(input.type);
   // Giá vốn đổi thì giá bán tự tính phải đổi theo → cần cấu hình margin ngay tại đây
   const pricingConfig = await getSparePartPricingConfig();
@@ -430,30 +435,18 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
         });
       } else if (input.type === 'OUT') {
         // Giảm tồn kho tại sourceWarehouseId
-        await tx.inventoryStock.update({
-          where: {
-            warehouseId_itemId: {
-              warehouseId: input.sourceWarehouseId!,
-              itemId: it.itemId,
-            },
-          },
-          data: {
-            quantity: { decrement: it.quantity },
-          },
+        const deducted = await tx.inventoryStock.updateMany({
+          where: { warehouseId: input.sourceWarehouseId!, itemId: it.itemId, quantity: { gte: it.quantity } },
+          data: { quantity: { decrement: it.quantity } },
         });
+        if (deducted.count !== 1) throw new Error('Tồn kho đã thay đổi, vui lòng tải lại phiếu');
       } else if (input.type === 'TRANSFER') {
         // Giảm tại sourceWarehouseId
-        await tx.inventoryStock.update({
-          where: {
-            warehouseId_itemId: {
-              warehouseId: input.sourceWarehouseId!,
-              itemId: it.itemId,
-            },
-          },
-          data: {
-            quantity: { decrement: it.quantity },
-          },
+        const deducted = await tx.inventoryStock.updateMany({
+          where: { warehouseId: input.sourceWarehouseId!, itemId: it.itemId, quantity: { gte: it.quantity } },
+          data: { quantity: { decrement: it.quantity } },
         });
+        if (deducted.count !== 1) throw new Error('Tồn kho đã thay đổi, vui lòng tải lại phiếu');
 
         // Tăng tại targetWarehouseId
         await tx.inventoryStock.upsert({
@@ -1418,6 +1411,12 @@ export async function approveStockTransaction(transactionId: number, userId: num
       throw new Error(`Phiếu ${trans.transCode} không ở trạng thái chờ duyệt`);
     }
 
+    const claimed = await tx.inventoryTransaction.updateMany({
+      where: { id: transactionId, status: 'PENDING_APPROVAL' },
+      data: { status: 'COMPLETED', approvedById: userId, approvedAt: new Date() },
+    });
+    if (claimed.count !== 1) throw new Error('Phiếu đã được xử lý, vui lòng tải lại');
+
     // Kiểm tra tồn ngay lúc duyệt, không dùng số lúc tạo phiếu — hàng có thể đã xuất bớt
     if (trans.type === 'OUT' || trans.type === 'TRANSFER') {
       for (const line of trans.items) {
@@ -1481,19 +1480,17 @@ export async function approveStockTransaction(transactionId: number, userId: num
           update: { quantity: { increment: line.quantity } },
         });
       } else if (trans.type === 'OUT') {
-        await tx.inventoryStock.update({
-          where: {
-            warehouseId_itemId: { warehouseId: trans.sourceWarehouseId!, itemId: line.itemId },
-          },
+        const deducted = await tx.inventoryStock.updateMany({
+          where: { warehouseId: trans.sourceWarehouseId!, itemId: line.itemId, quantity: { gte: line.quantity } },
           data: { quantity: { decrement: line.quantity } },
         });
+        if (deducted.count !== 1) throw new Error('Tồn kho đã thay đổi, vui lòng tải lại phiếu');
       } else {
-        await tx.inventoryStock.update({
-          where: {
-            warehouseId_itemId: { warehouseId: trans.sourceWarehouseId!, itemId: line.itemId },
-          },
+        const deducted = await tx.inventoryStock.updateMany({
+          where: { warehouseId: trans.sourceWarehouseId!, itemId: line.itemId, quantity: { gte: line.quantity } },
           data: { quantity: { decrement: line.quantity } },
         });
+        if (deducted.count !== 1) throw new Error('Tồn kho đã thay đổi, vui lòng tải lại phiếu');
         await tx.inventoryStock.upsert({
           where: {
             warehouseId_itemId: { warehouseId: trans.targetWarehouseId!, itemId: line.itemId },
@@ -1513,7 +1510,7 @@ export async function approveStockTransaction(transactionId: number, userId: num
       data: { status: 'COMPLETED', approvedById: userId, approvedAt: new Date() },
       include: { items: { include: { item: true } }, sourceWarehouse: true, targetWarehouse: true },
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 }
 
 /** Duyệt phiếu rồi chốt luôn đợt kiểm kê nếu không còn phiếu nào chờ. */
@@ -1800,89 +1797,54 @@ export async function recordSupplierPayment(
   },
   userId?: number,
 ) {
-  const amount = Math.max(0, Number(input.amount) || 0);
-  if (amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
-
-  const payment = await prisma.supplierPayment.create({
-    data: {
-      paymentCode: await generateSupplierPaymentCode(),
-      supplier: input.supplier.trim(),
-      orderId: input.orderId || null,
-      amount,
-      method: input.method || 'TRANSFER',
-      paidAt: input.paidAt ? new Date(input.paidAt) : new Date(),
-      reference: input.reference?.trim() || null,
-      note: input.note?.trim() || null,
-      createdById: userId || null,
-    },
-  });
-
-  if (input.orderId) {
-    await prisma.sparePartOrder.update({
-      where: { id: input.orderId },
-      data: { paidAmount: { increment: amount } },
-    });
-    return payment;
-  }
-
-  // Trả chung cho nhà cung cấp: trừ dần phiếu cũ nhất còn nợ
-  const orders = await prisma.sparePartOrder.findMany({
-    where: { supplier: input.supplier.trim(), status: { not: 'CANCELLED' } },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  let left = amount;
-  for (const o of orders) {
-    if (left <= 0) break;
-    const remaining = Math.max(0, Number(o.totalVnd || 0) - Number(o.paidAmount || 0));
-    if (remaining <= 0) continue;
-    const apply = Math.min(left, remaining);
-    await prisma.sparePartOrder.update({
-      where: { id: o.id },
-      data: { paidAmount: { increment: apply } },
-    });
-    left -= apply;
-  }
-
-  return payment;
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
+  const paymentCode = await generateSupplierPaymentCode();
+  return prisma.$transaction(async (tx) => {
+    const orders = await tx.sparePartOrder.findMany({ where: { supplier: input.supplier.trim(), status: { not: 'CANCELLED' }, ...(input.orderId ? { id: input.orderId } : {}) }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    if (input.orderId && !orders.length) throw new Error('Đơn không thuộc nhà cung cấp hoặc đã hủy');
+    const { allocations, unapplied } = allocatePayment(amount, orders.map((order) => ({ id: order.id, remaining: supplierOrderDebt(order).remaining })));
+    const payment = await tx.supplierPayment.create({ data: {
+      allocationVersion: 1, paymentCode, supplier: input.supplier.trim(), orderId: input.orderId || null, amount,
+      method: input.method || 'TRANSFER', paidAt: input.paidAt ? new Date(input.paidAt) : new Date(),
+      reference: input.reference?.trim() || null, note: input.note?.trim() || null, createdById: userId || null,
+      allocations: { create: allocations },
+    } });
+    for (const allocation of allocations) await tx.sparePartOrder.update({ where: { id: allocation.orderId }, data: { paidAmount: { increment: allocation.amount } } });
+    await tx.auditLog.create({ data: { actorId: userId || null, entityType: 'SupplierPayment', entityId: String(payment.id), action: 'ALLOCATE', diffJson: { allocations, amount } } });
+    return { ...payment, unappliedAmount: unapplied };
+  }, { isolationLevel: 'Serializable' });
 }
 
-export async function deleteSupplierPayment(id: number) {
-  const payment = await prisma.supplierPayment.findUnique({ where: { id } });
-  if (!payment) throw new Error('Không tìm thấy phiếu chi');
-
-  if (payment.orderId) {
-    const order = await prisma.sparePartOrder.findUnique({ where: { id: payment.orderId } });
-    if (order) {
-      await prisma.sparePartOrder.update({
-        where: { id: order.id },
-        data: { paidAmount: Math.max(0, Number(order.paidAmount || 0) - Number(payment.amount)) },
-      });
+export async function deleteSupplierPayment(id: number, actorId?: number) {
+  return prisma.$transaction(async (tx) => {
+    const payment = await tx.supplierPayment.findUnique({ where: { id }, include: { allocations: true } });
+    if (!payment) throw new Error('Không tìm thấy phiếu chi');
+    if (Number(payment.amount) <= 0) throw new Error('Phiếu điều chỉnh cần đối soát riêng');
+    let allocations = payment.allocations.map((a) => ({ orderId: a.orderId, amount: Number(a.amount) }));
+    if (!allocations.length && payment.allocationVersion !== 1) {
+      if (!payment.orderId) throw new Error('Phiếu chi cũ chưa có phân bổ. Cần đối soát trước khi hủy.');
+      allocations = [{ orderId: payment.orderId, amount: Number(payment.amount) }];
     }
-  } else {
-    const orders = await prisma.sparePartOrder.findMany({
-      where: { supplier: payment.supplier, paidAmount: { gt: 0 } },
-      orderBy: { createdAt: 'desc' },
-    });
-    let left = Number(payment.amount);
-    for (const o of orders) {
-      if (left <= 0) break;
-      const back = Math.min(left, Number(o.paidAmount || 0));
-      await prisma.sparePartOrder.update({
-        where: { id: o.id },
-        data: { paidAmount: Number(o.paidAmount || 0) - back },
-      });
-      left -= back;
+    for (const allocation of allocations) {
+      const updated = await tx.sparePartOrder.updateMany({ where: { id: allocation.orderId, paidAmount: { gte: allocation.amount } }, data: { paidAmount: { decrement: allocation.amount } } });
+      if (updated.count !== 1) throw new Error('Công nợ không khớp phân bổ. Cần đối soát trước khi hủy.');
     }
-  }
-
-  return prisma.supplierPayment.delete({ where: { id } });
+    await tx.auditLog.create({ data: { actorId: actorId || null, entityType: 'SupplierPayment', entityId: String(id), action: 'REVERSE', diffJson: { paymentCode: payment.paymentCode, amount: Number(payment.amount), allocations } } });
+    return tx.supplierPayment.delete({ where: { id } });
+  }, { isolationLevel: 'Serializable' });
 }
 
-export async function listSupplierPayments(supplier?: string) {
+export async function listSupplierPayments(supplier?: string, orderId?: number) {
   if (!prisma.supplierPayment) return [];
+  const where: any = {};
+  if (orderId) {
+    where.orderId = orderId;
+  } else if (supplier && supplier !== 'ALL') {
+    where.supplier = supplier;
+  }
   return prisma.supplierPayment.findMany({
-    where: supplier && supplier !== 'ALL' ? { supplier } : {},
+    where,
     include: { order: { select: { id: true, orderCode: true } } },
     orderBy: { paidAt: 'desc' },
     take: 100,

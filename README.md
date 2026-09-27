@@ -32,7 +32,7 @@ npm run scheduler    # tiến trình nhắc việc / chốt công (cửa sổ te
 docker compose up -d
 ```
 
-MySQL 8.4 + ứng dụng khởi động cùng nhau; entrypoint tự chờ DB, chạy migration và seed. Mở http://localhost:3000, đăng nhập `admin / Admin@123`.
+MySQL 8.4 + ứng dụng khởi động cùng nhau; entrypoint tự chờ DB, chạy migration và seed. Mở http://localhost:3000. Tạo tài khoản quản trị ở `/install`; không dùng mật khẩu mặc định trên môi trường dùng chung.
 
 ### Cách 3 — Trình cài đặt web
 
@@ -100,10 +100,14 @@ npm run job outbox     # chạy tay một job: outbox | task-reminders | overdue
                        #                    approval-sla | daily-digest | attendance-rollup
 npm run db:migrate     # tạo migration mới sau khi sửa schema.prisma
 npm run db:seed        # nạp lại dữ liệu hệ thống (idempotent)
-npm run db:seed -- --demo
+npm run db:seed -- --demo  # dữ liệu HR/F&B mẫu hiện có
+npm run db:seed:business-demo # thêm khách, kho, mặt hàng, PO, đơn bán và phiếu thu/chi demo
+CONFIRM_DEMO_HR_OVERWRITE=YES npm run db:seed:hr-demo # thêm HR/demo; cập nhật hồ sơ NV001–NV014
 npm run db:studio      # Prisma Studio
 npm test               # vitest
 ```
+
+Seed thương mại dùng mã `DEMO-`, có thể chạy lại để dựng lại các giao dịch demo, và giữ nguyên các chứng từ không mang mã demo. Seed HR cập nhật các nhân sự mẫu `NV001`–`NV014`; lệnh yêu cầu biến xác nhận để tránh chạy nhầm lên hồ sơ nhân sự thật. Không dùng `db:seed:clean`, `db:reset` hoặc cờ `--clean` trên database đang chứa dữ liệu cần giữ.
 
 ---
 

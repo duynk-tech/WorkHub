@@ -109,7 +109,8 @@ describe('Zalo Bot Session Context & Role-Based Access Control', () => {
         id: 1,
         code: 'NV001',
         fullName: 'Nguyễn Văn A',
-        user: { roles: [] },
+        user: { roles: [], isActive: true, lockedUntil: null },
+        status: 'ACTIVE',
       } as any);
 
       const res = await handleZaloCommand('zalo_user_reset', '/reset');
@@ -122,7 +123,8 @@ describe('Zalo Bot Session Context & Role-Based Access Control', () => {
         id: 1,
         code: 'NV001',
         fullName: 'Nguyễn Văn A',
-        user: { roles: [] },
+        user: { roles: [], isActive: true, lockedUntil: null },
+        status: 'ACTIVE',
       } as any);
 
       const res = await handleZaloCommand('zalo_user_new', '/new');

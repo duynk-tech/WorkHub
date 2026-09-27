@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest, after } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleZaloCommand } from '@/server/modules/zalo/commands';
@@ -123,6 +124,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   // 1. Kiểm tra secret token xác thực Zalo Webhook
   const configuredSecret = await getSetting<string>('zalo.webhookSecret', '');
+  if (!configuredSecret?.trim()) {
+    return NextResponse.json({ ok: false, error: 'Webhook chưa được cấu hình bảo mật' }, { status: 503 });
+  }
   if (configuredSecret && configuredSecret.trim()) {
     const cleanConfigured = configuredSecret.trim();
 
@@ -135,9 +139,6 @@ export async function POST(req: NextRequest) {
       req.headers.get('x-workhub-secret') ||
       req.headers.get('x-secret-token') ||
       req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-      req.nextUrl.searchParams.get('secret') ||
-      req.nextUrl.searchParams.get('secret_token') ||
-      req.nextUrl.searchParams.get('token') ||
       '';
 
     const cleanHeader = headerSecret.trim();
@@ -169,7 +170,22 @@ export async function POST(req: NextRequest) {
   // 3. Đọc dữ liệu JSON an toàn
   let body: unknown = {};
   try {
-    const raw = await req.text();
+    const reader = req.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 256 * 1024) {
+          await reader.cancel();
+          return NextResponse.json({ ok: false, error: 'Payload quá lớn' }, { status: 413 });
+        }
+        chunks.push(value);
+      }
+    }
+    const raw = Buffer.concat(chunks).toString('utf8');
     if (raw.trim()) {
       body = JSON.parse(raw);
     }
@@ -180,6 +196,9 @@ export async function POST(req: NextRequest) {
 
   // 4. Trích xuất danh sách tin nhắn (hỗ trợ cả mảng sự kiện Zalo Bot và đối tượng đơn)
   const messages = extractZaloMessages(body);
+  if (messages.length > 20 || messages.some((m) => m.text.length > 8000 || m.senderId.length > 191)) {
+    return NextResponse.json({ ok: false, error: 'Vượt giới hạn tin nhắn' }, { status: 413 });
+  }
 
   if (messages.length === 0) {
     console.log('[Zalo Webhook] Đã nhận webhook nhưng không tìm thấy tin nhắn văn bản hợp lệ');
@@ -192,21 +211,29 @@ export async function POST(req: NextRequest) {
       const zaloUserId = msg.senderId;
       const text = msg.text;
       const displayName = msg.displayName;
-      console.log(`[Zalo Webhook] Đang xử lý tin nhắn từ ${displayName || zaloUserId} (${zaloUserId}): "${text.slice(0, 60)}"`);
+
+
+      const recentCount = await prisma.zaloInboundLog.count({
+        where: { zaloUserId, createdAt: { gte: new Date(Date.now() - 60_000) } },
+      });
+      if (recentCount >= 30) continue;
 
       // Ghi nhận log đầu vào vào CSDL
       const logRecord = await prisma.zaloInboundLog.create({
         data: {
-          messageId: msg.messageId,
+          messageId: createHash('sha256').update(JSON.stringify([zaloUserId, msg.messageId ?? msg.rawItem])).digest('hex'),
           zaloUserId: zaloUserId,
           text: text,
           payloadJson: msg.rawItem as any,
           handled: false,
         },
       }).catch((e) => {
-        console.error('[Zalo Inbound Log Create Error]:', e);
+        if (e?.code !== 'P2002') console.error('[Zalo Inbound Log] Không thể nhận sự kiện');
         return null;
       });
+
+      // A duplicate event or failed durable claim must never run business actions.
+      if (!logRecord) continue;
 
       try {
         // 5.1. Nếu là lệnh slash (bắt đầu bằng '/')

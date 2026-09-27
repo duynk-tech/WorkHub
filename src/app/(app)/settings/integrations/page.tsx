@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import { requireAuth, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { MCP_TOOLS } from '@/server/mcp/tools';
@@ -15,32 +16,35 @@ export default async function IntegrationsPage({
   searchParams?: Promise<Record<string, string | undefined>>;
 }) {
   const ctx = await requireAuth();
+  const canMcp = can(ctx, 'FEATURE_MCP_MANAGE');
+  const canZalo = can(ctx, 'FEATURE_SETTING_ZALO');
+  if (!canMcp && !canZalo) notFound();
   const sp = searchParams ? await searchParams : {};
   const initialTab = sp.tab ?? 'mcp';
   const initialModal = sp.modal ?? '';
   const initialSubtab = sp.subtab ?? '';
 
   const [clients, webhooks, users, recentCalls, settings, customTools, zaloLogs, disabledModules] = await Promise.all([
-    prisma.mcpClient.findMany({
+    canMcp ? prisma.mcpClient.findMany({
       orderBy: { createdAt: 'desc' },
       include: { actAsUser: { select: { username: true, employee: { select: { fullName: true } } } } },
-    }),
-    prisma.outboundWebhook.findMany({ orderBy: { createdAt: 'desc' } }),
+    }) : [],
+    canMcp ? prisma.outboundWebhook.findMany({ orderBy: { createdAt: 'desc' } }).then((rows) => rows.map((row) => ({ ...row, secret: row.secret ? '********' : null }))) : [],
     prisma.user.findMany({
       where: { isActive: true },
       orderBy: { username: 'asc' },
       select: { id: true, username: true, employeeId: true, employee: { select: { fullName: true } } },
     }),
-    prisma.mcpCallLog.findMany({
+    canMcp ? prisma.mcpCallLog.findMany({
       orderBy: { createdAt: 'desc' }, take: 30,
       include: { client: { select: { name: true } } },
-    }),
-    getSettings(),
-    getCustomTools(),
-    prisma.zaloInboundLog.findMany({
+    }) : [],
+    canZalo ? Promise.all([getSettings('zalo'), getSettings('ai')]).then(([zalo, ai]) => ({ ...zalo, ...ai })) : {},
+    ctx.isAdmin ? getCustomTools() : [],
+    ctx.isAdmin ? prisma.zaloInboundLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 100,
-    }),
+    }) : [],
     getDisabledMcpModules(),
   ]);
 

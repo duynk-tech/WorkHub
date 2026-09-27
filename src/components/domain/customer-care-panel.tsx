@@ -525,7 +525,7 @@ export function CustomerCarePanel({
             <CheckCircle2 style={{ width: 24, height: 24 }} />
           </div>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
-            Không có máy móc nào cần xử lý với bộ lọc này
+            Không có thiết bị nào cần xử lý với bộ lọc này
           </div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px auto 16px', maxWidth: 420 }}>
             {searchQuery
@@ -860,7 +860,7 @@ export function CustomerCarePanel({
 
                               <Link
                                 href={`/equipment/${m.id}`}
-                                title="Xem chi tiết máy móc"
+                                title="Xem chi tiết thiết bị"
                                 style={{
                                   padding: '5px 7px',
                                   borderRadius: 6,

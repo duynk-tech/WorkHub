@@ -12,7 +12,7 @@ import {
   lineTotal,
 } from '@/components/domain/line-items-editor';
 import { SparePartModal } from '@/components/domain/spare-parts-modals';
-import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X, Printer } from 'lucide-react';
+import { Plus, Trash2, MapPin, AlertTriangle, ShoppingCart, X, Printer, Receipt, Building2, Package } from 'lucide-react';
 import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
 import {
   ORDER_TYPES,
@@ -236,6 +236,7 @@ export function CustomerOrderModal({
   const [loading, setLoading] = useState(false);
   const [currentLocations, setCurrentLocations] = useState<any[]>(locations);
   const [quickLocationOpen, setQuickLocationOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'detail' | 'invoice'>('detail');
 
   const [orderType, setOrderType] = useState(order?.orderType || 'MACHINE_PURCHASE');
   const [status, setStatus] = useState(order?.status || 'COMPLETED');
@@ -515,7 +516,7 @@ export function CustomerOrderModal({
                 </span>
               </div>
               <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
-                Ghi nhận giao dịch bán linh kiện, phụ tùng máy móc hoặc dịch vụ cho khách hàng
+                Ghi nhận giao dịch bán linh kiện, phụ tùng thiết bị hoặc dịch vụ cho khách hàng
               </p>
             </div>
           </div>
@@ -536,6 +537,75 @@ export function CustomerOrderModal({
           </button>
         </div>
 
+        {/* Tab Switcher: Chi tiết & Hóa đơn */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 4,
+            padding: '0 16px',
+            borderBottom: '1px solid var(--border-base, #e2e8f0)',
+            background: 'var(--surface-sunken, #f8fafc)',
+            flexShrink: 0,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab('detail')}
+            style={{
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: activeTab === 'detail' ? 700 : 500,
+              color: activeTab === 'detail' ? '#7c3aed' : 'var(--text-muted)',
+              borderBottom: activeTab === 'detail' ? '2px solid #7c3aed' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <Package size={15} /> Chi tiết
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('invoice')}
+            style={{
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: activeTab === 'invoice' ? 700 : 500,
+              color: activeTab === 'invoice' ? '#7c3aed' : 'var(--text-muted)',
+              borderBottom: activeTab === 'invoice' ? '2px solid #7c3aed' : '2px solid transparent',
+              background: 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderRight: 'none',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <Receipt size={15} /> Hóa đơn
+            {Boolean(invoiceNo || invoiceSerial || invoiceDate) && (
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                  background: '#dcfce7',
+                  color: '#15803d',
+                  fontWeight: 700,
+                }}
+              >
+                Đã có HĐ
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* Scrollable Form Body */}
         <form
           onSubmit={(e) => {
@@ -550,7 +620,9 @@ export function CustomerOrderModal({
             gap: 12,
           }}
         >
-          {/* Thông tin đơn hàng (Top header grid) */}
+          {activeTab === 'detail' ? (
+            <>
+              {/* Thông tin đơn hàng (Top header grid) */}
           <div
             style={{
               display: 'grid',
@@ -703,46 +775,161 @@ export function CustomerOrderModal({
             }
           />
 
-          {/* Thông tin hóa đơn & Ghi chú đơn hàng */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: 12, alignItems: 'start' }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-strong)' }}>
-                Thông tin hóa đơn VAT (nếu có)
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.2fr', gap: 6 }}>
+              {/* Ghi chú đơn hàng */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-strong)' }}>
+                  Ghi chú đơn hàng
+                </label>
                 <Input
-                  placeholder="Số HĐ (VD: 00001234)"
-                  value={invoiceNo}
-                  onChange={(e) => setInvoiceNo(e.target.value)}
-                  sizeSm
+                  placeholder="VD: Bàn giao kèm hướng dẫn sử dụng và phiếu bảo hành..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
                 />
+              </div>
+            </>
+          ) : (
+            /* Tab Hóa đơn */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* 1. Thông tin hóa đơn VAT */}
+              <div
+                style={{
+                  background: 'var(--surface-sunken, #f8fafc)',
+                  border: '1px solid var(--border-base, #e2e8f0)',
+                  borderRadius: 8,
+                  padding: '14px 16px',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Receipt size={16} color="#7c3aed" /> Thông tin hóa đơn VAT điện tử (nếu có)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.2fr', gap: 12 }}>
+                  <Field label="Số hóa đơn (Số HĐ)">
+                    <Input
+                      placeholder="VD: 00001234"
+                      value={invoiceNo}
+                      onChange={(e) => setInvoiceNo(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Ký hiệu hóa đơn">
+                    <Input
+                      placeholder="VD: 1C26TAA"
+                      value={invoiceSerial}
+                      onChange={(e) => setInvoiceSerial(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Ngày xuất hóa đơn">
+                    <Input
+                      type="date"
+                      value={invoiceDate}
+                      onChange={(e) => setInvoiceDate(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </div>
+
+              {/* 2. Thông tin pháp nhân khách hàng nhận hóa đơn */}
+              <div
+                style={{
+                  background: 'var(--surface-sunken, #f8fafc)',
+                  border: '1px solid var(--border-base, #e2e8f0)',
+                  borderRadius: 8,
+                  padding: '14px 16px',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Building2 size={16} color="#2563eb" /> Đơn vị nhận hóa đơn (Khách hàng)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px 16px', fontSize: 12.5 }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Tên đơn vị:</span>{' '}
+                    <strong style={{ color: 'var(--text-strong)' }}>{customer?.name || customerName}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Mã số thuế (MST):</span>{' '}
+                    <strong style={{ color: customer?.taxCode ? 'var(--text-strong)' : 'var(--text-muted)' }}>
+                      {customer?.taxCode || '— (Chưa có MST)'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Địa chỉ:</span>{' '}
+                    <span>{customer?.address || '— (Chưa có địa chỉ)'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Người liên hệ / Email HĐ:</span>{' '}
+                    <span>
+                      {customer?.contactPerson ? `${customer.contactPerson} • ` : ''}
+                      {customer?.email || customer?.phone || '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Bảng giá trị đối soát theo hóa đơn */}
+              <div
+                style={{
+                  background: 'var(--surface-sunken, #f8fafc)',
+                  border: '1px solid var(--border-base, #e2e8f0)',
+                  borderRadius: 8,
+                  padding: '14px 16px',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Giá trị thanh toán trên hóa đơn ({items.filter((it) => it.name.trim()).length} mặt hàng)</span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>
+                    Thuế suất VAT: <strong style={{ color: '#7c3aed' }}>{vatRate}%</strong>
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Tổng tiền hàng trước thuế:</span>
+                    <span style={{ fontWeight: 600 }}>{grossAmount.toLocaleString('vi-VN')} ₫</span>
+                  </div>
+                  {discountAmount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
+                      <span>Chiết khấu thương mại ({effectiveDiscountRate}%):</span>
+                      <span style={{ fontWeight: 600 }}>-{discountAmount.toLocaleString('vi-VN')} ₫</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Cộng tiền hàng chịu thuế:</span>
+                    <span>{goodsAmount.toLocaleString('vi-VN')} ₫</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Tiền thuế GTGT ({vatRate}%):</span>
+                    <span style={{ fontWeight: 600 }}>{vatAmount.toLocaleString('vi-VN')} ₫</span>
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: 8,
+                      marginTop: 4,
+                      borderTop: '2px solid var(--border-base, #cbd5e1)',
+                      fontSize: 13.5,
+                      fontWeight: 800,
+                      color: '#7c3aed',
+                    }}
+                  >
+                    <span>TỔNG CỘNG THANH TOÁN (ĐÃ GỒM VAT):</span>
+                    <span style={{ fontSize: 15 }}>{totalAmount.toLocaleString('vi-VN')} ₫</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Ghi chú xuất hóa đơn */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-strong)' }}>
+                  Ghi chú đơn hàng / Hóa đơn
+                </label>
                 <Input
-                  placeholder="Ký hiệu (1C26TAA)"
-                  value={invoiceSerial}
-                  onChange={(e) => setInvoiceSerial(e.target.value)}
-                  sizeSm
-                />
-                <Input
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  sizeSm
-                  title="Ngày xuất hóa đơn"
+                  placeholder="Ghi chú nội dung xuất hóa đơn hoặc diễn giải..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
                 />
               </div>
             </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-strong)' }}>
-                Ghi chú đơn hàng
-              </label>
-              <Input
-                placeholder="VD: Bàn giao kèm hướng dẫn sử dụng và phiếu bảo hành..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-          </div>
+          )}
 
           {/* Footer Actions */}
           <div

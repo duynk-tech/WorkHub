@@ -1,6 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { taskState, taskStatusSchema } from '@/lib/task-state';
+import { transitionTask, assertCompletion, assertChecklistEditable, syncChecklistProgress } from './mutations';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
@@ -17,11 +19,11 @@ const taskSchema = z.object({
   assigneeId: z.number().int().nullable(),
   reviewerId: z.number().int().nullable(),
   parentTaskId: z.number().int().nullable(),
-  status: z.string().default('TODO'),
-  priority: z.string().default('MEDIUM'),
+  status: taskStatusSchema.default('TODO'),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
   startDate: z.string().nullable().or(z.literal('')),
   dueDate: z.string().nullable().or(z.literal('')),
-  estimateHours: z.number().nullable().optional(),
+  estimateHours: z.number().nonnegative().nullable().optional(),
   tags: z.string().nullable().or(z.literal('')),
   progress: z.number().int().min(0).max(100).default(0),
   watcherIds: z.array(z.number().int()).default([]),
@@ -48,6 +50,10 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ' };
   const d = parsed.data;
+  const start = d.startDate ? new Date(d.startDate) : null;
+  const due = d.dueDate ? new Date(d.dueDate) : null;
+  if ((start && !Number.isFinite(start.getTime())) || (due && !Number.isFinite(due.getTime())) || (start && due && due < start)) return { ok: false, message: 'Khoảng ngày công việc không hợp lệ' };
+  if (id && d.parentTaskId === id) return { ok: false, message: 'Công việc không thể là cha của chính nó' };
 
   if (d.assigneeId && d.assigneeId !== ctx.employeeId && !can(ctx, 'FEATURE_TASK_ASSIGN')) {
     return { ok: false, message: 'Bạn chỉ được tạo công việc cho chính mình' };
@@ -74,18 +80,14 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
       const { task: before } = await assertCanEdit(id);
       const assigneeChanged = before.assigneeId !== d.assigneeId;
 
-      const task = await prisma.task.update({
-        where: { id },
-        data: {
-          ...data,
-          completedAt: d.status === 'DONE' && before.status !== 'DONE' ? new Date() : before.completedAt,
-        },
-      });
-
-      await prisma.taskWatcher.deleteMany({ where: { taskId: id } });
-      if (d.watcherIds.length) {
-        await prisma.taskWatcher.createMany({ data: d.watcherIds.map((employeeId) => ({ taskId: id, employeeId })), skipDuplicates: true });
-      }
+      if (before.reviewerId !== d.reviewerId && before.creatorId !== ctx.employeeId && !can(ctx, 'FEATURE_TASK_ASSIGN')) throw new Error('Bạn không có quyền đổi người kiểm tra');
+      const task = await prisma.$transaction(async (tx) => {
+        if (d.status === 'DONE' && before.status !== 'DONE') await assertCompletion(tx, ctx, { id, reviewerId: before.reviewerId ?? d.reviewerId });
+        const task = await tx.task.update({ where: { id }, data: { ...data, ...taskState(d.status, d.progress, before) } });
+        await tx.taskWatcher.deleteMany({ where: { taskId: id } });
+        if (d.watcherIds.length) await tx.taskWatcher.createMany({ data: d.watcherIds.map((employeeId) => ({ taskId: id, employeeId })), skipDuplicates: true });
+        return task;
+      }, { isolationLevel: 'Serializable' });
 
       await logActivity(id, ctx.employeeId, 'UPDATE');
       if (assigneeChanged && d.assigneeId) await notifyTaskAssigned(id, ctx.fullName);
@@ -105,10 +107,12 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
       return { ok: true, message: 'Đã cập nhật công việc', id: task.id };
     }
 
+    if (d.status === 'DONE' && (d.checklist.some(Boolean) || (d.reviewerId && d.reviewerId !== ctx.employeeId))) throw new Error('Tạo công việc trước khi kiểm tra và hoàn thành');
     const code = await generateTaskCode();
     const task = await prisma.task.create({
       data: {
         ...data,
+        ...taskState(d.status, d.progress, { status: 'TODO', progress: 0 }),
         code,
         creatorId: ctx.employeeId,
         departmentId: d.departmentId ?? ctx.departmentId,
@@ -147,30 +151,8 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
 
 export async function updateTaskStatusAction(id: number, status: string, progress?: number): Promise<Result> {
   try {
-    const { ctx, task } = await assertCanEdit(id);
-    if (task.status === status) return { ok: true, message: 'Trạng thái không đổi' };
-
-    await prisma.task.update({
-      where: { id },
-      data: {
-        status: status as never,
-        progress: progress ?? (status === 'DONE' ? 100 : task.progress),
-        completedAt: status === 'DONE' ? new Date() : null,
-      },
-    });
-
-    await logActivity(id, ctx.employeeId, 'STATUS', 'status', TASK_STATUS[task.status]?.label ?? task.status, TASK_STATUS[status]?.label ?? status);
-
-    if (status === 'DONE' && task.status !== 'DONE') {
-      dispatchOutboundWebhook('task.completed', {
-        id: task.id,
-        code: task.code,
-        title: task.title,
-        status: 'DONE',
-        assigneeId: task.assigneeId,
-        completedAt: new Date().toISOString(),
-      }).catch((err) => console.error('[Webhook task.completed Error]:', err));
-    }
+    const ctx = await requireAuth();
+    await transitionTask(ctx, id, status, progress);
 
     revalidatePath('/tasks');
     revalidatePath(`/tasks/${id}`);
@@ -182,8 +164,10 @@ export async function updateTaskStatusAction(id: number, status: string, progres
 
 export async function updateTaskProgressAction(id: number, progress: number): Promise<Result> {
   try {
-    const { ctx } = await assertCanEdit(id);
-    await prisma.task.update({ where: { id }, data: { progress: Math.max(0, Math.min(100, progress)) } });
+    const { ctx, task } = await assertCanEdit(id);
+    if (task.status === 'DONE' && progress !== 100) throw new Error('Mở lại công việc trước khi đổi tiến độ');
+    const data = taskState(task.status, progress, task);
+    await prisma.task.update({ where: { id }, data });
     await logActivity(id, ctx.employeeId, 'PROGRESS', 'progress', null, String(progress));
     revalidatePath(`/tasks/${id}`);
     return { ok: true, message: `Đã cập nhật tiến độ ${progress}%` };
@@ -229,20 +213,11 @@ export async function toggleChecklistAction(itemId: number, isDone: boolean): Pr
 
   try {
     const { ctx } = await assertCanEdit(item.taskId);
-    await prisma.taskChecklistItem.update({
-      where: { id: itemId },
-      data: { isDone, completedAt: isDone ? new Date() : null },
-    });
-
-    // Tiến độ tự suy ra từ checklist khi có đủ dữ liệu
-    const items = await prisma.taskChecklistItem.findMany({ where: { taskId: item.taskId } });
-    if (items.length > 0) {
-      const done = items.filter((i) => i.isDone).length;
-      await prisma.task.update({
-        where: { id: item.taskId },
-        data: { progress: Math.round((done / items.length) * 100) },
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      await assertChecklistEditable(tx, item.taskId);
+      await tx.taskChecklistItem.update({ where: { id: itemId }, data: { isDone, completedAt: isDone ? new Date() : null } });
+      await syncChecklistProgress(tx, item.taskId);
+    }, { isolationLevel: 'Serializable' });
 
     await logActivity(item.taskId, ctx.employeeId, 'CHECKLIST', item.content, null, isDone ? 'hoàn thành' : 'bỏ đánh dấu');
     revalidatePath(`/tasks/${item.taskId}`);
@@ -256,8 +231,12 @@ export async function addChecklistItemAction(taskId: number, content: string): P
   if (!content.trim()) return { ok: false, message: 'Nội dung trống' };
   try {
     await assertCanEdit(taskId);
-    const count = await prisma.taskChecklistItem.count({ where: { taskId } });
-    await prisma.taskChecklistItem.create({ data: { taskId, content: content.trim(), sortOrder: count } });
+    await prisma.$transaction(async (tx) => {
+      await assertChecklistEditable(tx, taskId);
+      const count = await tx.taskChecklistItem.count({ where: { taskId } });
+      await tx.taskChecklistItem.create({ data: { taskId, content: content.trim(), sortOrder: count } });
+      await syncChecklistProgress(tx, taskId);
+    }, { isolationLevel: 'Serializable' });
     revalidatePath(`/tasks/${taskId}`);
     return { ok: true, message: 'Đã thêm mục checklist' };
   } catch (e) {
@@ -270,7 +249,11 @@ export async function deleteChecklistItemAction(itemId: number): Promise<Result>
   if (!item) return { ok: false, message: 'Không tìm thấy mục' };
   try {
     await assertCanEdit(item.taskId);
-    await prisma.taskChecklistItem.delete({ where: { id: itemId } });
+    await prisma.$transaction(async (tx) => {
+      await assertChecklistEditable(tx, item.taskId);
+      await tx.taskChecklistItem.delete({ where: { id: itemId } });
+      await syncChecklistProgress(tx, item.taskId);
+    }, { isolationLevel: 'Serializable' });
     revalidatePath(`/tasks/${item.taskId}`);
     return { ok: true, message: 'Đã xóa mục checklist' };
   } catch (e) {
@@ -281,14 +264,16 @@ export async function deleteChecklistItemAction(itemId: number): Promise<Result>
 export async function logTimeAction(taskId: number, hours: number, workDate: string, description?: string): Promise<Result> {
   try {
     const { ctx } = await assertCanEdit(taskId);
-    if (hours <= 0 || hours > 24) return { ok: false, message: 'Số giờ phải trong khoảng 0–24' };
-
-    await prisma.taskTimeLog.create({
-      data: { taskId, employeeId: ctx.employeeId, hours, workDate: new Date(workDate), description: description || null },
-    });
-
-    const agg = await prisma.taskTimeLog.aggregate({ where: { taskId }, _sum: { hours: true } });
-    await prisma.task.update({ where: { id: taskId }, data: { actualHours: agg._sum.hours ?? 0 } });
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return { ok: false, message: 'Số giờ phải trong khoảng 0–24' };
+    const day = new Date(workDate);
+    if (!Number.isFinite(day.getTime()) || !/^\d{4}-\d{2}-\d{2}$/.test(workDate) || day.toISOString().slice(0, 10) !== workDate) return { ok: false, message: 'Ngày làm việc không hợp lệ' };
+    await prisma.$transaction(async (tx) => {
+      const daily = await tx.taskTimeLog.aggregate({ where: { employeeId: ctx.employeeId, workDate: day }, _sum: { hours: true } });
+      if (Number(daily._sum.hours || 0) + hours > 24) throw new Error('Tổng thời gian của bạn trong ngày vượt 24 giờ');
+      await tx.taskTimeLog.create({ data: { taskId, employeeId: ctx.employeeId, hours, workDate: day, description: description || null } });
+      const agg = await tx.taskTimeLog.aggregate({ where: { taskId }, _sum: { hours: true } });
+      await tx.task.update({ where: { id: taskId }, data: { actualHours: agg._sum.hours ?? 0 } });
+    }, { isolationLevel: 'Serializable' });
 
     revalidatePath(`/tasks/${taskId}`);
     return { ok: true, message: `Đã ghi nhận ${hours} giờ làm việc` };

@@ -1,3 +1,4 @@
+import { allocatePayment } from '@/lib/payment-allocation';
 import { prisma } from '@/lib/prisma';
 import { can, type AuthContext } from '@/server/auth/context';
 import { nextSequentialCode } from '@/lib/code-sequence';
@@ -767,10 +768,14 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
   };
 
   if (numId && !isNaN(numId) && numId > 0) {
-    // Xóa các items cũ và tạo lại
-    await prisma.customerOrderItem.deleteMany({ where: { orderId: numId } });
-
-    return prisma.customerOrder.update({
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.customerOrder.findUniqueOrThrow({ where: { id: numId } });
+      if (existing.stockIssuedAt || Number(existing.paidAmount) !== 0 || Number(existing.returnedAmount) !== 0) {
+        throw new Error('Đơn đã xuất kho hoặc phát sinh thu/trả hàng. Hãy lập điều chỉnh thay vì sửa chi tiết.');
+      }
+      if (existing.customerId !== Number(input.customerId)) throw new Error('Không thể đổi khách hàng của đơn');
+      await tx.customerOrderItem.deleteMany({ where: { orderId: numId } });
+      return tx.customerOrder.update({
       where: { id: numId },
       data: {
         orderType: input.orderType,
@@ -793,7 +798,8 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
         },
       },
       include: { items: true, location: true },
-    });
+      });
+    }, { isolationLevel: 'Serializable' });
   }
 
   const created = await prisma.customerOrder.create({
@@ -1472,107 +1478,52 @@ export function summarizeCustomerDebt(orders: any[]) {
  * đối trừ công nợ, tránh để đơn cũ treo mãi.
  */
 export async function recordCustomerPayment(input: SaveCustomerPaymentInput, userId?: number) {
-  const amount = Math.max(0, Number(input.amount) || 0);
-  if (amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
-
-  const payment = await prisma.customerPayment.create({
-    data: {
-      paymentCode: await generatePaymentCode(),
-      customerId: input.customerId,
-      orderId: input.orderId || null,
-      amount,
-      method: input.method || 'TRANSFER',
-      paidAt: input.paidAt ? new Date(input.paidAt) : new Date(),
-      reference: input.reference?.trim() || null,
-      note: input.note?.trim() || null,
-      createdById: userId || null,
-    },
-  });
-
-  if (input.orderId) {
-    const updated = await prisma.customerOrder.update({
-      where: { id: input.orderId },
-      data: { paidAmount: { increment: amount } },
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
+  const paymentCode = await generatePaymentCode();
+  return prisma.$transaction(async (tx) => {
+    const orders = await tx.customerOrder.findMany({
+      where: { customerId: input.customerId, status: { not: 'CANCELLED' }, ...(input.orderId ? { id: input.orderId } : {}) },
+      orderBy: [{ orderDate: 'asc' }, { id: 'asc' }],
     });
-    const total = Number(updated.totalAmount ?? updated.goodsAmount ?? 0);
-    const paid = Number(updated.paidAmount || 0);
-    const returned = Number(updated.returnedAmount || 0);
-    const rem = Math.max(0, total - returned - paid);
-    if (updated.stockIssuedAt && rem <= 0 && updated.status !== 'CANCELLED') {
-      await prisma.customerOrder.update({
-        where: { id: updated.id },
-        data: { status: 'COMPLETED' },
-      }).catch(() => {});
+    if (input.orderId && !orders.length) throw new Error('Đơn hàng không thuộc khách hàng hoặc đã hủy');
+    const { allocations, unapplied } = allocatePayment(amount, orders.map((order) => ({ id: order.id, remaining: orderDebt(order).remaining })));
+    const payment = await tx.customerPayment.create({ data: {
+      allocationVersion: 1, paymentCode, customerId: input.customerId, orderId: input.orderId || null, amount,
+      method: input.method || 'TRANSFER', paidAt: input.paidAt ? new Date(input.paidAt) : new Date(),
+      reference: input.reference?.trim() || null, note: input.note?.trim() || null, createdById: userId || null,
+      allocations: { create: allocations },
+    } });
+    for (const allocation of allocations) {
+      const order = await tx.customerOrder.update({ where: { id: allocation.orderId }, data: { paidAmount: { increment: allocation.amount } } });
+      if (order.stockIssuedAt && orderDebt(order).remaining <= 0) await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'COMPLETED' } });
     }
-    return payment;
-  }
-
-  // Thu chung: trừ dần từ đơn cũ nhất còn nợ
-  const orders = await prisma.customerOrder.findMany({
-    where: { customerId: input.customerId, status: { not: 'CANCELLED' } },
-    orderBy: { orderDate: 'asc' },
-  });
-
-  let left = amount;
-  for (const o of orders) {
-    if (left <= 0) break;
-    const remaining = Math.max(0, Number(o.totalAmount || 0) - Number(o.paidAmount || 0));
-    if (remaining <= 0) continue;
-    const apply = Math.min(left, remaining);
-    const updated = await prisma.customerOrder.update({
-      where: { id: o.id },
-      data: { paidAmount: { increment: apply } },
-    });
-    left -= apply;
-    const total = Number(updated.totalAmount ?? updated.goodsAmount ?? 0);
-    const paid = Number(updated.paidAmount || 0);
-    const returned = Number(updated.returnedAmount || 0);
-    const rem = Math.max(0, total - returned - paid);
-    if (updated.stockIssuedAt && rem <= 0 && updated.status !== 'CANCELLED') {
-      await prisma.customerOrder.update({
-        where: { id: updated.id },
-        data: { status: 'COMPLETED' },
-      }).catch(() => {});
-    }
-  }
-
-  return payment;
+    // This audit identifies new unallocated deposits, distinguishing them from legacy payments.
+    await tx.auditLog.create({ data: { actorId: userId || null, entityType: 'CustomerPayment', entityId: String(payment.id), action: 'ALLOCATE', diffJson: { allocations, amount } } });
+    return { ...payment, unappliedAmount: unapplied };
+  }, { isolationLevel: 'Serializable' });
 }
 
-/** Xóa phiếu thu và hoàn lại số đã trừ trên các đơn. */
-export async function deleteCustomerPayment(id: number) {
-  const payment = await prisma.customerPayment.findUnique({ where: { id } });
-  if (!payment) throw new Error('Không tìm thấy phiếu thu');
-
-  if (payment.orderId) {
-    const order = await prisma.customerOrder.findUnique({ where: { id: payment.orderId } });
-    if (order) {
-      await prisma.customerOrder.update({
-        where: { id: order.id },
-        data: {
-          paidAmount: Math.max(0, Number(order.paidAmount || 0) - Number(payment.amount)),
-        },
-      });
+/** Reverse the original allocation, never infer its orders from today's balances. */
+export async function deleteCustomerPayment(id: number, actorId?: number) {
+  return prisma.$transaction(async (tx) => {
+    const payment = await tx.customerPayment.findUnique({ where: { id }, include: { allocations: true } });
+    if (!payment) throw new Error('Không tìm thấy phiếu thu');
+    if (Number(payment.amount) < 0) throw new Error('Phiếu hoàn tiền phải được điều chỉnh cùng phiếu trả hàng');
+    let allocations = payment.allocations.map((a) => ({ orderId: a.orderId, amount: Number(a.amount) }));
+    if (!allocations.length && payment.allocationVersion !== 1) {
+      if (!payment.orderId) throw new Error('Phiếu thu cũ chưa có phân bổ. Cần đối soát trước khi hủy.');
+      allocations = [{ orderId: payment.orderId, amount: Number(payment.amount) }];
     }
-  } else {
-    // Thu chung: hoàn ngược từ đơn mới nhất đã được trừ
-    const orders = await prisma.customerOrder.findMany({
-      where: { customerId: payment.customerId, paidAmount: { gt: 0 } },
-      orderBy: { orderDate: 'desc' },
-    });
-    let left = Number(payment.amount);
-    for (const o of orders) {
-      if (left <= 0) break;
-      const back = Math.min(left, Number(o.paidAmount || 0));
-      await prisma.customerOrder.update({
-        where: { id: o.id },
-        data: { paidAmount: Number(o.paidAmount || 0) - back },
-      });
-      left -= back;
+    for (const allocation of allocations) {
+      const updated = await tx.customerOrder.updateMany({ where: { id: allocation.orderId, paidAmount: { gte: allocation.amount } }, data: { paidAmount: { decrement: allocation.amount } } });
+      if (updated.count !== 1) throw new Error('Công nợ không khớp phân bổ. Cần đối soát trước khi hủy.');
+      const order = await tx.customerOrder.findUniqueOrThrow({ where: { id: allocation.orderId } });
+      if (order.status === 'COMPLETED' && order.stockIssuedAt && orderDebt(order).remaining > 0) await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'DELIVERED' } });
     }
-  }
-
-  return prisma.customerPayment.delete({ where: { id } });
+    await tx.auditLog.create({ data: { actorId: actorId || null, entityType: 'CustomerPayment', entityId: String(id), action: 'REVERSE', diffJson: { paymentCode: payment.paymentCode, amount: Number(payment.amount), allocations } } });
+    return tx.customerPayment.delete({ where: { id } });
+  }, { isolationLevel: 'Serializable' });
 }
 
 // ── Trả hàng & hoàn tiền ────────────────────────────────────────

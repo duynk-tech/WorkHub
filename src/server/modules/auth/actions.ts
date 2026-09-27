@@ -1,5 +1,8 @@
 'use server';
 
+import { sha256 } from '@/lib/crypto';
+
+import { safeRedirectPath } from '@/lib/safe-redirect';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -85,10 +88,10 @@ export async function loginAction(_prev: ActionState, formData: FormData): Promi
     },
   });
 
-  await createSessionCookie({ userId: user.id, username: user.username });
+  await createSessionCookie({ userId: user.id, username: user.username, credentialVersion: sha256(user.passwordHash) });
 
   const next = String(formData.get('next') ?? '/dashboard');
-  redirect(next.startsWith('/') ? next : '/dashboard');
+  redirect(safeRedirectPath(next));
 }
 
 export async function logoutAction() {

@@ -1,3 +1,4 @@
+import { SECRET_SETTING_KEYS } from './policy';
 import { prisma } from '@/lib/prisma';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
 
@@ -17,7 +18,8 @@ export async function getSettings(group?: string): Promise<Record<string, unknow
   const rows = await prisma.systemSetting.findMany({ where: group ? { groupName: group } : undefined }).catch(() => []);
   const out: Record<string, unknown> = {};
   for (const row of rows) {
-    out[row.key] = row.isSecret ? (row.valueJson ? '********' : '') : row.valueJson;
+    if (row.key === 'ai.customTools') continue;
+    out[row.key] = (row.isSecret || SECRET_SETTING_KEYS.has(row.key)) ? (row.valueJson ? '********' : '') : row.valueJson;
   }
   return out;
 }

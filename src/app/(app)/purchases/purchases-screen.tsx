@@ -18,6 +18,10 @@ import {
   Building,
   Printer,
   FileDown,
+  ClipboardList,
+  ShieldCheck,
+  MapPin,
+  Package,
 } from 'lucide-react';
 import {
   Card,
@@ -40,6 +44,7 @@ import {
   OrderStatusModal,
 } from '@/components/domain/spare-part-order-modal';
 import { SupplierPaymentModal } from '@/components/domain/supplier-payment-modal';
+import { SparePartQuotationModal } from '@/components/domain/spare-part-quotation-modal';
 
 export function PurchasesScreen({
   orders = [],
@@ -75,6 +80,7 @@ export function PurchasesScreen({
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
 
   const [payOrder, setPayOrder] = useState<any | null>(null);
+  const [printOrder, setPrintOrder] = useState<any | null>(null);
 
   const [openOrderIds, setOpenOrderIds] = useState<Set<number>>(new Set());
   const toggleOrder = (id: number) =>
@@ -85,14 +91,14 @@ export function PurchasesScreen({
     });
 
   const stages = [
-    { step: 1, key: 'REQUESTED', label: 'Yêu cầu' },
-    { step: 2, key: 'ORDERED_SUPPLIER', label: 'Đặt hãng' },
-    { step: 3, key: 'SHIPPING_INTL', label: 'Vận chuyển QT' },
-    { step: 4, key: 'CUSTOMS_CLEARING', label: 'Thông quan' },
-    { step: 5, key: 'ARRIVED_WAREHOUSE', label: 'Hàng về' },
-    { step: 6, key: 'INSPECTING', label: 'Kiểm hàng' },
-    { step: 7, key: 'STOCKED', label: 'Nhập kho' },
-    { step: 8, key: 'COMPLETED', label: 'Hoàn tất' },
+    { step: 1, key: 'REQUESTED', label: 'Yêu cầu', icon: ClipboardList },
+    { step: 2, key: 'ORDERED_SUPPLIER', label: 'Đặt hãng', icon: ShoppingCart },
+    { step: 3, key: 'SHIPPING_INTL', label: 'Vận chuyển QT', icon: Plane },
+    { step: 4, key: 'CUSTOMS_CLEARING', label: 'Thông quan', icon: ShieldCheck },
+    { step: 5, key: 'ARRIVED_WAREHOUSE', label: 'Hàng về', icon: MapPin },
+    { step: 6, key: 'INSPECTING', label: 'Kiểm hàng', icon: Search },
+    { step: 7, key: 'STOCKED', label: 'Nhập kho', icon: Package },
+    { step: 8, key: 'COMPLETED', label: 'Hoàn tất', icon: CheckCircle2 },
   ];
 
   const filteredOrders = orders.filter((o: any) => {
@@ -312,16 +318,16 @@ export function PurchasesScreen({
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr>
-                <th style={{ width: 36 }}></th>
-                <th style={{ width: 140, whiteSpace: 'nowrap' }}>Mã phiếu</th>
-                <th>Nhà cung cấp / Kho</th>
-                <th style={{ width: 130 }}>Loại</th>
-                <th style={{ width: 160 }}>Trạng thái</th>
-                <th style={{ width: 110 }}>Dự kiến về</th>
-                <th className="num" style={{ width: 150 }}>Giá vốn (Trả NCC)</th>
-                <th className="num" style={{ width: 140 }}>Còn nợ NCC</th>
-                <th style={{ width: 52 }}></th>
+              <tr style={{ background: '#f1f5f9' }}>
+                <th style={{ width: 36, background: '#f1f5f9' }}></th>
+                <th style={{ width: 140, whiteSpace: 'nowrap', background: '#f1f5f9' }}>Mã phiếu</th>
+                <th style={{ background: '#f1f5f9' }}>Nhà cung cấp / Kho</th>
+                <th style={{ width: 130, background: '#f1f5f9' }}>Loại</th>
+                <th style={{ width: 160, background: '#f1f5f9' }}>Trạng thái</th>
+                <th style={{ width: 110, background: '#f1f5f9' }}>Dự kiến về</th>
+                <th className="num" style={{ width: 150, background: '#f1f5f9' }}>Giá vốn (Trả NCC)</th>
+                <th className="num" style={{ width: 140, background: '#f1f5f9' }}>Còn nợ NCC</th>
+                <th style={{ width: 92, background: '#f1f5f9' }}></th>
               </tr>
             </thead>
             <tbody>
@@ -339,7 +345,12 @@ export function PurchasesScreen({
                   <React.Fragment key={order.id}>
                     <tr
                       onClick={() => toggleOrder(order.id)}
-                      style={{ cursor: 'pointer', background: isOpen ? 'var(--surface-sunken)' : undefined }}
+                      style={{
+                        cursor: 'pointer',
+                        background: isOpen ? '#faf5ff' : undefined,
+                        borderLeft: isOpen ? '3px solid #7c3aed' : '3px solid transparent',
+                        transition: 'background 0.15s ease',
+                      }}
                     >
                       <td style={{ width: 36, textAlign: 'center', color: 'var(--text-faint)' }}>
                         {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
@@ -375,9 +386,6 @@ export function PurchasesScreen({
                         <Badge style={{ background: statusCfg.bg, color: statusCfg.color }}>
                           {orderStatusLabel(order.status)}
                         </Badge>
-                        {currentStep > 0 && (
-                          <div className="hint">Bước {currentStep}/8</div>
-                        )}
                       </td>
 
                       <td style={{ fontSize: 12.5 }}>
@@ -423,11 +431,39 @@ export function PurchasesScreen({
                         })()}
                       </td>
 
-                      <td onClick={(e) => e.stopPropagation()} style={{ width: 52 }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <td onClick={(e) => e.stopPropagation()} style={{ width: 92, whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => setPrintOrder(order)}
+                            title="In phiếu đặt hàng NCC (PO)"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '4px 8px',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: '#6d28d9',
+                              background: '#f5f3ff',
+                              border: '1px solid #ddd6fe',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Printer size={13} />
+                            In
+                          </button>
                           <ActionMenu
                             title={order.orderCode}
                             items={[
+                              {
+                                key: 'print',
+                                label: 'In phiếu đặt hàng NCC',
+                                icon: <Printer size={15} />,
+                                onClick: () => setPrintOrder(order),
+                              },
                               ...(canManage && order.status !== 'STOCKED' && order.status !== 'COMPLETED' && order.status !== 'CANCELLED'
                                 ? [
                                     {
@@ -462,7 +498,7 @@ export function PurchasesScreen({
                                 ? [
                                     {
                                       key: 'pay',
-                                      label: 'Thanh toán tiền NCC',
+                                      label: 'Thanh toán đơn hàng',
                                       icon: <Wallet size={15} />,
                                       onClick: () => setPayOrder(order),
                                     },
@@ -476,23 +512,33 @@ export function PurchasesScreen({
 
                     {isOpen && (
                       <tr>
-                        <td colSpan={9} style={{ background: 'var(--surface-sunken)', padding: '4px 18px 18px' }}>
+                        <td
+                          colSpan={9}
+                          style={{
+                            background: '#f8fafc',
+                            padding: '12px 18px 20px',
+                            borderBottom: '2px solid #e2e8f0',
+                            borderLeft: '3px solid #7c3aed',
+                          }}
+                        >
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                             {/* Tiến trình 8 bước */}
                             <div
                               style={{
                                 display: 'grid',
                                 gridTemplateColumns: `repeat(${stages.length}, 1fr)`,
-                                background: 'var(--surface-sunken)',
-                                padding: '10px 8px',
+                                background: '#ffffff',
+                                padding: '12px 10px',
                                 borderRadius: 8,
                                 border: '1px solid var(--border-base)',
+                                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
                               }}
                             >
                               {stages.map((stage, idx) => {
                                 const isDone = currentStep > stage.step;
                                 const isCurrent = currentStep === stage.step;
                                 const reached = isDone || isCurrent;
+                                const IconComp = stage.icon;
 
                                 return (
                                   <div
@@ -510,11 +556,12 @@ export function PurchasesScreen({
                                       <span
                                         style={{
                                           position: 'absolute',
-                                          top: 9,
+                                          top: 11,
                                           right: '50%',
                                           width: '100%',
                                           height: 2,
                                           background: reached ? '#16a34a' : 'var(--border-base)',
+                                          zIndex: 0,
                                         }}
                                       />
                                     )}
@@ -523,19 +570,28 @@ export function PurchasesScreen({
                                       style={{
                                         position: 'relative',
                                         zIndex: 1,
-                                        width: 20,
-                                        height: 20,
+                                        width: 24,
+                                        height: 24,
                                         borderRadius: '50%',
                                         display: 'grid',
                                         placeItems: 'center',
-                                        fontSize: 10.5,
-                                        fontWeight: 800,
-                                        background: isDone ? '#16a34a' : isCurrent ? '#7c3aed' : 'var(--surface-card)',
-                                        color: reached ? '#fff' : 'var(--text-muted)',
-                                        border: reached ? 'none' : '1px solid var(--border-base)',
+                                        background: isDone
+                                          ? '#16a34a'
+                                          : isCurrent
+                                          ? '#7c3aed'
+                                          : 'var(--surface-card, #ffffff)',
+                                        color: isDone || isCurrent ? '#ffffff' : 'var(--text-muted, #94a3b8)',
+                                        border: isDone
+                                          ? 'none'
+                                          : isCurrent
+                                          ? '2px solid #6d28d9'
+                                          : '1px solid var(--border-base, #cbd5e1)',
+                                        boxShadow: isCurrent ? '0 0 0 3px rgba(124, 58, 237, 0.2)' : 'none',
+                                        transition: 'all 0.2s ease',
                                       }}
+                                      title={`Bước ${stage.step}: ${stage.label}`}
                                     >
-                                      {isDone ? '✓' : stage.step}
+                                      <IconComp size={13} strokeWidth={2.3} />
                                     </span>
 
                                     <span
@@ -543,7 +599,7 @@ export function PurchasesScreen({
                                       style={{
                                         maxWidth: '100%',
                                         fontSize: 10.5,
-                                        fontWeight: isCurrent ? 700 : 500,
+                                        fontWeight: isCurrent ? 700 : isDone ? 600 : 500,
                                         color: isCurrent ? '#7c3aed' : isDone ? '#16a34a' : 'var(--text-muted)',
                                         lineHeight: 1.15,
                                         whiteSpace: 'nowrap',
@@ -658,13 +714,7 @@ export function PurchasesScreen({
                                                 : ''}
                                               {new Intl.NumberFormat('vi-VN').format(it.baseCost)} ₫
                                               {Number(it.unitPriceEur || 0) > 0 ? ')' : ''}
-                                              {(it.freightPerUnit > 0 || it.otherFeePerUnit > 0) && (
-                                                <span>
-                                                  {' '}
-                                                  • Phí phân bổ: +
-                                                  {new Intl.NumberFormat('vi-VN').format(it.freightPerUnit + it.otherFeePerUnit)} ₫/cái
-                                                </span>
-                                              )}
+
                                             </div>
                                           </div>
                                           <div style={{ textAlign: 'right' }}>
@@ -672,7 +722,7 @@ export function PurchasesScreen({
                                               x{it.quantity} {it.item?.unit || 'cái'}
                                             </div>
                                             <div style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 700 }}>
-                                              {new Intl.NumberFormat('vi-VN').format(it.totalCostWithFees || it.costSubtotal)} ₫
+                                              {new Intl.NumberFormat('vi-VN').format(it.costSubtotal)} ₫
                                               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>(Giá vốn)</div>
                                             </div>
                                           </div>
@@ -738,13 +788,13 @@ export function PurchasesScreen({
                                         {Number(order.shippingFee) > 0 && (
                                           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                                             <span>Cước vận chuyển quốc tế:</span>
-                                            <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
+                                            <span>{new Intl.NumberFormat('vi-VN').format(Number(order.shippingFee))} ₫</span>
                                           </div>
                                         )}
                                         {Number(order.customsFee) > 0 && (
                                           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                                             <span>Phí khác / Hải quan:</span>
-                                            <span>+{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
+                                            <span>{new Intl.NumberFormat('vi-VN').format(Number(order.customsFee))} ₫</span>
                                           </div>
                                         )}
 
@@ -779,7 +829,7 @@ export function PurchasesScreen({
 
                                         {order.customer && (
                                           <div style={{ fontSize: 11, color: '#6b7280', paddingTop: 4 }}>
-                                            🎯 Đặt cho khách: <span style={{ fontWeight: 600, color: '#374151' }}>{order.customer.name}</span>
+                                            Khách hàng: <span style={{ fontWeight: 600, color: '#374151' }}>{order.customer.name}</span>
                                           </div>
                                         )}
                                       </div>
@@ -869,6 +919,16 @@ export function PurchasesScreen({
           companyInfo={companyInfo}
           onClose={() => setPayOrder(null)}
           onSuccess={() => startTransition(() => router.refresh())}
+        />
+      )}
+
+      {printOrder && (
+        <SparePartQuotationModal
+          open={Boolean(printOrder)}
+          order={printOrder}
+          companyInfo={companyInfo}
+          pricingConfig={pricingConfig}
+          onClose={() => setPrintOrder(null)}
         />
       )}
     </div>

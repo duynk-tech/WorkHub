@@ -48,6 +48,7 @@ export function CustomerQuotationModal({
   stockMachines = [],
   spareParts = [],
   pricingConfig,
+  companyInfo,
   quotation,
   onSuccess,
 }: {
@@ -62,11 +63,13 @@ export function CustomerQuotationModal({
   spareParts?: any[];
   /** Cấu hình giá (tỷ giá, lợi nhuận, cước nhập) để tính đơn giá tạm tính. */
   pricingConfig?: Partial<SparePartPricingConfig>;
+  companyInfo?: any;
   quotation?: any;
   onSuccess?: (q: any) => void;
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | ''>(
     propCustomerId || quotation?.customerId || (customers.length === 1 ? customers[0].id : '')
   );
@@ -250,36 +253,83 @@ export function CustomerQuotationModal({
       description="Báo giá gửi khách trước khi chốt đơn. Khi khách duyệt có thể chuyển thẳng thành đơn hàng."
       size="xl"
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={loading}>
-            Hủy
-          </Button>
-          <Button variant="primary" onClick={handleSave} loading={loading}>
-            {quotation ? 'Lưu báo giá' : 'Tạo báo giá'}
-          </Button>
-        </>
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+          <div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                if (items.filter((it) => it.name?.trim()).length === 0) {
+                  toast.error('Vui lòng thêm ít nhất một mặt hàng để in báo giá');
+                  return;
+                }
+                setPrintOpen(true);
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #93c5fd', color: '#1d4ed8', background: '#eff6ff' }}
+              title="Xem trước và in Báo giá gửi khách hàng (A4 / PDF)"
+            >
+              <Printer size={15} /> In báo giá
+            </Button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="secondary" onClick={onClose} disabled={loading}>
+              Hủy
+            </Button>
+            <Button variant="primary" onClick={handleSave} loading={loading}>
+              {quotation ? 'Lưu báo giá' : 'Tạo báo giá'}
+            </Button>
+          </div>
+        </div>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {customers.length > 0 && !propCustomerId && (
-          <Field label="Khách hàng nhận báo giá" required>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {customers.length > 0 && !propCustomerId ? (
+            <Field label="Khách hàng nhận báo giá" required>
+              <SearchableSelect
+                value={String(selectedCustomerId ?? '')}
+                onChange={(val) => {
+                  setSelectedCustomerId(val ? Number(val) : '');
+                  setLocationId('');
+                }}
+                options={customers.map((c: any) => ({
+                  value: String(c.id),
+                  label: c.name,
+                  subLabel: c.phone || c.code || undefined,
+                  keywords: `${c.name} ${c.phone || ''} ${c.code || ''}`,
+                }))}
+                placeholder="-- Chọn khách hàng nhận báo giá --"
+                searchPlaceholder="Tìm theo tên hoặc số điện thoại…"
+              />
+            </Field>
+          ) : (
+            <Field label="Khách hàng nhận báo giá">
+              <Input
+                value={displayCustomerName}
+                readOnly
+                disabled
+                style={{ background: 'var(--surface-sunken, #f8fafc)', fontWeight: 600, color: 'var(--text-strong, #0f172a)' }}
+              />
+            </Field>
+          )}
+
+          <Field label="Điểm đặt / Chi nhánh nhận hàng">
             <SearchableSelect
-              value={String(selectedCustomerId ?? '')}
-              onChange={(val) => {
-                setSelectedCustomerId(val ? Number(val) : '');
-                setLocationId('');
-              }}
-              options={customers.map((c: any) => ({
-                value: String(c.id),
-                label: c.name,
-                subLabel: c.phone || c.code || undefined,
-                keywords: `${c.name} ${c.phone || ''} ${c.code || ''}`,
-              }))}
-              placeholder="-- Chọn khách hàng nhận báo giá --"
-              searchPlaceholder="Tìm theo tên hoặc số điện thoại…"
+              value={String(locationId ?? '')}
+              onChange={(val) => setLocationId(val ? Number(val) : '')}
+              options={[
+                { value: '', label: '-- Trụ sở chính / Chưa gán chi nhánh --' },
+                ...activeLocations.map((loc: any) => ({
+                  value: String(loc.id),
+                  label: loc.name,
+                  subLabel: loc.address || undefined,
+                })),
+              ]}
+              placeholder="-- Trụ sở chính / Chưa gán chi nhánh --"
+              searchPlaceholder="Tìm chi nhánh…"
             />
           </Field>
-        )}
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
           <Field label="Trạng thái báo giá">
@@ -308,33 +358,6 @@ export function CustomerQuotationModal({
               value={exchangeRate}
               onChange={(val) => setExchangeRate(val || 27800)}
               style={{ height: 38 }}
-            />
-          </Field>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Điểm đặt / Chi nhánh nhận hàng">
-            <SearchableSelect
-              value={String(locationId ?? '')}
-              onChange={(val) => setLocationId(val ? Number(val) : '')}
-              options={[
-                { value: '', label: '-- Trụ sở chính / Chưa gán chi nhánh --' },
-                ...activeLocations.map((loc: any) => ({
-                  value: String(loc.id),
-                  label: loc.name,
-                  subLabel: loc.address || undefined,
-                })),
-              ]}
-              placeholder="-- Trụ sở chính / Chưa gán chi nhánh --"
-              searchPlaceholder="Tìm chi nhánh…"
-            />
-          </Field>
-
-          <Field label="Ghi chú báo giá">
-            <Input
-              placeholder="VD: Giá đã bao gồm chi phí lắp đặt và vận chuyển nội thành"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
             />
           </Field>
         </div>
@@ -400,6 +423,34 @@ export function CustomerQuotationModal({
             }, 50);
           }}
           zIndex={1060}
+        />
+      )}
+
+      {printOpen && (
+        <CustomerQuotationPrintModal
+          open={printOpen}
+          onClose={() => setPrintOpen(false)}
+          quotation={{
+            quoteCode: quotation?.quoteCode || 'DỰ THẢO',
+            quoteDate,
+            validUntil,
+            status,
+            vatRate: Number(vatRate) || 0,
+            shippingFee,
+            deliveryTime: quotation?.deliveryTime || pricingConfig?.defaultDeliveryTime || '3-5 ngày',
+            paymentTerms: quotation?.paymentTerms || pricingConfig?.defaultPaymentTerms || '',
+            warrantyTerms: quotation?.warrantyTerms || pricingConfig?.defaultWarrantyTerms || '',
+            notes: notes || pricingConfig?.defaultQuotationNotes || '',
+            customer: activeCustomer || { name: displayCustomerName },
+            items: items.map((it) => ({
+              ...it,
+              unitPrice: it.unitPrice || 0,
+              quantity: it.quantity || 1,
+            })),
+          }}
+          customer={activeCustomer || { name: displayCustomerName }}
+          companyInfo={companyInfo}
+          machines={activeMachines}
         />
       )}
     </Modal>

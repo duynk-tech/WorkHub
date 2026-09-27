@@ -8,7 +8,7 @@ import { getCompanyInfo } from '@/server/modules/settings/branding';
 import { getEquipmentProfit } from '@/server/modules/equipment/profit';
 import { EquipmentDetailScreen } from './equipment-detail-screen';
 
-export const metadata = { title: 'Chi tiết Thiết bị & Máy móc' };
+export const metadata = { title: 'Chi tiết Thiết bị' };
 export const dynamic = 'force-dynamic';
 
 export default async function EquipmentDetailPage({

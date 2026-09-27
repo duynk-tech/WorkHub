@@ -1,3 +1,5 @@
+import { googleCallbackUrl } from '@/server/auth/google/service';
+import { notFound } from 'next/navigation';
 import { requireAuth, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { getSettings } from '@/server/modules/settings/service';
@@ -12,12 +14,14 @@ export default async function SettingsPage({
   searchParams?: Promise<Record<string, string | undefined>>;
 }) {
   const ctx = await requireAuth();
+  const allowed = { general: can(ctx, 'FEATURE_SETTING_GENERAL'), zalo: can(ctx, 'FEATURE_SETTING_ZALO'), holiday: can(ctx, 'FEATURE_SETTING_HOLIDAY'), shift: can(ctx, 'FEATURE_ATTENDANCE_SHIFT_MANAGE'), leaveType: can(ctx, 'FEATURE_LEAVE_TYPE_MANAGE') };
+  if (!Object.values(allowed).some(Boolean)) notFound();
   const sp = searchParams ? await searchParams : {};
   const initialTab = (sp.tab as any) || 'general';
   const year = new Date().getFullYear();
 
   const [settings, holidays, shifts, leaveTypes] = await Promise.all([
-    getSettings(),
+    Promise.all([...(allowed.general ? ['general', 'leave', 'attendance', 'reports'] : []), ...(allowed.zalo ? ['zalo', 'ai'] : []), ...(ctx.isAdmin ? ['sso'] : [])].map((group) => getSettings(group))).then((groups) => Object.assign({}, ...groups)),
     prisma.holiday.findMany({ where: { year: { gte: year - 1 } }, orderBy: { date: 'asc' } }),
     prisma.workShift.findMany({ orderBy: { code: 'asc' } }),
     prisma.leaveType.findMany({ orderBy: { sortOrder: 'asc' } }),
@@ -26,12 +30,14 @@ export default async function SettingsPage({
   return (
     <SettingsScreen
       initialTab={initialTab}
+      googleCallbackUrl={googleCallbackUrl()}
       settings={settings}
       holidays={JSON.parse(JSON.stringify(holidays))}
       shifts={JSON.parse(JSON.stringify(shifts))}
       leaveTypes={JSON.parse(JSON.stringify(leaveTypes))}
       webhookUrl={`${process.env.APP_URL || 'http://localhost:3000'}/api/zalo`}
       permissions={{
+        sso: ctx.isAdmin,
         general: can(ctx, 'FEATURE_SETTING_GENERAL'),
         zalo: can(ctx, 'FEATURE_SETTING_ZALO'),
         holiday: can(ctx, 'FEATURE_SETTING_HOLIDAY'),

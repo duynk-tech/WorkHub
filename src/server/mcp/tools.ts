@@ -299,22 +299,13 @@ export const MCP_TOOLS: McpTool[] = [
 
       // Nhìn thấy việc trong phạm vi dữ liệu KHÔNG đồng nghĩa được sửa nó.
       // Giao diện chỉ cho người được giao, người tạo, hoặc người có quyền sửa việc.
-      const isOwner = task.assigneeId === identity.ctx.employeeId || task.creatorId === identity.ctx.employeeId;
+      const isOwner = task.assigneeId === identity.ctx.employeeId || task.creatorId === identity.ctx.employeeId || task.reviewerId === identity.ctx.employeeId;
       if (!isOwner && !can(identity.ctx, 'FEATURE_TASK_EDIT')) {
         throw new Error(`Bạn không phải người thực hiện hay người tạo ${task.code}, và không có quyền FEATURE_TASK_EDIT`);
       }
 
-      await prisma.task.update({
-        where: { id: task.id },
-        data: {
-          status: a.status as never,
-          progress: a.progress !== undefined ? Number(a.progress) : (a.status === 'DONE' ? 100 : task.progress),
-          completedAt: a.status === 'DONE' ? new Date() : null,
-        },
-      });
-      await prisma.taskActivity.create({
-        data: { taskId: task.id, actorId: identity.ctx.employeeId, action: 'STATUS', field: 'status', oldValue: task.status, newValue: a.status },
-      });
+      const { transitionTask } = await import('@/server/modules/task/mutations');
+      await transitionTask(identity.ctx, task.id, a.status, a.progress);
 
       return { message: `Đã chuyển ${task.code} sang "${TASK_STATUS[a.status]?.label ?? a.status}"` };
     },
@@ -479,7 +470,7 @@ export const MCP_TOOLS: McpTool[] = [
 
       const preview = await calculateLeaveDays(identity.ctx.employeeId, new Date(startDate), new Date(endDate), 'FULL_DAY');
 
-      const { submitLeaveAction } = await import('@/server/modules/leave/actions');
+      const { submitLeaveAction } = await import('@/server/modules/leave/internal-actions');
       const result = await submitLeaveAction(null, {
         leaveTypeId: leaveType.id, startDate, endDate,
         durationType: 'FULL_DAY', reason: a.reason,
@@ -564,7 +555,7 @@ export const MCP_TOOLS: McpTool[] = [
       });
       if (!result.ok) throw new Error(result.message);
 
-      const { finalizeLeave, notifyPendingApprovers } = await import('@/server/modules/leave/actions');
+      const { finalizeLeave, notifyPendingApprovers } = await import('@/server/modules/leave/internal-actions');
       if (result.instanceStatus === 'APPROVED') await finalizeLeave(leave.id, 'APPROVED', identity.ctx.fullName);
       else if (result.instanceStatus === 'REJECTED') await finalizeLeave(leave.id, 'REJECTED', a.comment ?? identity.ctx.fullName);
       else await notifyPendingApprovers(leave.id);

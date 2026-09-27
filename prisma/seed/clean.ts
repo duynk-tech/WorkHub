@@ -15,6 +15,9 @@ export async function cleanBusinessData(prisma: PrismaClient) {
 
   try {
     // 1. Dịch vụ F&B, bảo hành, kho, đơn hàng, thanh toán
+    // Bảng phân bổ mới có khóa ngoại riêng; xóa chúng trước khi làm sạch chứng từ cha.
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `CustomerPaymentAllocation`;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `SupplierPaymentAllocation`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `InventoryTransactionItem`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `InventoryTransaction`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `StockCountItem`;');
@@ -82,6 +85,8 @@ export async function cleanBusinessData(prisma: PrismaClient) {
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `ZaloInboundLog`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `ZaloLinkCode`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `McpCallLog`;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `McpClient`;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `ExternalIdentity`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `ReportPreset`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `ReportSchedule`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `AuditLog`;');

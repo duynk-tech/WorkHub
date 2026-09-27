@@ -206,7 +206,7 @@ export function CustomerScreen({
               </div>
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: '#d97706' }}>{metrics.totalMachines}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Máy móc đang vận hành</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Thiết bị đang vận hành</div>
               </div>
             </Card>
 

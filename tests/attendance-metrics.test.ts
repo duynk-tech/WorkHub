@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeMetrics, distanceMeters, type ShiftInfo } from '@/server/modules/attendance/service';
+import { attendanceWorkDate, computeMetrics, distanceMeters, type ShiftInfo } from '@/server/modules/attendance/service';
 
 const shift: ShiftInfo = {
   id: 1, startTime: '08:00', endTime: '17:30', breakMinutes: 90, lateToleranceMin: 5, workDays: 62,
@@ -70,5 +70,42 @@ describe('Khoảng cách geofence', () => {
 
   it('cùng một điểm thì khoảng cách bằng 0', () => {
     expect(distanceMeters({ lat: 21.028511, lng: 105.804817 }, { lat: 21.028511, lng: 105.804817 })).toBe(0);
+  });
+});
+
+describe('Ca đặc biệt và nghỉ nửa ngày', () => {
+  it('tính ca qua đêm với giờ kết thúc ở ngày kế tiếp', () => {
+    const night = { ...shift, startTime: '22:00', endTime: '06:00', breakMinutes: 0 };
+    const out = at(6, 0); out.setDate(out.getDate() + 1);
+    const result = computeMetrics({ workDate: workday, checkInAt: at(22, 0), checkOutAt: out, shift: night });
+    expect(result.workedMinutes).toBe(480);
+    expect(result.otMinutes).toBe(0);
+    expect(result.earlyLeaveMinutes).toBe(0);
+  });
+  it('giữ giờ có mặt ngày lễ nhưng không tự duyệt tăng ca', () => {
+    const result = computeMetrics({ workDate: workday, checkInAt: at(8, 0), checkOutAt: at(17, 30), shift, isHoliday: true });
+    expect(result.status).toBe('HOLIDAY');
+    expect(result.workedMinutes).toBe(480);
+    expect(result.otMinutes).toBe(0);
+  });
+  it('nghỉ sáng không bị tính đi muộn và trừ giờ nghỉ trưa lần nữa', () => {
+    const result = computeMetrics({ workDate: workday, checkInAt: at(13, 30), checkOutAt: at(17, 30), shift, isOnLeave: true, leavePortion: 0.5, leaveDuration: 'HALF_DAY_MORNING' });
+    expect(result.lateMinutes).toBe(0);
+    expect(result.workedMinutes).toBe(240);
+    expect(result.status).toBe('HALF_DAY');
+  });
+});
+
+describe('Ngày công ca qua đêm', () => {
+  const night = { ...shift, startTime: '22:00', endTime: '06:00' };
+  it('check-in sau nửa đêm thuộc ngày bắt đầu ca', () => {
+    const result = attendanceWorkDate(at(1, 30), night);
+    expect(result.toISOString().slice(0, 10)).toBe('2026-09-17');
+  });
+  it('check-in buổi tối thuộc ngày hiện tại', () => {
+    expect(attendanceWorkDate(at(22, 0), night).toISOString().slice(0, 10)).toBe('2026-09-18');
+  });
+  it('ca ban ngày không đổi ngày công', () => {
+    expect(attendanceWorkDate(at(5, 0), shift).toISOString().slice(0, 10)).toBe('2026-09-18');
   });
 });

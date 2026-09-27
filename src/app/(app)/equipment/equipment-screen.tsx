@@ -304,7 +304,7 @@ export function EquipmentScreen({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
-              Thiết bị & Máy móc
+              Thiết bị
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--text-muted)' }}>
               Quản lý máy làm kem, máy socola, thiết bị bếp, điểm lắp đặt và lịch bảo dưỡng
@@ -328,52 +328,9 @@ export function EquipmentScreen({
         </div>
       )}
 
-      {/* Số liệu theo trạng thái kiêm luôn bộ lọc: năm thẻ chỉ để đọc, còn ô
-          chọn trạng thái ở dưới lặp lại đúng năm con số đó — gộp làm một */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {([
-          { key: '', label: 'Tất cả', count: metrics.total, color: 'var(--primary, #0284c7)' },
-          { key: 'OPERATING', label: 'Hoạt động', count: metrics.operating, color: '#16a34a' },
-          { key: 'BREAKDOWN', label: 'Báo hỏng', count: metrics.breakdown, color: '#dc2626' },
-          { key: 'UNDER_MAINTENANCE', label: 'Bảo dưỡng', count: metrics.underMaintenance, color: '#d97706' },
-          { key: 'IN_STOCK', label: 'Trong kho', count: metrics.inStock, color: '#0284c7' },
-        ] as const).map((chip) => {
-          const active = status === chip.key;
-          return (
-            <button
-              key={chip.key || 'all'}
-              type="button"
-              onClick={() => {
-                setStatus(chip.key);
-                handleFilterChange({ status: chip.key });
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 12px',
-                borderRadius: 999,
-                fontSize: 12.5,
-                fontWeight: active ? 700 : 500,
-                cursor: 'pointer',
-                border: '1px solid',
-                borderColor: active ? chip.color : 'var(--border-base)',
-                background: active ? `color-mix(in srgb, ${chip.color} 12%, transparent)` : 'var(--surface-card)',
-                color: active ? chip.color : 'var(--text-muted)',
-              }}
-            >
-              {chip.label}
-              <span style={{ fontWeight: 700, color: chip.count > 0 ? chip.color : 'var(--text-faint)' }}>
-                {chip.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 3. Filter Bar — bỏ khung thẻ, xếp một hàng cho gọn */}
+      {/* 3. Filter Bar — tích hợp Trạng thái, Phân loại, Hình thức và Khách hàng vào một hàng gọn gàng */}
       <div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.6fr) repeat(3, minmax(150px, 1fr))', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1.4fr) minmax(145px, 1fr) minmax(140px, 1fr) minmax(130px, 1fr) minmax(150px, 1.1fr)', gap: 10, alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <Input
               placeholder="Tìm theo tên máy, mã, S/N, hãng..."
@@ -381,6 +338,23 @@ export function EquipmentScreen({
               onChange={(e) => handleFilterChange({ search: e.target.value })}
             />
           </div>
+
+          <SearchableSelect
+            value={status}
+            onChange={(val) => {
+              setStatus(val);
+              handleFilterChange({ status: val });
+            }}
+            options={[
+              { value: '', label: `Tất cả trạng thái (${metrics.total})` },
+              { value: 'OPERATING', label: `Hoạt động (${metrics.operating})` },
+              { value: 'BREAKDOWN', label: `Báo hỏng (${metrics.breakdown})` },
+              { value: 'UNDER_MAINTENANCE', label: `Bảo dưỡng (${metrics.underMaintenance})` },
+              { value: 'IN_STOCK', label: `Trong kho (${metrics.inStock})` },
+            ]}
+            placeholder="-- Tất cả trạng thái --"
+            searchPlaceholder="Tìm trạng thái..."
+          />
 
           <SearchableSelect
             value={category}
@@ -443,7 +417,7 @@ export function EquipmentScreen({
       {/* Subheader: Count & View Mode Toggle (Card vs List) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>
-          Hiển thị <strong style={{ color: 'var(--text)' }}>{filteredList.length}</strong> thiết bị & máy móc
+          Hiển thị <strong style={{ color: 'var(--text)' }}>{filteredList.length}</strong> thiết bị
         </div>
 
         <div style={{ display: 'inline-flex', padding: 3, background: 'var(--surface-subtle, #f1f5f9)', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -812,7 +786,22 @@ export function EquipmentScreen({
                     Giá vốn / Giá bán
                   </th>
                 )}
-                <th style={{ padding: '14px 18px', width: '110px', textAlign: 'right', whiteSpace: 'nowrap' }}>Thao tác</th>
+                <th
+                  style={{
+                    padding: '14px 18px',
+                    width: '110px',
+                    minWidth: '110px',
+                    textAlign: 'right',
+                    whiteSpace: 'nowrap',
+                    position: 'sticky',
+                    right: 0,
+                    background: 'var(--surface-subtle, #f8fafc)',
+                    boxShadow: '-3px 0 6px -1px rgba(0, 0, 0, 0.06)',
+                    zIndex: 2,
+                  }}
+                >
+                  Thao tác
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1063,8 +1052,20 @@ export function EquipmentScreen({
                       </td>
                     )}
 
-                    {/* 10. Thao tác */}
-                    <td style={{ padding: '14px 18px', verticalAlign: 'middle', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {/* 10. Thao tác — ghim cố định ở mép phải khi cuộn ngang */}
+                    <td
+                      style={{
+                        padding: '14px 18px',
+                        verticalAlign: 'middle',
+                        textAlign: 'right',
+                        whiteSpace: 'nowrap',
+                        position: 'sticky',
+                        right: 0,
+                        background: 'var(--surface, #ffffff)',
+                        boxShadow: '-3px 0 6px -1px rgba(0, 0, 0, 0.06)',
+                        zIndex: 1,
+                      }}
+                    >
                       <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                         <Link
                           href={`/equipment/${item.id}`}

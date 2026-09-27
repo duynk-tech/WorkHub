@@ -643,8 +643,8 @@ export default async function DashboardPage({
             />
             <StatCard
               href="/spare-parts?tab=machines"
-              label="Máy móc tại khách" value={stock.machines} icon={<Utensils size={16} />}
-              hint={stock.machines > 0 ? 'Hồ sơ máy đang theo dõi bảo hành, bảo dưỡng' : 'Chưa khai máy nào'}
+              label="Thiết bị tại khách" value={stock.machines} icon={<Utensils size={16} />}
+              hint={stock.machines > 0 ? 'Hồ sơ thiết bị đang theo dõi bảo hành, bảo dưỡng' : 'Chưa khai thiết bị nào'}
             />
           </div>
 
