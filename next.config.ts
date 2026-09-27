@@ -9,6 +9,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  distDir: process.env.WORKHUB_BUILD_DIR || '.next',
   output: 'standalone',
   serverExternalPackages: ['@prisma/client', 'bcryptjs', 'node-cron', 'exceljs'],
   experimental: {

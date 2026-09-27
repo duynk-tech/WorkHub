@@ -368,7 +368,7 @@ export function SettingsScreen({
                 >
                   <Input
                     value={values['app.description'] ?? ''}
-                    placeholder="Hệ thống quản lý công việc, nghỉ phép và chấm công"
+                    placeholder="Hệ thống quản trị kinh doanh, thiết bị, kho vận và công việc"
                     onChange={(e) => set('app.description', e.target.value)}
                   />
                 </Field>

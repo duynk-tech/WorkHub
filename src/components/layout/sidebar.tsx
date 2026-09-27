@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { PanelLeftClose, PanelLeft, X } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, X, ChevronDown, Settings } from 'lucide-react';
 import type { NavSection } from '@/lib/nav';
 import { NAV_ICONS } from './icons';
 import { cn } from '@/lib/utils';
@@ -24,6 +24,18 @@ export function Sidebar({
   sections, appName, logoUrl, logoText, badges, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
 }: Props) {
   const pathname = usePathname();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const settingsItem = sections.flatMap(s => s.items).find(i => i.href === '/settings');
+  const menuSections = sections.map(s => ({ ...s, items: s.items.filter(i => i.href !== '/settings') })).filter(s => s.items.length);
+  useEffect(() => {
+    setExpanded(previous => {
+      const next = { ...previous };
+      for (const section of sections) {
+        if (section.title && section.items.some(i => pathname === i.href || pathname.startsWith(`${i.href}/`))) next[section.title] = true;
+      }
+      return next;
+    });
+  }, [pathname, sections]);
   const [hoveredTooltip, setHoveredTooltip] = useState<{ top: number; text: string } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -48,7 +60,7 @@ export function Sidebar({
     setHoveredTooltip(null);
   }, [isEffectiveCollapsed]);
 
-  const showTooltip = (e: React.MouseEvent<HTMLElement>, text: string) => {
+  const showTooltip = (e: React.SyntheticEvent<HTMLElement>, text: string) => {
     if (!isEffectiveCollapsed) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setHoveredTooltip({
@@ -71,7 +83,6 @@ export function Sidebar({
       {mobileOpen && <div className="sidebar-backdrop" onClick={onCloseMobile} />}
 
       <aside
-        data-tour="sidebar-nav"
         className={cn('sidebar', isEffectiveCollapsed && 'sidebar-collapsed', mobileOpen && 'sidebar-mobile-open')}
       >
         <div className="sidebar-head">
@@ -134,11 +145,14 @@ export function Sidebar({
           </button>
         </div>
 
-        <nav className="sidebar-nav scrollbar-none" data-tour="sidebar-nav" onScroll={hideTooltip}>
-          {sections.map((section, i) => (
+        <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
+          {menuSections.map((section, i) => (
             <div key={i} style={{ marginBottom: 2 }}>
-              {section.title && !isEffectiveCollapsed && <div className="nav-section">{section.title}</div>}
+              {section.title && !isEffectiveCollapsed && <button type="button" className="nav-group-toggle" aria-expanded={expanded[section.title] ?? false} aria-controls={`nav-group-${i}`} onClick={() => setExpanded(previous => ({ ...previous, [section.title!]: !previous[section.title!] }))}>
+                <span>{section.title}</span><ChevronDown size={14} style={{ transform: expanded[section.title] ? 'rotate(0)' : 'rotate(-90deg)' }} />
+              </button>}
               {section.title && isEffectiveCollapsed && <div className="nav-section-divider" />}
+              <div id={`nav-group-${i}`} hidden={!!section.title && !isEffectiveCollapsed && !expanded[section.title]}>
               {section.items.map((item) => {
                 const Icon = NAV_ICONS[item.icon];
                 const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
@@ -150,6 +164,7 @@ export function Sidebar({
                     prefetch={true}
                     className="nav-item"
                     data-active={isActive(item.href)}
+                    aria-current={isActive(item.href) ? "page" : undefined}
                     onClick={() => {
                       if (pathname !== item.href) {
                         setPendingHref(item.href);
@@ -157,6 +172,9 @@ export function Sidebar({
                     }}
                     onMouseEnter={(e) => showTooltip(e, labelWithCount)}
                     onMouseLeave={hideTooltip}
+                    onFocus={(e) => showTooltip(e, labelWithCount)}
+                    onBlur={hideTooltip}
+                    aria-label={labelWithCount}
                   >
                     {Icon && <Icon />}
                     {!isEffectiveCollapsed && <span style={{ flex: 1 }}>{item.label}</span>}
@@ -165,11 +183,13 @@ export function Sidebar({
                   </Link>
                 );
               })}
+              </div>
             </div>
           ))}
         </nav>
 
         <div className="sidebar-footer">
+          {settingsItem && <Link href={settingsItem.href} className="nav-item" data-active={pathname === '/settings'} aria-current={pathname === '/settings' ? 'page' : undefined} aria-label="Cài đặt" onMouseEnter={e => showTooltip(e, 'Cài đặt')} onMouseLeave={hideTooltip} onFocus={e => showTooltip(e, 'Cài đặt')} onBlur={hideTooltip}><Settings />{!isEffectiveCollapsed && <span>Cài đặt</span>}</Link>}
           <button
             type="button"
             className="sidebar-toggle-btn"

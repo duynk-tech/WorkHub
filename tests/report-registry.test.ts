@@ -35,10 +35,9 @@ describe('danh mục báo cáo', () => {
   });
 
   it('thiếu quyền thì ẩn báo cáo dù đang bật', () => {
-    const guarded = [{ ...REPORTS[0], permission: 'FEATURE_X' }];
-    const hidden = guarded.filter((r) => !r.permission || false);
-    expect(hidden).toHaveLength(0);
-    expect(visibleReports([], (p) => p !== 'FEATURE_X')).toHaveLength(REPORTS.length);
+    expect(visibleReports([], () => false)).toEqual([]);
+    expect(visibleReports([], (p) => p === 'FEATURE_REPORT_TASK').map(r => r.key)).toEqual(['task']);
+    expect(visibleReports([], (p) => p === 'FEATURE_REPORT_ATTENDANCE').map(r => r.key)).toEqual(['attendance']);
   });
 
   it('bỏ qua khóa lạ còn sót trong cấu hình cũ', () => {

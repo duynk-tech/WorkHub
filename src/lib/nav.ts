@@ -19,6 +19,27 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Kinh doanh',
+    items: [
+      { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
+      { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: 'MENU_CUSTOMERS' },
+      { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },
+    ],
+  },
+  {
+    title: 'Mua hàng & Kho',
+    items: [
+      { href: '/purchases', label: 'Mua hàng', icon: 'Plane', permission: 'MENU_EQUIPMENT' },
+      { href: '/spare-parts', label: 'Hàng hóa & Kho', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
+    ],
+  },
+  {
+    title: 'Dịch vụ',
+    items: [
+      { href: '/tickets', label: 'Sửa chữa & Bảo trì', icon: 'Wrench', permission: 'MENU_EQUIPMENT' },
+    ],
+  },
+  {
     title: 'Công việc',
     items: [
       { href: '/tasks', label: 'Công việc', icon: 'ListChecks', permission: 'MENU_TASKS', badgeKey: 'myTasks' },
@@ -28,30 +49,24 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Nhân sự',
     items: [
-      { href: '/leaves', label: 'Nghỉ phép', icon: 'CalendarDays', permission: 'MENU_LEAVES' },
+      { href: '/employees', label: 'Nhân viên', icon: 'Users', permission: 'MENU_EMPLOYEES' },
       { href: '/attendance', label: 'Chấm công', icon: 'Clock', permission: 'MENU_ATTENDANCE' },
-      { href: '/employees', label: 'Nhân sự', icon: 'Users', permission: 'MENU_EMPLOYEES' },
+      { href: '/leaves', label: 'Nghỉ phép', icon: 'CalendarDays', permission: 'MENU_LEAVES' },
       { href: '/departments', label: 'Phòng ban', icon: 'Network', permission: 'MENU_DEPARTMENTS' },
     ],
   },
   {
-    title: 'Thiết bị & Dịch vụ',
+    title: 'Báo cáo',
     items: [
-      { href: '/spare-parts', label: 'Thiết bị & Phụ tùng', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
-      { href: '/purchases', label: 'Mua hàng NCC', icon: 'Plane', permission: 'MENU_EQUIPMENT' },
-      { href: '/tickets', label: 'Sự cố & Sửa chữa', icon: 'Wrench', permission: 'MENU_EQUIPMENT' },
-      { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },
-      { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: 'MENU_CUSTOMERS' },
-      { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
-      { href: '/assets', label: 'Thiết bị văn phòng', icon: 'Laptop', permission: 'MENU_ASSETS' },
-      { href: '/media', label: 'Thư viện Media', icon: 'Image', permission: 'MENU_EQUIPMENT' },
+      { href: '/reports', label: 'Báo cáo', icon: 'BarChart3', permission: 'MENU_REPORTS' },
+      { href: '/documents', label: 'Sổ chứng từ', icon: 'ScrollText', permission: 'MENU_REPORTS' },
     ],
   },
   {
-    title: 'Phân tích',
+    title: 'Tiện ích',
     items: [
-      { href: '/documents', label: 'Sổ chứng từ', icon: 'ScrollText', permission: 'MENU_REPORTS' },
-      { href: '/reports', label: 'Báo cáo', icon: 'BarChart3', permission: 'MENU_REPORTS' },
+      { href: '/assets', label: 'Thiết bị văn phòng', icon: 'Laptop', permission: 'MENU_ASSETS' },
+      { href: '/media', label: 'Thư viện Media', icon: 'Image', permission: 'MENU_EQUIPMENT' },
     ],
   },
   {
@@ -61,8 +76,12 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: '/settings/roles', label: 'Phân quyền', icon: 'ShieldCheck', permission: 'MENU_ROLES' },
       { href: '/settings/accounts', label: 'Tài khoản', icon: 'UserCog', permission: 'MENU_ACCOUNTS' },
       { href: '/settings/integrations', label: 'Tích hợp & MCP', icon: 'Plug', permission: 'MENU_INTEGRATIONS' },
-      { href: '/settings', label: 'Cấu hình hệ thống', icon: 'Settings', permission: 'MENU_SETTINGS' },
       { href: '/settings/audit', label: 'Nhật ký', icon: 'ScrollText', permission: 'MENU_AUDIT' },
+    ],
+  },
+  {
+    items: [
+      { href: '/settings', label: 'Cấu hình hệ thống', icon: 'Settings', permission: 'MENU_SETTINGS' },
     ],
   },
 ];

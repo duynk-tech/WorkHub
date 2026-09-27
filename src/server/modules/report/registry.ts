@@ -38,30 +38,35 @@ export interface ReportDef {
 export const REPORTS: ReportDef[] = [
   {
     key: 'task',
+    permission: 'FEATURE_REPORT_TASK',
     group: 'WORK',
     label: 'Tiến độ công việc',
     description: 'Việc hoàn thành, quá hạn và khối lượng theo người phụ trách',
   },
   {
     key: 'sales-inventory',
+    permission: 'FEATURE_REPORT_INVENTORY',
     group: 'SALES',
     label: 'Nhập – Bán – Lãi gộp',
     description: 'Giá trị nhập kho, doanh thu bán ra, giá vốn và lãi gộp theo kỳ',
   },
   {
     key: 'customer-debt',
+    permission: 'FEATURE_CUSTOMER_MANAGE',
     group: 'SALES',
     label: 'Công nợ khách hàng',
     description: 'Số phải thu của từng khách, phần quá hạn và tuổi nợ',
   },
   {
     key: 'attendance',
+    permission: 'FEATURE_REPORT_ATTENDANCE',
     group: 'HR',
     label: 'Chấm công',
     description: 'Số công, lượt đi muộn, lượt vắng và giờ công theo phòng ban',
   },
   {
     key: 'leave',
+    permission: 'FEATURE_REPORT_LEAVE',
     group: 'HR',
     label: 'Nghỉ phép',
     description: 'Ngày nghỉ đã dùng và còn lại theo loại phép',

@@ -19,7 +19,7 @@ describe('App Branding Service (getAppBranding)', () => {
       name: 'WorkHub',
       logoUrl: null,
       logoText: 'W',
-      description: 'Hệ thống quản trị công việc, nghỉ phép và chấm công',
+      description: 'Hệ thống quản trị kinh doanh, thiết bị, kho vận và công việc',
     });
   });
 

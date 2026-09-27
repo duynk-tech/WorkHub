@@ -194,7 +194,9 @@ export function CustomerOrderModal({
   companyInfo,
   order,
   onSuccess,
+  quickSale,
 }: {
+  quickSale?: { controls: React.ReactNode; submit: (payload: SaveCustomerOrderInput) => Promise<any> };
   open: boolean;
   onClose: () => void;
   customerId: number;
@@ -238,8 +240,8 @@ export function CustomerOrderModal({
   const [quickLocationOpen, setQuickLocationOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'detail' | 'invoice'>('detail');
 
-  const [orderType, setOrderType] = useState(order?.orderType || 'MACHINE_PURCHASE');
-  const [status, setStatus] = useState(order?.status || 'COMPLETED');
+  const [orderType, setOrderType] = useState(order?.orderType || (quickSale ? 'SPARE_PART' : 'MACHINE_PURCHASE'));
+  const [status, setStatus] = useState(order?.status || 'PENDING');
   const [locationId, setLocationId] = useState<number | ''>(order?.locationId || '');
   const [orderDate, setOrderDate] = useState(
     order?.orderDate ? new Date(order.orderDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
@@ -426,7 +428,7 @@ export function CustomerOrderModal({
       }),
     };
 
-    const res = await saveCustomerOrderAction(order ? order.id : null, payload);
+    const res = quickSale ? await quickSale.submit(payload) : await saveCustomerOrderAction(order ? order.id : null, payload);
     setLoading(false);
 
     if (res.ok) {
@@ -499,7 +501,7 @@ export function CustomerOrderModal({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
-                  {order ? `Chỉnh sửa đơn: ${order.orderCode}` : 'Tạo Đơn Hàng Bán Khách'}
+                  {order ? `Chỉnh sửa đơn: ${order.orderCode}` : quickSale ? 'Bán nhanh' : 'Tạo Đơn Hàng Bán Khách'}
                 </h2>
                 <span
                   style={{
@@ -637,7 +639,7 @@ export function CustomerOrderModal({
             className="po-header-grid"
           >
             <Field label="Hình thức giao dịch">
-              <Select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
+              <Select disabled={!!quickSale} value={orderType} onChange={(e) => setOrderType(e.target.value)}>
                 {Object.entries(ORDER_TYPES).map(([k, v]) => (
                   <option key={k} value={k}>
                     {v.label}
@@ -647,8 +649,8 @@ export function CustomerOrderModal({
             </Field>
 
             <Field label="Trạng thái đơn">
-              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-                {Object.entries(ORDER_STATUSES).map(([k, v]) => (
+              <Select disabled={!!quickSale} value={status} onChange={(e) => setStatus(e.target.value)}>
+                {Object.entries(ORDER_STATUSES).filter(([k]) => ['PENDING', 'CONFIRMED'].includes(k) || k === order?.status).map(([k, v]) => (
                   <option key={k} value={k}>
                     {v.label}
                   </option>
@@ -657,15 +659,15 @@ export function CustomerOrderModal({
             </Field>
 
             <Field label="Ngày đặt hàng">
-              <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+              <Input disabled={!!quickSale} type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
             </Field>
 
             <Field label="Ngày bàn giao dự kiến">
-              <Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+              <Input disabled={!!quickSale} type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
             </Field>
 
             <Field label="Hạn thanh toán">
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <Input disabled={!!quickSale} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </Field>
 
             <Field label="Tỉ giá EUR / VND">
@@ -683,6 +685,7 @@ export function CustomerOrderModal({
               <Field label="Điểm đặt / Chi nhánh nhận máy">
                 <div style={{ display: 'flex', gap: 6 }}>
                   <Select
+                    disabled={!!quickSale}
                     value={locationId}
                     onChange={(e) => setLocationId(e.target.value ? Number(e.target.value) : '')}
                     style={{ flex: 1, minWidth: 0 }}
@@ -698,6 +701,7 @@ export function CustomerOrderModal({
                     type="button"
                     variant="secondary"
                     size="sm"
+                    disabled={!!quickSale}
                     onClick={() => setQuickLocationOpen(true)}
                     title="Thêm chi nhánh mới cho khách hàng này"
                     style={{ padding: '0 10px', height: 38, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
@@ -752,13 +756,14 @@ export function CustomerOrderModal({
           )}
 
           {/* Bảng danh sách mặt hàng */}
+          {quickSale?.controls}
           <LineItemsEditor
             title="Danh sách mặt hàng"
             items={items}
             catalogRefs={catalogRefs}
             catalogOptions={catalogOptions}
             onAdd={addItem}
-            onAddNewPart={() => setNewPartModalOpen(true)}
+            onAddNewPart={quickSale ? undefined : () => setNewPartModalOpen(true)}
             onRemove={handleRemoveItem}
             onChange={changeItem}
             onSelectCatalog={selectCatalog}
@@ -842,23 +847,23 @@ export function CustomerOrderModal({
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px 16px', fontSize: 12.5 }}>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Tên đơn vị:</span>{' '}
-                    <strong style={{ color: 'var(--text-strong)' }}>{customer?.name || customerName}</strong>
+                    <strong style={{ color: 'var(--text-strong)' }}>{customer?.profile?.legalName || customer?.name || customerName}</strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Mã số thuế (MST):</span>{' '}
-                    <strong style={{ color: customer?.taxCode ? 'var(--text-strong)' : 'var(--text-muted)' }}>
-                      {customer?.taxCode || '— (Chưa có MST)'}
+                    <strong style={{ color: customer?.profile?.taxCode ? 'var(--text-strong)' : 'var(--text-muted)' }}>
+                      {customer?.profile?.taxCode || '— (Chưa có MST)'}
                     </strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Địa chỉ:</span>{' '}
-                    <span>{customer?.address || '— (Chưa có địa chỉ)'}</span>
+                    <span>{customer?.profile?.billingAddress || customer?.address || '— (Chưa có địa chỉ)'}</span>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Người liên hệ / Email HĐ:</span>{' '}
                     <span>
                       {customer?.contactPerson ? `${customer.contactPerson} • ` : ''}
-                      {customer?.email || customer?.phone || '—'}
+                      {customer?.profile?.billingEmail || customer?.email || customer?.phone || '—'}
                     </span>
                   </div>
                 </div>
@@ -984,7 +989,7 @@ export function CustomerOrderModal({
                 border: 'none',
               }}
             >
-              {order ? 'Lưu đơn hàng' : 'Xác nhận'}
+              {quickSale ? 'Thanh toán & xuất kho' : order ? 'Lưu đơn hàng' : 'Xác nhận'}
             </Button>
           </div>
         </form>

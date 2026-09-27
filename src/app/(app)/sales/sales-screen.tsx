@@ -8,6 +8,7 @@ import {
 } from '@/components/ui';
 import { fmtDate } from '@/lib/date';
 import { SalesOrderDetailModal } from '@/components/domain/sales-order-detail-modal';
+import { QuickSaleModal } from '@/components/domain/quick-sale-modal';
 import { CustomerOrderModal } from '@/components/domain/customer-modals';
 import { getCustomerOrderContextAction } from '@/server/modules/customer/actions';
 import { Modal } from '@/components/ui/modal';
@@ -62,6 +63,7 @@ export function SalesScreen({
   canManage?: boolean;
 }) {
   const router = useRouter();
+  const [quickSaleOpen, setQuickSaleOpen] = useState(false);
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [chip, setChip] = useState('ALL');
@@ -142,6 +144,7 @@ export function SalesScreen({
 
   return (
     <div className="stack">
+      {quickSaleOpen && <QuickSaleModal onClose={() => setQuickSaleOpen(false)} onSuccess={() => { setQuickSaleOpen(false); toast.success("Đã thanh toán và xuất kho. Mở đơn để in phiếu bán hàng."); router.refresh(); }} />}
       <PageHeader
         title="Bán hàng"
         description={
@@ -151,9 +154,9 @@ export function SalesScreen({
         }
         actions={
           canManage ? (
-            <Button variant="primary" onClick={() => setPickCustomerOpen(true)}>
+            <div style={{ display: "flex", gap: 8 }}><Button onClick={() => setQuickSaleOpen(true)}>Bán nhanh</Button><Button variant="primary" onClick={() => setPickCustomerOpen(true)}>
               <Plus /> Tạo đơn bán
-            </Button>
+            </Button></div>
           ) : undefined
         }
       />
@@ -170,7 +173,7 @@ export function SalesScreen({
           hint={totals.awaiting > 0 ? 'Đã chốt đơn nhưng hàng chưa rời kho' : 'Đã xuất hết'}
         />
         <StatCard
-          label="Doanh thu ghi nhận" value={money(totals.revenue)} icon={<Wallet size={16} />}
+          label="Giá trị đơn hàng" value={money(totals.revenue)} icon={<Wallet size={16} />}
           hint="Tổng giá trị đơn, trừ đơn đã hủy"
         />
         <StatCard
@@ -260,7 +263,7 @@ export function SalesScreen({
                 return (
                   <tr key={o.id} onClick={() => setDetailId(o.id)} style={{ cursor: 'pointer' }}>
                     <td>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--brand)' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--brand)', whiteSpace: 'nowrap' }}>
                         {o.orderCode}
                       </span>
                       <div className="hint">{o._count?.items ?? 0} dòng hàng</div>

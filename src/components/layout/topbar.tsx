@@ -5,13 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import {
   Menu, Bell, LogOut, User, KeyRound, ChevronDown,
-  Search, ListChecks, Users, CalendarDays, Compass,
+  Search, ListChecks, Users, CalendarDays,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { logoutAction } from '@/server/modules/auth/actions';
 import { fmtRelative } from '@/lib/date';
-import { triggerGuidelineTour } from './guideline-tour';
 
 export interface TopbarUser {
   fullName: string;
@@ -88,7 +87,7 @@ export function Topbar({
       </button>
 
       {/* Ô tìm kiếm Topbar */}
-      <div ref={searchContainerRef} className="topbar-search" data-tour="topbar-search">
+      <div ref={searchContainerRef} className="topbar-search">
         <form onSubmit={handleSearchSubmit}>
           <div className="input-group">
             <span className="input-group-icon">
@@ -161,18 +160,6 @@ export function Topbar({
       <div style={{ flex: 1 }} />
 
       <div ref={ref} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {/* Nút Khám phá tour hướng dẫn */}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm btn-icon"
-          data-tour="tour-btn"
-          onClick={() => triggerGuidelineTour()}
-          aria-label="Khám phá nhanh tính năng"
-          title="Tour hướng dẫn tính năng"
-        >
-          <Compass size={17} style={{ color: 'var(--brand)' }} />
-        </button>
-
         <ThemeToggle />
 
         <div style={{ position: 'relative' }}>
@@ -215,7 +202,7 @@ export function Topbar({
         </div>
 
         <div style={{ position: 'relative' }}>
-          <button className="topbar-user" data-tour="topbar-user" onClick={() => setOpenMenu((m) => (m === 'user' ? null : 'user'))}>
+          <button className="topbar-user" onClick={() => setOpenMenu((m) => (m === 'user' ? null : 'user'))}>
             <Avatar name={user.fullName} src={user.avatarUrl} size="sm" />
             <span className="topbar-user-text">
               <span className="topbar-user-name">{user.fullName}</span>

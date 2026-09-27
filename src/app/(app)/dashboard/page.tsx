@@ -458,7 +458,7 @@ export default async function DashboardPage({
       />
 
       {tabs.length > 1 && (
-        <div className="tabs" data-tour="dashboard-tabs">
+        <div className="tabs">
           {tabs.map((t) => (
             <Link key={t.key} href={`/dashboard?tab=${t.key}`} className="tab" data-active={tab === t.key}>
               <t.icon size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
@@ -472,7 +472,7 @@ export default async function DashboardPage({
 
       {sales && (
         <>
-          <div className="grid-stats" data-tour="dashboard-kpi">
+          <div className="grid-stats">
             <StatCard
               href="/customers" label="Đơn hàng chưa hoàn tất" value={sales.openOrders} icon={<ShoppingCart size={16} />}
               hint={sales.awaitingStock > 0 ? `${sales.awaitingStock} đơn đang chờ hàng hoặc chờ giao` : 'Không có đơn nào tồn đọng'}
@@ -872,7 +872,7 @@ export default async function DashboardPage({
 
 
       {showWork && (
-      <div className="grid-stats" data-tour="dashboard-kpi">
+      <div className="grid-stats">
         <StatCard
           href="/tasks" label="Việc đang mở của tôi" value={myOpenTasks} icon={<ListChecks size={16} />}
           hint={myOpenTasks === 0 ? 'Không còn việc tồn đọng' : 'Đang chờ bạn xử lý'}

@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { CustomerWorkspacePanel } from '@/components/domain/customer-workspace-panel';
+import { customerInsights } from '@/lib/customer-insights';
+import { CUSTOMER_TABS, resolveCustomerView, customerTabForView, type CustomerView } from '@/lib/customer-tabs';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import {
   ArrowLeft,
   Building2,
@@ -30,8 +33,11 @@ import {
   ShoppingCart,
   ChevronDown,
   ChevronRight,
+  LayoutDashboard,
+  CreditCard,
+  UserCheck,
 } from 'lucide-react';
-import { Card, Button, Badge, ConfirmDialog } from '@/components/ui';
+import { Card, Button, Badge, ConfirmDialog, StatCard, ScrollTabs } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
 import { CustomerModal, CustomerLocationModal } from '@/components/domain/customer-modals';
 import {
@@ -69,6 +75,8 @@ import {
 export function CustomerDetailScreen({
   customer,
   canManage,
+  canExport = false,
+  employees = [],
   companyInfo,
   spareParts = [],
   stockMachines = [],
@@ -77,6 +85,8 @@ export function CustomerDetailScreen({
 }: {
   customer: any;
   canManage: boolean;
+  canExport?: boolean;
+  employees?: { id: number; fullName: string }[];
   companyInfo?: any;
   spareParts?: any[];
   stockMachines?: any[];
@@ -86,9 +96,27 @@ export function CustomerDetailScreen({
   const router = useRouter();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<
-    'machines' | 'quotations' | 'orders' | 'payments' | 'locations' | 'tickets'
-  >('machines');
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const activeTab = resolveCustomerView(searchParams.get('tab'), searchParams.get('view'));
+  const activeGroup = customerTabForView(activeTab);
+  const setActiveTab = (view: CustomerView, orderId?: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', customerTabForView(view).key);
+    params.set('view', view);
+    if (orderId) params.set('order', String(orderId)); else params.delete('order');
+    router.push(`${pathname}?${params}`, { scroll: false });
+  };
+  useEffect(() => {
+    const id = searchParams.get('order');
+    if (activeTab === 'orders' && id) {
+      setExpandedOrderItems(prev => ({ ...prev, [id]: true }));
+      document.getElementById(`customer-order-${id}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeTab, searchParams]);
+  const insights = customerInsights(customer);
+  const purchasedParts = insights.parts;
+  const [partsView, setPartsView] = useState<'transactions' | 'items'>('transactions');
   const [printPayment, setPrintPayment] = useState<any>(null);
   const [createQuotationOpen, setCreateQuotationOpen] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<any>(null);
@@ -162,25 +190,7 @@ export function CustomerDetailScreen({
   };
 
   /** Công nợ: phải thu, đã thu, còn nợ, quá hạn. */
-  const debt = (customer.orders || []).reduce(
-    (acc: any, o: any) => {
-      if (o.status === 'CANCELLED') return acc;
-      const total = Number(o.totalAmount || 0);
-      const paid = Number(o.paidAmount || 0);
-      const returned = Math.min(total, Number(o.returnedAmount || 0));
-      const remaining = Math.max(0, total - returned - paid);
-      acc.billed += total;
-      acc.returned += returned;
-      acc.paid += Math.min(paid, total);
-      acc.outstanding += remaining;
-      if (remaining > 0 && o.dueDate && new Date(o.dueDate) < new Date(new Date().toDateString())) {
-        acc.overdue += remaining;
-        acc.overdueOrders += 1;
-      }
-      return acc;
-    },
-    { billed: 0, returned: 0, paid: 0, outstanding: 0, overdue: 0, overdueOrders: 0 },
-  );
+  const debt = insights;
 
   const handleDeletePayment = (paymentId: number) => {
     setConfirmDialog({
@@ -300,223 +310,373 @@ export function CustomerDetailScreen({
                 )}
               </div>
 
-              {customer.notes && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12.5,
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: 'var(--text-base)' }}>Ghi chú:</span> {customer.notes}
-                </div>
-              )}
             </div>
           </div>
 
           {canManage && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Button variant="secondary" onClick={() => setEditCustomerModalOpen(true)}>
-                <Edit2 size={14} style={{ marginRight: 6 }} /> Sửa thông tin
+            <div>
+              <Button size="sm" variant="secondary" onClick={() => setEditCustomerModalOpen(true)}>
+                <Edit2 size={13} style={{ marginRight: 6 }} /> Sửa thông tin
               </Button>
-              {/* Lập và sửa đơn bán đã chuyển hẳn sang màn Bán hàng — một nghiệp
-                  vụ chỉ nên có một chỗ làm, hồ sơ khách giữ vai trò tra cứu */}
-              <Link href={`/sales?customerId=${customer.id}`} className="btn btn-secondary">
-                <ShoppingCart size={14} style={{ marginRight: 6 }} /> Bán Hàng
-              </Link>
-
-              <Button variant="secondary" onClick={() => setCreateQuotationOpen(true)}>
-                <FileText size={14} style={{ marginRight: 6 }} /> Lập báo giá
-              </Button>
-
-              {debt.outstanding > 0 && (
-                <Button variant="secondary" onClick={() => setPaymentOrderId('GENERAL')}>
-                  <Wallet size={14} style={{ marginRight: 6 }} /> Ghi nhận thanh toán
-                </Button>
-              )}
-
-              {/* Hai con số tiền đặt ngay cạnh nút; các chỉ số đếm đã có trên tab */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 18,
-                  marginLeft: 'auto',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Công nợ phải thu</div>
-                  <div
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 800,
-                      color:
-                        debt.outstanding > 0 ? (debt.overdue > 0 ? '#dc2626' : '#d97706') : '#16a34a',
-                    }}
-                  >
-                    {new Intl.NumberFormat('vi-VN').format(debt.outstanding)} ₫
-                    {debt.overdue > 0 && (
-                      <span style={{ fontSize: 11, fontWeight: 600 }}> · {debt.overdueOrders} đơn quá hạn</span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Tổng giá trị giao dịch</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--brand)' }}>
-                    {new Intl.NumberFormat('vi-VN').format(totalSpent)} ₫
-                  </div>
-                </div>
-              </div>
             </div>
           )}
         </div>
 
       </Card>
 
-      {/* 3. Navigation Tabs */}
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-base)', paddingBottom: 0 }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('machines')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 13.5,
-            fontWeight: activeTab === 'machines' ? 700 : 500,
-            color: activeTab === 'machines' ? 'var(--brand)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'machines' ? '2px solid var(--brand)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <Utensils size={16} /> Thiết bị đã mua ({customer.machines?.length || 0})
-        </button>
+      {/* ── TABS (Style chuẩn Spare Parts) ── */}
+      <ScrollTabs>
+        {CUSTOMER_TABS.map((tab) => {
+          const isActive = activeGroup.key === tab.key;
+          const TabIcon =
+            tab.key === 'overview'
+              ? LayoutDashboard
+              : tab.key === 'transactions'
+              ? ShoppingCart
+              : tab.key === 'products'
+              ? Package
+              : tab.key === 'debt'
+              ? CreditCard
+              : UserCheck;
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('quotations')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 13.5,
-            fontWeight: activeTab === 'quotations' ? 700 : 500,
-            color: activeTab === 'quotations' ? 'var(--brand)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'quotations' ? '2px solid var(--brand)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <FileText size={16} /> Báo giá ({customer.quotations?.length || 0})
-        </button>
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.views[0].key)}
+              style={{
+                padding: '10px 16px',
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+                fontWeight: isActive ? 700 : 500,
+                fontSize: 14,
+                borderBottom: isActive ? '2px solid var(--brand)' : '2px solid transparent',
+                color: isActive ? 'var(--brand)' : 'var(--text-muted)',
+                background: 'none',
+                borderTop: 'none',
+                borderLeft: 'none',
+                borderRight: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                transition: 'color 0.15s var(--ease-out), border-color 0.15s var(--ease-out)',
+              }}
+            >
+              <TabIcon size={16} /> {tab.label}
+            </button>
+          );
+        })}
+      </ScrollTabs>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('orders')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 13.5,
-            fontWeight: activeTab === 'orders' ? 700 : 500,
-            color: activeTab === 'orders' ? 'var(--brand)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'orders' ? '2px solid var(--brand)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <ShoppingBag size={16} /> Lịch sử đơn hàng ({customer.orders?.length || 0})
-        </button>
+      {activeGroup.views.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -6 }}>
+          {activeGroup.views.map((view) => {
+            const isSubActive = activeTab === view.key;
+            return (
+              <button
+                key={view.key}
+                type="button"
+                onClick={() => setActiveTab(view.key)}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 'var(--radius-full)',
+                  fontSize: 12.5,
+                  fontWeight: isSubActive ? 600 : 500,
+                  background: isSubActive ? 'var(--brand-soft)' : 'var(--surface-sunken)',
+                  color: isSubActive ? 'var(--brand)' : 'var(--text-muted)',
+                  border: isSubActive ? '1px solid var(--brand-soft-hover)' : '1px solid var(--border-base)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {view.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('payments')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 13.5,
-            fontWeight: activeTab === 'payments' ? 700 : 500,
-            color: activeTab === 'payments' ? 'var(--brand)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'payments' ? '2px solid var(--brand)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <Wallet size={16} /> Công nợ & Thanh toán ({customer.payments?.length || 0})
-        </button>
+      {activeTab === 'overview' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Stats Grid - Colorful circle icon cards identical to Spare Parts report */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
+            {[
+              { label: 'Giá trị đơn (gồm VAT)', value: totalSpent, color: '#2563eb', bg: '#eff6ff', Icon: ShoppingCart },
+              { label: 'Đã phân bổ thu vào đơn', value: debt.paid, color: '#0f766e', bg: '#f0fdfa', Icon: Wallet },
+              { label: 'Còn phải thu', value: debt.outstanding, color: '#d97706', bg: '#fffbeb', Icon: Clock },
+              {
+                label: 'Nợ quá hạn',
+                value: debt.overdue,
+                color: debt.overdue > 0 ? '#dc2626' : '#16a34a',
+                bg: debt.overdue > 0 ? '#fef2f2' : '#f0fdf4',
+                Icon: AlertTriangle,
+              },
+            ].map((c) => (
+              <Card key={c.label} style={{ padding: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: c.bg,
+                    color: c.color,
+                    display: 'grid',
+                    placeItems: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <c.Icon size={19} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: c.color }}>
+                    {new Intl.NumberFormat('vi-VN').format(Number(c.value))} ₫
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>{c.label}</div>
+                </div>
+              </Card>
+            ))}
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('locations')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 13.5,
-            fontWeight: activeTab === 'locations' ? 700 : 500,
-            color: activeTab === 'locations' ? 'var(--brand)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'locations' ? '2px solid var(--brand)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <MapPin size={16} /> Điểm lắp đặt / Chi nhánh ({customer.locations?.length || 0})
-        </button>
+          {/* Cần theo dõi */}
+          <Card style={{ padding: 16 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)', marginBottom: 12 }}>
+              Cần theo dõi
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              <Button size="sm" variant={debt.overdueOrders > 0 ? 'secondary' : 'ghost'} onClick={() => setActiveTab('payments')}>
+                <AlertTriangle size={13} style={{ marginRight: 6, color: debt.overdueOrders > 0 ? '#dc2626' : undefined }} />
+                {debt.overdueOrders} đơn quá hạn
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setActiveTab('orders')}>
+                {(customer.orders || []).filter((o: any) => !['COMPLETED', 'CANCELLED'].includes(o.status)).length} đơn chưa hoàn tất
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setActiveTab('machines')}>
+                <Utensils size={13} style={{ marginRight: 6 }} />
+                {customer.machines?.length || 0} thiết bị
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setActiveTab('parts')}>
+                <Package size={13} style={{ marginRight: 6 }} />
+                {purchasedParts.length} dòng phụ tùng đã mua
+              </Button>
+            </div>
+          </Card>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('tickets')}
-          style={{
-            padding: '10px 16px',
-            fontSize: 13.5,
-            fontWeight: activeTab === 'tickets' ? 700 : 500,
-            color: activeTab === 'tickets' ? 'var(--brand)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'tickets' ? '2px solid var(--brand)' : '2px solid transparent',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <Wrench size={16} /> Lịch sử Sửa chữa & Sự cố ({customer.tickets?.length || 0})
-        </button>
-      </div>
+          {/* Đơn hàng gần đây */}
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            <div
+              style={{
+                padding: '14px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: '1px solid var(--border-base)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ShoppingCart size={16} style={{ color: 'var(--brand)' }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-strong)' }}>
+                  Đơn hàng gần đây
+                </span>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--surface-sunken)',
+                    color: 'var(--text-muted)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {customer.orders?.length || 0}
+                </span>
+              </div>
+              {(customer.orders || []).length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => setActiveTab('orders')}
+                  style={{ fontSize: 12, color: 'var(--brand)', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+                >
+                  Xem tất cả ({customer.orders.length}) <ChevronRight size={13} />
+                </button>
+              )}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table className="customer-purchase-table" style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 140 }}>Mã đơn hàng</th>
+                    <th style={{ width: 110 }}>Ngày đặt</th>
+                    <th>Chi tiết mặt hàng</th>
+                    <th style={{ width: 130 }}>Trạng thái</th>
+                    <th style={{ width: 140, textAlign: 'right' }}>Tổng tiền</th>
+                    <th style={{ width: 160 }}>Thanh toán</th>
+                    <th style={{ width: 70, textAlign: 'center' }}>Chi tiết</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...(customer.orders || [])]
+                    .sort((a: any, b: any) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())
+                    .slice(0, 5)
+                    .map((o: any) => {
+                      const total = o.status === 'CANCELLED' ? 0 : Number(o.totalAmount || 0);
+                      const paid = Number(o.paidAmount || 0);
+                      const remaining = Math.max(0, total - paid);
+                      const items = o.items || [];
+                      const firstItem = items[0];
+                      const itemsCount = items.length;
+                      const stInfo = ORDER_STATUSES[o.status] || { label: o.status, color: '#64748b', bg: '#f1f5f9' };
+
+                      return (
+                        <tr key={o.id}>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--brand)', padding: '2px 6px', height: 'auto', minHeight: 26 }}
+                              onClick={() => setActiveTab('orders', o.id)}
+                            >
+                              {o.orderCode}
+                            </button>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                            {new Date(o.orderDate).toLocaleDateString('vi-VN')}
+                          </td>
+                          <td>
+                            {firstItem ? (
+                              <div>
+                                <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>
+                                  {firstItem.name}
+                                  {firstItem.quantity > 1 && (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500, marginLeft: 4 }}>
+                                      × {firstItem.quantity}
+                                    </span>
+                                  )}
+                                </div>
+                                {itemsCount > 1 && (
+                                  <div
+                                    className="tooltip-host"
+                                    style={{
+                                      fontSize: 11.5,
+                                      color: 'var(--brand)',
+                                      marginTop: 2,
+                                      cursor: 'pointer',
+                                      display: 'inline-block',
+                                    }}
+                                  >
+                                    +{itemsCount - 1} mặt hàng khác
+                                    <span className="tooltip tooltip-bottom" style={{ width: 220, textAlign: 'left', whiteSpace: 'normal', lineHeight: 1.4 }}>
+                                      {items.slice(1).map((it: any) => `${it.name}${it.quantity > 1 ? ` (x${it.quantity})` : ''}`).join(', ')}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: 12 }}>Chưa có mặt hàng</span>
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '3px 10px',
+                                borderRadius: 'var(--radius-full)',
+                                fontSize: 11.5,
+                                fontWeight: 600,
+                                color: stInfo.color,
+                                background: stInfo.bg,
+                              }}
+                            >
+                              {stInfo.label}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <strong style={{ fontVariantNumeric: 'tabular-nums', fontSize: 13.5, color: 'var(--text-strong)' }}>
+                              {new Intl.NumberFormat('vi-VN').format(Number(o.totalAmount || 0))} ₫
+                            </strong>
+                          </td>
+                          <td>
+                            {o.status === 'CANCELLED' ? (
+                              <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>Đã hủy</span>
+                            ) : remaining === 0 && total > 0 ? (
+                              <span style={{ color: '#16a34a', fontWeight: 600, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <CheckCircle2 size={13} /> Đã đủ
+                              </span>
+                            ) : remaining > 0 ? (
+                              <div>
+                                <span style={{ color: '#d97706', fontWeight: 600, fontSize: 12 }}>
+                                  Còn nợ {new Intl.NumberFormat('vi-VN').format(remaining)} ₫
+                                </span>
+                                {paid > 0 && (
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    Đã trả {new Intl.NumberFormat('vi-VN').format(paid)} ₫
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>0 ₫</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs"
+                              style={{ padding: '4px 8px', color: 'var(--brand)' }}
+                              onClick={() => setActiveTab('orders', o.id)}
+                              title="Xem chi tiết đơn hàng"
+                            >
+                              <ChevronRight size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {!customer.orders?.length && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: 13 }}>
+                        Chưa có đơn hàng nào.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+      {['profile', 'contacts', 'care', 'customer-report'].includes(activeTab) && <CustomerWorkspacePanel customer={customer} view={activeTab} canManage={canManage} canExport={canExport} employees={employees} onOrder={id => setActiveTab('orders', id)} />}
 
       {/* 4. Tab Contents */}
 
       {/* ── TAB 1: THIẾT BỊ & MÁY MÓC ── */}
+      {activeTab === 'parts' && (
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card-header"><h3 className="card-title">Phụ tùng</h3><div className="tabs"><button className="tab" data-active={partsView === 'transactions'} onClick={() => setPartsView('transactions')}>Theo giao dịch</button><button className="tab" data-active={partsView === 'items'} onClick={() => setPartsView('items')}>Theo mặt hàng</button></div></div>
+          <div style={{ overflowX: 'auto' }}>
+            {partsView === 'items' ? <table className="customer-purchase-table" style={{ width: '100%', fontSize: 13 }}><thead><tr><th>Phụ tùng</th><th>SL đã mua</th><th>Đã trả</th><th>Còn lại</th></tr></thead><tbody>{insights.partGroups.map(g => <tr key={g.key}><td>{g.name}</td><td>{g.quantity}</td><td>{g.returnedQty}</td><td>{g.netQty}</td></tr>)}{!insights.partGroups.length && <tr><td colSpan={4}>Chưa có phụ tùng đã mua.</td></tr>}</tbody></table> : (
+            <table className="customer-purchase-table" style={{ width: '100%', minWidth: 700, borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+              <thead><tr>{['Phụ tùng / Vật tư', 'Đơn hàng', 'Ngày mua', 'SL trên đơn', 'Tiền hàng (chưa VAT)', 'Đã trả / Còn lại'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+              <tbody>{purchasedParts.length === 0 ? <tr><td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>Khách hàng này chưa có phụ tùng đã giao</td></tr> : purchasedParts.map(({ item, order: o, returnedQty, netQty }: any) => <tr key={`${o.id}-${item.id}`}>
+                <td><div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{item.name}</div></td>
+                <td><button type="button" onClick={() => { setActiveTab('orders', o.id); }} style={{ color: 'var(--brand)', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap', background: 'none', border: 0, padding: 0, cursor: 'pointer' }}>{o.orderCode}</button></td>
+                <td style={{ whiteSpace: 'nowrap' }}>{new Date(o.orderDate).toLocaleDateString('vi-VN')}</td>
+                <td style={{ textAlign: 'right' }}>{item.quantity}</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{new Intl.NumberFormat('vi-VN').format(Number(item.totalPrice ?? Number(item.quantity) * Number(item.unitPrice)))} ₫</td>
+                <td>{returnedQty} / {netQty}</td>
+              </tr>)}</tbody>
+            </table>)}
+          </div>
+          {purchasedParts.length > 0 && <p style={{ padding: '10px 14px', margin: 0, fontSize: 12, color: 'var(--text-muted)', borderTop: '1px solid var(--border-base)' }}>Tiền hàng theo đơn gốc; số lượng trả lấy từ dòng phiếu trả liên kết. Đơn cũ chưa có liên kết cần đối soát.</p>}
+        </Card>
+      )}
+
       {activeTab === 'machines' && (
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+            <table className="customer-purchase-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--surface-sunken)', borderBottom: '1px solid var(--border-base)', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>
                   <th style={{ padding: '12px 14px', width: 130 }}>Mã máy</th>
@@ -647,6 +807,16 @@ export function CustomerDetailScreen({
       {/* ── TAB: BÁO GIÁ ── */}
       {activeTab === 'quotations' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {canManage && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
+                Danh sách Báo giá ({customer.quotations?.length || 0})
+              </div>
+              <Button size="sm" variant="primary" onClick={() => setCreateQuotationOpen(true)}>
+                <FileText size={14} style={{ marginRight: 6 }} /> Tạo báo giá
+              </Button>
+            </div>
+          )}
           {customer.quotations?.length === 0 ? (
             <Card style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               Chưa có báo giá nào cho khách hàng này
@@ -740,69 +910,85 @@ export function CustomerDetailScreen({
                       </div>
 
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          type="button"
-                          onClick={() => setPrintingQuotation(q)}
-                          style={{
-                            padding: '5px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            background: 'var(--surface-sunken)',
-                            color: 'var(--brand)',
-                            border: 'none',
-                            cursor: 'pointer',
-                          }}
-                          title="In báo giá"
-                        >
-                          <FileText size={14} />
-                        </button>
+                        <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                          <button
+                            type="button"
+                            onClick={() => setPrintingQuotation(q)}
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: 'var(--surface-sunken)',
+                              color: 'var(--brand)',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <FileText size={14} />
+                          </button>
+                          <span className="tooltip">In báo giá</span>
+                        </div>
 
                         {canManage && !convertedOrder && (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => handleConvertQuotation(q)}
-                              style={{
-                                padding: '5px 8px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: '#ecfdf5',
-                                color: '#047857',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                              title="Khách đã chốt — tạo đơn hàng từ báo giá này"
-                            >
-                              <CheckCircle2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingQuotation(q)}
-                              style={{
-                                padding: '5px 8px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: 'var(--surface-sunken)',
-                                color: 'var(--text-strong)',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                              title="Sửa báo giá"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteQuotation(q.id)}
-                              style={{
-                                padding: '5px 8px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: 'var(--surface-sunken)',
-                                color: 'var(--danger)',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                              title="Xóa báo giá"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleConvertQuotation(q)}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: '#ecfdf5',
+                                  color: '#047857',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <CheckCircle2 size={14} />
+                              </button>
+                              <span className="tooltip">Tạo đơn từ báo giá</span>
+                            </div>
+                            <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                              <button
+                                type="button"
+                                onClick={() => setEditingQuotation(q)}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: 'var(--surface-sunken)',
+                                  color: 'var(--text-strong)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <span className="tooltip">Sửa báo giá</span>
+                            </div>
+                            <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteQuotation(q.id)}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: 'var(--surface-sunken)',
+                                  color: 'var(--danger)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                              <span className="tooltip">Xóa báo giá</span>
+                            </div>
                           </>
                         )}
                       </div>
@@ -895,6 +1081,16 @@ export function CustomerDetailScreen({
       {/* ── TAB 2: LỊCH SỬ MUA MÁY & ĐƠN HÀNG ── */}
       {activeTab === 'orders' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {canManage && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
+                Danh sách Đơn hàng ({customer.orders?.length || 0})
+              </div>
+              <Link href={`/sales?customerId=${customer.id}`} className="btn btn-primary btn-sm">
+                <ShoppingCart size={14} style={{ marginRight: 6 }} /> Tạo đơn
+              </Link>
+            </div>
+          )}
           {customer.orders?.length === 0 ? (
             <Card style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               Chưa có đơn hàng hoặc lịch sử mua máy nào cho khách hàng này
@@ -905,7 +1101,7 @@ export function CustomerDetailScreen({
               const stInfo = ORDER_STATUSES[o.status] || { label: o.status, color: '#64748b', bg: '#f1f5f9' };
 
               return (
-                <Card key={o.id} style={{ padding: 18 }}>
+                <Card key={o.id} id={`customer-order-${o.id}`} style={{ padding: 18 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1055,98 +1251,118 @@ export function CustomerDetailScreen({
                         )}
                       </div>
 
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          type="button"
-                          onClick={() => setPrintingOrder(o)}
-                          style={{
-                            padding: '5px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            background: '#faf5ff',
-                            color: '#7c3aed',
-                            border: '1px solid #ddd6fe',
-                            cursor: 'pointer',
-                          }}
-                          title="In hóa đơn bán hàng & bàn giao (A4 / PDF)"
-                        >
-                          <Printer size={14} />
-                        </button>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                          <button
+                            type="button"
+                            onClick={() => setPrintingOrder(o)}
+                            style={{
+                              padding: '6px 9px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: '#faf5ff',
+                              color: '#7c3aed',
+                              border: '1px solid #ddd6fe',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Printer size={14} />
+                          </button>
+                          <span className="tooltip">In hóa đơn & bàn giao (A4/PDF)</span>
+                        </div>
 
                         {canManage && (
                           <>
                             {Number(o.totalAmount || 0) > Number(o.paidAmount || 0) &&
                               o.status !== 'CANCELLED' && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPaymentOrderId(o.id)}
-                                  style={{
-                                    padding: '5px 8px',
-                                    borderRadius: 'var(--radius-sm)',
-                                    background: '#fef3c7',
-                                    color: '#b45309',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                  }}
-                                  title="Ghi nhận khách thanh toán cho đơn này"
-                                >
-                                  <Wallet size={14} />
-                                </button>
+                                <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPaymentOrderId(o.id)}
+                                    style={{
+                                      padding: '6px 9px',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: '#fef3c7',
+                                      color: '#b45309',
+                                      border: '1px solid #fde68a',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    <Wallet size={14} />
+                                  </button>
+                                  <span className="tooltip">Thu tiền đơn hàng</span>
+                                </div>
                               )}
 
                             {o.status !== 'CANCELLED' && (o.items || []).length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setReturnOrder(o)}
-                                style={{
-                                  padding: '5px 8px',
-                                  borderRadius: 'var(--radius-sm)',
-                                  background: '#f5f3ff',
-                                  color: '#7c3aed',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                }}
-                                title="Khách trả hàng"
-                              >
-                                <Undo2 size={14} />
-                              </button>
+                              <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setReturnOrder(o)}
+                                  style={{
+                                    padding: '6px 9px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: '#f5f3ff',
+                                    color: '#7c3aed',
+                                    border: '1px solid #e9d5ff',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <Undo2 size={14} />
+                                </button>
+                                <span className="tooltip">Khách trả hàng</span>
+                              </div>
                             )}
 
                             {o.items?.some((it: any) => it.itemType === 'SPARE_PART') && (
                               <>
-                                <button
-                                  type="button"
-                                  onClick={() => setFulfillment({ order: o, mode: 'SUPPLIER' })}
-                                  style={{
-                                    padding: '5px 8px',
-                                    borderRadius: 'var(--radius-sm)',
-                                    background: '#ede9fe',
-                                    color: '#6d28d9',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                  }}
-                                  title="Đặt hàng nhà cung cấp cho linh kiện trong đơn"
-                                >
-                                  <Truck size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setFulfillment({ order: o, mode: 'ISSUE' })}
-                                  style={{
-                                    padding: '5px 8px',
-                                    borderRadius: 'var(--radius-sm)',
-                                    background: o.stockIssuedAt ? '#dcfce7' : '#e0f2fe',
-                                    color: o.stockIssuedAt ? '#15803d' : '#0369a1',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                  }}
-                                  title={
-                                    o.stockIssuedAt
-                                      ? `Đã xuất kho ngày ${new Date(o.stockIssuedAt).toLocaleDateString('vi-VN')}`
-                                      : 'Xuất kho giao khách (trừ tồn kho)'
-                                  }
-                                >
-                                  <PackageCheck size={14} />
-                                </button>
+                                <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFulfillment({ order: o, mode: 'SUPPLIER' })}
+                                    style={{
+                                      padding: '6px 9px',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: '#ede9fe',
+                                      color: '#6d28d9',
+                                      border: '1px solid #ddd6fe',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    <Truck size={14} />
+                                  </button>
+                                  <span className="tooltip">Đặt hàng NCC (PO)</span>
+                                </div>
+                                <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFulfillment({ order: o, mode: 'ISSUE' })}
+                                    style={{
+                                      padding: '6px 9px',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: o.stockIssuedAt ? '#dcfce7' : '#e0f2fe',
+                                      color: o.stockIssuedAt ? '#15803d' : '#0369a1',
+                                      border: o.stockIssuedAt ? '1px solid #bbf7d0' : '1px solid #bae6fd',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    <PackageCheck size={14} />
+                                  </button>
+                                  <span className="tooltip">
+                                    {o.stockIssuedAt
+                                      ? `Đã xuất kho (${new Date(o.stockIssuedAt).toLocaleDateString('vi-VN')})`
+                                      : 'Xuất kho giao khách'}
+                                  </span>
+                                </div>
                               </>
                             )}
                           </>
@@ -1246,6 +1462,7 @@ export function CustomerDetailScreen({
       )}
 
       {/* ── TAB: CÔNG NỢ & THANH TOÁN ── */}
+      {activeTab === 'payments' && <Card style={{ padding: 16 }}><strong>Chưa phân bổ: {new Intl.NumberFormat('vi-VN').format(insights.unapplied)} ₫</strong><p className="text-muted">{insights.legacyPayments} phiếu cũ chưa có phân bổ chi tiết · {insights.allocationMismatch} đơn lệch phân bổ. Tiền dư chưa tự trừ vào công nợ.</p><Button size="sm" onClick={() => setActiveTab('customer-report')}>Xem đối soát</Button></Card>}
       {activeTab === 'payments' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
@@ -1276,7 +1493,7 @@ export function CustomerDetailScreen({
               <strong style={{ fontSize: 13.5, color: 'var(--text-strong)' }}>Lịch sử thu tiền</strong>
               {canManage && (
                 <Button variant="primary" size="sm" onClick={() => setPaymentOrderId('GENERAL')}>
-                  <Wallet size={14} style={{ marginRight: 6 }} /> Ghi nhận thanh toán
+                  <Wallet size={14} style={{ marginRight: 6 }} /> Thu tiền
                 </Button>
               )}
             </div>
@@ -1333,36 +1550,44 @@ export function CustomerDetailScreen({
                         </td>
                         {canManage && (
                           <td style={{ padding: '10px 14px', display: 'flex', gap: 5 }}>
-                            <button
-                              type="button"
-                              onClick={() => setPrintPayment(p)}
-                              style={{
-                                padding: '4px 7px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: 'var(--surface-sunken)',
-                                color: 'var(--brand)',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                              title="In phiếu thu"
-                            >
-                              <Printer size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePayment(p.id)}
-                              style={{
-                                padding: '4px 7px',
-                                borderRadius: 'var(--radius-sm)',
-                                background: 'var(--surface-sunken)',
-                                color: 'var(--danger)',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                              title="Xóa phiếu thu"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                              <button
+                                type="button"
+                                onClick={() => setPrintPayment(p)}
+                                style={{
+                                  padding: '4px 7px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: 'var(--surface-sunken)',
+                                  color: 'var(--brand)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Printer size={13} />
+                              </button>
+                              <span className="tooltip">In phiếu thu</span>
+                            </div>
+                            <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePayment(p.id)}
+                                style={{
+                                  padding: '4px 7px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: 'var(--surface-sunken)',
+                                  color: 'var(--danger)',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                              <span className="tooltip">Xóa phiếu thu</span>
+                            </div>
                           </td>
                         )}
                       </tr>

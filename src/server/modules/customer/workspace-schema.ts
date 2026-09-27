@@ -1,0 +1,5 @@
+import { z } from 'zod';
+const optionalText = (max: number) => z.string().trim().max(max).optional();
+export const profileSchema = z.object({ kind: z.enum(['BUSINESS', 'PERSONAL', 'WALK_IN']), legalName: optionalText(191), taxCode: optionalText(32), billingAddress: optionalText(255), billingEmail: z.union([z.literal(''), z.string().email().max(191)]).optional(), paymentTerms: optionalText(500), ownerEmployeeId: z.number().int().positive().nullable() });
+export const contactSchema = z.object({ id: z.number().int().positive().optional(), name: z.string().trim().min(1).max(100), role: optionalText(100), phone: optionalText(32), email: z.union([z.literal(''), z.string().email().max(191)]).optional(), isPrimary: z.boolean() });
+export const activitySchema = z.object({ id: z.number().int().positive().optional(), title: z.string().trim().min(1).max(191), note: optionalText(4000), channel: z.enum(['CALL', 'EMAIL', 'MEETING', 'ZALO', 'OTHER']), assigneeId: z.number().int().positive(), dueAt: z.string().datetime().nullable() });

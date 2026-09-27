@@ -174,17 +174,15 @@ async function seedTransactions() {
   console.log('✓ Thao tác ghi nhận bởi tài khoản', admin.code);
 }
 
+import { runFullFlowSeed } from './seed-full-flow';
+
 async function main() {
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') throw new Error('Seed demo bị chặn trong production. Chỉ bật ALLOW_DEMO_SEED=true sau khi đã duyệt.');
-  const counts = await prisma.$transaction(async (tx) => ({
-    customers: await tx.customer.count(), items: await tx.inventoryItem.count(), sales: await tx.customerOrder.count(), purchases: await tx.sparePartOrder.count(),
-  }));
-  console.log(`Database hiện tại: ${counts.customers} khách, ${counts.items} mặt hàng, ${counts.sales} đơn bán, ${counts.purchases} đơn mua.`);
   if (process.argv.includes('--include-hr')) {
     if (process.env.CONFIRM_DEMO_HR_OVERWRITE !== 'YES') throw new Error('HR seed sửa hồ sơ demo NV001–NV014. Để chạy, đặt CONFIRM_DEMO_HR_OVERWRITE=YES.');
     await seedHrDemo();
   }
-  await seedTransactions();
+  await runFullFlowSeed();
   if (process.argv.includes('--include-hr')) await seedHrBusinessFlows();
 }
 

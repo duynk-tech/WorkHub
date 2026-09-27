@@ -1,4 +1,5 @@
 import { requireAuth, can } from '@/server/auth/context';
+import { redirect } from 'next/navigation';
 import { attendanceReport, taskReport, leaveReport, overviewReport } from '@/server/modules/report/service';
 import { customerDebtReport } from '@/server/modules/report/customer-debt';
 import { getDisabledReportKeys } from '@/server/modules/report/config';
@@ -14,6 +15,7 @@ export default async function ReportsPage({
   searchParams: Promise<{ tab?: string; month?: string; from?: string; to?: string; year?: string }>;
 }) {
   const ctx = await requireAuth();
+  if (!can(ctx, 'MENU_REPORTS')) redirect('/dashboard');
   const sp = await searchParams;
 
   const disabled = await getDisabledReportKeys();

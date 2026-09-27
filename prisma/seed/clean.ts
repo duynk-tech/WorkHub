@@ -40,6 +40,9 @@ export async function cleanBusinessData(prisma: PrismaClient) {
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `FnbEquipment`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `ServiceContract`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `CustomerLocation`;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `CustomerProfile`;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `CustomerContact`;');
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE `CustomerCareActivity`;');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `Customer`;');
 
     // 2. Tài sản & Thiết bị văn phòng (Asset)

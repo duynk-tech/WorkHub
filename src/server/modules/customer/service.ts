@@ -1,3 +1,4 @@
+import { customerInsights } from '@/lib/customer-insights';
 import { allocatePayment } from '@/lib/payment-allocation';
 import { prisma } from '@/lib/prisma';
 import { can, type AuthContext } from '@/server/auth/context';
@@ -239,6 +240,7 @@ export async function getCustomerOrderContext(ctx: AuthContext, customerId: numb
       phone: true,
       address: true,
       contactName: true,
+      profile: true,
       locations: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
       machines: {
         select: {
@@ -680,7 +682,11 @@ export async function saveCustomer(id: number | null, input: SaveCustomerInput) 
 export async function deleteCustomer(id: number) {
   const numId = Number(id);
   if (!numId || isNaN(numId) || numId <= 0) return null;
-  return prisma.customer.delete({ where: { id: numId } });
+  return prisma.$transaction(async tx => {
+    const customer = await tx.customer.findUniqueOrThrow({ where: { id: numId }, include: { _count: { select: { orders: true, payments: true, returns: true, machines: true, tickets: true, quotations: true, contracts: true, sparePartOrders: true, careActivities: true } } } });
+    if (Object.values(customer._count).some(count => count > 0)) throw new Error('Khách đã có giao dịch hoặc lịch sử. Hãy chuyển sang Ngừng giao dịch thay vì xóa.');
+    return tx.customer.delete({ where: { id: numId } });
+  }, { isolationLevel: 'Serializable' });
 }
 
 /** Tổng hợp tiền của một đơn hàng: tiền hàng, VAT và tổng khách phải trả (đơn bán khách không tính cước). */
@@ -731,6 +737,9 @@ export function summarizeOrder(
 
 export async function saveCustomerOrder(id: number | null, input: SaveCustomerOrderInput) {
   const numId = id ? Number(id) : null;
+  if (!numId && input.status && !['PENDING', 'CONFIRMED'].includes(input.status)) {
+    throw new Error('Đơn mới phải ở trạng thái Chờ xác nhận hoặc Đã xác nhận. Giao hàng và thu tiền được ghi nhận ở bước sau.');
+  }
   const orderCode = input.orderCode?.trim() || (numId ? undefined : await generateOrderCode());
   const vatRate = Number(input.vatRate) || 0;
   const { grossAmount, discountAmount, goodsAmount, vatAmount, totalAmount } = summarizeOrder(
@@ -770,6 +779,9 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
   if (numId && !isNaN(numId) && numId > 0) {
     return prisma.$transaction(async (tx) => {
       const existing = await tx.customerOrder.findUniqueOrThrow({ where: { id: numId } });
+      if (input.status && input.status !== existing.status && !['PENDING', 'CONFIRMED'].includes(input.status)) {
+        throw new Error('Không thể chuyển sang đã giao hoặc hoàn tất bằng sửa đơn. Hãy thực hiện giao hàng và thu tiền.');
+      }
       if (existing.stockIssuedAt || Number(existing.paidAmount) !== 0 || Number(existing.returnedAmount) !== 0) {
         throw new Error('Đơn đã xuất kho hoặc phát sinh thu/trả hàng. Hãy lập điều chỉnh thay vì sửa chi tiết.');
       }
@@ -779,7 +791,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       where: { id: numId },
       data: {
         orderType: input.orderType,
-        status: input.status || 'COMPLETED',
+        status: input.status || existing.status,
         locationId: input.locationId ? Number(input.locationId) : null,
         goodsAmount,
         shippingFee: 0,
@@ -810,7 +822,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       quotationId: input.quotationId ? Number(input.quotationId) : null,
       serviceTicketId: input.serviceTicketId ? Number(input.serviceTicketId) : null,
       orderType: input.orderType,
-      status: input.status || 'COMPLETED',
+      status: input.status || 'PENDING',
       goodsAmount,
       shippingFee: 0,
       vatRate,
@@ -844,7 +856,20 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
 export async function deleteCustomerOrder(id: number) {
   const numId = Number(id);
   if (!numId || isNaN(numId) || numId <= 0) return null;
-  return prisma.customerOrder.delete({ where: { id: numId } });
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.customerOrder.findUnique({
+      where: { id: numId },
+      include: { _count: { select: { payments: true, returns: true, allocations: true } } },
+    });
+    if (!order) return null;
+    const stockDocuments = await tx.inventoryTransaction.count({ where: { customerOrderId: numId } });
+    if (!['DRAFT', 'PENDING'].includes(order.status) || order.stockIssuedAt || Number(order.paidAmount) !== 0 ||
+        Number(order.returnedAmount) !== 0 || order._count.payments || order._count.returns ||
+        order._count.allocations || stockDocuments) {
+      throw new Error('Chỉ được xóa đơn chưa xác nhận, chưa phát sinh thu tiền, trả hàng hoặc phiếu kho.');
+    }
+    return tx.customerOrder.delete({ where: { id: numId } });
+  }, { isolationLevel: 'Serializable' });
 }
 
 
@@ -1450,26 +1475,8 @@ export function orderDebt(order: {
 
 /** Tổng hợp công nợ của một khách hàng. */
 export function summarizeCustomerDebt(orders: any[]) {
-  let totalBilled = 0;
-  let totalReturned = 0;
-  let totalPaid = 0;
-  let outstanding = 0;
-  let overdue = 0;
-  let overdueOrders = 0;
-
-  for (const o of orders || []) {
-    const d = orderDebt(o);
-    totalBilled += d.total;
-    totalReturned += d.returned;
-    totalPaid += Math.min(d.paid, d.total);
-    outstanding += d.remaining;
-    if (d.overdue) {
-      overdue += d.remaining;
-      overdueOrders += 1;
-    }
-  }
-
-  return { totalBilled, totalReturned, totalPaid, outstanding, overdue, overdueOrders };
+  const report = customerInsights({ orders });
+  return { totalBilled: report.billed, totalReturned: report.returned, totalPaid: report.paid, outstanding: report.outstanding, overdue: report.overdue, overdueOrders: report.overdueOrders };
 }
 
 /**

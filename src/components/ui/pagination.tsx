@@ -134,7 +134,16 @@ export function Pagination({
                 setPageSize(Number(e.target.value));
                 setPage(1);
               }}
-              style={{ width: 'auto', padding: '4px 8px', fontSize: 12.5 }}
+              style={{
+                width: 'auto',
+                minWidth: 64,
+                height: 32,
+                padding: '0 26px 0 10px',
+                fontSize: 12.5,
+                backgroundPosition: 'right 7px center',
+                backgroundSize: '14px 14px',
+                cursor: 'pointer',
+              }}
             >
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <option key={n} value={n}>

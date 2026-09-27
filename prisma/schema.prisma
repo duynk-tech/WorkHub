@@ -1124,6 +1124,9 @@ model AssetLiquidation {
 // ============================================================
 
 model Customer {
+  profile CustomerProfile?
+  contacts CustomerContact[]
+  careActivities CustomerCareActivity[]
   id          Int      @id @default(autoincrement())
   code        String   @unique @db.VarChar(32)
   name        String   @db.VarChar(191)
@@ -1720,4 +1723,42 @@ model SupplierPaymentAllocation {
   order SparePartOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
   @@unique([paymentId, orderId])
   @@index([orderId])
+}
+
+model CustomerProfile {
+  customerId Int @id
+  kind String @default("BUSINESS") @db.VarChar(20)
+  legalName String? @db.VarChar(191)
+  taxCode String? @db.VarChar(32)
+  billingAddress String? @db.VarChar(255)
+  billingEmail String? @db.VarChar(191)
+  paymentTerms String? @db.VarChar(500)
+  ownerEmployeeId Int?
+  updatedAt DateTime @updatedAt
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+model CustomerContact {
+  id Int @id @default(autoincrement())
+  customerId Int
+  name String @db.VarChar(100)
+  role String? @db.VarChar(100)
+  phone String? @db.VarChar(32)
+  email String? @db.VarChar(191)
+  isPrimary Boolean @default(false)
+  createdAt DateTime @default(now())
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([customerId])
+}
+model CustomerCareActivity {
+  id Int @id @default(autoincrement())
+  customerId Int
+  title String @db.VarChar(191)
+  note String? @db.Text
+  channel String @default("CALL") @db.VarChar(20)
+  assigneeId Int
+  dueAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([customerId, dueAt])
 }

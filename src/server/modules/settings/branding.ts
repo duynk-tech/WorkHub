@@ -19,7 +19,7 @@ export async function getAppBranding(): Promise<AppBranding> {
     getSetting<string>('app.name', process.env.APP_NAME || 'WorkHub'),
     getSetting<string>('app.logoUrl', ''),
     getSetting<string>('app.logoText', ''),
-    getSetting<string>('app.description', 'Hệ thống quản trị công việc, nghỉ phép và chấm công'),
+    getSetting<string>('app.description', 'Hệ thống quản trị kinh doanh, thiết bị, kho vận và công việc'),
   ]);
 
   const cleanName = name?.trim() || process.env.APP_NAME || 'WorkHub';

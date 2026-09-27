@@ -173,7 +173,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
   // 2. Phiếu kho — chỉ dùng để tính nhập kho và xuất khác (bảo hành, hủy…),
   //    KHÔNG dùng để tính doanh thu bán ra.
   const transactions = await prisma.inventoryTransaction.findMany({
-    where: { transDate: { gte: range.from, lte: range.to } },
+    where: { status: 'COMPLETED', transDate: { gte: range.from, lte: range.to } },
     include: {
       items: {
         include: { item: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } } },
@@ -216,7 +216,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       if (!line.item) continue;
       const row = rowOf(line.item);
       const qty = line.quantity;
-      const actualCost = actualUnitCostMap.get(line.item.id) ?? Number(line.unitCost || 0);
+      const actualCost = Number(line.unitCost ?? 0);
       const cost = actualCost * qty;
       const price = Number(line.unitPrice || 0) * qty;
 
@@ -255,25 +255,27 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     },
   });
 
-  // Tổng hợp chi tiết đơn bán: chiết khấu, VAT, hàng trả lại — cấp đơn hàng
+  // Tổng hợp chi tiết đơn bán: chỉ lấy VAT của các dòng gắn với mặt hàng kho,
+  // cùng phạm vi với doanh thu và số lượng hiển thị trong báo cáo này.
   let totalDiscount = 0;
   let totalVat = 0;
   let totalReturned = 0;
+  let inventoryOrderCount = 0;
 
   for (const order of customerOrders) {
-    // Cộng dồn VAT & hàng trả lại cấp đơn hàng
-    totalVat += Number(order.vatAmount || 0);
-    totalReturned += Number(order.returnedAmount || 0);
+    if (!order.items.some((line) => line.inventoryItem)) continue;
+    inventoryOrderCount += 1;
+    let inventoryLineSubtotal = 0;
 
     for (const line of order.items) {
       if (!line.inventoryItem) continue;
       const row = rowOf(line.inventoryItem);
-      const qty = Number(line.quantity) || 1;
+      const qty = Number(line.quantity);
       const unitPrice = Number(line.unitPrice) || 0;
-      const totalPrice = Number(line.totalPrice) || 0;
+      const totalPrice = line.totalPrice == null ? unitPrice * qty : Number(line.totalPrice);
 
       // Doanh thu = totalPrice (đã trừ chiết khấu dòng) trên đơn bán hàng
-      const lineRevenue = totalPrice > 0 ? totalPrice : unitPrice * qty;
+      const lineRevenue = totalPrice;
       // Chiết khấu dòng = giá gốc − thành tiền thực thu
       const lineDiscount = Math.max(0, unitPrice * qty - lineRevenue);
       // Giá vốn = đơn giá vốn thực tế PO × số lượng bán
@@ -285,10 +287,20 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       row.discount += lineDiscount;
       row.cogs += lineCogs;
       totalDiscount += lineDiscount;
+      inventoryLineSubtotal += lineRevenue;
+    }
+
+    // VAT được lưu ở cấp đơn. Phân bổ theo tỷ trọng doanh thu mặt hàng kho,
+    // để không cộng VAT dịch vụ/thiết bị không thuộc báo cáo kho.
+    const orderSubtotal = Number(order.goodsAmount || 0) + Number(order.shippingFee || 0);
+    if (inventoryLineSubtotal > 0 && orderSubtotal > 0) {
+      const inventoryShare = Math.min(1, inventoryLineSubtotal / orderSubtotal);
+      totalVat += Number(order.vatAmount || 0) * inventoryShare;
+      totalReturned += Number(order.returnedAmount || 0) * inventoryShare;
     }
   }
 
-  // Tồn cuối kỳ theo từng mặt hàng
+  // Tồn hiện tại; chưa phải số dư lịch sử tại ngày cuối kỳ.
   const stocks = await prisma.inventoryStock.groupBy({
     by: ['itemId'],
     where: { itemId: { in: [...rows.keys()] } },
@@ -336,7 +348,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       // Lãi thuần của kho = lãi gộp trừ hàng xuất không thu tiền (bảo hành, hủy...)
       netProfit: grossProfit - nonSaleCost,
       transactionCount: transactions.length,
-      orderCount: customerOrders.length,
+      orderCount: inventoryOrderCount,
     },
     costByReason: [...reasonAgg.entries()]
       .map(([code, agg]) => ({
@@ -390,7 +402,7 @@ export function reportToCsv(report: InventoryProfitReport): string {
       'Mã hàng', 'Tên hàng', 'ĐVT', 'SL nhập', 'Giá trị nhập', 'SL bán',
       'Giá bán TB', 'Chiết khấu', 'Doanh thu (đã trừ CK)',
       'Đơn giá vốn thực tế (đã gồm phí)', 'Giá vốn hàng bán (đã gồm phí)', 'Lãi gộp', 'Tỷ suất (%)',
-      'SL xuất khác', 'Chi phí xuất khác', 'Tồn cuối',
+      'SL xuất khác', 'Chi phí xuất khác', 'Tồn hiện tại',
     ].join(';'),
   );
   for (const r of report.items) {

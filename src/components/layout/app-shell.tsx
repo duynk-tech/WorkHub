@@ -7,7 +7,6 @@ import { Topbar, type TopbarUser, type TopbarNotification } from './topbar';
 import { NavigationProgressBar } from './nav-progress-bar';
 import { CurrentUserProvider } from './current-user';
 import { PrintWatermarkProvider } from './print-watermark-context';
-import { GuidelineTour } from './guideline-tour';
 import type { PrintWatermarkConfig } from '@/server/modules/settings/branding';
 
 export function AppShell({
@@ -64,7 +63,6 @@ export function AppShell({
           />
           <main className="app-content animate-in">{children}</main>
         </div>
-        <GuidelineTour />
       </div>
       </PrintWatermarkProvider>
     </CurrentUserProvider>

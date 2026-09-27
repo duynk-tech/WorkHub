@@ -1,16 +1,41 @@
 'use client';
 
 import { useActionState, useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, LogIn, AlertCircle, CheckSquare, CalendarCheck, Clock3, GitBranch } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  LogIn,
+  AlertCircle,
+  ShoppingCart,
+  Boxes,
+  Wrench,
+  Users,
+} from 'lucide-react';
 import { loginAction, type ActionState } from '@/server/modules/auth/actions';
 import { Button, Field, Input } from '@/components/ui';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 const HIGHLIGHTS = [
-  { icon: CheckSquare, title: 'Giao việc & nhắc việc', desc: 'Theo dõi tiến độ, nhắc hạn tự động qua Zalo Bot' },
-  { icon: CalendarCheck, title: 'Nghỉ phép có duyệt', desc: 'Quy trình duyệt nhiều bước cấu hình được theo phòng ban' },
-  { icon: Clock3, title: 'Chấm công đa nguồn', desc: 'Check-in web, Zalo, import máy chấm công, HR điều chỉnh' },
-  { icon: GitBranch, title: 'Phân quyền theo cây', desc: 'Phạm vi dữ liệu bám theo cấu trúc phòng ban phân cấp' },
+  {
+    icon: ShoppingCart,
+    title: 'Kinh doanh & Bán hàng',
+    desc: 'Báo giá, đơn hàng, chính sách giá margin và công nợ khách hàng',
+  },
+  {
+    icon: Boxes,
+    title: 'Kho vận & Phụ tùng',
+    desc: 'Quản lý kho trung tâm, kho chi nhánh, tồn kho và mua hàng NCC',
+  },
+  {
+    icon: Wrench,
+    title: 'Thiết bị & Dịch vụ kỹ thuật',
+    desc: 'Theo dõi máy tại khách, bảo hành, phiếu bàn giao và sửa chữa bảo trì',
+  },
+  {
+    icon: Users,
+    title: 'Nhân sự & Vận hành',
+    desc: 'Quản lý công việc, quy trình xét duyệt nhiều cấp, chấm công và nghỉ phép',
+  },
 ];
 
 export function LoginForm({ googleEnabled = false, ssoError,
@@ -77,10 +102,10 @@ export function LoginForm({ googleEnabled = false, ssoError,
 
             <div>
               <h2 style={{ color: '#fff', fontSize: 28, lineHeight: 1.25, marginBottom: 14, fontWeight: 700, letterSpacing: '-0.02em' }}>
-                {appDescription ? appDescription : 'Công việc, nghỉ phép và chấm công trong một hệ thống'}
+                {appDescription || 'Quản trị kinh doanh, thiết bị, kho vận và công việc'}
               </h2>
               <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, maxWidth: 440, lineHeight: 1.55 }}>
-                {appName} — Quản lý phòng ban phân cấp, quy trình duyệt linh hoạt và thông báo tức thời qua Zalo.
+                {appName} — Nền tảng hợp nhất quản trị bán hàng, theo dõi thiết bị khách hàng, quản lý kho linh kiện và vận hành doanh nghiệp.
               </p>
 
               <div style={{ display: 'grid', gap: 14, marginTop: 30 }}>
@@ -177,7 +202,7 @@ export function LoginForm({ googleEnabled = false, ssoError,
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
+                    onClick={() => setShowPassword((v: boolean) => !v)}
                     className="btn btn-ghost btn-sm btn-icon"
                     style={{ position: 'absolute', right: 3, top: 3 }}
                     aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}

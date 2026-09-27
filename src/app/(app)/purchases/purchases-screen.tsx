@@ -764,7 +764,10 @@ export function PurchasesScreen({
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                           <span style={{ color: 'var(--text-muted)' }}>
-                                            Tiền hàng mua ({new Intl.NumberFormat('vi-VN').format(exchangeRate)} ₫/{order.currency || 'EUR'}):
+                                            Tiền hàng mua
+                                            {order.currency && order.currency !== 'VND' && exchangeRate !== 1
+                                              ? ` (${new Intl.NumberFormat('vi-VN').format(exchangeRate)} ₫/${order.currency}):`
+                                              : ':'}
                                           </span>
                                           <span style={{ fontWeight: 600 }}>
                                             {new Intl.NumberFormat('vi-VN').format(Number(order.subtotalVnd))} ₫

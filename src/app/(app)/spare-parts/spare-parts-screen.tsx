@@ -18,6 +18,8 @@ import {
   Search,
   Truck,
   Building,
+  MapPin,
+  User,
   RefreshCw,
   Sparkles,
   Utensils,
@@ -835,9 +837,28 @@ export function SparePartsScreen({
 
       {/* ── TAB 3: QUẢN LÝ KHO & XE LƯU ĐỘNG ── */}
       {activeTab === 'warehouses' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {canManage && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Header toolbar & Thống kê nhanh */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-strong)' }}>
+                Hệ thống Kho hàng ({warehouses.length})
+              </div>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: 'var(--text-muted)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--surface-sunken)',
+                  border: '1px solid var(--border-base)',
+                }}
+              >
+                {stats.centralCount || 0} kho trung tâm · {stats.vanCount || 0} kho chi nhánh
+              </span>
+            </div>
+
+            {canManage && (
               <Button
                 size="sm"
                 variant="primary"
@@ -848,142 +869,232 @@ export function SparePartsScreen({
               >
                 <Plus size={15} style={{ marginRight: 6 }} /> Thêm Kho phụ tùng
               </Button>
-            </div>
-          )}
+            )}
+          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             {warehouses.map((w) => {
               const typeCfg = WAREHOUSE_TYPES[w.type] || { label: w.type, color: '#64748b', bg: '#f1f5f9' };
               const totalItemsInWh = w.stocks?.reduce((sum: number, s: any) => sum + s.quantity, 0) || 0;
+              const hasEquipments = w.equipments && w.equipments.length > 0;
 
               return (
-                <Card key={w.id} style={{ padding: 18 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 'var(--radius-md)',
-                          background: typeCfg.bg,
-                          color: typeCfg.color,
-                          display: 'grid',
-                          placeItems: 'center',
-                        }}
-                      >
-                        <Building size={20} />
+                <Card
+                  key={w.id}
+                  style={{
+                    padding: 20,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    minHeight: 250,
+                    borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--border-base)',
+                    boxShadow: 'var(--shadow-xs)',
+                    transition: 'all 0.18s ease',
+                  }}
+                >
+                  <div>
+                    {/* Header: Icon, Tên kho, Mã kho, Loại kho & Nút Sửa */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 'var(--radius-md)',
+                            background: typeCfg.bg,
+                            color: typeCfg.color,
+                            display: 'grid',
+                            placeItems: 'center',
+                            flexShrink: 0,
+                            boxShadow: `0 2px 8px ${typeCfg.color}25`,
+                          }}
+                        >
+                          <Building size={22} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-strong)' }}>
+                              {w.name}
+                            </h3>
+                            <span
+                              style={{
+                                fontFamily: 'monospace',
+                                fontWeight: 700,
+                                fontSize: 11,
+                                padding: '1px 7px',
+                                borderRadius: 'var(--radius-xs)',
+                                background: typeCfg.bg,
+                                color: typeCfg.color,
+                                border: `1px solid ${typeCfg.color}35`,
+                              }}
+                            >
+                              {w.code}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, fontWeight: 500 }}>
+                            {typeCfg.label}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-strong)' }}>
-                            {w.name}
-                          </h3>
-                          <span
-                            style={{
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              background: typeCfg.bg,
-                              color: typeCfg.color,
+
+                      {canManage && (
+                        <div className="tooltip-host" style={{ display: 'inline-flex' }}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditingWarehouse(w);
+                              setWarehouseModalOpen(true);
                             }}
+                            style={{ padding: '6px 8px', height: 'auto', borderRadius: 'var(--radius-sm)' }}
                           >
-                            {w.code}
+                            <Edit2 size={14} />
+                          </Button>
+                          <span className="tooltip">Sửa thông tin kho</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Metadata: Địa chỉ & Quản lý */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 14 }}>
+                      {w.address ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 6,
+                            fontSize: 12.5,
+                            color: 'var(--text-muted)',
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          <MapPin size={13} style={{ flexShrink: 0, marginTop: 2, color: 'var(--text-faint)' }} />
+                          <span>{w.address}</span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: 'var(--text-faint)', fontStyle: 'italic' }}>
+                          Chưa cập nhật địa chỉ
+                        </div>
+                      )}
+
+                      {w.manager && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 12.5,
+                            color: 'var(--text-muted)',
+                          }}
+                        >
+                          <User size={13} style={{ flexShrink: 0, color: 'var(--text-faint)' }} />
+                          <span>
+                            Phụ trách: <strong style={{ color: 'var(--text-strong)' }}>{w.manager.fullName}</strong>
+                            {w.manager.phone && ` (${w.manager.phone})`}
                           </span>
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {typeCfg.label}
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Phần chân Card: Thống kê & Danh mục thiết bị */}
+                  <div style={{ marginTop: 16 }}>
+                    {/* Thống kê 2 cột cân đối */}
+                    <div
+                      style={{
+                        paddingTop: 12,
+                        borderTop: '1px solid var(--border-base)',
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: 'var(--surface-sunken)',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 500 }}>
+                          Mã linh kiện
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-strong)', marginTop: 2 }}>
+                          {w.stocks?.length || 0}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          background: '#f0fdf4',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid #dcfce7',
+                        }}
+                      >
+                        <div style={{ fontSize: 11.5, color: '#15803d', fontWeight: 500 }}>
+                          Tổng tồn kho
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a', marginTop: 2 }}>
+                          {new Intl.NumberFormat('vi-VN').format(totalItemsInWh)}
                         </div>
                       </div>
                     </div>
 
-                    {canManage && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEditingWarehouse(w);
-                          setWarehouseModalOpen(true);
+                    {/* Thiết bị đang lưu trong kho nếu có */}
+                    {hasEquipments && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          paddingTop: 10,
+                          borderTop: '1px dashed var(--border-base)',
                         }}
-                        style={{ padding: '4px 6px', height: 'auto' }}
                       >
-                        <Edit2 size={14} />
-                      </Button>
+                        <div
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            color: 'var(--text-muted)',
+                            marginBottom: 6,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <Utensils size={12} />
+                          <span>Thiết bị lưu tại kho ({w.equipments.length}):</span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 58, overflowY: 'auto' }}>
+                          {w.equipments.map((eq: any) => (
+                            <Link
+                              key={eq.id}
+                              href={`/equipment/${eq.id}`}
+                              style={{
+                                padding: '2px 7px',
+                                borderRadius: 'var(--radius-xs)',
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                                fontWeight: 700,
+                                background: '#eff6ff',
+                                color: '#2563eb',
+                                border: '1px solid #bfdbfe',
+                                textDecoration: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                transition: 'all 0.15s ease',
+                              }}
+                              className="hover:border-blue-400"
+                            >
+                              {eq.machineCode}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {w.address && (
-                    <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-muted)' }}>
-                      📍 {w.address}
-                    </div>
-                  )}
-
-                  {w.manager && (
-                    <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--text-muted)' }}>
-                      👤 Phụ trách: <strong style={{ color: 'var(--text-strong)' }}>{w.manager.fullName}</strong>{' '}
-                      {w.manager.phone && `(${w.manager.phone})`}
-                    </div>
-                  )}
-
-                  {/* Thống kê trong kho */}
-                  <div
-                    style={{
-                      marginTop: 14,
-                      paddingTop: 12,
-                      borderTop: '1px solid var(--border-base)',
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 10,
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div style={{ background: 'var(--surface-sunken)', padding: '8px', borderRadius: 'var(--radius-sm)' }}>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Mã linh kiện</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-strong)' }}>
-                        {w.stocks?.length || 0}
-                      </div>
-                    </div>
-
-                    <div style={{ background: 'var(--surface-sunken)', padding: '8px', borderRadius: 'var(--radius-sm)' }}>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Tổng số lượng tồn</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--brand)' }}>
-                        {totalItemsInWh}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Thiết bị đang lưu trong kho */}
-                  {w.equipments?.length > 0 && (
-                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border-base)' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-                        Thiết bị đang lưu tại kho ({w.equipments.length}):
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {w.equipments.map((eq: any) => (
-                          <Link
-                            key={eq.id}
-                            href={`/equipment/${eq.id}`}
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: 4,
-                              fontSize: 11.5,
-                              fontFamily: 'monospace',
-                              fontWeight: 600,
-                              background: '#eff6ff',
-                              color: '#2563eb',
-                              border: '1px solid #bfdbfe',
-                              textDecoration: 'none',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                            }}
-                          >
-                            <Utensils size={11} /> {eq.machineCode}
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </Card>
               );
             })}

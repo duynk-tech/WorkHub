@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Button, Field, Input, SearchInput, Select } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
-import { FileDown, TrendingUp, TrendingDown, Package, AlertTriangle } from 'lucide-react';
+import { FileDown, TrendingUp, TrendingDown, Package } from 'lucide-react';
 import {
   getInventoryReportAction,
   exportInventoryReportCsvAction,
@@ -80,18 +80,17 @@ export function InventoryReportPanel() {
           icon: Package,
         },
         {
-          label: 'Doanh thu bán ra (chưa VAT)',
+          label: 'Doanh thu bán ra',
           value: `${fmt(s.revenue)} ₫`,
           sub: `${s.orderCount} đơn · ${s.soldQty} đơn vị đã bán`,
-          detail: s.vatAmount > 0 ? `VAT phát sinh: +${fmt(s.vatAmount)} ₫` : undefined,
           color: '#0f766e',
           bg: '#f0fdfa',
           icon: TrendingUp,
         },
         {
-          label: 'Giá vốn hàng bán (đã gồm phí)',
+          label: 'Giá vốn hàng bán',
           value: `${fmt(s.cogs)} ₫`,
-          sub: 'Giá mua NCC + phí khác',
+          sub: 'Giá mua NCC + cước + phí',
           color: '#d97706',
           bg: '#fffbeb',
           icon: TrendingDown,
@@ -192,104 +191,38 @@ export function InventoryReportPanel() {
                   <div style={{ fontSize: 17, fontWeight: 800, color: c.color }}>{c.value}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>{c.label}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-faint, var(--text-muted))' }}>{c.sub}</div>
-                  {c.detail && (
-                    <div style={{ fontSize: 11.5, color: '#2563eb', fontWeight: 700, marginTop: 3 }}>{c.detail}</div>
-                  )}
                 </div>
               </Card>
             ))}
           </div>
 
-          {/* Điều chỉnh làm giảm doanh thu; VAT được hiển thị ngay trong thẻ Doanh thu. */}
-          {(s.discount > 0 || s.returnedAmount > 0) && (
+          {/* Cần theo dõi — chip badges giống trang khách hàng */}
+          {(s.discount > 0 || s.returnedAmount > 0 || report.costByReason.length > 0) && (
             <Card style={{ padding: 14 }}>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: 'var(--text-strong)',
-                  marginBottom: 10,
-                }}
-              >
-                Điều chỉnh doanh thu ({s.orderCount} đơn)
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', marginBottom: 10 }}>
+                Cần theo dõi
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {s.discount > 0 && (
-                  <div
-                    style={{
-                      padding: '7px 12px',
-                      borderRadius: 'var(--radius-md)',
-                      background: '#fef2f2',
-                      border: '1px solid #fecaca',
-                      fontSize: 12.5,
-                    }}
-                  >
-                    <div style={{ color: '#b91c1c' }}>Chiết khấu</div>
-                    <div style={{ fontWeight: 700, color: '#b91c1c' }}>−{fmt(s.discount)} ₫</div>
-                  </div>
+                  <span style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
+                    Chiết khấu −{fmt(s.discount)} ₫
+                  </span>
                 )}
                 {s.returnedAmount > 0 && (
-                  <div
-                    style={{
-                      padding: '7px 12px',
-                      borderRadius: 'var(--radius-md)',
-                      background: '#fffbeb',
-                      border: '1px solid #fde68a',
-                      fontSize: 12.5,
-                    }}
-                  >
-                    <div style={{ color: '#b45309' }}>Hàng trả lại</div>
-                    <div style={{ fontWeight: 700, color: '#b45309' }}>−{fmt(s.returnedAmount)} ₫</div>
-                  </div>
+                  <span style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
+                    Hàng trả lại −{fmt(s.returnedAmount)} ₫
+                  </span>
                 )}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
-                Doanh thu đã phản ánh các khoản điều chỉnh này, chưa bao gồm VAT.
-              </div>
-            </Card>
-          )}
-
-          {/* Chi phí xuất không thu tiền */}
-          {report.costByReason.length > 0 && (
-            <Card style={{ padding: 14 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 13.5,
-                  fontWeight: 700,
-                  color: 'var(--text-strong)',
-                  marginBottom: 10,
-                }}
-              >
-                <AlertTriangle size={15} color="#d97706" /> Hàng xuất không thu tiền —{' '}
-                {fmt(s.nonSaleCost)} ₫
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {report.costByReason.map((r: any) => (
-                  <div
-                    key={r.code}
-                    style={{
-                      padding: '7px 12px',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--surface-sunken)',
-                      border: '1px solid var(--border-base)',
-                      fontSize: 12.5,
-                    }}
-                  >
-                    <div style={{ color: 'var(--text-muted)' }}>{r.label}</div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>
-                      {r.qty} đơn vị hàng · {fmt(r.value)} ₫
-                    </div>
-                  </div>
+                  <span key={r.code} style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
+                    {r.label} {r.qty} đơn vị · {fmt(r.value)} ₫
+                  </span>
                 ))}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10 }}>
-                Lãi thuần sau khi trừ khoản này:{' '}
-                <strong style={{ color: s.netProfit >= 0 ? '#16a34a' : '#dc2626' }}>
-                  {fmt(s.netProfit)} ₫
-                </strong>
+                {s.nonSaleCost > 0 && (
+                  <span style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
+                    Lãi thuần {fmt(s.netProfit)} ₫
+                  </span>
+                )}
               </div>
             </Card>
           )}
