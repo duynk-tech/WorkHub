@@ -5,6 +5,60 @@ import {
   SparePartPricingConfigSchema,
 } from '../../src/server/modules/spare-parts/types';
 
+async function backfillSeededSalesOrderCostSnapshots(prisma: PrismaClient, orderId: number) {
+  const [transactions, orderItems] = await Promise.all([
+    prisma.inventoryTransaction.findMany({
+      where: { customerOrderId: orderId, type: 'OUT', status: 'COMPLETED' },
+      select: {
+        items: {
+          select: {
+            itemId: true,
+            quantity: true,
+            baseUnitCost: true,
+            shippingUnitCost: true,
+            otherUnitCost: true,
+          },
+        },
+      },
+    }),
+    prisma.customerOrderItem.findMany({
+      where: { orderId },
+      select: { id: true, inventoryItemId: true, quantity: true, unitCostVnd: true, shippingFee: true, customsFee: true },
+    }),
+  ]);
+
+  const costsByItem = new Map<number, { quantity: number; base: number; shipping: number; other: number; complete: boolean }>();
+  for (const transaction of transactions) {
+    for (const line of transaction.items) {
+      const current = costsByItem.get(line.itemId) || { quantity: 0, base: 0, shipping: 0, other: 0, complete: true };
+      const quantity = Math.max(0, Number(line.quantity) || 0);
+      if (line.baseUnitCost == null || line.shippingUnitCost == null || line.otherUnitCost == null) current.complete = false;
+      if (quantity > 0 && current.complete) {
+        current.quantity += quantity;
+        current.base += Number(line.baseUnitCost) * quantity;
+        current.shipping += Number(line.shippingUnitCost) * quantity;
+        current.other += Number(line.otherUnitCost) * quantity;
+      }
+      costsByItem.set(line.itemId, current);
+    }
+  }
+
+  for (const item of orderItems) {
+    if (!item.inventoryItemId || item.unitCostVnd != null || item.shippingFee != null || item.customsFee != null) continue;
+    const costs = costsByItem.get(item.inventoryItemId);
+    if (!costs?.complete || costs.quantity <= 0) continue;
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+    await prisma.customerOrderItem.update({
+      where: { id: item.id },
+      data: {
+        unitCostVnd: costs.base / costs.quantity,
+        shippingFee: Math.round((costs.shipping / costs.quantity) * quantity),
+        customsFee: Math.round((costs.other / costs.quantity) * quantity),
+      },
+    });
+  }
+}
+
 /**
  * Seed dữ liệu kinh doanh liên tục 6 tháng (Tháng 4 – Tháng 9/2026).
  *
@@ -149,7 +203,11 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
 
       // Skip if exists
       const existing = await prisma.customerOrder.findUnique({ where: { orderCode } });
-      if (existing) { orderCount++; continue; }
+      if (existing) {
+        await backfillSeededSalesOrderCostSnapshots(prisma, existing.id);
+        orderCount++;
+        continue;
+      }
 
       // Pick 2-4 products for the order
       const numProducts = 2 + (i % 3); // 2, 3, or 4 items
@@ -232,16 +290,22 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
         item: p.type === 'SERVICE' ? null : findInventoryItem(p.name),
       }));
       await prisma.customerOrderItem.createMany({
-        data: orderLines.map(({ product: p, item }) => ({
-          orderId: order.id,
-          itemType: p.type,
-          name: p.name,
-          quantity: p.qty,
-          unitPrice: p.sell,
-          totalPrice: p.sell * p.qty - Math.round(p.sell * p.qty * p.discountPercent / 100),
-          discountAmount: Math.round(p.sell * p.qty * p.discountPercent / 100),
-          inventoryItemId: item?.id || null,
-        })),
+        data: orderLines.map(({ product: p, item }) => {
+          const costs = item ? costState.get(item.id)! : null;
+          return {
+            orderId: order.id,
+            itemType: p.type,
+            name: p.name,
+            quantity: p.qty,
+            unitPrice: p.sell,
+            totalPrice: p.sell * p.qty - Math.round(p.sell * p.qty * p.discountPercent / 100),
+            discountAmount: Math.round(p.sell * p.qty * p.discountPercent / 100),
+            unitCostVnd: costs?.base ?? null,
+            shippingFee: costs ? Math.round(costs.shipping * p.qty) : null,
+            customsFee: costs ? Math.round(costs.other * p.qty) : null,
+            inventoryItemId: item?.id || null,
+          };
+        }),
       });
 
       // Create payment
