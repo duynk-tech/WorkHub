@@ -447,12 +447,6 @@ export function SalesOrderDetailModal({
                     </tr>
                   </tfoot>
                 </table>
-                {(order.items ?? []).some((it: any) => it.unitCostVnd == null || it.shippingFee == null || it.customsFee == null) && (
-                  <div className="hint" style={{ padding: '6px 2px 0' }}>
-                    “—” nghĩa là đơn cũ chưa lưu snapshot khoản chi phí đó nên không thể hiện chính xác tại thời điểm lập đơn.
-                  </div>
-                )}
-
                 <div
                   style={{
                     marginTop: 8,
