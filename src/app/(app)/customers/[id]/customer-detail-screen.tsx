@@ -59,7 +59,6 @@ import {
   convertQuotationToOrderAction,
 } from '@/server/modules/customer/actions';
 import {
-  CUSTOMER_STATUSES,
   ORDER_TYPES,
   ORDER_STATUSES,
   QUOTATION_STATUSES,
@@ -139,7 +138,6 @@ export function CustomerDetailScreen({
     setExpandedQuotationItems(prev => ({ ...prev, [String(quoteId)]: !prev[String(quoteId)] }));
   };
 
-  const statusInfo = CUSTOMER_STATUSES[customer.status] || { label: customer.status, color: '#64748b', bg: '#f1f5f9' };
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -274,18 +272,6 @@ export function CustomerDetailScreen({
                   }}
                 >
                   {customer.code}
-                </span>
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: statusInfo.bg,
-                    color: statusInfo.color,
-                  }}
-                >
-                  {statusInfo.label}
                 </span>
               </div>
 
@@ -736,11 +722,11 @@ export function CustomerDetailScreen({
                             borderRadius: 'var(--radius-sm)',
                             fontSize: 11.5,
                             fontWeight: 600,
-                            background: m.ownershipType === 'SOLD' ? '#dcfce7' : m.ownershipType === 'RENTAL' ? '#e0f2fe' : '#fef3c7',
-                            color: m.ownershipType === 'SOLD' ? '#15803d' : m.ownershipType === 'RENTAL' ? '#0369a1' : '#b45309',
+                            background: m.ownershipType === 'SOLD' ? '#dcfce7' : ['RENTAL', 'LOAN'].includes(m.ownershipType) ? '#e0f2fe' : '#fef3c7',
+                            color: m.ownershipType === 'SOLD' ? '#15803d' : ['RENTAL', 'LOAN'].includes(m.ownershipType) ? '#0369a1' : '#b45309',
                           }}
                         >
-                          {m.ownershipType === 'SOLD' ? 'Đã bán' : m.ownershipType === 'RENTAL' ? 'Cho thuê' : 'Ký gửi'}
+                          {m.ownershipType === 'SOLD' ? 'Đã bán' : m.ownershipType === 'RENTAL' ? 'Cho thuê' : m.ownershipType === 'LOAN' ? 'Cho mượn' : 'Ký gửi'}
                         </span>
                       </td>
                       <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>

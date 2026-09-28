@@ -31,35 +31,55 @@ async function ensureMasterData() {
     prisma.warehouse.upsert({ where: { code: `${PREFIX}HCM` }, update: { name: 'DEMO · Kho TP.HCM' }, create: { code: `${PREFIX}HCM`, name: 'DEMO · Kho TP.HCM', type: 'BRANCH', address: 'Tân Bình, TP. Hồ Chí Minh' } }),
   ]);
   const products = await Promise.all([
-    prisma.inventoryItem.upsert({ where: { itemCode: `${PREFIX}FILTER-01` }, update: { name: 'DEMO · Lõi lọc nước máy pha', status: 'ACTIVE' }, create: { itemCode: `${PREFIX}FILTER-01`, name: 'DEMO · Lõi lọc nước máy pha', category: 'CONSUMABLE', unit: 'cái', costPrice: 250000, sellingPrice: 450000, avgCost: 250000, minStockAlert: 3, manufacturer: 'WorkHub Demo', description: DEMO_NOTE } }),
-    prisma.inventoryItem.upsert({ where: { itemCode: `${PREFIX}GASKET-01` }, update: { name: 'DEMO · Gioăng silicone chịu nhiệt', status: 'ACTIVE' }, create: { itemCode: `${PREFIX}GASKET-01`, name: 'DEMO · Gioăng silicone chịu nhiệt', category: 'SPARE_PART', unit: 'cái', costPrice: 180000, sellingPrice: 320000, avgCost: 180000, minStockAlert: 4, manufacturer: 'WorkHub Demo', description: DEMO_NOTE } }),
-    prisma.inventoryItem.upsert({ where: { itemCode: `${PREFIX}PUMP-01` }, update: { name: 'DEMO · Bơm nước máy pha', status: 'ACTIVE' }, create: { itemCode: `${PREFIX}PUMP-01`, name: 'DEMO · Bơm nước máy pha', category: 'SPARE_PART', unit: 'cái', costPrice: 1500000, sellingPrice: 2200000, avgCost: 1500000, minStockAlert: 2, manufacturer: 'WorkHub Demo', description: DEMO_NOTE } }),
+    prisma.inventoryItem.upsert({ where: { itemCode: `${PREFIX}FILTER-01` }, update: { name: 'DEMO · Lõi lọc nước máy pha', status: 'ACTIVE', avgCost: 250000, avgBaseCost: 250000, avgShippingCost: 0, avgOtherCost: 0 }, create: { itemCode: `${PREFIX}FILTER-01`, name: 'DEMO · Lõi lọc nước máy pha', category: 'CONSUMABLE', unit: 'cái', costPrice: 250000, sellingPrice: 450000, avgCost: 250000, avgBaseCost: 250000, avgShippingCost: 0, avgOtherCost: 0, minStockAlert: 3, manufacturer: 'WorkHub Demo', description: DEMO_NOTE } }),
+    prisma.inventoryItem.upsert({ where: { itemCode: `${PREFIX}GASKET-01` }, update: { name: 'DEMO · Gioăng silicone chịu nhiệt', status: 'ACTIVE', avgCost: 180000, avgBaseCost: 180000, avgShippingCost: 0, avgOtherCost: 0 }, create: { itemCode: `${PREFIX}GASKET-01`, name: 'DEMO · Gioăng silicone chịu nhiệt', category: 'SPARE_PART', unit: 'cái', costPrice: 180000, sellingPrice: 320000, avgCost: 180000, avgBaseCost: 180000, avgShippingCost: 0, avgOtherCost: 0, minStockAlert: 4, manufacturer: 'WorkHub Demo', description: DEMO_NOTE } }),
+    prisma.inventoryItem.upsert({ where: { itemCode: `${PREFIX}PUMP-01` }, update: { name: 'DEMO · Bơm nước máy pha', status: 'ACTIVE', avgCost: 1500000, avgBaseCost: 1500000, avgShippingCost: 0, avgOtherCost: 0 }, create: { itemCode: `${PREFIX}PUMP-01`, name: 'DEMO · Bơm nước máy pha', category: 'SPARE_PART', unit: 'cái', costPrice: 1500000, sellingPrice: 2200000, avgCost: 1500000, avgBaseCost: 1500000, avgShippingCost: 0, avgOtherCost: 0, minStockAlert: 2, manufacturer: 'WorkHub Demo', description: DEMO_NOTE } }),
   ]);
   const supplier = `${PREFIX}Nhà cung cấp thiết bị mẫu`;
   return { admin, adminUser, customers, warehouses, products, supplier };
 }
 
-async function postStock(input: { type: 'IN' | 'OUT'; warehouseId: number; userId: number; orderId?: number; purchaseId?: number; code: string; date: Date; partner: string; items: { itemId: number; quantity: number; unitPrice: number }[] }) {
+async function postStock(input: { type: 'IN' | 'OUT'; warehouseId: number; userId: number; orderId?: number; purchaseId?: number; code: string; date: Date; partner: string; items: { itemId: number; quantity: number; unitPrice: number; baseUnitCost?: number; shippingUnitCost?: number; otherUnitCost?: number }[] }) {
   await prisma.$transaction(async (tx) => {
+    const componentCosts = new Map<number, { base: number; shipping: number; other: number }>();
     for (const line of input.items) {
       const stock = await tx.inventoryStock.findUnique({ where: { warehouseId_itemId: { warehouseId: input.warehouseId, itemId: line.itemId } } });
-      const currentCost = Number((await tx.inventoryItem.findUnique({ where: { id: line.itemId }, select: { avgCost: true, costPrice: true } }))?.avgCost ?? 0);
+      const item = await tx.inventoryItem.findUnique({ where: { id: line.itemId }, select: { avgCost: true, costPrice: true, avgBaseCost: true, avgShippingCost: true, avgOtherCost: true } });
+      const baseUnitCost = input.type === 'IN'
+        ? line.baseUnitCost ?? line.unitPrice
+        : Number(item?.avgBaseCost ?? item?.costPrice ?? line.unitPrice);
+      const shippingUnitCost = input.type === 'IN'
+        ? line.shippingUnitCost ?? 0
+        : Number(item?.avgShippingCost ?? 0);
+      const otherUnitCost = input.type === 'IN'
+        ? line.otherUnitCost ?? 0
+        : Number(item?.avgOtherCost ?? 0);
+      componentCosts.set(line.itemId, { base: baseUnitCost, shipping: shippingUnitCost, other: otherUnitCost });
       if (input.type === 'IN') {
         const total = await tx.inventoryStock.aggregate({ where: { itemId: line.itemId }, _sum: { quantity: true } });
-        const nextCost = Math.round(((total._sum.quantity ?? 0) * currentCost + line.quantity * line.unitPrice) / Math.max(1, (total._sum.quantity ?? 0) + line.quantity));
-        await tx.inventoryItem.update({ where: { id: line.itemId }, data: { avgCost: nextCost } });
+        const existingQty = total._sum.quantity ?? 0;
+        const nextQty = existingQty + line.quantity;
+        const weighted = (oldValue: number, incoming: number) => Number(((existingQty * oldValue + line.quantity * incoming) / Math.max(1, nextQty)).toFixed(2));
+        const nextBase = weighted(Number(item?.avgBaseCost ?? item?.costPrice ?? 0), baseUnitCost);
+        const nextShipping = weighted(Number(item?.avgShippingCost ?? 0), shippingUnitCost);
+        const nextOther = weighted(Number(item?.avgOtherCost ?? 0), otherUnitCost);
+        await tx.inventoryItem.update({ where: { id: line.itemId }, data: { avgCost: nextBase + nextShipping + nextOther, avgBaseCost: nextBase, avgShippingCost: nextShipping, avgOtherCost: nextOther } });
         await tx.inventoryStock.upsert({ where: { warehouseId_itemId: { warehouseId: input.warehouseId, itemId: line.itemId } }, create: { warehouseId: input.warehouseId, itemId: line.itemId, quantity: line.quantity }, update: { quantity: { increment: line.quantity } } });
       } else {
         const changed = await tx.inventoryStock.updateMany({ where: { warehouseId: input.warehouseId, itemId: line.itemId, quantity: { gte: line.quantity } }, data: { quantity: { decrement: line.quantity } } });
         if (changed.count !== 1) throw new Error(`Thiếu tồn kho demo cho mặt hàng ${line.itemId} (đang có ${stock?.quantity ?? 0}).`);
       }
     }
-    const totalValue = input.items.reduce((sum, row) => sum + row.quantity * row.unitPrice, 0);
+    const transactionLines = input.items.map((line) => {
+      const costs = componentCosts.get(line.itemId)!;
+      return { ...line, baseUnitCost: costs.base, shippingUnitCost: costs.shipping, otherUnitCost: costs.other };
+    });
+    const totalValue = transactionLines.reduce((sum, row) => sum + row.quantity * (row.baseUnitCost + row.shippingUnitCost + row.otherUnitCost), 0);
     await tx.inventoryTransaction.create({ data: {
       transCode: input.code, type: input.type, ...(input.type === 'IN' ? { targetWarehouseId: input.warehouseId, sparePartOrderId: input.purchaseId } : { sourceWarehouseId: input.warehouseId, customerOrderId: input.orderId }),
       reasonCode: input.type === 'IN' ? 'PO_RECEIPT' : 'SALE', reason: DEMO_NOTE, partnerName: input.partner,
       transDate: input.date, totalValue, createdById: input.userId, status: 'COMPLETED',
-      items: { create: input.items.map((line) => ({ itemId: line.itemId, quantity: line.quantity, unitCost: line.unitPrice, unitPrice: line.unitPrice })) },
+      items: { create: transactionLines.map((line) => ({ itemId: line.itemId, quantity: line.quantity, unitCost: line.baseUnitCost + line.shippingUnitCost + line.otherUnitCost, baseUnitCost: line.baseUnitCost, shippingUnitCost: line.shippingUnitCost, otherUnitCost: line.otherUnitCost, unitPrice: line.unitPrice })) },
     } });
   }, { isolationLevel: 'Serializable' });
 }
@@ -137,7 +157,7 @@ async function seedTransactions() {
       { itemId: products[1].id, quantity: 10, unitPriceVnd: 180000, finalPriceVnd: 1800000 },
     ] },
   } });
-  await postStock({ type: 'IN', warehouseId: warehouses[0].id, purchaseId: po1.id, userId: adminUser.id, code: inboundCodes[0], date: dateAt(28), partner: supplier, items: [{ itemId: products[0].id, quantity: 20, unitPrice: 250000 }, { itemId: products[1].id, quantity: 10, unitPrice: 180000 }] });
+  await postStock({ type: 'IN', warehouseId: warehouses[0].id, purchaseId: po1.id, userId: adminUser.id, code: inboundCodes[0], date: dateAt(28), partner: supplier, items: [{ itemId: products[0].id, quantity: 20, unitPrice: 250000, baseUnitCost: 250000, shippingUnitCost: 3676.47 }, { itemId: products[1].id, quantity: 10, unitPrice: 180000, baseUnitCost: 180000, shippingUnitCost: 2647.06 }] });
   await prisma.supplierPayment.create({ data: { paymentCode: supplierPaymentCodes[0], supplier, orderId: po1.id, amount: 3000000, paidAt: dateAt(27), method: 'TRANSFER', note: DEMO_NOTE, createdById: adminUser.id, allocationVersion: 1, allocations: { create: [{ orderId: po1.id, amount: 3000000 }] } } });
   await prisma.sparePartOrder.update({ where: { id: po1.id }, data: { paidAmount: 3000000 } });
 
@@ -148,23 +168,25 @@ async function seedTransactions() {
     createdById: adminUser.id, createdAt: dateAt(12),
     items: { create: [{ itemId: products[2].id, quantity: 8, unitPriceVnd: 1500000, finalPriceVnd: 12000000 }] },
   } });
-  await postStock({ type: 'IN', warehouseId: warehouses[1].id, purchaseId: po2.id, userId: adminUser.id, code: inboundCodes[1], date: dateAt(12), partner: supplier, items: [{ itemId: products[2].id, quantity: 8, unitPrice: 1500000 }] });
+  await postStock({ type: 'IN', warehouseId: warehouses[1].id, purchaseId: po2.id, userId: adminUser.id, code: inboundCodes[1], date: dateAt(12), partner: supplier, items: [{ itemId: products[2].id, quantity: 8, unitPrice: 1500000, baseUnitCost: 1500000, shippingUnitCost: 18750 }] });
   await prisma.supplierPayment.create({ data: { paymentCode: supplierPaymentCodes[1], supplier, orderId: po2.id, amount: 12150000, paidAt: dateAt(10), method: 'TRANSFER', note: DEMO_NOTE, createdById: adminUser.id, allocationVersion: 1, allocations: { create: [{ orderId: po2.id, amount: 12150000 }] } } });
   await prisma.sparePartOrder.update({ where: { id: po2.id }, data: { paidAmount: 12150000 } });
 
   const sales = [
-    { code: salesCodes[0], customer: customers[0], warehouse: warehouses[0], product: products[0], quantity: 3, unitPrice: 450000, daysAgo: 18, payPercent: 100 },
-    { code: salesCodes[1], customer: customers[1], warehouse: warehouses[1], product: products[2], quantity: 2, unitPrice: 2200000, daysAgo: 5, payPercent: 50 },
+    { code: salesCodes[0], customer: customers[0], warehouse: warehouses[0], product: products[0], quantity: 3, unitPrice: 450000, daysAgo: 18, payPercent: 100, discountPercent: 5 },
+    { code: salesCodes[1], customer: customers[1], warehouse: warehouses[1], product: products[2], quantity: 2, unitPrice: 2200000, daysAgo: 5, payPercent: 50, discountPercent: 0 },
   ];
   for (const sale of sales) {
     const goods = sale.quantity * sale.unitPrice;
-    const vat = Math.round(goods * 0.08);
-    const total = goods + vat;
+    const lineDiscount = Math.round(goods * (sale.discountPercent || 0) / 100);
+    const netGoods = goods - lineDiscount;
+    const vat = Math.round(netGoods * 0.08);
+    const total = netGoods + vat;
     const order = await prisma.customerOrder.create({ data: {
       orderCode: sale.code, customerId: sale.customer.id, orderType: 'SPARE_PART', status: sale.payPercent === 100 ? 'COMPLETED' : 'DELIVERED',
-      goodsAmount: goods, vatRate: 8, vatAmount: vat, totalAmount: total, paidAmount: 0,
+      goodsAmount: netGoods, vatRate: 8, vatAmount: vat, totalAmount: total, paidAmount: 0,
       orderDate: dateAt(sale.daysAgo), deliveryDate: dateAt(sale.daysAgo), stockIssuedAt: dateAt(sale.daysAgo), notes: DEMO_NOTE,
-      items: { create: [{ name: sale.product.name, itemType: 'SPARE_PART', quantity: sale.quantity, unitPrice: sale.unitPrice, totalPrice: goods, inventoryItemId: sale.product.id }] },
+      items: { create: [{ name: sale.product.name, itemType: 'SPARE_PART', quantity: sale.quantity, unitPrice: sale.unitPrice, totalPrice: netGoods, discountAmount: lineDiscount, inventoryItemId: sale.product.id }] },
     } });
     await postStock({ type: 'OUT', warehouseId: sale.warehouse.id, orderId: order.id, userId: adminUser.id, code: outboundCodes[sales.indexOf(sale)], date: dateAt(sale.daysAgo), partner: sale.customer.name, items: [{ itemId: sale.product.id, quantity: sale.quantity, unitPrice: Number(sale.product.avgCost ?? sale.product.costPrice ?? 0) }] });
     await postCustomerPayment({ orderId: order.id, customerId: sale.customer.id, paymentCode: `DEMO-PT-${sale.code.endsWith('001') ? '001' : '002'}`, amount: total * sale.payPercent / 100, userId: adminUser.id, paidAt: dateAt(sale.daysAgo) });

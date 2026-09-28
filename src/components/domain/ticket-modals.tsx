@@ -10,13 +10,8 @@ import { saveTicketAction, closeTicketWithBillingAction } from '@/server/modules
 
 const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n || 0));
 
-/** Mức ưu tiên dùng khi tạo phiếu, kèm cam kết thời gian phản hồi. */
-const PRIORITY_CHOICES = [
-  { code: 'P1_CRITICAL', sla: 'phản hồi trong 2 giờ' },
-  { code: 'P2_MAJOR', sla: 'trong ngày' },
-  { code: 'MEDIUM', sla: 'trong 24 giờ' },
-  { code: 'P3_ROUTINE', sla: 'trong 48 giờ' },
-];
+/** Mức độ ưu tiên dùng khi tạo phiếu; không cam kết thời gian xử lý. */
+const PRIORITY_CHOICES = ['P1_CRITICAL', 'P2_MAJOR', 'MEDIUM', 'P3_ROUTINE'];
 
 // ── Tạo / sửa phiếu sự cố ───────────────────────────────────────
 export function TicketModal({
@@ -128,9 +123,9 @@ export function TicketModal({
 
           <Field label="Mức độ ưu tiên">
             <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
-              {PRIORITY_CHOICES.map((p) => (
-                <option key={p.code} value={p.code}>
-                  {TICKET_PRIORITIES[p.code]?.label} — {p.sla}
+              {PRIORITY_CHOICES.map((code) => (
+                <option key={code} value={code}>
+                  {TICKET_PRIORITIES[code]?.label}
                 </option>
               ))}
             </Select>

@@ -19,7 +19,8 @@ export default async function ReportsPage({
   const sp = await searchParams;
 
   const disabled = await getDisabledReportKeys();
-  const reports = visibleReports(disabled, (p) => can(ctx, p as never));
+  const reports = visibleReports(disabled, (p) => can(ctx, p as never))
+    .filter((report) => report.key !== 'sales-inventory');
   const groups = visibleGroups(reports);
 
   // Báo cáo bị tắt hoặc không có quyền thì rơi về báo cáo đầu tiên còn hiển thị

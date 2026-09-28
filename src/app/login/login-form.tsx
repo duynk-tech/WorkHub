@@ -40,11 +40,13 @@ const HIGHLIGHTS = [
 
 export function LoginForm({ googleEnabled = false, ssoError,
   appName, logoUrl, logoText, appDescription, next,
+  currentYear,
 }: {
   appName: string;
   logoUrl?: string | null;
   logoText?: string;
   appDescription?: string;
+  currentYear: number;
   next?: string;
   googleEnabled?: boolean;
   ssoError?: string;
@@ -122,7 +124,7 @@ export function LoginForm({ googleEnabled = false, ssoError,
             </div>
 
             <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-              © {new Date().getFullYear()} {appName}. Tất cả quyền được bảo lưu.
+              © {currentYear} {appName}. Tất cả quyền được bảo lưu.
             </div>
           </div>
         </aside>

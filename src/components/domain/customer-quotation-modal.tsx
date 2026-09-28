@@ -900,7 +900,7 @@ export function CustomerQuotationPrintModal({
                         {idx + 1}
                       </td>
                       <td style={{ border: cellBorder, padding: '6px 8px', verticalAlign: 'top' }}>
-                        <div style={{ fontWeight: 650, color: '#0f172a' }}>{displayName}</div>
+                        <div style={{ fontWeight: specRows.length > 0 ? 650 : 400, color: '#0f172a' }}>{displayName}</div>
                         {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                         {item.notes && (
                           <div style={{ fontSize: '10.5px', color: '#64748b', fontStyle: 'italic', marginTop: specRows.length > 0 ? 2 : 0, paddingLeft: 8 }}>
@@ -909,11 +909,11 @@ export function CustomerQuotationPrintModal({
                         )}
                       </td>
                       <td style={{ border: cellBorder, padding: '6px 7px', textAlign: 'center', verticalAlign: 'top' }}>{item.quantity}</td>
-                      <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                      <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                         {fmt(Number(item.unitPrice))}
                       </td>
                       {hasLineDiscount && (
-                        <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                        <td style={{ border: cellBorder, padding: '6px 6px', textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           {Number(item.discountVnd) > 0 ? fmt(Number(item.discountVnd)) : '—'}
                         </td>
                       )}

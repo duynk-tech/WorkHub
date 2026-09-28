@@ -107,7 +107,7 @@ export function buildCatalogOptions({
     });
   }
 
-  // Máy đang cho thuê / ký gửi tại khách → vẫn có thể chốt bán đứt hoặc gia hạn.
+  // Máy đang cho thuê, cho mượn hoặc ký gửi tại khách → vẫn có thể chốt bán đứt hoặc gia hạn.
   for (const m of machines.filter((x: any) => x.ownershipType && x.ownershipType !== 'SOLD')) {
     const price = Number(m.soldPrice || 0);
     const priceLabel = strictSellingPrice
@@ -118,9 +118,9 @@ export function buildCatalogOptions({
 
     opts.push({
       value: `EQ:${m.id}`,
-      group: 'Máy đang thuê / ký gửi tại khách',
+      group: 'Máy đang thuê / cho mượn / ký gửi tại khách',
       label: m.name,
-      subLabel: [m.ownershipType === 'RENTAL' ? 'Cho thuê' : 'Ký gửi', m.machineCode, priceLabel]
+      subLabel: [m.ownershipType === 'RENTAL' ? 'Cho thuê' : m.ownershipType === 'LOAN' ? 'Cho mượn' : 'Ký gửi', m.machineCode, priceLabel]
         .filter(Boolean)
         .join(' · '),
       keywords: [m.machineCode, m.brand, m.model, m.serialNumber, priceLabel].filter(Boolean).join(' '),
@@ -677,7 +677,11 @@ export function LineItemsEditor({
                                   lineHeight: 1.2,
                                 }}
                               >
-                                Máy thuê/ký gửi
+                                {detail.equipment?.ownershipType === 'RENTAL'
+                                  ? 'Máy cho thuê'
+                                  : detail.equipment?.ownershipType === 'LOAN'
+                                    ? 'Máy cho mượn'
+                                    : 'Máy ký gửi'}
                               </span>
                             )}
                             {quickPills.map((pill: string, pIdx: number) => (
@@ -1297,4 +1301,3 @@ export function LineItemsSummaryFooter({
     </>
   );
 }
-

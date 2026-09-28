@@ -30,7 +30,6 @@ import {
   SlidersHorizontal,
   Printer,
   FileDown,
-  BarChart3,
   Wallet,
   FilePlus2,
   ShoppingCart,
@@ -62,7 +61,6 @@ import {
 import { saveSparePartAction } from '@/server/modules/spare-parts/actions';
 import { SparePartPricingModal } from '@/components/domain/spare-part-pricing-modal';
 import { InventoryTransactionReportModal } from '@/components/domain/inventory-transaction-report-modal';
-import { InventoryReportPanel } from '@/components/domain/inventory-report-panel';
 import { StockHistoryPanel } from '@/components/domain/stock-history-panel';
 import { StockCountModal } from '@/components/domain/stock-count-modal';
 import { StockDocumentChooser } from '@/components/domain/stock-document-chooser';
@@ -119,8 +117,8 @@ export function SparePartsScreen({
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
 
-  type TabKey = 'parts' | 'machines' | 'warehouses' | 'transactions' | 'report';
-  const TAB_KEYS: TabKey[] = ['parts', 'machines', 'warehouses', 'transactions', 'report'];
+  type TabKey = 'parts' | 'machines' | 'warehouses' | 'transactions';
+  const TAB_KEYS: TabKey[] = ['parts', 'machines', 'warehouses', 'transactions'];
   // Link từ dashboard / tem QR mở thẳng tab cần xem, sai key thì về tab mặc định
   const [activeTab, setActiveTab] = useState<TabKey>(
     TAB_KEYS.includes(initialTab as TabKey) ? (initialTab as TabKey) : 'parts',
@@ -421,29 +419,6 @@ export function SparePartsScreen({
           <ArrowLeftRight size={16} /> Lịch sử kho ({transactions.length})
         </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('report')}
-          style={{
-            padding: '10px 16px',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-            fontWeight: activeTab === 'report' ? 700 : 500,
-            fontSize: 14,
-            borderBottom: activeTab === 'report' ? '2px solid var(--brand)' : '2px solid transparent',
-            color: activeTab === 'report' ? 'var(--brand)' : 'var(--text-muted)',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <BarChart3 size={16} /> Báo cáo
-        </button>
       </ScrollTabs>
 
       {/* ── TAB: MÁY TẠI KHÁCH HÀNG ── */}
@@ -1102,9 +1077,7 @@ export function SparePartsScreen({
         </div>
       )}
 
-      {/* ── TAB 3: LỊCH SỬ XUẤT / NHẬP / ĐIỀU CHUYỂN ── */}
-      {activeTab === 'report' && <InventoryReportPanel />}
-
+      {/* ── LỊCH SỬ XUẤT / NHẬP / ĐIỀU CHUYỂN ── */}
       {activeTab === 'transactions' && (
         <StockHistoryPanel
           warehouses={warehouses}

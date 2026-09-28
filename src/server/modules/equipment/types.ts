@@ -10,15 +10,16 @@ export const EQUIPMENT_CATEGORIES: Record<string, { label: string; icon: string 
 export const OWNERSHIP_TYPES: Record<string, { label: string; badgeTone: 'success' | 'info' | 'warning' }> = {
   SOLD: { label: 'Đã bán', badgeTone: 'success' },
   RENTAL: { label: 'Cho thuê', badgeTone: 'info' },
+  LOAN: { label: 'Cho mượn', badgeTone: 'info' },
   CONSIGNMENT: { label: 'Ký gửi / Cam kết nguyên liệu', badgeTone: 'warning' },
 };
 
 /** Mức độ ưu tiên phiếu sự cố. Nhận cả 2 quy ước mã đang tồn tại trong dữ liệu. */
 export const TICKET_PRIORITIES: Record<string, { label: string; color: string; bg: string }> = {
-  P1_CRITICAL: { label: 'Khẩn cấp (SLA 2 giờ)', color: '#dc2626', bg: '#fee2e2' },
-  CRITICAL: { label: 'Khẩn cấp (SLA 2 giờ)', color: '#dc2626', bg: '#fee2e2' },
-  P2_MAJOR: { label: 'Ưu tiên (trong ngày)', color: '#d97706', bg: '#fef3c7' },
-  HIGH: { label: 'Ưu tiên (trong ngày)', color: '#d97706', bg: '#fef3c7' },
+  P1_CRITICAL: { label: 'Khẩn cấp', color: '#dc2626', bg: '#fee2e2' },
+  CRITICAL: { label: 'Khẩn cấp', color: '#dc2626', bg: '#fee2e2' },
+  P2_MAJOR: { label: 'Ưu tiên cao', color: '#d97706', bg: '#fef3c7' },
+  HIGH: { label: 'Ưu tiên cao', color: '#d97706', bg: '#fef3c7' },
   MEDIUM: { label: 'Trung bình', color: '#d97706', bg: '#fef3c7' },
   P3_ROUTINE: { label: 'Thông thường', color: '#475569', bg: '#f1f5f9' },
   LOW: { label: 'Thông thường', color: '#475569', bg: '#f1f5f9' },

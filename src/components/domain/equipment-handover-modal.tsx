@@ -383,28 +383,28 @@ export function EquipmentHandoverModal({
               <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase' }}>
                 I. Danh mục thiết bị bàn giao:
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'center' }}>
                 <thead>
                   <tr style={{ background: '#cbd5e1' }}>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '35px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>STT</th>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tên thiết bị & Thông số kỹ thuật</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '130px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
-                    <th style={{ border: '1px solid #000', padding: '5px 7px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 5px', width: '1%', whiteSpace: 'nowrap', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Số Serial (S/N)</th>
+                    <th style={{ border: '1px solid #000', padding: '5px 4px', width: '32px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
                     <th style={{ border: '1px solid #000', padding: '5px 7px', width: '150px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Tình trạng kỹ thuật</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr style={{ verticalAlign: 'top' }}>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>01</td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', verticalAlign: 'top' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'middle' }}>01</td>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'left', verticalAlign: 'top' }}>
                       <div style={{ fontWeight: 700, color: '#0f172a' }}>{equipment.name}</div>
                       {specRows.length > 0 && <EquipmentSpecGrid rows={specRows} />}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontFamily: 'monospace', fontWeight: 600, verticalAlign: 'top' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', width: '1%', whiteSpace: 'nowrap', textAlign: 'center', verticalAlign: 'middle' }}>
                       {equipment.serialNumber}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>01</td>
-                    <td style={{ border: '1px solid #000', padding: '6px 7px', fontSize: '11.5px', verticalAlign: 'top' }}>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontWeight: 700, verticalAlign: 'middle' }}>01</td>
+                    <td style={{ border: '1px solid #000', padding: '6px 7px', textAlign: 'center', fontSize: '11.5px', verticalAlign: 'middle' }}>
                       {equipmentCondition}
                     </td>
                   </tr>
@@ -453,7 +453,7 @@ export function EquipmentHandoverModal({
               </div>
               <ul style={{ margin: '4px 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <li>Thiết bị được bảo hành chính hãng trong thời hạn <strong>{warrantyMonths} tháng</strong> kể từ ngày ký biên bản bàn giao.</li>
-                <li>Khi phát sinh sự cố kỹ thuật, Bên B liên hệ Hotline <strong>{delivererPhone}</strong> hoặc mở Zalo quét mã QR trên thân máy để gửi phiếu báo hỏng khẩn cấp (Cam kết SLA phản hồi kỹ thuật trong vòng 2 giờ).</li>
+                <li>Khi phát sinh sự cố kỹ thuật, Bên B liên hệ Hotline <strong>{delivererPhone}</strong> hoặc mở Zalo quét mã QR trên thân máy để gửi phiếu báo hỏng khẩn cấp.</li>
               </ul>
             </div>
 

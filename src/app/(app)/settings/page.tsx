@@ -37,6 +37,7 @@ export default async function SettingsPage({
       leaveTypes={JSON.parse(JSON.stringify(leaveTypes))}
       webhookUrl={`${process.env.APP_URL || 'http://localhost:3000'}/api/zalo`}
       permissions={{
+        isAdmin: ctx.isAdmin,
         sso: ctx.isAdmin,
         general: can(ctx, 'FEATURE_SETTING_GENERAL'),
         zalo: can(ctx, 'FEATURE_SETTING_ZALO'),

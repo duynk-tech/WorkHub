@@ -2,6 +2,10 @@
 
 import { outboundProviderFetch } from '@/server/security/outbound-http';
 
+import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
@@ -10,6 +14,7 @@ import { settingsPolicy, SECRET_SETTING_KEYS } from './policy';
 import { setSetting, getSetting } from './service';
 import { getAppBranding } from './branding';
 import { runFullDemoSeed, cleanBusinessData } from '../../../../prisma/seed/index';
+import { assertDemoSeedSchema } from '../../../../prisma/seed/schema-guard';
 import {
   getBotInfo,
   sendZaloMessage,
@@ -35,6 +40,36 @@ import type { PromptVariable, PromptTemplate, AiAgentTestResult, AiAgentTestStep
 export type { LlmModelItem, PromptVariable, PromptTemplate, AiAgentTestResult, AiAgentTestStep };
 
 export interface Result { ok: boolean; message: string }
+
+const execFileAsync = promisify(execFile);
+
+/** Deploy pending Prisma migrations from the settings screen (admin only). */
+export async function deployPendingMigrationsAction(): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_SETTING_GENERAL');
+  if (!ctx.isAdmin) return { ok: false, message: 'Chỉ quản trị viên được triển khai migration' };
+
+  const projectRoot = process.cwd();
+  const prismaCli = resolve(projectRoot, 'node_modules/prisma/build/index.js');
+  const schemaPath = resolve(projectRoot, 'prisma/schema.prisma');
+  if (!existsSync(prismaCli) || !existsSync(schemaPath)) {
+    return { ok: false, message: 'Máy chủ chưa có Prisma CLI hoặc prisma/schema.prisma để chạy migration' };
+  }
+
+  try {
+    await execFileAsync(process.execPath, [prismaCli, 'migrate', 'deploy', '--schema', schemaPath], {
+      cwd: projectRoot,
+      timeout: 180_000,
+      maxBuffer: 1024 * 1024,
+      env: process.env,
+    });
+    await assertDemoSeedSchema(prisma);
+    revalidatePath('/settings');
+    return { ok: true, message: 'Đã triển khai các migration đang chờ. Có thể tiếp tục nạp dữ liệu seed.' };
+  } catch (error) {
+    console.error('Prisma migrate deploy thất bại:', error);
+    return { ok: false, message: 'Triển khai migration thất bại. Kiểm tra log máy chủ để biết chi tiết.' };
+  }
+}
 
 const SECRET_KEYS = SECRET_SETTING_KEYS;
 
@@ -578,4 +613,3 @@ export async function resetDemoDataAction(options?: { clean?: boolean }): Promis
     return { ok: false, message: `Thao tác thất bại: ${msg}` };
   }
 }
-

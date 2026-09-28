@@ -16,11 +16,6 @@ export const ORDER_STATUSES: Record<string, { label: string; color: string; bg: 
   CANCELLED: { label: 'Đã hủy', color: '#b91c1c', bg: '#fef2f2' },
 };
 
-export const CUSTOMER_STATUSES: Record<string, { label: string; color: string; bg: string }> = {
-  ACTIVE: { label: 'Đang giao dịch', color: '#059669', bg: '#d1fae5' },
-  INACTIVE: { label: 'Ngừng giao dịch', color: '#64748b', bg: '#f1f5f9' },
-};
-
 export const QUOTATION_STATUSES: Record<string, { label: string; color: string; bg: string }> = {
   DRAFT: { label: 'Nháp', color: '#64748b', bg: '#f1f5f9' },
   SENT: { label: 'Đã gửi khách', color: '#2563eb', bg: '#dbeafe' },
@@ -72,7 +67,6 @@ export interface SaveCustomerInput {
   phone: string;
   email?: string;
   address?: string;
-  status?: string;
   notes?: string;
 }
 
@@ -139,12 +133,10 @@ export interface SaveCustomerPaymentInput {
 
 export interface CustomerFilter {
   search?: string;
-  status?: string;
 }
 
 export interface CustomerMetrics {
   total: number;
-  active: number;
   totalMachines: number;
   totalOrders: number;
 }

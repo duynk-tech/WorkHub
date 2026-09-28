@@ -24,6 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       logoUrl={branding.logoUrl}
       logoText={branding.logoText}
       appDescription={branding.description}
+      currentYear={new Date().getFullYear()}
       next={next}
       googleEnabled={await googleReady()}
       ssoError={sso}

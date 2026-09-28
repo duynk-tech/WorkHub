@@ -119,7 +119,7 @@ export function SalesOrderDetailModal({
       <Modal
         open={open}
         onClose={onClose}
-        size="lg"
+        size="xl"
         title={order ? `Đơn bán ${order.orderCode}` : 'Chi tiết đơn bán'}
         description={order ? order.customer?.name : undefined}
         footer={

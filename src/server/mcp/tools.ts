@@ -656,7 +656,7 @@ export const MCP_TOOLS: McpTool[] = [
         query: str('Từ khóa tên máy, mã máy EQ-..., số serial, thương hiệu (vd: Taylor, Carpigiani, Pomati...)'),
         category: str('Loại máy: ICE_CREAM_MACHINE, CHOCOLATE_MACHINE, KITCHEN_HOT, KITCHEN_COLD, BEVERAGE_BAR, OTHER'),
         status: str('Trạng thái: OPERATING (đang chạy), BREAKDOWN (sự cố), UNDER_MAINTENANCE (bảo dưỡng), IN_STOCK (lưu kho), LIQUIDATED (thanh lý)'),
-        ownershipType: str('Hình thức: SOLD (đã bán), RENTAL (cho thuê), CONSIGNMENT (ký gửi)'),
+        ownershipType: str('Hình thức: SOLD (đã bán), RENTAL (cho thuê), LOAN (cho mượn), CONSIGNMENT (ký gửi)'),
         limit: num('Số lượng tối đa, mặc định 20'),
       },
     },
@@ -898,7 +898,6 @@ export const MCP_TOOLS: McpTool[] = [
           reportedBy: t.reportedBy,
           reportedPhone: t.reportedPhone,
           assignedTo: t.assignedTo?.fullName ?? 'Chưa phân công',
-          slaDeadline: t.slaDeadline ? fmtDateTime(t.slaDeadline) : null,
           createdAt: fmtDateTime(t.createdAt),
           resolvedAt: t.resolvedAt ? fmtDateTime(t.resolvedAt) : null,
         })),
@@ -909,7 +908,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'create_service_ticket',
     module: 'equipment',
     title: 'Tạo phiếu báo hỏng máy F&B',
-    description: 'Tạo phiếu báo hỏng, sự cố máy móc F&B tại điểm bán và tính toán thời hạn xử lý SLA.',
+    description: 'Tạo phiếu báo hỏng, sự cố máy móc F&B tại điểm bán.',
     mutating: true,
     permissionsAny: ['FEATURE_EQUIPMENT_MAINTENANCE', 'FEATURE_EQUIPMENT_MANAGE'],
     inputSchema: {
@@ -918,7 +917,7 @@ export const MCP_TOOLS: McpTool[] = [
         machineCode: str('Mã máy EQ-..., ví dụ EQ-2026-0001 (hoặc số serial)'),
         title: str('Tiêu đề sự cố, ví dụ: Máy làm kem không đông, Bồn socola lỗi nhiệt độ...'),
         description: str('Mô tả chi tiết sự cố và hiện trạng máy'),
-        priority: str('Mức độ: P1_CRITICAL (khẩn cấp - SLA 2h), P2_MAJOR (trong ngày - SLA 8h), P3_ROUTINE (thông thường - SLA 24h)'),
+        priority: str('Mức độ ưu tiên: P1_CRITICAL (khẩn cấp), P2_MAJOR (ưu tiên cao), MEDIUM (trung bình), P3_ROUTINE (thông thường)'),
         reportedBy: str('Tên người báo hỏng'),
         reportedPhone: str('Số điện thoại liên hệ'),
       },
@@ -947,10 +946,6 @@ export const MCP_TOOLS: McpTool[] = [
 
       const priority = a.priority || 'P2_MAJOR';
       const now = new Date();
-      let slaHours = 8;
-      if (priority === 'P1_CRITICAL') slaHours = 2;
-      else if (priority === 'P3_ROUTINE') slaHours = 24;
-      const slaDeadline = new Date(now.getTime() + slaHours * 60 * 60 * 1000);
 
       // Sinh mã ticket TKT-YYYY-XXXX
       const year = now.getFullYear();
@@ -973,7 +968,6 @@ export const MCP_TOOLS: McpTool[] = [
           reportedBy: a.reportedBy || identity.ctx.fullName,
           reportedPhone: a.reportedPhone || null,
           status: 'OPEN',
-          slaDeadline,
         },
       });
 
@@ -991,8 +985,7 @@ export const MCP_TOOLS: McpTool[] = [
         machineName: machine.name,
         priority: ticket.priority,
         status: ticket.status,
-        slaDeadline: fmtDateTime(slaDeadline),
-        message: `Đã tạo phiếu sự cố ${ticket.ticketCode} cho máy ${machine.machineCode}. SLA hạn chót: ${fmtDateTime(slaDeadline)}.`,
+        message: `Đã tạo phiếu sự cố ${ticket.ticketCode} cho máy ${machine.machineCode}.`,
       };
     },
   },

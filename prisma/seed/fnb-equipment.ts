@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { nextSequentialCode } from '../../src/lib/code-sequence';
 import selmiOrderParts from './selmi-order-parts.json';
+import { assertDemoSeedSchema } from './schema-guard';
 
 /**
  * Sinh mã khách trong seed.
@@ -20,6 +21,8 @@ async function nextCustomerCode(prisma: PrismaClient): Promise<string> {
 }
 
 export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: number) {
+  await assertDemoSeedSchema(prisma);
+
   console.log('--- Bắt đầu khởi tạo dữ liệu mẫu Thiết bị & Máy móc F&B ---');
 
   // 1. Khách hàng chuỗi F&B
@@ -479,12 +482,11 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
           customerId: marou?.id,
           locationId: marou?.locationMap.get('Maison Marou Flagship Hà Nội'),
           priority: 'CRITICAL',
-          title: 'Khẩn cấp (SLA 2h): Máy socola FBM Prima báo lỗi cảm biến E02',
-          description: 'Máy socola tại quầy không duy trì được nhiệt độ 31.5°C, màn hình chớp tắt báo mã lỗi E02 (Sensor / Overheat Fault). Socola trong bồn bắt đầu đông đặc vón cục. Yêu cầu kỹ thuật viên có mặt trong vòng 2 giờ.',
+          title: 'Sự cố khẩn cấp: Máy socola FBM Prima báo lỗi cảm biến E02',
+          description: 'Máy socola tại quầy không duy trì được nhiệt độ 31.5°C, màn hình chớp tắt báo mã lỗi E02 (Sensor / Overheat Fault). Socola trong bồn bắt đầu đông đặc vón cục. Yêu cầu kỹ thuật viên kiểm tra và xử lý sớm.',
           reportedBy: 'Đỗ Minh Khang (Quản lý quán)',
           reportedPhone: '0977889900',
           assignedToId: technicianId || null,
-          slaDeadline: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours SLA
           status: 'IN_PROGRESS',
         },
       });
@@ -516,7 +518,7 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
     }
   }
 
-  console.log('→ Phiếu Báo hỏng (Tickets) : 2 phiếu (1 Khẩn cấp SLA 2h, 1 Đã hoàn tất)');
+  console.log('→ Phiếu Báo hỏng (Tickets) : 2 phiếu (1 Khẩn cấp, 1 Đã hoàn tất)');
 
   // 4. Kho & Linh kiện Phụ tùng (Warehouses & Spare Parts)
   const whHn = await prisma.warehouse.upsert({

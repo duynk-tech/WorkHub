@@ -15,7 +15,6 @@ import {
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 import { formatMinutes } from '@/lib/utils';
 import { REPORT_GROUPS, type ReportDef, type ReportGroupKey } from '@/server/modules/report/registry';
-import { InventoryReportPanel } from '@/components/domain/inventory-report-panel';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const CHART_COLORS = ['#2447eb', '#0f9960', '#c77700', '#d92d20', '#8b5cf6', '#0b7fd4', '#ec4899'];
@@ -68,7 +67,7 @@ export function ReportScreen({
         : '';
 
   return (
-    <div className="stack">
+    <div className="stack reports-content">
       <PageHeader
         title="Báo cáo"
         description={activeGroup ? REPORT_GROUPS[activeGroup].description : 'Chưa có báo cáo nào được bật'}
@@ -296,8 +295,6 @@ export function ReportScreen({
           </Card>
         </div>
       )}
-
-      {tab === 'sales-inventory' && <InventoryReportPanel />}
 
       {tab === 'customer-debt' && debt && (
         <div className="stack">

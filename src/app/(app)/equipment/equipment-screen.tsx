@@ -278,6 +278,7 @@ export function EquipmentScreen({
   const OWNERSHIP_SHORT_LABELS: Record<string, string> = {
     SOLD: 'Đã bán',
     RENTAL: 'Cho thuê',
+    LOAN: 'Cho mượn',
     CONSIGNMENT: 'Ký gửi',
   };
 

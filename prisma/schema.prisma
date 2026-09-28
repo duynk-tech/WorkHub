@@ -1203,6 +1203,7 @@ model CustomerOrderItem {
   quantity    Int     @default(1)
   unitPrice   Decimal @db.Decimal(15, 2)
   totalPrice  Decimal @db.Decimal(15, 2)
+  discountAmount Decimal @default(0) @db.Decimal(15, 2) // Chiết khấu đã phân bổ riêng cho dòng này
   equipmentId Int?
   notes       String? @db.Text
 
@@ -1394,7 +1395,7 @@ model FnbEquipment {
   category          String    @db.VarChar(64) // ICE_CREAM_MACHINE, CHOCOLATE_MACHINE, KITCHEN_HOT, KITCHEN_COLD, BEVERAGE_BAR, OTHER
   brand             String?   @db.VarChar(100)
   model             String?   @db.VarChar(100)
-  ownershipType     String    @default("SOLD") @db.VarChar(32) // SOLD, RENTAL, CONSIGNMENT
+  ownershipType     String    @default("SOLD") @db.VarChar(32) // SOLD, RENTAL, LOAN, CONSIGNMENT
   specs             Json? // Specs JSON chi tiết
   status            String    @default("OPERATING") @db.VarChar(32) // OPERATING, BREAKDOWN, UNDER_MAINTENANCE, IN_STOCK, LIQUIDATED
   customerId        Int?
@@ -1500,6 +1501,9 @@ model InventoryItem {
   // bán để sinh hồ sơ máy mà không phải hỏi lại người xuất kho
   fnbCategory    String?   @db.VarChar(64)
   avgCost        Decimal?  @db.Decimal(15, 2) // Giá vốn bình quân gia quyền, cập nhật mỗi lần nhập
+  avgBaseCost    Decimal?  @db.Decimal(15, 2) // Phần giá hàng trong giá vốn bình quân
+  avgShippingCost Decimal? @db.Decimal(15, 2) // Phần cước phân bổ trong giá vốn bình quân
+  avgOtherCost   Decimal?  @db.Decimal(15, 2) // Phần phí khác phân bổ trong giá vốn bình quân
   autoPrice      Decimal?  @db.Decimal(15, 2) // Giá bán suy ra từ giá vốn + margin, lưu lại để báo giá ổn định
   autoPriceAt    DateTime? // Thời điểm tính lại giá bán tự động
   autoPriceBasis Decimal?  @db.Decimal(15, 2) // Giá vốn đã dùng để tính autoPrice → phát hiện lệch
@@ -1584,6 +1588,9 @@ model InventoryTransactionItem {
   quantity        Int
   unitPrice       Decimal? @db.Decimal(15, 2)
   unitCost        Decimal? @db.Decimal(15, 2) // Giá vốn bình quân tại thời điểm ghi sổ
+  baseUnitCost    Decimal? @db.Decimal(15, 2) // Phần giá hàng tại thời điểm ghi sổ
+  shippingUnitCost Decimal? @db.Decimal(15, 2) // Phần cước phân bổ tại thời điểm ghi sổ
+  otherUnitCost   Decimal? @db.Decimal(15, 2) // Phần phí khác phân bổ tại thời điểm ghi sổ
   oldPartPhotoUrl String?  @db.VarChar(512)
 
   transaction InventoryTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)

@@ -12,6 +12,7 @@
 
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { assertDemoSeedSchema } from '../prisma/seed/schema-guard';
 
 const prisma = new PrismaClient();
 
@@ -32,6 +33,8 @@ function calcSellingPrice(cost: number): number {
 }
 
 export async function runFullFlowSeed() {
+  await assertDemoSeedSchema(prisma);
+
   console.log('╔══════════════════════════════════════════════════════════════════════╗');
   console.log('║  BẮT ĐẦU SEED DỮ LIỆU KINH DOANH & KHO VẬN 6 THÁNG CHUYÊN NGHIỆP     ║');
   console.log('║  - Thời gian: Tháng 04/2026 -> Tháng 09/2026 (6 tháng liên tục)      ║');
@@ -79,6 +82,11 @@ export async function runFullFlowSeed() {
     await tx.sparePartOrderItem.deleteMany({});
     await tx.sparePartOrder.deleteMany({});
     await tx.inventoryStock.updateMany({ data: { quantity: 0 } });
+    // Clear the moving cost snapshots as well; the demo PO rows below rebuild
+    // them from a clean baseline on every run.
+    await tx.inventoryItem.updateMany({
+      data: { avgCost: 0, avgBaseCost: 0, avgShippingCost: 0, avgOtherCost: 0 },
+    });
   });
 
   // 1.2 Kho hàng chuẩn doanh nghiệp (Xóa các kho DEMO cũ nếu có)
@@ -257,6 +265,9 @@ export async function runFullFlowSeed() {
       data: {
         costPrice: rawCost,
         avgCost: rawCost,
+        avgBaseCost: rawCost,
+        avgShippingCost: 0,
+        avgOtherCost: 0,
         sellingPrice: selling,
         autoPrice: selling,
         autoPriceBasis: rawCost,
@@ -348,6 +359,9 @@ export async function runFullFlowSeed() {
             itemId: line.itemId,
             quantity: line.quantity,
             unitCost: line.unitPriceVnd,
+            baseUnitCost: line.unitPriceVnd,
+            shippingUnitCost: 0,
+            otherUnitCost: 0,
             unitPrice: line.unitPriceVnd,
           })),
         },
@@ -356,6 +370,24 @@ export async function runFullFlowSeed() {
 
     // Cập nhật tồn kho
     for (const line of poItemsData) {
+      const current = await prisma.inventoryItem.findUniqueOrThrow({
+        where: { id: line.itemId },
+        select: { avgBaseCost: true, avgShippingCost: true, avgOtherCost: true },
+      });
+      const stock = await prisma.inventoryStock.aggregate({ where: { itemId: line.itemId }, _sum: { quantity: true } });
+      const existingQty = stock._sum.quantity || 0;
+      const nextQty = existingQty + line.quantity;
+      const weighted = (oldValue: number, incomingValue: number) => Number(
+        ((existingQty * oldValue + line.quantity * incomingValue) / Math.max(1, nextQty)).toFixed(2),
+      );
+      const avgBaseCost = weighted(Number(current.avgBaseCost || 0), line.unitPriceVnd);
+      const avgShippingCost = weighted(Number(current.avgShippingCost || 0), 0);
+      const avgOtherCost = weighted(Number(current.avgOtherCost || 0), 0);
+      const updatedItem = await prisma.inventoryItem.update({
+        where: { id: line.itemId },
+        data: { avgBaseCost, avgShippingCost, avgOtherCost, avgCost: avgBaseCost + avgShippingCost + avgOtherCost },
+      });
+      itemMap.set(updatedItem.itemCode, updatedItem);
       await prisma.inventoryStock.upsert({
         where: { warehouseId_itemId: { warehouseId: opts.warehouseId, itemId: line.itemId } },
         create: { warehouseId: opts.warehouseId, itemId: line.itemId, quantity: line.quantity },
@@ -633,7 +665,7 @@ export async function runFullFlowSeed() {
     payPercent: number;
     isOverdue?: boolean;
     notes?: string;
-    items: { code: string; fallbackId: number; qty: number }[];
+    items: { code: string; fallbackId: number; qty: number; discountPercent?: number }[];
   }
 
   async function processSalesOrder(opts: SalesOrderCreateOptions) {
@@ -643,12 +675,14 @@ export async function runFullFlowSeed() {
     const orderItemsData = opts.items.map(i => {
       const it = getItem(i.code, i.fallbackId);
       const unit = Number(it.sellingPrice);
+      const discountAmount = Math.round(unit * i.qty * (i.discountPercent || 0) / 100);
       return {
         name: it.name,
         itemType: 'SPARE_PART',
         quantity: i.qty,
         unitPrice: unit,
-        totalPrice: unit * i.qty,
+        totalPrice: unit * i.qty - discountAmount,
+        discountAmount,
         inventoryItemId: it.id,
       };
     });
@@ -691,11 +725,14 @@ export async function runFullFlowSeed() {
     if (opts.status === 'COMPLETED' || opts.status === 'DELIVERED') {
       const issueDate = new Date(opts.date.getTime() + 86400000);
       const txLines = orderItemsData.map(line => {
-        const it = allItems.find(x => x.id === line.inventoryItemId)!;
+        const it = [...itemMap.values()].find(x => x.id === line.inventoryItemId)!;
         return {
           itemId: line.inventoryItemId,
           quantity: line.quantity,
           unitCost: Number(it.avgCost || it.costPrice || 0),
+          baseUnitCost: it.avgBaseCost == null ? null : Number(it.avgBaseCost),
+          shippingUnitCost: it.avgShippingCost == null ? null : Number(it.avgShippingCost),
+          otherUnitCost: it.avgOtherCost == null ? null : Number(it.avgOtherCost),
           unitPrice: line.unitPrice,
         };
       });
@@ -776,7 +813,7 @@ export async function runFullFlowSeed() {
 
   // --- THÁNG 9/2026 (HIỆN TẠI) ---
   await processSalesOrder({ orderCode: 'ORD-2026-0012', customerCode: 'CUS-2026-0004', quotationCode: 'BG-2026-0006', date: makeDate(9, 8), warehouseId: whNorth.id, warehouseCode: 'HN', status: 'COMPLETED', payPercent: 100, items: [{ code: 'COMMSESPCOMF___000001', fallbackId: 40, qty: 1 }, { code: 'COMMSWCOMF00000000001', fallbackId: 39, qty: 1 }, { code: 'COMMRSMCOMFIT__00000', fallbackId: 41, qty: 2 }] });
-  await processSalesOrder({ orderCode: 'ORD-2026-0013', customerCode: 'CUS-2026-0005', quotationCode: 'BG-2026-0007', date: makeDate(9, 15), warehouseId: whSouth.id, warehouseCode: 'HCM', status: 'DELIVERED', payPercent: 60, items: [{ code: 'PART-VALVE-3WAY', fallbackId: 5, qty: 2 }, { code: 'PART-ORING-SILICONE', fallbackId: 2, qty: 5 }, { code: 'PART-FILTER-WATER', fallbackId: 8, qty: 2 }] });
+  await processSalesOrder({ orderCode: 'ORD-2026-0013', customerCode: 'CUS-2026-0005', quotationCode: 'BG-2026-0007', date: makeDate(9, 15), warehouseId: whSouth.id, warehouseCode: 'HCM', status: 'DELIVERED', payPercent: 60, items: [{ code: 'PART-VALVE-3WAY', fallbackId: 5, qty: 2, discountPercent: 5 }, { code: 'PART-ORING-SILICONE', fallbackId: 2, qty: 5 }, { code: 'PART-FILTER-WATER', fallbackId: 8, qty: 2 }] });
   await processSalesOrder({ orderCode: 'ORD-2026-0014', customerCode: 'CUS-2026-0002', quotationCode: 'BG-2026-0008', date: makeDate(9, 20), warehouseId: whNorth.id, warehouseCode: 'HN', status: 'DELIVERED', payPercent: 0, items: [{ code: 'COMMMO56TB405__000001', fallbackId: 10, qty: 1 }, { code: 'PART-TEMP-PT100', fallbackId: 3, qty: 1 }] });
   await processSalesOrder({ orderCode: 'ORD-2026-0015', customerCode: 'CUS-2026-0006', date: makeDate(9, 23), warehouseId: whSouth.id, warehouseCode: 'HCM', status: 'DELIVERED', payPercent: 0, items: [{ code: 'PART-HEATER-UNOX', fallbackId: 7, qty: 2 }, { code: 'PART-FILTER-WATER', fallbackId: 8, qty: 3 }] });
   await processSalesOrder({ orderCode: 'ORD-2026-0016', customerCode: 'CUS-2026-0001', date: makeDate(9, 26), warehouseId: whNorth.id, warehouseCode: 'HN', status: 'CONFIRMED', payPercent: 0, items: [{ code: 'PART-TYL-BLADE', fallbackId: 1, qty: 3 }, { code: 'PART-ORING-SILICONE', fallbackId: 2, qty: 10 }] });

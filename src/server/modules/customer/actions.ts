@@ -224,6 +224,8 @@ export async function issueOrderStockAction(
       const label =
         res.ownershipType === 'RENTAL'
           ? 'cho thuê'
+          : res.ownershipType === 'LOAN'
+            ? 'cho mượn'
           : res.ownershipType === 'CONSIGNMENT'
             ? 'ký gửi'
             : 'bán';

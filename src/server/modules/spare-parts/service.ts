@@ -313,8 +313,16 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
     //    giá hiện hành thì giá vốn hàng bán của đơn cũ sẽ đổi theo giá nhập mới.
     const dbItems = await tx.inventoryItem.findMany({
       where: { id: { in: input.items.map((i) => i.itemId) } },
-      select: { id: true, avgCost: true, costPrice: true },
+      select: {
+        id: true,
+        avgCost: true,
+        costPrice: true,
+        avgBaseCost: true,
+        avgShippingCost: true,
+        avgOtherCost: true,
+      },
     });
+    const dbItemMap = new Map(dbItems.map((item) => [item.id, item]));
     const itemCostMap = new Map(
       dbItems.map((i) => [i.id, Number(i.avgCost ?? i.costPrice ?? 0)]),
     );
@@ -366,26 +374,53 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
       : null;
 
     const lineCosts = new Map<number, number>();
+    const lineCostComponents = new Map<number, { base: number; shipping: number; other: number } | null>();
     for (const it of input.items) {
+      const dbItem = dbItemMap.get(it.itemId);
       const currentCost = itemCostMap.get(it.itemId) || 0;
 
-      if (input.type === 'IN' && !pendingApproval) {
+      if (input.type === 'IN') {
         const totalOnHand = await tx.inventoryStock.aggregate({
           where: { itemId: it.itemId },
           _sum: { quantity: true },
         });
 
         const metric = itemMetricMap?.get(it.itemId);
-        // Đơn giá nhập kho thực tế (đã gồm cước & chi phí khác nếu có)
-        const effectiveUnitPrice = metric ? metric.landedCost : (Number(it.unitPrice) || 0);
+        const hasExplicitUnitCost = it.unitPrice != null || it.baseUnitPrice != null || Number(it.landedCost) > 0 || Number(metric?.landedCost) > 0;
+        const currentComponentsKnown = dbItem?.avgBaseCost != null && dbItem.avgShippingCost != null && dbItem.avgOtherCost != null;
+        const incomingComponents = metric && metric.landedCost > 0
+          ? { base: metric.baseUnitPrice, shipping: metric.allocatedShipping, other: metric.allocatedOtherFee }
+          : hasExplicitUnitCost
+            ? { base: Number(it.baseUnitPrice ?? it.unitPrice ?? 0), shipping: Number(it.allocatedShipping || 0), other: Number(it.allocatedOtherFee || 0) }
+            : currentComponentsKnown
+              ? { base: Number(dbItem.avgBaseCost), shipping: Number(dbItem.avgShippingCost), other: Number(dbItem.avgOtherCost) }
+              : null;
+        // Giá vốn nhập đã gồm cước/phí. Với phiếu kiểm kê không có giá nhập,
+        // giữ nguyên giá vốn hiện tại thay vì kéo bình quân về 0.
+        const effectiveUnitPrice = incomingComponents
+          ? incomingComponents.base + incomingComponents.shipping + incomingComponents.other
+          : currentCost;
+        lineCosts.set(it.itemId, hasExplicitUnitCost ? effectiveUnitPrice : currentCost);
+        lineCostComponents.set(it.itemId, incomingComponents);
 
-        const newCost = weightedAverageCost(
-          totalOnHand._sum.quantity || 0,
-          currentCost,
-          it.quantity,
-          effectiveUnitPrice,
-        );
-        lineCosts.set(it.itemId, effectiveUnitPrice || currentCost || newCost);
+        if (pendingApproval) continue;
+
+        const onHandQty = totalOnHand._sum.quantity || 0;
+        const newCost = weightedAverageCost(onHandQty, currentCost, it.quantity, effectiveUnitPrice);
+        const existingBreakdownKnown = currentComponentsKnown;
+        const nextComponents = incomingComponents && (onHandQty === 0 || existingBreakdownKnown)
+          ? {
+              base: onHandQty === 0
+                ? incomingComponents.base
+                : weightedAverageCost(onHandQty, Number(dbItem!.avgBaseCost), it.quantity, incomingComponents.base),
+              shipping: onHandQty === 0
+                ? incomingComponents.shipping
+                : weightedAverageCost(onHandQty, Number(dbItem!.avgShippingCost), it.quantity, incomingComponents.shipping),
+              other: onHandQty === 0
+                ? incomingComponents.other
+                : weightedAverageCost(onHandQty, Number(dbItem!.avgOtherCost), it.quantity, incomingComponents.other),
+            }
+          : null;
 
         // Giá vốn vừa đổi → tính lại giá bán theo margin và LƯU LẠI, để báo giá
         // luôn đọc được một con số ổn định thay vì tính nóng mỗi lần mở form.
@@ -402,6 +437,13 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
           where: { id: it.itemId },
           data: {
             avgCost: newCost,
+            ...(nextComponents
+              ? {
+                  avgBaseCost: nextComponents.base,
+                  avgShippingCost: nextComponents.shipping,
+                  avgOtherCost: nextComponents.other,
+                }
+              : {}),
             ...(autoPrice
               ? { autoPrice, autoPriceAt: new Date(), autoPriceBasis: newCost }
               : {}),
@@ -410,6 +452,10 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
         itemCostMap.set(it.itemId, newCost);
       } else {
         lineCosts.set(it.itemId, currentCost);
+        const breakdownKnown = dbItem?.avgBaseCost != null && dbItem.avgShippingCost != null && dbItem.avgOtherCost != null;
+        lineCostComponents.set(it.itemId, breakdownKnown
+          ? { base: Number(dbItem.avgBaseCost), shipping: Number(dbItem.avgShippingCost), other: Number(dbItem.avgOtherCost) }
+          : null);
       }
     }
 
@@ -491,12 +537,10 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
         refNo: input.refNo?.trim() || null,
         deliveredBy: input.deliveredBy?.trim() || null,
         receivedBy: input.receivedBy?.trim() || null,
-        totalValue: costMetrics
-          ? costMetrics.totalLandedCost
-          : input.items.reduce(
-              (sum, it) => sum + (lineCosts.get(it.itemId) || 0) * it.quantity,
-              0,
-            ),
+        totalValue: input.items.reduce(
+          (sum, it) => sum + (lineCosts.get(it.itemId) ?? 0) * it.quantity,
+          0,
+        ),
         note: costMetrics && (costMetrics.shippingFee > 0 || costMetrics.otherFee > 0)
           ? formatStockCostMetrics(input.note, costMetrics)
           : (input.note?.trim() || null),
@@ -511,7 +555,10 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
               itemId: it.itemId,
               quantity: it.quantity,
               unitPrice: landedPrice,
-              unitCost: lineCosts.get(it.itemId) || null,
+              unitCost: lineCosts.get(it.itemId) ?? null,
+              baseUnitCost: lineCostComponents.get(it.itemId)?.base ?? null,
+              shippingUnitCost: lineCostComponents.get(it.itemId)?.shipping ?? null,
+              otherUnitCost: lineCostComponents.get(it.itemId)?.other ?? null,
               ticketId: it.ticketId || input.serviceTicketId || null,
               oldPartPhotoUrl: it.oldPartPhotoUrl || null,
             };
@@ -1443,14 +1490,30 @@ export async function approveStockTransaction(transactionId: number, userId: num
         });
         const item = await tx.inventoryItem.findUnique({
           where: { id: line.itemId },
-          select: { avgCost: true, costPrice: true },
+          select: { avgCost: true, costPrice: true, avgBaseCost: true, avgShippingCost: true, avgOtherCost: true },
         });
+        const currentQty = onHand._sum.quantity || 0;
         const newCost = weightedAverageCost(
-          onHand._sum.quantity || 0,
+          currentQty,
           Number(item?.avgCost ?? item?.costPrice ?? 0),
           line.quantity,
-          Number(line.unitPrice || 0),
+          Number(line.unitCost ?? line.unitPrice ?? 0),
         );
+        const currentBreakdownKnown = item?.avgBaseCost != null && item.avgShippingCost != null && item.avgOtherCost != null;
+        const lineBreakdownKnown = line.baseUnitCost != null && line.shippingUnitCost != null && line.otherUnitCost != null;
+        const nextComponents = lineBreakdownKnown && (currentQty === 0 || currentBreakdownKnown)
+          ? {
+              base: currentQty === 0
+                ? Number(line.baseUnitCost)
+                : weightedAverageCost(currentQty, Number(item!.avgBaseCost), line.quantity, Number(line.baseUnitCost)),
+              shipping: currentQty === 0
+                ? Number(line.shippingUnitCost)
+                : weightedAverageCost(currentQty, Number(item!.avgShippingCost), line.quantity, Number(line.shippingUnitCost)),
+              other: currentQty === 0
+                ? Number(line.otherUnitCost)
+                : weightedAverageCost(currentQty, Number(item!.avgOtherCost), line.quantity, Number(line.otherUnitCost)),
+            }
+          : null;
         const autoPrice =
           newCost > 0
             ? calculateSellingPriceFromMargin(
@@ -1464,6 +1527,13 @@ export async function approveStockTransaction(transactionId: number, userId: num
           where: { id: line.itemId },
           data: {
             avgCost: newCost,
+            ...(nextComponents
+              ? {
+                  avgBaseCost: nextComponents.base,
+                  avgShippingCost: nextComponents.shipping,
+                  avgOtherCost: nextComponents.other,
+                }
+              : {}),
             ...(autoPrice ? { autoPrice, autoPriceAt: new Date(), autoPriceBasis: newCost } : {}),
           },
         });

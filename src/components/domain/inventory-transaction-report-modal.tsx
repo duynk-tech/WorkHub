@@ -363,8 +363,8 @@ export function InventoryTransactionReportModal({
                     <th style={{ border: '1px solid #000', padding: '6px 8px', width: '55px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>SL</th>
                     {hasPrices && (
                       <>
-                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>Đơn giá</th>
-                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>Thành tiền</th>
+                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '110px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Đơn giá</th>
+                        <th style={{ border: '1px solid #000', padding: '6px 8px', width: '120px', textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>Thành tiền</th>
                       </>
                     )}
                   </tr>
@@ -395,10 +395,10 @@ export function InventoryTransactionReportModal({
                         </td>
                         {hasPrices && (
                           <>
-                            <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right' }}>
+                            <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center' }}>
                               {price > 0 ? new Intl.NumberFormat('vi-VN').format(price) : '—'}
                             </td>
-                            <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>
+                            <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', fontWeight: 600 }}>
                               {subtotal > 0 ? new Intl.NumberFormat('vi-VN').format(subtotal) : '—'}
                             </td>
                           </>

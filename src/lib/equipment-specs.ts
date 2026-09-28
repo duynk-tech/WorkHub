@@ -12,7 +12,22 @@ export interface EquipmentSpecRow {
 export function getEquipmentSpecRows(equipmentOrSpecs: any): EquipmentSpecRow[] {
   if (!equipmentOrSpecs) return [];
 
-  let rawSpecs = equipmentOrSpecs.specs || equipmentOrSpecs;
+  const looksLikeEquipment = [
+    'id',
+    'machineCode',
+    'serialNumber',
+    'ownershipType',
+    'status',
+    'customerId',
+  ].some((key) => key in equipmentOrSpecs);
+  const equipmentSpecKeys = [
+    'dimensions', 'weightKg', 'madeIn', 'voltage', 'powerWatts', 'powerKw', 'power',
+    'iceCream', 'chocolate', 'kitchen', 'attributes', 'brand', 'model',
+  ];
+  const directEquipmentSpecs = looksLikeEquipment
+    ? Object.fromEntries(equipmentSpecKeys.filter((key) => equipmentOrSpecs[key] !== undefined).map((key) => [key, equipmentOrSpecs[key]]))
+    : equipmentOrSpecs;
+  let rawSpecs = equipmentOrSpecs.specs ?? directEquipmentSpecs;
   if (typeof rawSpecs === 'string') {
     try {
       rawSpecs = JSON.parse(rawSpecs);

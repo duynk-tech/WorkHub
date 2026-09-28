@@ -44,13 +44,25 @@ export async function completeQuickSale(raw: unknown, userId: number) {
           invoiceNo: input.invoiceNo, invoiceSerial: input.invoiceSerial, invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : null,
           orderCode: code, customerId: customer.id, orderType: 'SPARE_PART', status: 'COMPLETED', goodsAmount: goods,
           vatRate: input.vatRate, vatAmount: vat, totalAmount: total, paidAmount: total, stockIssuedAt: now, deliveryDate: now, notes: note,
-          items: { create: input.items.map(i => ({ inventoryItemId: i.itemId, itemType: 'SPARE_PART', name: products.find(p => p.id === i.itemId)!.name, quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.quantity * i.unitPrice - i.discount })) },
+          items: { create: input.items.map(i => ({ inventoryItemId: i.itemId, itemType: 'SPARE_PART', name: products.find(p => p.id === i.itemId)!.name, quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.quantity * i.unitPrice - i.discount, discountAmount: i.discount })) },
         } });
         const cost = (id: number) => { const p = products.find(p => p.id === id)!; return Number(p.avgCost ?? p.costPrice ?? 0); };
         await tx.inventoryTransaction.create({ data: {
           transCode: `X-${code}`, type: 'OUT', sourceWarehouseId: input.warehouseId, customerOrderId: order.id, reasonCode: 'SALE', status: 'COMPLETED', createdById: userId, partnerName: customer.name,
           totalValue: input.items.reduce((s, i) => s + cost(i.itemId) * i.quantity, 0),
-          items: { create: input.items.map(i => ({ itemId: i.itemId, quantity: i.quantity, unitCost: cost(i.itemId), unitPrice: i.unitPrice })) },
+          items: { create: input.items.map(i => {
+            const product = products.find(p => p.id === i.itemId)!;
+            const knownCostBreakdown = product.avgBaseCost != null && product.avgShippingCost != null && product.avgOtherCost != null;
+            return {
+              itemId: i.itemId,
+              quantity: i.quantity,
+              unitCost: cost(i.itemId),
+              baseUnitCost: knownCostBreakdown ? product.avgBaseCost : null,
+              shippingUnitCost: knownCostBreakdown ? product.avgShippingCost : null,
+              otherUnitCost: knownCostBreakdown ? product.avgOtherCost : null,
+              unitPrice: i.unitPrice,
+            };
+          }) },
         } });
         for (const [method, amount] of [['CASH', input.cash], ['TRANSFER', input.transfer]] as const) {
           if (!amount) continue;

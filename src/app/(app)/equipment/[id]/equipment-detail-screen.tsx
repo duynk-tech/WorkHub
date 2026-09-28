@@ -345,6 +345,8 @@ export function EquipmentDetailScreen({
             tone={
               equipment.ownershipType === 'RENTAL'
                 ? 'warning'
+                : equipment.ownershipType === 'LOAN'
+                ? 'info'
                 : equipment.ownershipType === 'CONSIGNMENT'
                 ? 'info'
                 : 'outline'

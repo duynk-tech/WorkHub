@@ -53,6 +53,9 @@ export default async function SparePartsPage({
   if (sp.tab === 'quotes') {
     redirect('/quotations');
   }
+  if (sp.tab === 'report') {
+    redirect('/inventory-report');
+  }
 
   const [
     spareParts, warehouses, transactions, stats, pricingConfig, companyInfo, customers, equipments,
@@ -101,4 +104,3 @@ export default async function SparePartsPage({
     />
   );
 }
-

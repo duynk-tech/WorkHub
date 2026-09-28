@@ -9,17 +9,6 @@ import { nextSequentialCode } from '@/lib/code-sequence';
  * ca sửa chữa lấy thẳng từ sổ kho chứ không nhập tay.
  */
 
-/** Giờ cam kết phản hồi theo mức ưu tiên. */
-const SLA_HOURS: Record<string, number> = {
-  P1_CRITICAL: 2,
-  CRITICAL: 2,
-  P2_MAJOR: 8,
-  HIGH: 8,
-  MEDIUM: 24,
-  P3_ROUTINE: 24,
-  LOW: 48,
-};
-
 export interface SaveTicketInput {
   equipmentId: number;
   customerId?: number | null;
@@ -114,24 +103,21 @@ export async function getServiceTicket(id: number) {
 
 export async function getTicketMetrics() {
   if (!prisma.serviceTicket) {
-    return { open: 0, inProgress: 0, overdueSla: 0, resolvedThisMonth: 0 };
+    return { open: 0, inProgress: 0, resolvedThisMonth: 0 };
   }
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [open, inProgress, overdueSla, resolvedThisMonth] = await Promise.all([
+  const [open, inProgress, resolvedThisMonth] = await Promise.all([
     prisma.serviceTicket.count({ where: { status: { in: ['OPEN', 'ASSIGNED'] } } }),
     prisma.serviceTicket.count({ where: { status: 'IN_PROGRESS' } }),
-    prisma.serviceTicket.count({
-      where: { status: { notIn: ['RESOLVED', 'CLOSED'] }, slaDeadline: { lt: now } },
-    }),
     prisma.serviceTicket.count({
       where: { status: { in: ['RESOLVED', 'CLOSED'] }, resolvedAt: { gte: monthStart } },
     }),
   ]);
 
-  return { open, inProgress, overdueSla, resolvedThisMonth };
+  return { open, inProgress, resolvedThisMonth };
 }
 
 /** Máy còn bảo hành tại thời điểm báo hỏng thì mặc định không thu tiền. */
@@ -142,8 +128,6 @@ export function isUnderWarranty(equipment: { warrantyExpiresAt?: Date | string |
 
 export async function saveServiceTicket(id: number | null, input: SaveTicketInput) {
   const numId = id ? Number(id) : null;
-  const slaHours = SLA_HOURS[input.priority] ?? 24;
-
   const data: any = {
     equipmentId: input.equipmentId,
     customerId: input.customerId || null,
@@ -169,8 +153,6 @@ export async function saveServiceTicket(id: number | null, input: SaveTicketInpu
       ...data,
       ticketCode: await generateTicketCode(),
       status: input.assignedToId ? 'ASSIGNED' : 'OPEN',
-      // Hạn cam kết tính ngay lúc tiếp nhận, không đợi phân công
-      slaDeadline: new Date(Date.now() + slaHours * 3_600_000),
     },
     include: TICKET_INCLUDE,
   });

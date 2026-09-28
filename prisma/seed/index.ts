@@ -11,6 +11,7 @@ import {
 import { seedDemoFnbEquipment } from './fnb-equipment';
 import { seedBusiness6Months } from './business-6months';
 import { cleanBusinessData } from './clean';
+import { assertDemoSeedSchema } from './schema-guard';
 import { hashPassword } from '../../src/server/auth/password';
 
 export { cleanBusinessData };
@@ -22,6 +23,8 @@ const prisma = new PrismaClient();
  * Có thể truyền tùy chọn clean = true để dọn sạch dữ liệu cũ trước khi nạp lại.
  */
 export async function runFullDemoSeed(db: PrismaClient = prisma, options?: { clean?: boolean }) {
+  await assertDemoSeedSchema(db);
+
   if (options?.clean) {
     console.log('🧹 Đang làm sạch dữ liệu cũ...');
     await cleanBusinessData(db);

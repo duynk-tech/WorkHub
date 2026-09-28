@@ -283,14 +283,14 @@ async function loadStockSummary() {
   };
 }
 
-/** Số liệu dịch vụ: phiếu sự cố đang mở và phần đã trễ cam kết SLA. */
+/** Số liệu dịch vụ: phiếu sự cố đang mở và đã hoàn tất. */
 async function loadServiceSummary() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const ticketCard = {
     id: true, ticketCode: true, title: true, status: true, priority: true,
-    slaDeadline: true, resolvedAt: true,
+    resolvedAt: true,
     equipment: { select: { id: true, machineCode: true, name: true } },
     customer: { select: { id: true, name: true } },
     assignedTo: { select: { id: true, fullName: true, avatarUrl: true } },
@@ -299,21 +299,17 @@ async function loadServiceSummary() {
   const months = lastMonths(6, now);
 
   const [
-    open, inProgress, overdueSla, resolvedThisMonth, openList, resolvedList, monthlyTickets,
+    open, inProgress, resolvedThisMonth, openList, resolvedList, monthlyTickets,
   ] = await Promise.all([
     prisma.serviceTicket.count({ where: { status: { in: ['OPEN', 'ASSIGNED'] } } }),
     prisma.serviceTicket.count({ where: { status: 'IN_PROGRESS' } }),
-    prisma.serviceTicket.count({
-      where: { status: { notIn: ['RESOLVED', 'CLOSED'] }, slaDeadline: { lt: now } },
-    }),
     prisma.serviceTicket.count({
       where: { status: { in: ['RESOLVED', 'CLOSED'] }, resolvedAt: { gte: monthStart } },
     }),
     prisma.serviceTicket.findMany({
       where: { status: { notIn: ['RESOLVED', 'CLOSED'] } },
       select: ticketCard,
-      // Phiếu trễ hạn nhất lên đầu: slaDeadline nhỏ nhất là ca gấp nhất
-      orderBy: [{ slaDeadline: 'asc' }, { createdAt: 'desc' }],
+      orderBy: { createdAt: 'desc' },
       take: 6,
     }),
     prisma.serviceTicket.findMany({
@@ -341,7 +337,7 @@ async function loadServiceSummary() {
   }
 
   return {
-    open, inProgress, overdueSla, resolvedThisMonth, openList, resolvedList, now, ticketsByMonth,
+    open, inProgress, resolvedThisMonth, openList, resolvedList, ticketsByMonth,
   };
 }
 
@@ -771,11 +767,6 @@ export default async function DashboardPage({
               hint={service.inProgress > 0 ? 'Kỹ thuật đang làm' : 'Không có ca nào đang làm'}
             />
             <StatCard
-              href="/tickets" label="Trễ cam kết SLA" value={service.overdueSla} icon={<AlertTriangle size={16} />}
-              tone={service.overdueSla > 0 ? 'var(--danger)' : undefined}
-              hint={service.overdueSla > 0 ? 'Quá thời hạn đã hứa với khách' : 'Đang đúng hạn'}
-            />
-            <StatCard
               href="/tickets" label="Đã xong trong tháng" value={service.resolvedThisMonth} icon={<CheckSquare size={16} />}
               tone="var(--success)"
               hint="Phiếu đã hoàn tất hoặc đã đóng"
@@ -795,14 +786,12 @@ export default async function DashboardPage({
           <div className="grid-2">
             <ListCard
               title="Sự cố đang mở"
-              subtitle={`${service.open + service.inProgress} phiếu · gấp nhất lên đầu`}
+              subtitle={`${service.open + service.inProgress} phiếu · mới nhất lên đầu`}
               href="/tickets"
               count={service.openList.length}
               empty={<EmptyState icon={<Wrench size={20} />} title="Không có sự cố nào đang mở" description="Toàn bộ phiếu đã được xử lý xong." />}
             >
-              {service.openList.map((t) => {
-                const late = t.slaDeadline && t.slaDeadline < service.now;
-                return (
+              {service.openList.map((t) => (
                   <Link key={t.id} href={`/tickets/${t.id}`} className="list-row">
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="row" style={{ gap: 7, marginBottom: 3 }}>
@@ -818,17 +807,6 @@ export default async function DashboardPage({
                       </div>
                     </div>
                     <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                      {t.slaDeadline ? (
-                        <div style={{
-                          fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-                          color: late ? 'var(--danger)' : 'var(--text-muted)',
-                        }}>
-                          <Clock size={11} style={{ verticalAlign: -1, marginRight: 3 }} />
-                          {late ? 'Trễ SLA' : fmtDate(t.slaDeadline)}
-                        </div>
-                      ) : (
-                        <div className="hint">Không đặt SLA</div>
-                      )}
                       {t.assignedTo && (
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
                           <Avatar name={t.assignedTo.fullName} src={t.assignedTo.avatarUrl} size="sm" />
@@ -836,8 +814,7 @@ export default async function DashboardPage({
                       )}
                     </div>
                   </Link>
-                );
-              })}
+              ))}
             </ListCard>
 
             <ListCard

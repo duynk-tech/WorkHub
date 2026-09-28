@@ -512,10 +512,10 @@ export function CustomerOrderPrintModal({
                           <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', fontWeight: 700, verticalAlign: 'top' }}>
                             {qty}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'right', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                             {fmt(price)}
                           </td>
-                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'right', fontWeight: 600, verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                          <td style={{ border: '1px solid #000', padding: '6px 6px', textAlign: 'center', fontWeight: 600, verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                             {fmt(lineTotal)}
                           </td>
                         </tr>

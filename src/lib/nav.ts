@@ -24,6 +24,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
       { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: 'MENU_CUSTOMERS' },
       { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },
+      { href: '/inventory-report', label: 'Báo cáo doanh thu', icon: 'BarChart3', permission: 'FEATURE_REPORT_INVENTORY' },
     ],
   },
   {

@@ -14,15 +14,13 @@ import {
   Utensils,
   ShoppingBag,
   Users,
-  CheckCircle2,
   Phone,
 } from 'lucide-react';
 import { Card, Button, Input, Badge, usePaged, Pagination, ScrollTabs, ConfirmDialog } from '@/components/ui';
-import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useToast } from '@/components/ui/toast';
 import { CustomerModal } from '@/components/domain/customer-modals';
 import { deleteCustomerAction } from '@/server/modules/customer/actions';
-import { CUSTOMER_STATUSES, type CustomerMetrics } from '@/server/modules/customer/types';
+import type { CustomerMetrics } from '@/server/modules/customer/types';
 import { CustomerCarePanel } from '@/components/domain/customer-care-panel';
 
 export function CustomerScreen({
@@ -40,7 +38,7 @@ export function CustomerScreen({
   technicians?: any[];
   initialTab?: string;
   metrics: CustomerMetrics;
-  filter: { search: string; status: string };
+  filter: { search: string };
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -74,17 +72,14 @@ export function CustomerScreen({
   const toast = useToast();
 
   const [search, setSearch] = useState(filter.search || '');
-  const [status, setStatus] = useState(filter.status || '');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
 
-  const handleFilterChange = (updates: Partial<{ search: string; status: string }>) => {
+  const handleFilterChange = (updates: Partial<{ search: string }>) => {
     const params = new URLSearchParams();
     const newSearch = updates.search !== undefined ? updates.search : search;
-    const newStatus = updates.status !== undefined ? updates.status : status;
 
     if (newSearch) params.set('q', newSearch);
-    if (newStatus) params.set('status', newStatus);
 
     router.push(`/customers?${params.toString()}`);
   };
@@ -191,16 +186,6 @@ export function CustomerScreen({
             </Card>
 
             <Card style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 10, background: '#f0fdf4', color: '#16a34a', display: 'grid', placeItems: 'center' }}>
-                <CheckCircle2 style={{ width: 20, height: 20 }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#16a34a' }}>{metrics.active}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Khách đang giao dịch</div>
-              </div>
-            </Card>
-
-            <Card style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 42, height: 42, borderRadius: 10, background: '#fef3c7', color: '#d97706', display: 'grid', placeItems: 'center' }}>
                 <Utensils style={{ width: 20, height: 20 }} />
               </div>
@@ -222,7 +207,7 @@ export function CustomerScreen({
           </div>
       {/* 3. Filter Bar */}
       <Card style={{ padding: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 12, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <Input
               placeholder="Tìm theo tên công ty, chuỗi quán, mã KH, SĐT, người đại diện..."
@@ -234,22 +219,6 @@ export function CustomerScreen({
             />
           </div>
 
-          <SearchableSelect
-            value={status}
-            onChange={(val) => {
-              setStatus(val);
-              handleFilterChange({ status: val });
-            }}
-            options={[
-              { value: '', label: '-- Tất cả trạng thái --' },
-              ...Object.entries(CUSTOMER_STATUSES).map(([k, v]) => ({
-                value: k,
-                label: v.label,
-              })),
-            ]}
-            placeholder="-- Tất cả trạng thái --"
-            searchPlaceholder="Tìm trạng thái..."
-          />
         </div>
       </Card>
 
@@ -265,20 +234,18 @@ export function CustomerScreen({
                 <th style={{ padding: '12px 14px' }}>Người đại diện</th>
                 <th style={{ padding: '12px 14px' }}>Điểm đặt</th>
                 <th style={{ padding: '12px 14px' }}>Thiết bị</th>
-                <th style={{ padding: '12px 14px' }}>Trạng thái</th>
                 <th style={{ padding: '12px 14px', width: 100, textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {customers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Không tìm thấy khách hàng nào phù hợp
                   </td>
                 </tr>
               ) : (
                 paged.pageRows.map((c: any, index: number) => {
-                  const statusInfo = CUSTOMER_STATUSES[c.status] || { label: c.status, color: '#64748b', bg: '#f1f5f9' };
                   const locationCount = c._count?.locations ?? c.locations?.length ?? 0;
                   const machineCount = c._count?.machines ?? c.machines?.length ?? 0;
 
@@ -386,23 +353,6 @@ export function CustomerScreen({
                         >
                           <Utensils size={12} />
                           {machineCount} máy
-                        </span>
-                      </td>
-
-                      {/* Trạng thái */}
-                      <td style={{ padding: '14px', verticalAlign: 'top' }}>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '3px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            fontSize: 11.5,
-                            fontWeight: 600,
-                            background: statusInfo.bg,
-                            color: statusInfo.color,
-                          }}
-                        >
-                          {statusInfo.label}
                         </span>
                       </td>
 

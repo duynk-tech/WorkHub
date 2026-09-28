@@ -70,10 +70,6 @@ export async function listCustomers(filter: CustomerFilter = {}) {
       ];
     }
 
-    if (filter.status && filter.status !== 'ALL') {
-      where.status = filter.status;
-    }
-
     return await prisma.customer.findMany({
       where,
       include: {
@@ -624,26 +620,24 @@ export async function getCustomerById(id: number) {
 
 export async function getCustomerMetrics(): Promise<CustomerMetrics> {
   if (!prisma.customer) {
-    return { total: 0, active: 0, totalMachines: 0, totalOrders: 0 };
+    return { total: 0, totalMachines: 0, totalOrders: 0 };
   }
 
   try {
-    const [total, active, totalMachines, totalOrders] = await Promise.all([
+    const [total, totalMachines, totalOrders] = await Promise.all([
       prisma.customer.count(),
-      prisma.customer.count({ where: { status: 'ACTIVE' } }),
       prisma.fnbEquipment ? prisma.fnbEquipment.count({ where: { customerId: { not: null } } }) : 0,
       prisma.customerOrder ? prisma.customerOrder.count() : 0,
     ]);
 
     return {
       total,
-      active,
       totalMachines,
       totalOrders,
     };
   } catch (error) {
     console.error('[getCustomerMetrics error]:', error);
-    return { total: 0, active: 0, totalMachines: 0, totalOrders: 0 };
+    return { total: 0, totalMachines: 0, totalOrders: 0 };
   }
 }
 
@@ -657,7 +651,6 @@ export async function saveCustomer(id: number | null, input: SaveCustomerInput) 
     phone: input.phone.trim(),
     email: input.email?.trim() || null,
     address: input.address?.trim() || null,
-    status: input.status || 'ACTIVE',
     notes: input.notes?.trim() || null,
   };
 
@@ -670,7 +663,6 @@ export async function saveCustomer(id: number | null, input: SaveCustomerInput) 
         phone: data.phone,
         email: data.email,
         address: data.address,
-        status: data.status,
         notes: data.notes,
       },
     });
@@ -684,7 +676,7 @@ export async function deleteCustomer(id: number) {
   if (!numId || isNaN(numId) || numId <= 0) return null;
   return prisma.$transaction(async tx => {
     const customer = await tx.customer.findUniqueOrThrow({ where: { id: numId }, include: { _count: { select: { orders: true, payments: true, returns: true, machines: true, tickets: true, quotations: true, contracts: true, sparePartOrders: true, careActivities: true } } } });
-    if (Object.values(customer._count).some(count => count > 0)) throw new Error('Khách đã có giao dịch hoặc lịch sử. Hãy chuyển sang Ngừng giao dịch thay vì xóa.');
+    if (Object.values(customer._count).some(count => count > 0)) throw new Error('Khách đã có giao dịch hoặc lịch sử nên không thể xóa.');
     return tx.customer.delete({ where: { id: numId } });
   }, { isolationLevel: 'Serializable' });
 }
@@ -750,7 +742,8 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
     input.discountAmount,
   );
 
-  const mapItemData = (item: CustomerOrderItemInput) => {
+  let allocatedOrderDiscount = 0;
+  const mapItemData = (item: CustomerOrderItemInput, index: number) => {
     const lineGross = Number(item.quantity) * Number(item.unitPrice);
     let lineTotal =
       item.totalPrice !== undefined && item.totalPrice !== null
@@ -761,15 +754,19 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       discountAmount > 0 &&
       grossAmount > 0
     ) {
-      const lineDiscount = Math.round((lineGross / grossAmount) * discountAmount);
+      const lineDiscount = index === input.items.length - 1
+        ? Math.max(0, discountAmount - allocatedOrderDiscount)
+        : Math.round((lineGross / grossAmount) * discountAmount);
       lineTotal = Math.max(0, lineGross - lineDiscount);
     }
+    allocatedOrderDiscount += Math.max(0, lineGross - lineTotal);
     return {
       itemType: item.itemType,
       name: item.name.trim(),
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: lineTotal,
+      discountAmount: Math.max(0, lineGross - lineTotal),
       equipmentId: item.equipmentId || null,
       inventoryItemId: item.inventoryItemId || null,
       notes: item.notes?.trim() || null,
@@ -1023,15 +1020,31 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
   }
 
   const orderCode = await generateOrderCode();
-  const items = quotation.items.map((item) => {
-    const unitPrice =
-      item.quantity > 0 ? Number(item.totalPrice) / item.quantity : Number(item.unitPrice);
+  const lineDiscountTotal = quotation.items.reduce((sum, item) => sum + Number(item.discountVnd || 0), 0);
+  const afterLineDiscount = quotation.items.reduce((sum, item) => {
+    const gross = Number(item.quantity) * Number(item.unitPrice);
+    return sum + Math.max(0, gross - Number(item.discountVnd || 0));
+  }, 0);
+  const orderDiscount = Math.max(0, Number(quotation.discountAmount || 0) - lineDiscountTotal);
+  let allocatedOrderDiscount = 0;
+  const items = quotation.items.map((item, index) => {
+    const gross = Number(item.quantity) * Number(item.unitPrice);
+    const lineDiscount = Math.min(gross, Number(item.discountVnd || 0));
+    const netAfterLineDiscount = Math.max(0, gross - lineDiscount);
+    const allocated = afterLineDiscount > 0
+      ? index === quotation.items.length - 1
+        ? Math.max(0, orderDiscount - allocatedOrderDiscount)
+        : Math.round((netAfterLineDiscount / afterLineDiscount) * orderDiscount)
+      : 0;
+    allocatedOrderDiscount += allocated;
+    const totalPrice = Math.max(0, netAfterLineDiscount - allocated);
     return {
       itemType: item.itemType,
       name: item.name,
       quantity: item.quantity,
-      unitPrice,
-      totalPrice: Number(item.totalPrice),
+      unitPrice: Number(item.unitPrice),
+      totalPrice,
+      discountAmount: Math.max(0, gross - totalPrice),
       equipmentId: item.equipmentId,
       inventoryItemId: item.inventoryItemId,
       notes: item.notes,

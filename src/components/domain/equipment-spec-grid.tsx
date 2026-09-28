@@ -19,27 +19,43 @@ export function EquipmentSpecGrid({
       style={{
         marginTop: 3,
         marginBottom: 2,
-        paddingLeft: compact ? 6 : 8,
+        padding: compact ? 6 : '0 0 0 8px',
+        border: compact ? '1px solid #e2e8f0' : undefined,
+        borderRadius: compact ? 6 : undefined,
+        background: compact ? '#f8fafc' : undefined,
         fontSize: compact ? '10px' : '10.5px',
         lineHeight: 1.45,
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <div
+        style={{
+          display: compact ? 'grid' : 'flex',
+          gridTemplateColumns: compact ? 'repeat(auto-fit, minmax(145px, 1fr))' : undefined,
+          flexDirection: compact ? undefined : 'column',
+          gap: compact ? 4 : 1.5,
+        }}
+      >
         {rows.map((r, idx) => (
           <div
             key={idx}
             style={{
               display: 'flex',
-              alignItems: 'baseline',
-              gap: 4,
+              flexDirection: compact ? 'column' : 'row',
+              alignItems: compact ? 'stretch' : 'baseline',
+              gap: compact ? 0 : 4,
+              minWidth: 0,
+              padding: compact ? '3px 5px' : 0,
+              borderRadius: compact ? 4 : undefined,
+              background: compact ? '#fff' : undefined,
             }}
           >
             <span
               style={{
                 fontWeight: 600,
-                color: '#475569',
-                whiteSpace: 'nowrap',
+                color: compact ? '#64748b' : '#475569',
+                whiteSpace: compact ? 'normal' : 'nowrap',
                 flexShrink: 0,
+                fontSize: compact ? '9px' : undefined,
               }}
             >
               {r.label}:

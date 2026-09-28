@@ -38,18 +38,29 @@ export function ActionMenu({
   width?: number;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; right: number; width: number } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const visible = items.filter(Boolean);
 
   useEffect(() => setMounted(true), []);
 
-  // Đo sau khi bố cục ổn định để menu không nhấp nháy ở vị trí cũ
+  // Đo menu sau khi render để mở lên trên nếu phía dưới không đủ chỗ.
   useLayoutEffect(() => {
-    if (!open || !btnRef.current) return;
+    if (!open || !btnRef.current || !menuRef.current) return;
     const r = btnRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
-  }, [open]);
+    const menuHeight = menuRef.current.getBoundingClientRect().height;
+    const availableBelow = window.innerHeight - r.bottom - 6;
+    const availableAbove = r.top - 6;
+    const placeAbove = menuHeight > availableBelow && availableAbove > availableBelow;
+    const top = placeAbove
+      ? Math.max(8, r.top - menuHeight - 6)
+      : Math.min(r.bottom + 6, Math.max(8, window.innerHeight - menuHeight - 8));
+    const menuWidth = Math.min(width, window.innerWidth - 16);
+    const right = Math.max(8, Math.min(window.innerWidth - r.right, window.innerWidth - menuWidth - 8));
+    setPos({ top, right, width: menuWidth });
+  }, [open, visible.length, title, width]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,7 +80,6 @@ export function ActionMenu({
     };
   }, [open]);
 
-  const visible = items.filter(Boolean);
   if (visible.length === 0) return null;
 
   return (
@@ -98,18 +108,20 @@ export function ActionMenu({
         <MoreHorizontal size={16} style={{ pointerEvents: 'none' }} />
       </button>
 
-      {mounted && open && pos && createPortal(
+      {mounted && open && createPortal(
         <div
+          ref={menuRef}
           role="menu"
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'fixed',
-            top: pos.top,
-            right: pos.right,
-            width,
-            maxHeight: 'calc(100vh - 24px)',
+            top: pos?.top ?? 8,
+            right: pos?.right ?? 8,
+            width: pos?.width ?? Math.min(width, window.innerWidth - 16),
+            maxHeight: 'calc(100vh - 16px)',
             overflowY: 'auto',
             zIndex: 9999,
+            visibility: pos ? 'visible' : 'hidden',
             background: 'var(--surface-card)',
             border: '1px solid var(--border-base)',
             borderRadius: 'var(--radius-lg)',

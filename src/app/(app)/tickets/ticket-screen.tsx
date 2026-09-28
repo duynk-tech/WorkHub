@@ -9,7 +9,6 @@ import {
   Wrench,
   Plus,
   AlertTriangle,
-  Clock,
   CheckCircle2,
   UserCheck,
   Package,
@@ -50,7 +49,7 @@ export function TicketScreen({
   canManage,
 }: {
   tickets: any[];
-  metrics: { open: number; inProgress: number; overdueSla: number; resolvedThisMonth: number };
+  metrics: { open: number; inProgress: number; resolvedThisMonth: number };
   equipments: any[];
   technicians: any[];
   spareParts: any[];
@@ -114,7 +113,6 @@ export function TicketScreen({
   const cards = [
     { label: 'Chờ tiếp nhận / đã phân công', value: metrics.open, color: '#d97706', bg: '#fef3c7', icon: AlertTriangle },
     { label: 'Đang xử lý', value: metrics.inProgress, color: '#2563eb', bg: '#eff6ff', icon: Wrench },
-    { label: 'Trễ cam kết SLA', value: metrics.overdueSla, color: '#dc2626', bg: '#fee2e2', icon: Clock },
     { label: 'Hoàn tất trong tháng', value: metrics.resolvedThisMonth, color: '#16a34a', bg: '#f0fdf4', icon: CheckCircle2 },
   ];
 
@@ -211,7 +209,6 @@ export function TicketScreen({
                   <th style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>Mức độ</th>
                   <th style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>Trạng thái</th>
                   <th style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>Kỹ thuật viên</th>
-                  <th style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>Hạn xử lý</th>
                   {canManage && <th style={{ padding: '10px 12px' }} />}
                 </tr>
               </thead>
@@ -220,7 +217,6 @@ export function TicketScreen({
                   const pr = TICKET_PRIORITIES[t.priority] || { label: t.priority, color: '#64748b', bg: '#f1f5f9' };
                   const st = TICKET_STATUSES[t.status] || { label: t.status, color: '#64748b', bg: '#f1f5f9' };
                   const closed = ['RESOLVED', 'CLOSED'].includes(t.status);
-                  const overdue = !closed && t.slaDeadline && new Date(t.slaDeadline) < new Date();
                   const expanded = expandedId === t.id;
                   const parts = t.partsUsed || [];
                   const partsCost = parts.reduce(
@@ -257,12 +253,6 @@ export function TicketScreen({
                         </td>
                         <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: t.assignedTo ? 'var(--text-strong)' : 'var(--text-muted)' }}>
                           {t.assignedTo?.fullName || 'Chưa phân công'}
-                        </td>
-                        <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: overdue ? '#dc2626' : 'var(--text-muted)', fontWeight: overdue ? 700 : 400 }}>
-                          {t.slaDeadline
-                            ? new Date(t.slaDeadline).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
-                            : '—'}
-                          {overdue && ' · TRỄ'}
                         </td>
                         {canManage && (
                           <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>

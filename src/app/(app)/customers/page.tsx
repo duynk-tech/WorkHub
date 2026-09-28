@@ -10,14 +10,13 @@ export const dynamic = 'force-dynamic';
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; within?: string; tab?: string }>;
+  searchParams: Promise<{ q?: string; within?: string; tab?: string }>;
 }) {
   const ctx = await requireAuth();
   const sp = await searchParams;
 
   const filter = {
     search: sp.q ?? '',
-    status: sp.status ?? '',
   };
 
   const [customers, metrics, care, technicians] = await Promise.all([

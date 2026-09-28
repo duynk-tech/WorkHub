@@ -1,4 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
+import {
+  calculateLandedCostAllocation,
+  estimateImportFreight,
+  SparePartPricingConfigSchema,
+} from '../../src/server/modules/spare-parts/types';
 
 /**
  * Seed dữ liệu kinh doanh liên tục 6 tháng (Tháng 4 – Tháng 9/2026).
@@ -9,7 +14,7 @@ import type { PrismaClient } from '@prisma/client';
  * - Chứng từ xuất/nhập kho (InventoryTransaction)
  *
  * Margin bán hàng: ~35% (giá bán ≈ giá vốn × 1.54)
- * Phí phụ thu: 0 ₫
+ * Cước và phí nhập kho lấy theo cấu hình phụ tùng, phân bổ theo số lượng.
  * VAT: 8%
  */
 export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: number) {
@@ -44,7 +49,36 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
   }
 
   // Lookup inventory items for order line items
-  const invItems = await prisma.inventoryItem.findMany({ take: 10 });
+  const invItems = await prisma.inventoryItem.findMany();
+  const findInventoryItem = (name: string) =>
+    invItems.find((item) => item.name?.toLowerCase().includes(name.slice(0, 20).toLowerCase())) || null;
+  if (invItems.length === 0) {
+    console.log('⚠ Chưa có mặt hàng kho nào, bỏ qua seed business 6 tháng.');
+    return 0;
+  }
+  const pricingSetting = await prisma.systemSetting.findUnique({ where: { key: 'spare_parts_pricing_config' } });
+  const parsedPricingConfig = SparePartPricingConfigSchema.safeParse(pricingSetting?.valueJson ?? {});
+  const pricingConfig = parsedPricingConfig.success ? parsedPricingConfig.data : SparePartPricingConfigSchema.parse({});
+  const stockRows = await prisma.inventoryStock.groupBy({
+    by: ['itemId'],
+    where: { itemId: { in: invItems.map((item) => item.id) } },
+    _sum: { quantity: true },
+  });
+  const stockQtyByItem = new Map(stockRows.map((row) => [row.itemId, row._sum.quantity || 0]));
+  const warehouseStockRows = await prisma.inventoryStock.findMany({
+    where: { itemId: { in: invItems.map((item) => item.id) } },
+    select: { warehouseId: true, itemId: true, quantity: true },
+  });
+  const warehouseStockKey = (warehouseId: number, itemId: number) => `${warehouseId}:${itemId}`;
+  const warehouseQtyByItem = new Map(
+    warehouseStockRows.map((row) => [warehouseStockKey(row.warehouseId, row.itemId), row.quantity]),
+  );
+  const costState = new Map(invItems.map((item) => [item.id, {
+    quantity: stockQtyByItem.get(item.id) || 0,
+    base: Number(item.avgBaseCost ?? item.costPrice ?? 0),
+    shipping: Number(item.avgShippingCost ?? 0),
+    other: Number(item.avgOtherCost ?? 0),
+  }]));
 
   const creatorId = technicianId || 1;
   let orderCount = 0;
@@ -78,6 +112,11 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
     { name: 'Dịch vụ sửa chữa cứu hộ máy làm kem tại quán (Khẩn cấp 2h)', cost: 2000000, sell: 3070000, type: 'SERVICE' },
     { name: 'Gói đào tạo vận hành máy pha & máy xay cao cấp', cost: 4000000, sell: 6140000, type: 'SERVICE' },
   ];
+  const stockedProducts = products.filter((product) => product.type !== 'SERVICE' && findInventoryItem(product.name));
+  if (stockedProducts.length === 0) {
+    console.log('⚠ Không có mặt hàng demo nào khớp danh mục kho, bỏ qua seed business 6 tháng.');
+    return 0;
+  }
 
   // PO suppliers
   const suppliers = [
@@ -115,14 +154,39 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
       // Pick 2-4 products for the order
       const numProducts = 2 + (i % 3); // 2, 3, or 4 items
       const startIdx = ((month - 3) * 4 + i * 3) % products.length;
+      const saleWarehouseId = (month < 6 ? whHn : whHcm).id;
       const orderProducts = [];
+      const reservedQtyByItem = new Map<number, number>();
       for (let j = 0; j < numProducts; j++) {
         const prod = products[(startIdx + j) % products.length];
-        const qty = 1 + ((month + i + j) % 5); // 1-5 units
-        orderProducts.push({ ...prod, qty });
+        const requestedQty = 1 + ((month + i + j) % 5); // 1-5 units
+        const item = prod.type === 'SERVICE' ? null : findInventoryItem(prod.name);
+        if (prod.type !== 'SERVICE' && !item) continue;
+        const stockKey = item ? warehouseStockKey(saleWarehouseId, item.id) : '';
+        const alreadyReserved = item ? reservedQtyByItem.get(item.id) || 0 : 0;
+        const availableQty = item ? (warehouseQtyByItem.get(stockKey) || 0) - alreadyReserved : requestedQty;
+        const qty = item ? Math.min(requestedQty, Math.max(0, availableQty)) : requestedQty;
+        if (qty <= 0) continue;
+        if (item) reservedQtyByItem.set(item.id, alreadyReserved + qty);
+        // Có dòng không CK, có dòng CK 2–5% để báo cáo kiểm tra được phép
+        // cộng doanh thu/chiết khấu theo lịch sử từng đơn, không lấy giá hiện tại.
+        const discountPercent = (month + i + j) % 5 === 0
+          ? 5
+          : (month + i + j) % 3 === 0 ? 2 : 0;
+        orderProducts.push({ ...prod, qty, discountPercent });
       }
 
-      const goodsAmount = orderProducts.reduce((sum, p) => sum + p.sell * p.qty, 0);
+      if (orderProducts.length === 0) {
+        console.log(`⚠ Bỏ qua ${orderCode}: kho chưa có hàng để bán.`);
+        continue;
+      }
+
+      const grossGoodsAmount = orderProducts.reduce((sum, p) => sum + p.sell * p.qty, 0);
+      const discountAmount = orderProducts.reduce(
+        (sum, p) => sum + Math.round(p.sell * p.qty * p.discountPercent / 100),
+        0,
+      );
+      const goodsAmount = grossGoodsAmount - discountAmount;
       const vatRate = 8;
       const vatAmount = Math.round(goodsAmount * vatRate / 100);
       const totalAmount = goodsAmount + vatAmount;
@@ -153,6 +217,7 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
           paidAmount,
           orderDate,
           deliveryDate,
+          stockIssuedAt: deliveryDate,
           dueDate: isPaid ? undefined : new Date(orderDate.getTime() + 30 * 86400000),
           invoiceNo: isPaid ? String(1000 + globalOrderSeq) : undefined,
           invoiceSerial: isPaid ? '1C26TAA' : undefined,
@@ -162,15 +227,20 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
       });
 
       // Create order items
+      const orderLines = orderProducts.map((p) => ({
+        product: p,
+        item: p.type === 'SERVICE' ? null : findInventoryItem(p.name),
+      }));
       await prisma.customerOrderItem.createMany({
-        data: orderProducts.map((p) => ({
+        data: orderLines.map(({ product: p, item }) => ({
           orderId: order.id,
           itemType: p.type,
           name: p.name,
           quantity: p.qty,
           unitPrice: p.sell,
-          totalPrice: p.sell * p.qty,
-          inventoryItemId: invItems.find((ii) => ii.name?.includes(p.name.slice(0, 20)))?.id || null,
+          totalPrice: p.sell * p.qty - Math.round(p.sell * p.qty * p.discountPercent / 100),
+          discountAmount: Math.round(p.sell * p.qty * p.discountPercent / 100),
+          inventoryItemId: item?.id || null,
         })),
       });
 
@@ -197,21 +267,50 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
       globalTransSeq++;
       const existTrans = await prisma.inventoryTransaction.findUnique({ where: { transCode: transOutCode } });
       if (!existTrans) {
+        const issueCostLines = orderLines.flatMap(({ product, item }) => {
+          if (!item) return [];
+          const current = costState.get(item.id)!;
+          return [{ product, item, base: current.base, shipping: current.shipping, other: current.other }];
+        });
         await prisma.inventoryTransaction.create({
           data: {
             transCode: transOutCode,
             type: 'OUT',
-            sourceWarehouseId: (month < 6 ? whHn : whHcm).id,
-            reasonCode: 'SALE_EXPORT',
+            sourceWarehouseId: saleWarehouseId,
+            reasonCode: 'SALE',
             partnerName: cust.name,
             customerOrderId: order.id,
-            totalValue: goodsAmount,
+            totalValue: issueCostLines.reduce(
+              (sum, line) => sum + (line.base + line.shipping + line.other) * line.product.qty,
+              0,
+            ),
             status: 'COMPLETED',
             transDate: deliveryDate,
             note: `Xuất kho phục vụ đơn hàng ${orderCode}`,
             createdById: creatorId,
+            items: {
+              create: issueCostLines.map(({ product, item, base, shipping, other }) => ({
+                  itemId: item.id,
+                  quantity: product.qty,
+                  unitPrice: product.sell,
+                  unitCost: base + shipping + other,
+                  baseUnitCost: base,
+                  shippingUnitCost: shipping,
+                  otherUnitCost: other,
+                })),
+            },
           },
         });
+        for (const line of issueCostLines) {
+          const stockKey = warehouseStockKey(saleWarehouseId, line.item.id);
+          await prisma.inventoryStock.updateMany({
+            where: { warehouseId: saleWarehouseId, itemId: line.item.id, quantity: { gte: line.product.qty } },
+            data: { quantity: { decrement: line.product.qty } },
+          });
+          warehouseQtyByItem.set(stockKey, Math.max(0, (warehouseQtyByItem.get(stockKey) || 0) - line.product.qty));
+          const current = costState.get(line.item.id)!;
+          current.quantity = Math.max(0, current.quantity - line.product.qty);
+        }
       }
 
       orderCount++;
@@ -233,13 +332,31 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
       const numPoItems = 2 + (p % 2);
       const poProducts = [];
       for (let j = 0; j < numPoItems; j++) {
-        const prod = products[((month - 3) * 3 + p * 2 + j) % products.length];
+        const prod = stockedProducts[((month - 3) * 3 + p * 2 + j) % stockedProducts.length];
         const qty = 5 + ((month + p + j) % 10);
         poProducts.push({ ...prod, qty });
       }
 
-      const subtotalVnd = poProducts.reduce((sum, pp) => sum + pp.cost * pp.qty, 0);
-      const totalVnd = subtotalVnd; // 0 shipping/customs fees per user request
+      const poLines = poProducts.flatMap((product) => {
+        const item = findInventoryItem(product.name);
+        return item ? [{ product, item }] : [];
+      });
+      const subtotalVnd = poLines.reduce((sum, { product }) => sum + product.cost * product.qty, 0);
+      const shippingFee = estimateImportFreight(poLines.length, pricingConfig);
+      const customsFee = 0;
+      const landedCostMetrics = calculateLandedCostAllocation(
+        poLines.map(({ product, item }) => ({
+          itemId: item.id,
+          quantity: product.qty,
+          unitPrice: product.cost,
+          baseUnitPrice: product.cost,
+        })),
+        shippingFee,
+        customsFee,
+        'QUANTITY',
+      );
+      const landedCostByItem = new Map(landedCostMetrics.items.map((line) => [line.itemId, line]));
+      const totalVnd = subtotalVnd + shippingFee + customsFee;
 
       const isCompleted = month < 8; // Sep orders may be in transit
       const poStatus = isCompleted ? 'STOCKED' : (p === 0 ? 'SHIPPING_INTL' : 'ORDERED_SUPPLIER');
@@ -251,9 +368,14 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
           status: poStatus,
           currency: supplier.currency,
           exchangeRate: supplier.rate,
-          shippingFee: 0,
-          customsFee: 0,
-          totalItemsQty: poProducts.reduce((s, pp) => s + pp.qty, 0),
+          shippingFee,
+          customsFee,
+          // Cước đã được phân bổ vào snapshot phiếu nhập; không cộng phụ phí %
+          // không phát sinh thực tế vì sẽ làm PO và giá vốn nhập kho lệch nhau.
+          extraShippingRate: 0,
+          discountRate: 0,
+          discountVnd: 0,
+          totalItemsQty: poLines.reduce((s, { product }) => s + product.qty, 0),
           subtotalVnd,
           totalVnd,
           paidAmount: isCompleted ? totalVnd : Math.round(totalVnd * 0.5),
@@ -267,17 +389,17 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
       });
 
       // PO items
-      if (invItems.length > 0) {
+      if (poLines.some((line) => line.item)) {
         await prisma.sparePartOrderItem.createMany({
-          data: poProducts.map((pp, idx) => ({
+          data: poLines.flatMap(({ product: pp, item }) => item ? [{
             orderId: po.id,
-            itemId: invItems[((month - 3) * 2 + p + idx) % invItems.length].id,
+            itemId: item.id,
             quantity: pp.qty,
             unitPriceEur: supplier.currency === 'EUR' ? Math.round(pp.cost / supplier.rate * 100) / 100 : undefined,
             unitPriceVnd: pp.cost,
             discountVnd: 0,
             finalPriceVnd: pp.cost * pp.qty,
-          })),
+          }] : []),
           skipDuplicates: true,
         });
       }
@@ -315,13 +437,50 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
               targetWarehouseId: (month % 2 === 0 ? whHn : whHcm).id,
               reasonCode: 'PO_IMPORT',
               partnerName: supplier.name,
-              totalValue: subtotalVnd,
+              totalValue: landedCostMetrics.items.reduce(
+                (sum, line) => sum + line.quantity * (line.baseUnitPrice + line.allocatedShipping + line.allocatedOtherFee),
+                0,
+              ),
               status: 'COMPLETED',
               transDate: new Date(poDate.getTime() + 15 * 86400000),
               note: `Nhập kho lô hàng từ ${supplier.name} (${poCode})`,
               createdById: creatorId,
+              items: {
+                create: poLines.map(({ product, item }) => {
+                  const costs = landedCostByItem.get(item.id)!;
+                  return {
+                    itemId: item.id,
+                    quantity: product.qty,
+                    unitPrice: costs.landedCost,
+                    unitCost: costs.landedCost,
+                    baseUnitCost: costs.baseUnitPrice,
+                    shippingUnitCost: costs.allocatedShipping,
+                    otherUnitCost: costs.allocatedOtherFee,
+                  };
+                }),
+              },
             },
           });
+          const receiptWarehouseId = (month % 2 === 0 ? whHn : whHcm).id;
+          for (const { product, item } of poLines) {
+            const incoming = landedCostByItem.get(item.id)!;
+            const stockKey = warehouseStockKey(receiptWarehouseId, item.id);
+            await prisma.inventoryStock.upsert({
+              where: { warehouseId_itemId: { warehouseId: receiptWarehouseId, itemId: item.id } },
+              update: { quantity: { increment: incoming.quantity } },
+              create: { warehouseId: receiptWarehouseId, itemId: item.id, quantity: incoming.quantity },
+            });
+            warehouseQtyByItem.set(stockKey, (warehouseQtyByItem.get(stockKey) || 0) + incoming.quantity);
+            const current = costState.get(item.id)!;
+            const previousQty = Math.max(0, current.quantity);
+            const totalQty = previousQty + incoming.quantity;
+            if (totalQty > 0) {
+              current.base = (previousQty * current.base + incoming.quantity * incoming.baseUnitPrice) / totalQty;
+              current.shipping = (previousQty * current.shipping + incoming.quantity * incoming.allocatedShipping) / totalQty;
+              current.other = (previousQty * current.other + incoming.quantity * incoming.allocatedOtherFee) / totalQty;
+              current.quantity = totalQty;
+            }
+          }
         }
       }
     }

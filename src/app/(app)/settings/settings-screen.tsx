@@ -19,7 +19,7 @@ import {
   saveSettingsAction, testZaloBotAction, flushOutboxAction,
   saveHolidayAction, deleteHolidayAction, saveWorkShiftAction, saveLeaveTypeAction,
   registerZaloWebhookAction, getZaloWebhookInfoAction, deleteZaloWebhookAction,
-  resetDemoDataAction,
+  resetDemoDataAction, deployPendingMigrationsAction,
 } from '@/server/modules/settings/actions';
 import { SsoPanel } from './sso-panel';
 import { ScrollTabs } from '@/components/ui/scroll-tabs';
@@ -176,7 +176,7 @@ export function SettingsScreen({
   shifts: any[];
   leaveTypes: any[];
   webhookUrl: string;
-  permissions: Record<string, boolean>;
+  permissions: Record<string, boolean> & { isAdmin?: boolean };
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -226,10 +226,32 @@ export function SettingsScreen({
   const [leaveTypeModal, setLeaveTypeModal] = useState<any | null>(null);
   const [confirmResetModal, setConfirmResetModal] = useState<{ open: boolean; clean: boolean } | null>(null);
   const [resettingData, setResettingData] = useState(false);
+  const [confirmMigrationOpen, setConfirmMigrationOpen] = useState(false);
+  const [migratingSchema, setMigratingSchema] = useState(false);
 
   const [webhookInputUrl, setWebhookInputUrl] = useState(webhookUrl);
   const [webhookInfo, setWebhookInfo] = useState<any | null>(null);
   const [webhookLoading, setWebhookLoading] = useState(false);
+
+  const handleDeployMigrations = () => {
+    setMigratingSchema(true);
+    startTransition(async () => {
+      try {
+        const res = await deployPendingMigrationsAction();
+        if (res.ok) {
+          toast.success(res.message);
+          setConfirmMigrationOpen(false);
+          router.refresh();
+        } else {
+          toast.error(res.message);
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Không thể triển khai migration');
+      } finally {
+        setMigratingSchema(false);
+      }
+    });
+  };
 
   const handleRegisterWebhook = () => {
     if (!webhookInputUrl.trim()) return;
@@ -910,10 +932,20 @@ export function SettingsScreen({
                   </div>
 
                   <div style={{ display: 'flex', gap: 10 }}>
+                    {permissions.isAdmin && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={resettingData || migratingSchema || pending}
+                        onClick={() => setConfirmMigrationOpen(true)}
+                      >
+                        <Database size={14} /> Triển khai migration
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="secondary"
-                      disabled={resettingData || pending}
+                      disabled={resettingData || migratingSchema || pending}
                       onClick={() => setConfirmResetModal({ open: true, clean: false })}
                     >
                       <RefreshCw size={14} /> Nạp bổ sung (Giữ dữ liệu cũ)
@@ -921,7 +953,7 @@ export function SettingsScreen({
                     <Button
                       type="button"
                       variant="danger"
-                      disabled={resettingData || pending}
+                      disabled={resettingData || migratingSchema || pending}
                       onClick={() => setConfirmResetModal({ open: true, clean: true })}
                     >
                       <Trash2 size={14} /> Làm sạch & Nạp seed mới
@@ -1671,6 +1703,27 @@ export function SettingsScreen({
             </div>
           )
         }
+      />
+
+      <ConfirmDialog
+        open={confirmMigrationOpen}
+        onClose={() => setConfirmMigrationOpen(false)}
+        onConfirm={handleDeployMigrations}
+        loading={migratingSchema || pending}
+        title="Triển khai migration đang chờ"
+        confirmText="Chạy migration"
+        cancelText="Đóng"
+        message={(
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              Hệ thống sẽ chạy <code>prisma migrate deploy</code> trên database hiện tại.
+              Lệnh này áp dụng <b>tất cả migration đang chờ</b>, không xóa dữ liệu nghiệp vụ.
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+              Sau khi chạy thành công, quay lại đây và chọn nạp seed. Chỉ quản trị viên mới thấy và chạy được thao tác này.
+            </div>
+          </div>
+        )}
       />
     </div>
   );

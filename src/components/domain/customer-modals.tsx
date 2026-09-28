@@ -17,7 +17,6 @@ import { CustomerOrderPrintModal } from '@/components/domain/customer-order-prin
 import {
   ORDER_TYPES,
   ORDER_STATUSES,
-  CUSTOMER_STATUSES,
   QUOTATION_STATUSES,
   type SaveCustomerInput,
   type SaveCustomerOrderInput,
@@ -51,7 +50,6 @@ export function CustomerModal({
   const [phone, setPhone] = useState(customer?.phone || '');
   const [email, setEmail] = useState(customer?.email || '');
   const [address, setAddress] = useState(customer?.address || '');
-  const [status, setStatus] = useState(customer?.status || 'ACTIVE');
   const [notes, setNotes] = useState(customer?.notes || '');
 
   const handleSave = async () => {
@@ -68,7 +66,6 @@ export function CustomerModal({
       phone: phone.trim(),
       email: email.trim() || undefined,
       address: address.trim() || undefined,
-      status,
       notes: notes.trim() || undefined,
     };
 
@@ -111,25 +108,13 @@ export function CustomerModal({
           />
         </Field>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Mã khách hàng (Để trống tự sinh)">
-            <Input
-              placeholder="VD: KH-0001"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
-          </Field>
-
-          <Field label="Trạng thái khách hàng">
-            <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-              {Object.entries(CUSTOMER_STATUSES).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <Field label="Mã khách hàng (Để trống tự sinh)">
+          <Input
+            placeholder="VD: KH-0001"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+        </Field>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Số điện thoại liên hệ" required>
@@ -399,6 +384,7 @@ export function CustomerOrderModal({
     }
 
     setLoading(true);
+    let allocatedLineDiscount = 0;
     const payload: SaveCustomerOrderInput = {
       customerId,
       locationId: locationId ? Number(locationId) : undefined,
@@ -416,9 +402,13 @@ export function CustomerOrderModal({
       orderDate,
       deliveryDate: deliveryDate || undefined,
       notes: notes.trim() || undefined,
-      items: rows.map((it) => {
+      items: rows.map((it, index) => {
         const lineGross = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
-        const lineDiscount = grossAmount > 0 ? Math.round((lineGross / grossAmount) * discountAmount) : 0;
+        const proposedDiscount = index === rows.length - 1
+          ? Math.max(0, discountAmount - allocatedLineDiscount)
+          : grossAmount > 0 ? Math.round((lineGross / grossAmount) * discountAmount) : 0;
+        const lineDiscount = Math.min(lineGross, proposedDiscount);
+        allocatedLineDiscount += lineDiscount;
         const lineTotal = Math.max(0, lineGross - lineDiscount);
         const { discountVnd: _discount, priceSource: _src, ...rest } = it;
         return {

@@ -34,7 +34,7 @@ WorkHub đã có nền tảng quản lý công việc, nhân sự, phép/công, 
 | Bán hàng | Hiệu lực/phiên bản báo giá, duyệt chiết khấu, hạn mức nợ, giữ tồn, giao từng đợt, đổi/trả và hoàn tiền | Tiền hàng/CK/cước/VAT/tổng khớp từng dòng và chứng từ gốc |
 | Tiền/công nợ | Cọc/dư chưa phân bổ, tái phân bổ, tài khoản tiền mặt/ngân hàng, đối soát sao kê | Số dư đầu + thu − chi = cuối; tuổi nợ và dư khách/NCC đối chiếu được |
 | Kho | Ledger bất biến, kiểm kê và duyệt chênh lệch, serial/lô nếu cần, giá vốn lịch sử, khóa kỳ | Tồn thực tế/tồn sổ/tồn giữ/tồn khả dụng tách rõ |
-| Thiết bị/dịch vụ | Lịch bảo trì, SLA, serial/bảo hành, phụ tùng thay, công kỹ thuật, hợp đồng thuê và tiền cọc | Doanh thu–chi phí–lãi theo máy/hợp đồng; nhắc hết hạn và nghiệm thu |
+| Thiết bị/dịch vụ | Lịch bảo trì, serial/bảo hành, phụ tùng thay, công kỹ thuật, hợp đồng thuê và tiền cọc | Doanh thu–chi phí–lãi theo máy/hợp đồng; nhắc hết hạn và nghiệm thu |
 | Công việc | Phụ thuộc và chu kỳ cha-con, nghiệm thu, thời gian thực tế, việc lặp, bàn giao | Tiến độ đồng nhất Web/MCP/Zalo; báo cáo quá hạn theo ngày chốt |
 | HR | Hợp đồng và hiệu lực điều chuyển, onboarding/offboarding, lịch sử ca, hồ sơ riêng tư | Nghỉ việc thu hồi truy cập và bàn giao tài sản/công việc/phê duyệt |
 | Công/phép | Duyệt OT, bổ sung công có chứng cứ, công tác, phép chuyển năm, khóa bảng công | Phân biệt có mặt/công hợp lệ/OT duyệt; mở kỳ có quyền và lý do |
@@ -55,7 +55,7 @@ Hiện registry có 5 báo cáo: công việc, nhập–bán–lãi gộp, công
 | P2 | Đơn mua/bán chưa hoàn tất | Đặt–giao/nhận–còn lại, trễ cam kết, tồn giữ, thiếu hàng; mua hàng/kinh doanh |
 | P2 | Tồn chậm luân chuyển và đề nghị mua | Ngày phát sinh gần nhất, số ngày tồn, mức tối thiểu, lead time; cần quy tắc lô/FIFO nếu muốn tuổi tồn chính xác |
 | P2 | Thuế/hóa đơn đối soát | Đơn–giao–hóa đơn–thanh toán; phân nhóm thuế suất, điều chỉnh/thay thế; không coi tổng VAT đơn hàng là tờ khai |
-| P2 | Bảo trì/bảo hành/thuê | Sắp đến hạn, SLA, lần sửa lại, linh kiện/công, lãi từng máy/hợp đồng |
+| P2 | Bảo trì/bảo hành/thuê | Sắp đến hạn, lần sửa lại, linh kiện/công, lãi từng máy/hợp đồng |
 | P2 | Công việc và tải nhân sự | Backlog tại ngày chốt, đúng hạn theo completedAt/dueDate, thời gian xử lý, tải và chờ duyệt; phân biệt cohort tạo mới với việc tồn |
 | P2 | Bảng công và OT đã duyệt | Ngày công hợp lệ/thiếu công/phép/công tác/OT, khóa tháng, file đầu vào lương |
 | P2 | HR và hồ sơ đến hạn | Tăng/giảm người, thử việc/hợp đồng/bàn giao, quỹ phép và tài sản chưa trả |
