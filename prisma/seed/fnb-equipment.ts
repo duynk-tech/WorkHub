@@ -682,12 +682,12 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         status: 'SHIPPING_INTL',
         currency: 'USD',
         exchangeRate: 25400,
-        shippingFee: 6500000,
-        customsFee: 2200000,
+        shippingFee: 3500000,
+        customsFee: 0,
         totalItemsQty: 20,
         subtotalVnd: 56000000,
-        totalVnd: 64700000,
-        paidAmount: 32000000, // Đã đặt cọc 50%
+        totalVnd: 59500000,
+        paidAmount: 29750000, // Đặt cọc 50% tổng lô
         trackingNumber: 'DHL-EXPRESS-992817261',
         etaDate: new Date(Date.now() + 5 * 86400000),
         targetWarehouseId: whHcm.id,
@@ -735,12 +735,12 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         status: 'CUSTOMS_CLEARING',
         currency: 'EUR',
         exchangeRate: 27800,
-        shippingFee: 4500000,
-        customsFee: 1800000,
+        shippingFee: 3500000,
+        customsFee: 0,
         totalItemsQty: 10,
         subtotalVnd: 38000000,
-        totalVnd: 44300000,
-        paidAmount: 44300000, // Đã thanh toán 100%
+        totalVnd: 41500000,
+        paidAmount: 41500000, // Đã thanh toán 100%
         trackingNumber: 'FEDEX-IT-882711029',
         etaDate: new Date(Date.now() + 2 * 86400000),
         targetWarehouseId: whHn.id,

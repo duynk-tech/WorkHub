@@ -406,7 +406,8 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
         return item ? [{ product, item }] : [];
       });
       const subtotalVnd = poLines.reduce((sum, { product }) => sum + product.cost * product.qty, 0);
-      const shippingFee = estimateImportFreight(poLines.length, pricingConfig);
+      // Cước là tổng phí cho một lô PO, không nhân 3.500.000 ₫ theo từng dòng hàng.
+      const shippingFee = estimateImportFreight(1, pricingConfig);
       const customsFee = 0;
       const landedCostMetrics = calculateLandedCostAllocation(
         poLines.map(({ product, item }) => ({
