@@ -447,6 +447,10 @@
   .table-compact tbody td { padding: 7px 12px; }
 
   /* Bảng báo cáo kho: giữ nhận diện mặt hàng khi cuộn xem các chỉ số ở bên phải. */
+  .inventory-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .inventory-report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .inventory-report-kpis { grid-template-columns: minmax(0, 1fr); } }
+
   .inventory-report-scroll {
     max-height: min(62vh, 640px);
     overflow: auto;

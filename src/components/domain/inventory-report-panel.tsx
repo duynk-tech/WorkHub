@@ -335,7 +335,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
             </footer>
           </section>
           {/* Tổng hợp */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
+          <div className="inventory-report-kpis" style={{ display: 'grid', gap: 12 }}>
             {cards.map((c) => (
               <Card key={c.label} style={{ padding: 14, display: 'flex', gap: 12, alignItems: 'center', minHeight: 104 }}>
                 <div
