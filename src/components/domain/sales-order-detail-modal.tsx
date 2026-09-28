@@ -113,6 +113,13 @@ export function SalesOrderDetailModal({
 
   const st = order ? ORDER_STATUSES[order.status] : null;
   const ty = order ? ORDER_TYPES[order.orderType] : null;
+  const orderDiscount = order
+    ? (order.items ?? []).reduce((sum: number, it: any) => sum + (
+        it.discountAmount != null
+          ? Number(it.discountAmount)
+          : Math.max(0, Number(it.quantity || 0) * Number(it.unitPrice || 0) - Number(it.totalPrice || 0))
+      ), 0)
+    : 0;
 
   return (
     <>
@@ -304,14 +311,18 @@ export function SalesOrderDetailModal({
             {(order.items ?? []).length === 0 ? (
               <div className="hint">Đơn chưa có dòng hàng nào</div>
             ) : (
-              <div>
-                <table className="table table-compact" style={{ fontSize: 12.5, width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="table table-compact" style={{ fontSize: 12.5, width: '100%', minWidth: 980, borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
                       <th>Tên hàng</th>
                       <th style={{ width: 96 }}>Loại</th>
                       <th className="num" style={{ width: 60 }}>SL</th>
+                      <th className="num" style={{ width: 115 }} title="Giá vốn đơn vị đã lưu tại thời điểm lập đơn">Giá vốn/cái</th>
+                      <th className="num" style={{ width: 110 }} title="Cước mua phân bổ đã lưu theo dòng đơn">Cước VC</th>
+                      <th className="num" style={{ width: 110 }} title="Phí mua khác đã lưu theo dòng đơn">Phí khác</th>
                       <th className="num" style={{ width: 110 }}>Đơn giá</th>
+                      <th className="num" style={{ width: 110 }}>Chiết khấu</th>
                       <th className="num" style={{ width: 120 }}>Thành tiền</th>
                     </tr>
                   </thead>
@@ -324,68 +335,55 @@ export function SalesOrderDetailModal({
                         </td>
                         <td>{ITEM_TYPES[it.itemType] ?? it.itemType}</td>
                         <td className="num">{it.quantity}</td>
+                        <td className="num">{it.unitCostVnd != null ? money(Number(it.unitCostVnd)) : '—'}</td>
+                        <td className="num">{it.shippingFee != null ? money(Number(it.shippingFee)) : '—'}</td>
+                        <td className="num">{it.customsFee != null ? money(Number(it.customsFee)) : '—'}</td>
                         <td className="num">{money(Number(it.unitPrice))}</td>
+                        <td className="num" style={{ color: Number(it.discountAmount) > 0 ? '#b91c1c' : undefined }}>
+                          {Number(it.discountAmount) > 0 ? `−${money(Number(it.discountAmount))}` : '—'}
+                        </td>
                         <td className="num" style={{ fontWeight: 700 }}>{money(Number(it.totalPrice))}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    {/* 1. Tổng tiền hàng */}
+                    {/* 1. Tổng tiền hàng trước chiết khấu và tổng các khoản giá vốn đã lưu */}
                     <tr style={{ background: '#f8fafc', borderTop: '2px solid var(--border-base, #cbd5e1)', fontWeight: 700 }}>
                       <td colSpan={2} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-strong)' }}>
-                        Tổng cộng ({(order.items ?? []).length} mặt hàng):
+                        Tổng tiền hàng trước chiết khấu ({(order.items ?? []).length} mặt hàng):
                       </td>
                       <td style={{ padding: '8px 2px', textAlign: 'center', fontWeight: 700, color: 'var(--text-strong)' }}>
                         {(order.items ?? []).reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0)} cái
                       </td>
+                      <td className="num">{(order.items ?? []).every((it: any) => it.unitCostVnd != null) ? money((order.items ?? []).reduce((sum: number, it: any) => sum + Number(it.unitCostVnd) * Number(it.quantity || 0), 0)) : '—'}</td>
+                      <td className="num">{(order.items ?? []).every((it: any) => it.shippingFee != null) ? money((order.items ?? []).reduce((sum: number, it: any) => sum + Number(it.shippingFee), 0)) : '—'}</td>
+                      <td className="num">{(order.items ?? []).every((it: any) => it.customsFee != null) ? money((order.items ?? []).reduce((sum: number, it: any) => sum + Number(it.customsFee), 0)) : '—'}</td>
+                      <td></td>
                       <td></td>
                       <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>
-                        {money(Number(order.goodsAmount))}
+                        {money((order.items ?? []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0))}
                       </td>
                     </tr>
 
-                    {/* 2. Chiết khấu (nếu có) */}
-                    {(() => {
-                      const discountAmount = Math.max(
-                        0,
-                        (order.items ?? []).reduce(
-                          (sum: number, it: any) =>
-                            sum + Math.max(0, (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0) - Number(it.totalPrice || 0)),
-                          0,
-                        ),
-                      );
-                      if (discountAmount <= 0) return null;
-                      return (
-                        <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                          <td
-                            colSpan={4}
-                            style={{
-                              padding: '6px 10px',
-                              textAlign: 'right',
-                              fontWeight: 600,
-                              color: 'var(--text-strong)',
-                            }}
-                          >
-                            Chiết khấu:
-                          </td>
-                          <td
-                            style={{
-                              padding: '6px 10px',
-                              textAlign: 'right',
-                              fontWeight: 700,
-                              color: '#b91c1c',
-                            }}
-                          >
-                            -{money(discountAmount)}
-                          </td>
-                        </tr>
-                      );
-                    })()}
+                    {/* 2. Chiết khấu */}
+                    {orderDiscount > 0 && (
+                      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                        <td colSpan={8} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-strong)' }}>Chiết khấu:</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#b91c1c' }}>
+                          −{money(orderDiscount)}
+                        </td>
+                      </tr>
+                    )}
+
+                    <tr style={{ background: '#f8fafc', borderTop: '1px solid var(--border-base, #e2e8f0)', fontWeight: 700 }}>
+                      <td colSpan={8} style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-strong)' }}>Tiền hàng sau chiết khấu:</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-strong)' }}>{money(Number(order.goodsAmount))}</td>
+                    </tr>
 
                     {/* 3. Thuế VAT */}
                     <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
                       <td
-                        colSpan={4}
+                        colSpan={8}
                         style={{
                           padding: '6px 10px',
                           textAlign: 'right',
@@ -395,14 +393,7 @@ export function SalesOrderDetailModal({
                       >
                         Thuế VAT ({Number(order.vatRate)}%):
                       </td>
-                      <td
-                        style={{
-                          padding: '6px 10px',
-                          textAlign: 'right',
-                          fontWeight: 700,
-                          color: Number(order.vatAmount) > 0 ? 'var(--text-strong)' : 'var(--text-muted)',
-                        }}
-                      >
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: Number(order.vatAmount) > 0 ? 'var(--text-strong)' : 'var(--text-muted)' }}>
                         {Number(order.vatAmount) > 0
                           ? `+${money(Number(order.vatAmount))}`
                           : '0 ₫'}
@@ -413,7 +404,7 @@ export function SalesOrderDetailModal({
                     {order.returned > 0 && (
                       <tr style={{ background: '#fffbeb', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
                         <td
-                          colSpan={4}
+                          colSpan={8}
                           style={{
                             padding: '6px 10px',
                             textAlign: 'right',
@@ -439,7 +430,7 @@ export function SalesOrderDetailModal({
                     {/* 5. Tổng cộng thanh toán */}
                     <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
                       <td
-                        colSpan={4}
+                        colSpan={8}
                         style={{
                           padding: '10px',
                           textAlign: 'right',
@@ -456,6 +447,11 @@ export function SalesOrderDetailModal({
                     </tr>
                   </tfoot>
                 </table>
+                {(order.items ?? []).some((it: any) => it.unitCostVnd == null || it.shippingFee == null || it.customsFee == null) && (
+                  <div className="hint" style={{ padding: '6px 2px 0' }}>
+                    “—” nghĩa là đơn cũ chưa lưu snapshot khoản chi phí đó nên không thể hiện chính xác tại thời điểm lập đơn.
+                  </div>
+                )}
 
                 <div
                   style={{

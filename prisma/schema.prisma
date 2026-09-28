@@ -1204,6 +1204,9 @@ model CustomerOrderItem {
   unitPrice   Decimal @db.Decimal(15, 2)
   totalPrice  Decimal @db.Decimal(15, 2)
   discountAmount Decimal @default(0) @db.Decimal(15, 2) // Chiết khấu đã phân bổ riêng cho dòng này
+  unitCostVnd Decimal? @db.Decimal(15, 2) // Giá vốn đơn vị tại thời điểm lập đơn
+  shippingFee Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm lập đơn
+  customsFee Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm lập đơn
   equipmentId Int?
   notes       String? @db.Text
 

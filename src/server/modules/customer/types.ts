@@ -77,6 +77,9 @@ export interface CustomerOrderItemInput {
   unitPrice: number;
   totalPrice?: number;
   discountVnd?: number;
+  unitCostVnd?: number;
+  shippingFee?: number;
+  customsFee?: number;
   equipmentId?: number;
   /** Linh kiện trong danh mục kho — căn cứ xuất kho và đặt hàng nhà cung cấp. */
   inventoryItemId?: number;
