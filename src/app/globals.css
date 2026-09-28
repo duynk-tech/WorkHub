@@ -746,12 +746,12 @@
   .inventory-report-print-definition { margin: 8px 0 13px; padding: 7px 9px; border-left: 3px solid #2563eb; background: #f1f5f9; line-height: 1.4; }
   .inventory-report-print h2 { margin: 13px 0 6px; color: #172554; font-size: 10pt; }
   .inventory-report-print-table { width: 100%; border-collapse: collapse; font-size: 7pt; table-layout: auto; }
+  .inventory-report-print-table thead { display: table-header-group; }
   .inventory-report-print-table th { background: #e2e8f0; color: #172033; font-weight: 700; }
   .inventory-report-print-table th,
   .inventory-report-print-table td { border: 1px solid #cbd5e1; padding: 4px 5px; vertical-align: top; }
   .inventory-report-print-table .numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .inventory-report-print-table tr { break-inside: avoid; }
-  .inventory-report-print-table tfoot { display: table-row-group; font-weight: 700; background: #eff6ff; }
   .inventory-report-print-table tfoot { display: table-row-group; font-weight: 700; background: #eff6ff; }
   .inventory-report-print-footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #94a3b8; margin-top: 14px; padding-top: 7px; color: #475569; }
   .print-watermark-container {

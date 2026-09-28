@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Button, Field, Input, SearchInput, Select } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
-import { FileDown, TrendingUp, Package, Receipt, ShoppingCart, Percent, Printer } from 'lucide-react';
+import { FileDown, TrendingUp, Package, Receipt, ShoppingCart, Percent, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   getInventoryReportAction,
 } from '@/server/modules/spare-parts/actions';
@@ -30,6 +30,11 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
   const [itemSearch, setItemSearch] = useState('');
+  const [showPartDetails, setShowPartDetails] = useState(false);
+  const [showMachineDetails, setShowMachineDetails] = useState(false);
+  const [partDetailsPage, setPartDetailsPage] = useState(1);
+  const [machineDetailsPage, setMachineDetailsPage] = useState(1);
+  const [detailPageSize, setDetailPageSize] = useState(25);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
 
@@ -80,6 +85,12 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
   const salesBreakdownComplete = visibleSalesDetails.every((detail: any) => detail.breakdownComplete);
   const itemBreakdownComplete = visibleItems.every((item: any) => !item.soldQty || item.cogsBreakdownComplete);
   const machineCostsComplete = visibleMachineSalesDetails.every((machine: any) => machine.costKnown);
+  const partDetailsPageCount = Math.max(1, Math.ceil(visibleSalesDetails.length / detailPageSize));
+  const machineDetailsPageCount = Math.max(1, Math.ceil(visibleMachineSalesDetails.length / detailPageSize));
+  const currentPartDetailsPage = Math.min(partDetailsPage, partDetailsPageCount);
+  const currentMachineDetailsPage = Math.min(machineDetailsPage, machineDetailsPageCount);
+  const pageSalesDetails = visibleSalesDetails.slice((currentPartDetailsPage - 1) * detailPageSize, currentPartDetailsPage * detailPageSize);
+  const pageMachineSalesDetails = visibleMachineSalesDetails.slice((currentMachineDetailsPage - 1) * detailPageSize, currentMachineDetailsPage * detailPageSize);
   let trendBucketMode: 'day' | 'week' | 'month' = 'day';
   const revenueTrend = (() => {
     if (!report) return [];
@@ -277,46 +288,45 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
               Lợi nhuận gộp = doanh thu thuần − giá vốn; lợi nhuận sau chi phí đã ghi nhận còn trừ chi phí xuất kho ngoài bán. VAT và cước giao hàng thu khách được đối soát riêng, không tính là doanh thu hàng hóa.
               Báo cáo chưa gồm chi phí giao hàng thực tế và chi phí vận hành nếu hệ thống chưa ghi nhận các khoản này.
             </p>
-            <h2>Chi tiết bán phụ tùng theo đơn</h2>
+            <h2>Tổng hợp doanh thu theo phụ tùng</h2>
             <table className="inventory-report-print-table">
               <thead><tr>
-                <th>Ngày</th><th>Mã đơn</th><th>Khách hàng</th><th>Mã hàng</th><th>Tên hàng</th><th>SL</th>
-                <th>Đơn giá bán</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Tiền hàng vốn</th><th>Cước mua</th><th>Phí mua khác</th><th>Tổng giá vốn</th><th>Lợi nhuận gộp</th>
+                <th>Mã hàng</th><th>Tên phụ tùng</th><th>ĐVT</th><th>SL bán</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Tiền hàng vốn</th><th>Cước mua</th><th>Phí mua khác</th><th>Tổng giá vốn</th><th>Lợi nhuận gộp</th><th>Tỷ suất</th>
               </tr></thead>
-              <tbody>{report.salesDetails.map((detail: any, index: number) => <tr key={`print-part-${detail.orderCode}-${detail.itemId}-${index}`}>
-                <td>{new Date(`${detail.orderDate}T00:00:00`).toLocaleDateString('vi-VN')}</td><td>{detail.orderCode}</td><td>{detail.customerName}</td><td>{detail.itemCode}</td><td>{detail.name}</td><td className="numeric">{fmt(detail.quantity)}</td>
-                <td className="numeric">{fmt(detail.unitPrice)}</td><td className="numeric">{detail.discount ? fmt(detail.discount) : '—'}</td><td className="numeric">{fmt(detail.revenue)}</td>
-                <td className="numeric">{detail.breakdownComplete ? fmt(detail.baseCost || 0) : '—'}</td><td className="numeric">{detail.breakdownComplete ? fmt(detail.shippingCost || 0) : '—'}</td><td className="numeric">{detail.breakdownComplete ? fmt(detail.otherCost || 0) : '—'}</td>
-                <td className="numeric">{fmt(detail.cogs)}</td><td className="numeric">{fmt(detail.grossProfit)}</td>
+              <tbody>{report.items.filter((item: any) => item.soldQty > 0).map((item: any) => <tr key={`print-part-${item.itemId}`}>
+                <td>{item.itemCode}</td><td>{item.name}</td><td>{item.unit || '—'}</td><td className="numeric">{fmt(item.soldQty)}</td>
+                <td className="numeric">{item.discount ? fmt(item.discount) : '—'}</td><td className="numeric">{fmt(item.revenue)}</td>
+                <td className="numeric">{item.cogsBreakdownComplete ? fmt(item.cogsBaseCost || 0) : '—'}</td><td className="numeric">{item.cogsBreakdownComplete ? fmt(item.cogsShippingCost || 0) : '—'}</td><td className="numeric">{item.cogsBreakdownComplete ? fmt(item.cogsOtherCost || 0) : '—'}</td>
+                <td className="numeric">{fmt(item.cogs)}</td><td className="numeric">{fmt(item.grossProfit)}</td><td className="numeric">{item.marginPercent}%</td>
               </tr>)}</tbody>
-              {report.salesDetails.length > 0 && <tfoot><tr>
-                <td colSpan={5}>TỔNG CỘNG ({report.salesDetails.length} dòng)</td>
-                <td className="numeric">{fmt(sumField(report.salesDetails, 'quantity'))}</td><td></td>
-                <td className="numeric">{fmt(report.salesDetails.reduce((sum: number, row: any) => sum + row.unitPrice * row.quantity, 0))}</td>
-                <td className="numeric">{fmt(sumField(report.salesDetails, 'discount'))}</td>
-                <td className="numeric">{fmt(sumField(report.salesDetails, 'revenue'))}</td>
-                <td className="numeric">{report.salesDetails.every((row: any) => row.breakdownComplete) ? fmt(sumField(report.salesDetails, 'baseCost')) : '—'}</td>
-                <td className="numeric">{report.salesDetails.every((row: any) => row.breakdownComplete) ? fmt(sumField(report.salesDetails, 'shippingCost')) : '—'}</td>
-                <td className="numeric">{report.salesDetails.every((row: any) => row.breakdownComplete) ? fmt(sumField(report.salesDetails, 'otherCost')) : '—'}</td>
-                <td className="numeric">{fmt(sumField(report.salesDetails, 'cogs'))}</td><td className="numeric">{fmt(sumField(report.salesDetails, 'grossProfit'))}</td>
+              {report.items.some((item: any) => item.soldQty > 0) && <tfoot><tr>
+                <td colSpan={3}>TỔNG CỘNG ({report.items.filter((item: any) => item.soldQty > 0).length} mặt hàng)</td>
+                <td className="numeric">{fmt(sumField(report.items, 'soldQty'))}</td>
+                <td className="numeric">{fmt(sumField(report.items, 'discount'))}</td><td className="numeric">{fmt(sumField(report.items, 'revenue'))}</td>
+                <td className="numeric">{report.items.filter((item: any) => item.soldQty > 0).every((item: any) => item.cogsBreakdownComplete) ? fmt(sumField(report.items, 'cogsBaseCost')) : '—'}</td>
+                <td className="numeric">{report.items.filter((item: any) => item.soldQty > 0).every((item: any) => item.cogsBreakdownComplete) ? fmt(sumField(report.items, 'cogsShippingCost')) : '—'}</td>
+                <td className="numeric">{report.items.filter((item: any) => item.soldQty > 0).every((item: any) => item.cogsBreakdownComplete) ? fmt(sumField(report.items, 'cogsOtherCost')) : '—'}</td>
+                <td className="numeric">{fmt(sumField(report.items, 'cogs'))}</td><td className="numeric">{fmt(sumField(report.items, 'grossProfit'))}</td><td>—</td>
               </tr></tfoot>}
             </table>
-            {report.machineSalesDetails?.length > 0 && <>
-              <h2>Chi tiết bán thiết bị theo đơn</h2>
+            {report.machineSales?.length > 0 && <>
+              <h2>Tổng hợp doanh thu theo thiết bị</h2>
               <table className="inventory-report-print-table">
-                <thead><tr><th>Ngày</th><th>Mã đơn</th><th>Khách hàng</th><th>Mã thiết bị</th><th>Tên thiết bị / model</th><th>SL</th><th>Giá bán</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Giá vốn</th><th>Lợi nhuận gộp</th><th>Tình trạng giá vốn</th></tr></thead>
-                <tbody>{report.machineSalesDetails.map((machine: any, index: number) => <tr key={`print-machine-${machine.orderCode}-${machine.key}-${index}`}>
-                  <td>{new Date(`${machine.orderDate}T00:00:00`).toLocaleDateString('vi-VN')}</td><td>{machine.orderCode}</td><td>{machine.customerName}</td><td>{machine.key}</td><td>{machine.name}</td><td className="numeric">{fmt(machine.quantity)}</td>
-                  <td className="numeric">{fmt(machine.unitPrice)}</td><td className="numeric">{machine.discount ? fmt(machine.discount) : '—'}</td><td className="numeric">{fmt(machine.revenue)}</td><td className="numeric">{machine.costKnown ? fmt(machine.cogs) : 'Chưa có'}</td><td className="numeric">{machine.costKnown ? fmt(machine.grossProfit) : '—'}</td><td>{machine.costKnown ? 'Đủ giá vốn' : 'Thiếu giá vốn'}</td>
+                <thead><tr><th>Mã thiết bị</th><th>Tên thiết bị / model</th><th>SL</th><th>Đơn giá bán bình quân</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Giá vốn</th><th>Lợi nhuận gộp</th><th>Tình trạng giá vốn</th></tr></thead>
+                <tbody>{report.machineSales.map((machine: any) => <tr key={`print-machine-${machine.key}`}>
+                  <td>{machine.key}</td><td>{machine.name}</td><td className="numeric">{fmt(machine.quantity)}</td><td className="numeric">{fmt(machine.unitPrice)}</td>
+                  <td className="numeric">{machine.discount ? fmt(machine.discount) : '—'}</td><td className="numeric">{fmt(machine.revenue)}</td>
+                  <td className="numeric">{machine.costKnown ? fmt(machine.cogs) : '—'}</td><td className="numeric">{machine.costKnown ? fmt(machine.grossProfit) : '—'}</td><td>{machine.costKnown ? 'Đủ giá vốn' : 'Thiếu giá vốn'}</td>
                 </tr>)}</tbody>
-                {report.machineSalesDetails.length > 0 && <tfoot><tr>
-                  <td colSpan={5}>TỔNG CỘNG ({report.machineSalesDetails.length} dòng)</td><td className="numeric">{fmt(sumField(report.machineSalesDetails, 'quantity'))}</td><td></td>
-                  <td className="numeric">{fmt(sumField(report.machineSalesDetails, 'discount'))}</td><td className="numeric">{fmt(sumField(report.machineSalesDetails, 'revenue'))}</td>
-                  <td className="numeric">{report.machineSalesDetails.every((machine: any) => machine.costKnown) ? fmt(sumField(report.machineSalesDetails, 'cogs')) : '—'}</td>
-                  <td className="numeric">{report.machineSalesDetails.every((machine: any) => machine.costKnown) ? fmt(sumField(report.machineSalesDetails, 'grossProfit')) : '—'}</td><td>{report.machineSalesDetails.every((machine: any) => machine.costKnown) ? 'Đủ giá vốn' : 'Có máy thiếu giá vốn'}</td>
+                {report.machineSales.length > 0 && <tfoot><tr>
+                  <td colSpan={2}>TỔNG CỘNG ({report.machineSales.length} thiết bị)</td><td className="numeric">{fmt(sumField(report.machineSales, 'quantity'))}</td><td></td>
+                  <td className="numeric">{fmt(sumField(report.machineSales, 'discount'))}</td><td className="numeric">{fmt(sumField(report.machineSales, 'revenue'))}</td>
+                  <td className="numeric">{report.machineSales.every((machine: any) => machine.costKnown) ? fmt(sumField(report.machineSales, 'cogs')) : '—'}</td>
+                  <td className="numeric">{report.machineSales.every((machine: any) => machine.costKnown) ? fmt(sumField(report.machineSales, 'grossProfit')) : '—'}</td><td>{report.machineSales.every((machine: any) => machine.costKnown) ? 'Đủ giá vốn' : 'Có máy thiếu giá vốn'}</td>
                 </tr></tfoot>}
               </table>
             </>}
+            <p className="inventory-report-print-definition">Bản PDF này tổng hợp theo mã hàng, không liệt kê từng đơn. Xuất Excel để xem chi tiết giao dịch và đối chiếu từng phiếu.</p>
             <footer className="inventory-report-print-footer">
               <span>VAT thu hộ: {fmt(s.vatAmount || 0)} ₫</span>
               <span>Cước giao hàng thu khách: {fmt(s.customerShippingFee || 0)} ₫</span>
@@ -657,16 +667,22 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
             </div>
           </Card>
 
-          {/* Chi tiết theo từng lần bán: luôn hiển thị, không cần mở rộng từng sản phẩm. */}
+          {/* Chi tiết giao dịch được nạp/render theo yêu cầu, không dồn cả kỳ lên màn hình. */}
           <Card className="no-print" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--border-base)' }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
-                Chi tiết bán theo từng đơn ({visibleSalesDetails.length}{itemSearch ? `/${report.salesDetails?.length || 0}` : ''})
+            <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--border-base)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
+                  Chi tiết bán theo từng đơn ({visibleSalesDetails.length}{itemSearch ? `/${report.salesDetails?.length || 0}` : ''})
+                </div>
+                <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  Mỗi dòng là một mặt hàng trong một đơn; giá vốn lấy theo snapshot của lần xuất.
+                </div>
               </div>
-              <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--text-muted)' }}>
-                Mỗi dòng là một mặt hàng trong một đơn; các khoản giá vốn phản ánh đúng snapshot của lần xuất đó.
-              </div>
+              <Button size="sm" variant="secondary" onClick={() => setShowPartDetails((value) => !value)}>
+                {showPartDetails ? 'Ẩn chi tiết' : `Xem chi tiết (${fmt(visibleSalesDetails.length)} dòng)`}
+              </Button>
             </div>
+            {showPartDetails && <>
             <div className="inventory-report-scroll">
               <table className="table table-compact" style={{ minWidth: 2270, fontSize: 12.5 }}>
                 <colgroup>
@@ -710,7 +726,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                     <tr><td colSpan={15} style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)' }}>
                       {itemSearch ? `Không tìm thấy giao dịch “${itemSearch}”` : 'Kỳ này chưa có đơn bán phụ tùng'}
                     </td></tr>
-                  ) : visibleSalesDetails.map((detail: any, index: number) => (
+                  ) : pageSalesDetails.map((detail: any, index: number) => (
                     <tr key={`${detail.orderCode}-${detail.itemId}-${index}`} style={{ borderBottom: '1px solid var(--border-base)' }}>
                       <td style={{ ...td, textAlign: 'left', color: 'var(--brand)', fontWeight: 700 }}>{detail.orderCode}</td>
                       <td style={td}>{new Date(`${detail.orderDate}T00:00:00`).toLocaleDateString('vi-VN')}</td>
@@ -733,7 +749,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                 {visibleSalesDetails.length > 0 && (
                   <tfoot>
                     <tr style={{ background: 'var(--surface-sunken)', borderTop: '2px solid var(--border-base)', fontWeight: 700 }}>
-                      <td colSpan={5} style={{ ...td, textAlign: 'left' }}>Tổng {visibleSalesDetails.length} dòng</td>
+                      <td colSpan={5} style={{ ...td, textAlign: 'left' }}>Tổng {visibleSalesDetails.length} dòng trong kết quả lọc</td>
                       <td style={td}>{fmt(sumField(visibleSalesDetails, 'quantity'))}</td>
                       <td style={td}>—</td>
                       <td style={td}>—</td>
@@ -749,9 +765,21 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                 )}
               </table>
             </div>
+            {visibleSalesDetails.length > detailPageSize && <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, padding: '8px 14px' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Hiển thị {(currentPartDetailsPage - 1) * detailPageSize + 1}–{Math.min(currentPartDetailsPage * detailPageSize, visibleSalesDetails.length)} / {fmt(visibleSalesDetails.length)}</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>Dòng/trang
+                <Select value={detailPageSize} onChange={(event) => setDetailPageSize(Number(event.target.value))} style={{ width: 78 }}>
+                  <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
+                </Select>
+              </label>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Trang {currentPartDetailsPage}/{partDetailsPageCount}</span>
+              <Button size="sm" variant="secondary" disabled={currentPartDetailsPage <= 1} onClick={() => setPartDetailsPage((page) => Math.max(1, page - 1))} aria-label="Trang trước"><ChevronLeft size={15} /></Button>
+              <Button size="sm" variant="secondary" disabled={currentPartDetailsPage >= partDetailsPageCount} onClick={() => setPartDetailsPage((page) => Math.min(partDetailsPageCount, page + 1))} aria-label="Trang sau"><ChevronRight size={15} /></Button>
+            </div>}
             <div style={{ padding: '8px 14px', fontSize: 11.5, color: 'var(--text-muted)' }}>
               Phiếu xuất cũ chưa lưu riêng tiền hàng, cước phí và phí khác sẽ để trống các cột đó; tổng giá vốn vẫn dùng số đã ghi nhận.
             </div>
+            </>}
           </Card>
 
           {report.machineSales?.length > 0 && (
@@ -812,14 +840,20 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
 
           {report.machineSalesDetails?.length > 0 && (
             <Card className="no-print" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--border-base)' }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
-                  Chi tiết bán máy móc theo từng đơn ({visibleMachineSalesDetails.length}{itemSearch ? `/${report.machineSalesDetails.length}` : ''})
+              <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--border-base)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-strong)' }}>
+                    Chi tiết bán máy móc theo từng đơn ({visibleMachineSalesDetails.length}{itemSearch ? `/${report.machineSalesDetails.length}` : ''})
+                  </div>
+                  <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                    Mỗi dòng là một thiết bị trong một đơn; bảng chỉ hiển thị theo trang khi mở.
+                  </div>
                 </div>
-                <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--text-muted)' }}>
-                  Mỗi dòng tương ứng một máy trong một đơn bán; giá vốn lấy từ hồ sơ máy đã lưu.
-                </div>
+                <Button size="sm" variant="secondary" onClick={() => setShowMachineDetails((value) => !value)}>
+                  {showMachineDetails ? 'Ẩn chi tiết' : `Xem chi tiết (${fmt(visibleMachineSalesDetails.length)} dòng)`}
+                </Button>
               </div>
+              {showMachineDetails && <>
               <div className="inventory-report-scroll">
                 <table className="table table-compact" style={{ minWidth: 1770, fontSize: 12.5 }}>
                   <colgroup>
@@ -853,7 +887,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                   <tbody>
                     {visibleMachineSalesDetails.length === 0 ? (
                       <tr><td colSpan={11} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Không tìm thấy giao dịch máy phù hợp</td></tr>
-                    ) : visibleMachineSalesDetails.map((machine: any, index: number) => (
+                    ) : pageMachineSalesDetails.map((machine: any, index: number) => (
                         <tr key={`${machine.orderCode}-${machine.key}-${index}`} style={{ borderBottom: '1px solid var(--border-base)' }}>
                           <td style={{ ...td, textAlign: 'left', color: 'var(--brand)', fontWeight: 700 }}>{machine.orderCode}</td>
                           <td style={td}>{new Date(`${machine.orderDate}T00:00:00`).toLocaleDateString('vi-VN')}</td>
@@ -874,7 +908,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                   {visibleMachineSalesDetails.length > 0 && (
                     <tfoot>
                       <tr style={{ background: 'var(--surface-sunken)', borderTop: '2px solid var(--border-base)', fontWeight: 700 }}>
-                        <td colSpan={5} style={{ ...td, textAlign: 'left' }}>Tổng {visibleMachineSalesDetails.length} dòng</td>
+                        <td colSpan={5} style={{ ...td, textAlign: 'left' }}>Tổng {visibleMachineSalesDetails.length} dòng trong kết quả lọc</td>
                         <td style={td}>{fmt(sumField(visibleMachineSalesDetails, 'quantity'))}</td>
                         <td style={td}>—</td>
                         <td style={td}>{fmt(sumField(visibleMachineSalesDetails, 'discount'))} ₫</td>
@@ -886,6 +920,18 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                   )}
                 </table>
               </div>
+              {visibleMachineSalesDetails.length > detailPageSize && <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, padding: '8px 14px' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Hiển thị {(currentMachineDetailsPage - 1) * detailPageSize + 1}–{Math.min(currentMachineDetailsPage * detailPageSize, visibleMachineSalesDetails.length)} / {fmt(visibleMachineSalesDetails.length)}</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>Dòng/trang
+                  <Select value={detailPageSize} onChange={(event) => setDetailPageSize(Number(event.target.value))} style={{ width: 78 }}>
+                    <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
+                  </Select>
+                </label>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Trang {currentMachineDetailsPage}/{machineDetailsPageCount}</span>
+                <Button size="sm" variant="secondary" disabled={currentMachineDetailsPage <= 1} onClick={() => setMachineDetailsPage((page) => Math.max(1, page - 1))} aria-label="Trang trước"><ChevronLeft size={15} /></Button>
+                <Button size="sm" variant="secondary" disabled={currentMachineDetailsPage >= machineDetailsPageCount} onClick={() => setMachineDetailsPage((page) => Math.min(machineDetailsPageCount, page + 1))} aria-label="Trang sau"><ChevronRight size={15} /></Button>
+              </div>}
+              </>}
             </Card>
           )}
         </>
