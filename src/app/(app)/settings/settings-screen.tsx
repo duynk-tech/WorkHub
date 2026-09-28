@@ -1654,7 +1654,7 @@ export function SettingsScreen({
                 Hệ thống sẽ làm sạch toàn bộ khách hàng, thiết bị F&B, linh kiện kho, phiếu thu/chi, đơn hàng, công việc, chấm công và các yêu cầu nghỉ phép hiện tại.
               </div>
               <div>
-                Sau khi xóa, hệ thống sẽ tự động khởi tạo lại bộ <b>Dữ liệu Seed Demo chuẩn</b> (bao gồm 8 máy F&B, 4 chuỗi khách hàng lớn, 8 linh kiện, 30 ngày chấm công và tài khoản nhân sự).
+                Sau khi xóa, hệ thống sẽ tự động khởi tạo lại bộ <b>Dữ liệu Seed Demo chuẩn</b> bao gồm: 14 nhân sự, 8 máy F&B, 4 chuỗi khách hàng lớn, 8+ linh kiện, <b>6 tháng liên tục dữ liệu kinh doanh (04–09/2026)</b> gồm 21 đơn bán hàng, 9 đơn nhập hàng, phiếu thu chi, chứng từ kho và 30 ngày chấm công.
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
                 * Tài khoản quản trị <b>admin</b> và các thông tin cấu hình hệ thống (tên công ty, token Zalo, bản in...) được bảo lưu an toàn.

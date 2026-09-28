@@ -189,7 +189,22 @@ export function Sidebar({
         </nav>
 
         <div className="sidebar-footer">
-          {settingsItem && <Link href={settingsItem.href} className="nav-item" data-active={pathname === '/settings'} aria-current={pathname === '/settings' ? 'page' : undefined} aria-label="Cài đặt" onMouseEnter={e => showTooltip(e, 'Cài đặt')} onMouseLeave={hideTooltip} onFocus={e => showTooltip(e, 'Cài đặt')} onBlur={hideTooltip}><Settings />{!isEffectiveCollapsed && <span>Cài đặt</span>}</Link>}
+          {settingsItem && (
+            <Link
+              href={settingsItem.href}
+              className="nav-item"
+              data-active={pathname === '/settings'}
+              aria-current={pathname === '/settings' ? 'page' : undefined}
+              aria-label="Cài đặt hệ thống"
+              onMouseEnter={(e) => showTooltip(e, 'Cài đặt hệ thống')}
+              onMouseLeave={hideTooltip}
+              onFocus={(e) => showTooltip(e, 'Cài đặt hệ thống')}
+              onBlur={hideTooltip}
+            >
+              <Settings />
+              {!isEffectiveCollapsed && <span style={{ flex: 1 }}>Cài đặt hệ thống</span>}
+            </Link>
+          )}
           <button
             type="button"
             className="sidebar-toggle-btn"
@@ -199,7 +214,7 @@ export function Sidebar({
             aria-label={isEffectiveCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
           >
             {isEffectiveCollapsed ? <PanelLeft /> : <PanelLeftClose />}
-            {!isEffectiveCollapsed && <span>Thu gọn</span>}
+            {!isEffectiveCollapsed && <span>Thu gọn menu</span>}
           </button>
         </div>
 

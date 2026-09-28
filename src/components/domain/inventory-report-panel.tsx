@@ -80,7 +80,7 @@ export function InventoryReportPanel() {
           icon: Package,
         },
         {
-          label: 'Doanh thu bán ra',
+          label: 'Doanh thu thuần (chưa VAT)',
           value: `${fmt(s.revenue)} ₫`,
           sub: `${s.orderCount} đơn · ${s.soldQty} đơn vị đã bán`,
           color: '#0f766e',
@@ -88,7 +88,7 @@ export function InventoryReportPanel() {
           icon: TrendingUp,
         },
         {
-          label: 'Giá vốn hàng bán',
+          label: 'Giá vốn hàng bán (COGS)',
           value: `${fmt(s.cogs)} ₫`,
           sub: 'Giá mua NCC + cước + phí',
           color: '#d97706',
@@ -96,7 +96,7 @@ export function InventoryReportPanel() {
           icon: TrendingDown,
         },
         {
-          label: 'Lãi gộp',
+          label: 'Lợi nhuận gộp (Lãi gộp)',
           value: `${fmt(s.grossProfit)} ₫`,
           sub: `Tỷ suất ${s.marginPercent}%`,
           color: s.grossProfit >= 0 ? '#16a34a' : '#dc2626',
@@ -196,31 +196,109 @@ export function InventoryReportPanel() {
             ))}
           </div>
 
-          {/* Cần theo dõi — chip badges giống trang khách hàng */}
-          {(s.discount > 0 || s.returnedAmount > 0 || report.costByReason.length > 0) && (
+          {/* Bóc tách thuế & Giảm trừ doanh thu theo chuẩn kế toán */}
+          {(s.vatAmount > 0 || s.discount > 0 || s.returnedAmount > 0 || report.costByReason.length > 0) && (
             <Card style={{ padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', marginBottom: 10 }}>
-                Cần theo dõi
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: 'var(--text-strong)',
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                }}
+              >
+                <span>Bóc tách Thuế GTGT & Giảm trừ doanh thu</span>
+                <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-muted)' }}>
+                  Tổng thanh toán từ khách (đã gồm VAT):{' '}
+                  <strong style={{ color: 'var(--brand)', fontWeight: 700 }}>
+                    {fmt(s.revenue + (s.vatAmount || 0))} ₫
+                  </strong>
+                </span>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {s.vatAmount > 0 && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '5px 14px',
+                      borderRadius: 999,
+                      border: '1px solid #bfdbfe',
+                      background: '#eff6ff',
+                      fontSize: 12.5,
+                      color: '#1d4ed8',
+                      fontWeight: 650,
+                    }}
+                    title="Thuế GTGT đầu ra thu từ khách hàng, không tính vào doanh thu để nộp thuế TNDN"
+                  >
+                    Thuế GTGT đầu ra (VAT thu hộ): +{fmt(s.vatAmount)} ₫
+                  </span>
+                )}
                 {s.discount > 0 && (
-                  <span style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
-                    Chiết khấu −{fmt(s.discount)} ₫
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '5px 14px',
+                      borderRadius: 999,
+                      border: '1px solid var(--border-base)',
+                      fontSize: 12.5,
+                      color: 'var(--text-base)',
+                    }}
+                    title="Chiết khấu thương mại đã giảm trừ trực tiếp vào giá bán"
+                  >
+                    Chiết khấu thương mại: −{fmt(s.discount)} ₫
                   </span>
                 )}
                 {s.returnedAmount > 0 && (
-                  <span style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
-                    Hàng trả lại −{fmt(s.returnedAmount)} ₫
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '5px 14px',
+                      borderRadius: 999,
+                      border: '1px solid var(--border-base)',
+                      fontSize: 12.5,
+                      color: 'var(--text-base)',
+                    }}
+                    title="Giá trị hàng bán bị khách trả lại"
+                  >
+                    Hàng bán trả lại: −{fmt(s.returnedAmount)} ₫
                   </span>
                 )}
                 {report.costByReason.map((r: any) => (
-                  <span key={r.code} style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
-                    {r.label} {r.qty} đơn vị · {fmt(r.value)} ₫
+                  <span
+                    key={r.code}
+                    style={{
+                      display: 'inline-block',
+                      padding: '5px 14px',
+                      borderRadius: 999,
+                      border: '1px solid var(--border-base)',
+                      fontSize: 12.5,
+                      color: 'var(--text-base)',
+                    }}
+                  >
+                    {r.label}: {r.qty} đơn vị · {fmt(r.value)} ₫
                   </span>
                 ))}
                 {s.nonSaleCost > 0 && (
-                  <span style={{ display: 'inline-block', padding: '5px 14px', borderRadius: 999, border: '1px solid var(--border-base)', fontSize: 12.5, color: 'var(--text-base)' }}>
-                    Lãi thuần {fmt(s.netProfit)} ₫
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '5px 14px',
+                      borderRadius: 999,
+                      border: '1px solid var(--border-base)',
+                      fontSize: 12.5,
+                      color: 'var(--text-base)',
+                      fontWeight: 600,
+                    }}
+                    title="Lãi thuần = Lãi gộp − Chi phí xuất kho phi thương mại (bảo hành, khuyến mãi, hủy hỏng)"
+                  >
+                    Lợi nhuận thuần kho: {fmt(s.netProfit)} ₫
                   </span>
                 )}
               </div>

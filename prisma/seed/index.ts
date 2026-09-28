@@ -9,6 +9,7 @@ import {
   seedDemoAttendance, seedDemoLeaves, seedDemoAdminApprovals,
 } from './demo';
 import { seedDemoFnbEquipment } from './fnb-equipment';
+import { seedBusiness6Months } from './business-6months';
 import { cleanBusinessData } from './clean';
 import { hashPassword } from '../../src/server/auth/password';
 
@@ -56,6 +57,7 @@ export async function runFullDemoSeed(db: PrismaClient = prisma, options?: { cle
   console.log('→ Chấm công 30 ngày    :', await seedDemoAttendance(db, employees));
   console.log('→ Đơn nghỉ phép demo   :', await seedDemoLeaves(db, employees));
   await seedDemoFnbEquipment(db, employees.get('NV005'));
+  await seedBusiness6Months(db, employees.get('NV005'));
 
   const adminEmployee = await ensureAdmin(db);
   if (adminEmployee) {

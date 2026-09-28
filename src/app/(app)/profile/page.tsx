@@ -1,5 +1,4 @@
 import { googleReady } from '@/server/auth/google/service';
-import { GoogleAccount } from './google-account';
 import { requireAuth } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { getOrCreateBalance, remainingDays } from '@/server/modules/leave/service';
@@ -31,15 +30,26 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   ]);
 
   const googleEnabled = await googleReady();
-  const google = googleEnabled ? await prisma.externalIdentity.findUnique({ where: { userId_provider: { userId: ctx.userId, provider: 'google' } } }) : null;
+  const google = googleEnabled
+    ? await prisma.externalIdentity.findUnique({
+        where: { userId_provider: { userId: ctx.userId, provider: 'google' } },
+      })
+    : null;
   const result = (await searchParams).google;
+
   return (
-    <div className="stack"><ProfileScreen
+    <ProfileScreen
       employee={JSON.parse(JSON.stringify(employee))}
       user={{ username: ctx.username, roleNames: ctx.roleNames }}
-      balance={{ remaining: remainingDays(balance), used: Number(balance.usedDays), pending: Number(balance.pendingDays), year }}
+      balance={{
+        remaining: remainingDays(balance),
+        used: Number(balance.usedDays),
+        pending: Number(balance.pendingDays),
+        year,
+      }}
       stats={{ openTasks: stats[0], doneTasks: stats[1], approvedLeaves: stats[2] }}
       zaloLinked={ctx.zaloLinked}
-    /><GoogleAccount enabled={googleEnabled} email={google?.email ?? null} result={result} /></div>
+      google={{ enabled: googleEnabled, email: google?.email ?? null, result }}
+    />
   );
 }
