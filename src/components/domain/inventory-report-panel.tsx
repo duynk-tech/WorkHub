@@ -640,7 +640,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
                 </tbody>
                 {visibleItems.length > 0 && <tfoot>
                   <tr style={{ background: 'var(--surface-sunken)', borderTop: '2px solid var(--border-base)', fontWeight: 700 }}>
-                    <td colSpan={2} style={{ ...td, textAlign: 'left' }}>Tổng {visibleItems.length} mặt hàng</td>
+                    <td className="report-sticky-code" colSpan={2} style={{ ...td, textAlign: 'left' }}>Tổng {visibleItems.length} mặt hàng</td>
                     <td style={td}>—</td>
                     <td style={td}>{fmt(sumField(visibleItems, 'inQty'))}</td>
                     <td style={td}>{fmt(sumField(visibleItems, 'inValue'))} ₫</td>

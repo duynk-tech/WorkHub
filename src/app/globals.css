@@ -485,6 +485,10 @@
     z-index: 5;
     background: var(--surface-sunken);
   }
+  .inventory-report-grid tfoot .report-sticky-code {
+    z-index: 4;
+    background: var(--surface-sunken);
+  }
   .inventory-report-grid tbody tr:nth-child(even),
   .inventory-report-grid tbody tr:nth-child(even) .report-sticky-code,
   .inventory-report-grid tbody tr:nth-child(even) .report-sticky-name {
