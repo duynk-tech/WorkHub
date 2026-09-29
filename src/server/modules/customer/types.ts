@@ -29,6 +29,10 @@ export interface CustomerQuotationItemInput {
   name: string;
   quantity: number;
   unitPrice: number;
+  unitPriceEur?: number;
+  unitCostVnd?: number;
+  shippingFee?: number;
+  customsFee?: number;
   /** Chiết khấu tính trên cả dòng (VND). */
   discountVnd?: number;
   equipmentId?: number;
@@ -50,6 +54,10 @@ export interface SaveCustomerQuotationInput {
   vatRate?: number;
   /** Cước vận chuyển báo riêng cho khách (VNĐ). */
   shippingFee?: number;
+  /** Tỷ giá EUR/VND và chính sách giá dùng để tính báo giá tại thời điểm lưu. */
+  exchangeRate?: number;
+  marginPercent?: number;
+  pricingMethod?: 'MARGIN' | 'MARKUP';
   /** Chiết khấu tính trên tổng tiền hàng (%). */
   discountRate?: number;
   paymentTerms?: string;
@@ -78,6 +86,7 @@ export interface CustomerOrderItemInput {
   totalPrice?: number;
   discountVnd?: number;
   unitCostVnd?: number;
+  unitPriceEur?: number;
   shippingFee?: number;
   customsFee?: number;
   equipmentId?: number;
@@ -92,6 +101,7 @@ export interface SaveCustomerOrderInput {
   orderCode?: string;
   /** Đơn được lập từ báo giá nào. */
   quotationId?: number;
+  exchangeRate?: number;
   /** Đơn dịch vụ sinh từ phiếu sự cố nào — để quy doanh thu về đúng máy. */
   serviceTicketId?: number;
   orderType: string;

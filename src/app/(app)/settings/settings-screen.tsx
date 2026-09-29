@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Save, MessageCircle, Send, Building2, CalendarDays, Clock, Plus, Trash2, Copy,
-  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle,
+  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle, SlidersHorizontal,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
@@ -19,14 +19,16 @@ import {
   saveSettingsAction, testZaloBotAction, flushOutboxAction,
   saveHolidayAction, deleteHolidayAction, saveWorkShiftAction, saveLeaveTypeAction,
   registerZaloWebhookAction, getZaloWebhookInfoAction, deleteZaloWebhookAction,
-  resetDemoDataAction, deployPendingMigrationsAction,
+  resetDemoDataAction, deployPendingMigrationsAction, clearSalesAndPurchaseDocumentsAction,
 } from '@/server/modules/settings/actions';
 import { SsoPanel } from './sso-panel';
 import { ScrollTabs } from '@/components/ui/scroll-tabs';
 import { PrintWatermark } from '@/components/domain/print-watermark';
+import { SparePartPricingModal } from '@/components/domain/spare-part-pricing-modal';
+import type { SparePartPricingConfig } from '@/server/modules/spare-parts/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type Tab = 'branding' | 'documents' | 'sales' | 'data' | 'sso' | 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports';
+type Tab = 'branding' | 'documents' | 'sales' | 'data' | 'pricing' | 'sso' | 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports';
 
 function ImageUploadInput({
   value,
@@ -166,7 +168,7 @@ function ImageUploadInput({
 }
 
 export function SettingsScreen({
-  settings, holidays, shifts, leaveTypes, webhookUrl, permissions, googleCallbackUrl,
+  settings, holidays, shifts, leaveTypes, sparePartPricing, webhookUrl, permissions, googleCallbackUrl,
   initialTab = 'general',
 }: {
   initialTab?: string;
@@ -175,14 +177,15 @@ export function SettingsScreen({
   holidays: any[];
   shifts: any[];
   leaveTypes: any[];
+  sparePartPricing: SparePartPricingConfig | null;
   webhookUrl: string;
-  permissions: Record<string, boolean> & { isAdmin?: boolean };
+  permissions: Record<string, boolean> & { isAdmin?: boolean; pricing?: boolean };
 }) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
 
-  const validTabs = (['general', 'branding', 'documents', 'sales', 'data', 'sso', 'zalo', 'leave', 'attendance', 'holidays', 'reports'] as Tab[]).filter((key) => ({ branding: permissions.general, documents: permissions.general, sales: permissions.general, data: permissions.general, sso: permissions.sso, general: permissions.general, zalo: permissions.zalo, leave: permissions.leaveType || permissions.general, attendance: permissions.shift || permissions.general, holidays: permissions.holiday, reports: permissions.general })[key]);
+  const validTabs = (['general', 'branding', 'documents', 'sales', 'pricing', 'data', 'sso', 'zalo', 'leave', 'attendance', 'holidays', 'reports'] as Tab[]).filter((key) => ({ branding: permissions.general, documents: permissions.general, sales: permissions.general, pricing: permissions.pricing, data: permissions.general, sso: permissions.sso, general: permissions.general, zalo: permissions.zalo, leave: permissions.leaveType || permissions.general, attendance: permissions.shift || permissions.general, holidays: permissions.holiday, reports: permissions.general })[key]);
   const initialValidTab: Tab = validTabs.includes(initialTab as Tab) ? (initialTab as Tab) : (validTabs[0] ?? 'general');
   const [tab, setTab] = useState<Tab>(initialValidTab);
 
@@ -207,6 +210,8 @@ export function SettingsScreen({
   };
 
   const [values, setValues] = useState<Record<string, any>>(settings);
+  const [pricingConfig, setPricingConfig] = useState<SparePartPricingConfig | null>(sparePartPricing);
+  useEffect(() => setPricingConfig(sparePartPricing), [sparePartPricing]);
   const valuesRef = useRef(values);
   const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(() => new Set());
   useEffect(() => {
@@ -225,6 +230,8 @@ export function SettingsScreen({
   const [shiftModal, setShiftModal] = useState<any | null>(null);
   const [leaveTypeModal, setLeaveTypeModal] = useState<any | null>(null);
   const [confirmResetModal, setConfirmResetModal] = useState<{ open: boolean; clean: boolean } | null>(null);
+  const [confirmClearSalesOpen, setConfirmClearSalesOpen] = useState(false);
+  const [pricingModalOpen, setPricingModalOpen] = useState(false);
   const [resettingData, setResettingData] = useState(false);
   const [confirmMigrationOpen, setConfirmMigrationOpen] = useState(false);
   const [migratingSchema, setMigratingSchema] = useState(false);
@@ -306,6 +313,7 @@ export function SettingsScreen({
     { key: 'branding', label: 'Giao diện', icon: Sparkles, visible: permissions.general },
     { key: 'documents', label: 'Chứng từ', icon: Copy, visible: permissions.general },
     { key: 'sales', label: 'Bán hàng', icon: Building2, visible: permissions.general },
+    { key: 'pricing', label: 'Giá & Margin', icon: SlidersHorizontal, visible: Boolean(permissions.pricing) },
     { key: 'sso', label: 'SSO', icon: Check, visible: permissions.sso },
     { key: 'data', label: 'Dữ liệu', icon: Database, visible: permissions.general },
     { key: 'zalo', label: 'Zalo Bot', icon: MessageCircle, visible: permissions.zalo },
@@ -887,33 +895,12 @@ export function SettingsScreen({
                   Dữ liệu mẫu
                 </CardTitle>
                 <div className="card-subtitle">
-                  Khởi tạo hoặc làm mới bộ dữ liệu mẫu chuẩn cho tất cả các tính năng: chuỗi F&B, thiết bị, phụ tùng kho, đơn hàng, chấm công 30 ngày, công việc và phê duyệt.
+                  Khởi tạo hoặc làm mới dữ liệu mẫu để trải nghiệm hệ thống.
                 </div>
               </div>
             </CardHeader>
             <CardBody>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--surface-sunken)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, color: 'var(--text-strong)', marginBottom: 4 }}>
-                    Dữ liệu demo bao gồm những gì?
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-muted)' }}>
-                    <li>14 nhân sự đa phòng ban (Ban TGĐ, Khối Kinh doanh, Khối Kỹ thuật, Khối Hành chính - Nhân sự).</li>
-                    <li>8 máy F&B cao cấp (Taylor C708, Carpigiani, Selmi, La Marzocco, Unox...) thuộc 4 khách hàng chuỗi lớn (Golden Gate, Maison Marou, Tous les Jours, Phúc Long).</li>
-                    <li>2 kho linh kiện (Hà Nội, TP.HCM) với 8 mã phụ tùng, đơn nhập khẩu PO, báo giá, đơn bán hàng và phiếu kho.</li>
-                    <li>Dữ liệu chấm công 30 ngày liên tục, bảng phân công công việc Kanban, đơn xin nghỉ phép và phiếu chờ duyệt trực tiếp.</li>
-                  </ul>
-                </div>
-
                 <div
                   style={{
                     display: 'flex',
@@ -958,12 +945,43 @@ export function SettingsScreen({
                     >
                       <Trash2 size={14} /> Làm sạch & Nạp seed mới
                     </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      disabled={resettingData || migratingSchema || pending}
+                      onClick={() => setConfirmClearSalesOpen(true)}
+                    >
+                      <Trash2 size={14} /> Xóa bán hàng, báo giá & PO
+                    </Button>
                   </div>
                 </div>
               </div>
             </CardBody>
           </Card>)}
         </div>
+      )}
+
+      {tab === 'pricing' && permissions.pricing && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Chính sách giá & margin phụ tùng</CardTitle>
+              <div className="card-subtitle">
+                Cấu hình tỷ giá, margin, cước phí, VAT và chiết khấu theo số lượng dùng chung cho báo giá và nhập hàng.
+              </div>
+            </div>
+            <Button type="button" variant="primary" onClick={() => setPricingModalOpen(true)}>
+              <SlidersHorizontal size={14} /> Mở cấu hình
+            </Button>
+          </CardHeader>
+          <CardBody>
+            <div className="hint">
+              {pricingConfig
+                ? `Margin hiện tại ${pricingConfig.defaultMarginPercent}% · Cước mặc định ${new Intl.NumberFormat('vi-VN').format(pricingConfig.defaultShippingFee)} ₫ · ${pricingConfig.volumeDiscountTiers.length} bậc chiết khấu số lượng`
+                : 'Đang tải cấu hình chính sách giá.'}
+            </div>
+          </CardBody>
+        </Card>
       )}
 
       {tab === 'zalo' && validTabs.includes('zalo') && (
@@ -1706,6 +1724,61 @@ export function SettingsScreen({
       />
 
       <ConfirmDialog
+        open={confirmClearSalesOpen}
+        onClose={() => setConfirmClearSalesOpen(false)}
+        onConfirm={() => {
+          setResettingData(true);
+          startTransition(async () => {
+            try {
+              const res = await clearSalesAndPurchaseDocumentsAction();
+              if (res.ok) {
+                toast.success(res.message);
+                setConfirmClearSalesOpen(false);
+                router.refresh();
+              } else {
+                toast.error(res.message);
+              }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Có lỗi xảy ra khi xóa chứng từ bán hàng';
+              toast.error(msg);
+            } finally {
+              setResettingData(false);
+            }
+          });
+        }}
+        loading={resettingData || pending}
+        danger
+        title="Xóa chứng từ bán hàng, báo giá và PO"
+        confirmText="Xóa chứng từ"
+        cancelText="Giữ lại"
+        message={(
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: 'var(--danger)', fontWeight: 600 }}>
+              Thao tác này xóa toàn bộ đơn bán, báo giá, PO mua hàng nhà cung cấp, phiếu thu/chi NCC và phiếu trả hàng.
+            </div>
+            <div>
+              Khách hàng, địa điểm, hồ sơ máy móc, danh mục phụ tùng và số tồn kho vẫn được giữ nguyên. Lịch sử phiếu kho vẫn còn, nhưng bỏ liên kết tới các PO và đơn bán đã xóa.
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+              Không thể hoàn tác sau khi xác nhận.
+            </div>
+          </div>
+        )}
+      />
+
+      {pricingModalOpen && pricingConfig && (
+        <SparePartPricingModal
+          open={pricingModalOpen}
+          initialConfig={pricingConfig}
+          onClose={() => setPricingModalOpen(false)}
+          onSuccess={(nextConfig) => {
+            setPricingConfig(nextConfig);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
+      <ConfirmDialog
         open={confirmMigrationOpen}
         onClose={() => setConfirmMigrationOpen(false)}
         onConfirm={handleDeployMigrations}
@@ -1716,11 +1789,11 @@ export function SettingsScreen({
         message={(
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
-              Hệ thống sẽ chạy <code>prisma migrate deploy</code> trên database hiện tại.
+              Hệ thống sẽ chạy <code>prisma migrate deploy</code> trên database hiện tại, sau đó tạo lại Prisma Client.
               Lệnh này áp dụng <b>tất cả migration đang chờ</b>, không xóa dữ liệu nghiệp vụ.
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-              Sau khi chạy thành công, quay lại đây và chọn nạp seed. Chỉ quản trị viên mới thấy và chạy được thao tác này.
+              Sau khi chạy thành công, hãy khởi động lại server để nạp Prisma Client mới rồi mới tiếp tục nạp seed. Chỉ quản trị viên mới thấy và chạy được thao tác này.
             </div>
           </div>
         )}

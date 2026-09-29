@@ -156,13 +156,77 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
         orderDate: true, deliveryDate: true, dueDate: true,
         goodsAmount: true, shippingFee: true, vatRate: true, totalAmount: true, paidAmount: true, returnedAmount: true,
         stockIssuedAt: true,
+        items: { select: { id: true, itemType: true, inventoryItemId: true, equipmentId: true, quantity: true } },
+        returns: { select: { items: { select: { orderItemId: true, quantity: true } } } },
         customer: { select: { id: true, code: true, name: true, phone: true } },
         location: { select: { id: true, name: true } },
         _count: { select: { items: true, payments: true } },
       },
     });
 
+    // Xác định phần thiếu hàng theo từng đơn để màn Bán hàng chỉ hiện nút
+    // đặt NCC khi tồn thực tế và PO đang mở chưa đủ đáp ứng đơn đó.
+    const orderIds = rows.map((o) => o.id);
+    const inventoryItemIds = [...new Set(rows.flatMap((o) => o.items
+      .filter((i) => i.itemType === 'SPARE_PART' || (i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId))
+      .flatMap((i) => i.inventoryItemId ? [i.inventoryItemId] : [])))];
+    const [stockRows, openPurchaseOrders] = await Promise.all([
+      inventoryItemIds.length
+        ? prisma.inventoryStock.findMany({ where: { itemId: { in: inventoryItemIds } }, select: { itemId: true, quantity: true } })
+        : Promise.resolve([]),
+      orderIds.length
+        ? prisma.sparePartOrder.findMany({
+            where: { customerOrderId: { in: orderIds }, status: { notIn: ['STOCKED', 'COMPLETED', 'CANCELLED'] } },
+            select: { customerOrderId: true, items: { select: { itemId: true, quantity: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+    const stockByItem = new Map<number, number>();
+    for (const stock of stockRows) stockByItem.set(stock.itemId, (stockByItem.get(stock.itemId) || 0) + stock.quantity);
+    const openPoByOrderItem = new Map<string, number>();
+    for (const po of openPurchaseOrders) {
+      if (!po.customerOrderId) continue;
+      for (const line of po.items) {
+        const key = `${po.customerOrderId}:${line.itemId}`;
+        openPoByOrderItem.set(key, (openPoByOrderItem.get(key) || 0) + line.quantity);
+      }
+    }
+    const needsSupplierOrderById = new Map<number, boolean>();
+    for (const order of rows) {
+      const remainingStock = new Map(stockByItem);
+      const remainingPo = new Map<number, number>();
+      let needsSupplierOrder = false;
+      const lines = order.items.filter((i) => i.itemType === 'SPARE_PART' || (i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId));
+      for (const line of lines) {
+        const itemId = line.inventoryItemId;
+        if (!itemId) {
+          needsSupplierOrder = true;
+          continue;
+        }
+        const available = Math.min(line.quantity, remainingStock.get(itemId) || 0);
+        const key = `${order.id}:${itemId}`;
+        const openPo = remainingPo.has(itemId) ? remainingPo.get(itemId)! : (openPoByOrderItem.get(key) || 0);
+        const ordered = Math.min(Math.max(0, line.quantity - available), openPo);
+        remainingStock.set(itemId, Math.max(0, (remainingStock.get(itemId) || 0) - available));
+        remainingPo.set(itemId, Math.max(0, openPo - ordered));
+        if (line.quantity - available - ordered > 0) needsSupplierOrder = true;
+      }
+      needsSupplierOrderById.set(order.id, needsSupplierOrder);
+    }
+
     const mapped = rows.map((o) => {
+      const { items, returns, ...orderRow } = o;
+      const returnedQuantityByLine = new Map<number, number>();
+      for (const customerReturn of returns) {
+        for (const returnedLine of customerReturn.items) {
+          if (!returnedLine.orderItemId) continue;
+          returnedQuantityByLine.set(
+            returnedLine.orderItemId,
+            (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + returnedLine.quantity,
+          );
+        }
+      }
+      const hasReturnableItems = items.some((item) => (returnedQuantityByLine.get(item.id) || 0) < item.quantity);
       const freight = Number(o.shippingFee || 0);
       let goodsAmount = Number(o.goodsAmount || 0);
       let total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
@@ -171,9 +235,13 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
         const vat = Math.round((goodsAmount * vatRate) / 100);
         total = goodsAmount + vat;
       }
+      if (o.status === 'CANCELLED') total = 0;
       const paid = Number(o.paidAmount || 0);
       return {
-        ...o,
+        ...orderRow,
+        hasReturnableItems,
+        hasReturns: returns.length > 0,
+        needsSupplierOrder: needsSupplierOrderById.get(o.id) || false,
         shippingFee: 0,
         total,
         paid,
@@ -369,7 +437,7 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
       location: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
       items: { orderBy: { id: 'asc' } },
       payments: { orderBy: { paidAt: 'desc' } },
-      returns: { orderBy: { returnedAt: 'desc' } },
+      returns: { include: { items: true }, orderBy: { returnedAt: 'desc' } },
       quotation: { select: { id: true, quoteCode: true } },
       serviceTicket: { select: { id: true, ticketCode: true, title: true } },
     },
@@ -769,6 +837,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       totalPrice: lineTotal,
       discountAmount: Math.max(0, lineGross - lineTotal),
       unitCostVnd: item.unitCostVnd != null ? Number(item.unitCostVnd) : null,
+      unitPriceEur: item.unitPriceEur != null ? Number(item.unitPriceEur) : null,
       shippingFee: item.shippingFee != null ? Number(item.shippingFee) : null,
       customsFee: item.customsFee != null ? Number(item.customsFee) : null,
       equipmentId: item.equipmentId || null,
@@ -794,6 +863,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
         orderType: input.orderType,
         status: input.status || existing.status,
         locationId: input.locationId ? Number(input.locationId) : null,
+        exchangeRate: input.exchangeRate != null ? Number(input.exchangeRate) : existing.exchangeRate,
         goodsAmount,
         shippingFee: 0,
         vatRate,
@@ -821,6 +891,7 @@ export async function saveCustomerOrder(id: number | null, input: SaveCustomerOr
       customerId: input.customerId,
       locationId: input.locationId ? Number(input.locationId) : null,
       quotationId: input.quotationId ? Number(input.quotationId) : null,
+      exchangeRate: input.exchangeRate != null ? Number(input.exchangeRate) : null,
       serviceTicketId: input.serviceTicketId ? Number(input.serviceTicketId) : null,
       orderType: input.orderType,
       status: input.status || 'PENDING',
@@ -870,6 +941,23 @@ export async function deleteCustomerOrder(id: number) {
       throw new Error('Chỉ được xóa đơn chưa xác nhận, chưa phát sinh thu tiền, trả hàng hoặc phiếu kho.');
     }
     return tx.customerOrder.delete({ where: { id: numId } });
+  }, { isolationLevel: 'Serializable' });
+}
+
+/** Hủy đơn bán chưa giao, giữ nguyên bản ghi để đối soát lịch sử. */
+export async function cancelCustomerOrder(id: number) {
+  const numId = Number(id);
+  if (!numId || isNaN(numId) || numId <= 0) throw new Error('Mã đơn hàng không hợp lệ');
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.customerOrder.findUnique({ where: { id: numId } });
+    if (!order) throw new Error('Không tìm thấy đơn hàng');
+    if (order.status === 'CANCELLED') throw new Error('Đơn hàng đã được hủy');
+    if (order.status === 'COMPLETED' || order.stockIssuedAt) {
+      throw new Error('Đơn đã giao cho khách, hãy lập phiếu trả hàng thay vì hủy');
+    }
+    const stockDocuments = await tx.inventoryTransaction.count({ where: { customerOrderId: numId } });
+    if (stockDocuments > 0) throw new Error('Đơn đã phát sinh phiếu kho, không thể hủy tại đây');
+    return tx.customerOrder.update({ where: { id: numId }, data: { status: 'CANCELLED' } });
   }, { isolationLevel: 'Serializable' });
 }
 
@@ -955,6 +1043,11 @@ export async function saveCustomerQuotation(id: number | null, input: SaveCustom
     unitPrice: item.unitPrice,
     discountVnd: Number(item.discountVnd) || 0,
     totalPrice: quotationLineTotal(item),
+    unitPriceEur: item.unitPriceEur != null ? Number(item.unitPriceEur) : null,
+    unitCostVnd: item.unitCostVnd != null ? Number(item.unitCostVnd) : null,
+    shippingFee: item.shippingFee != null ? Number(item.shippingFee) : null,
+    customsFee: item.customsFee != null ? Number(item.customsFee) : null,
+    priceSource: item.priceSource || null,
     equipmentId: item.equipmentId || null,
     inventoryItemId: item.inventoryItemId || null,
     notes: item.notes?.trim() || null,
@@ -969,6 +1062,9 @@ export async function saveCustomerQuotation(id: number | null, input: SaveCustom
     discountRate,
     discountAmount,
     shippingFee,
+    exchangeRate: Math.max(0, Number(input.exchangeRate ?? 32500)),
+    marginPercent: Math.max(0, Number(input.marginPercent ?? 30)),
+    pricingMethod: input.pricingMethod === 'MARKUP' ? 'MARKUP' : 'MARGIN',
     vatRate,
     vatAmount,
     totalAmount,
@@ -1024,42 +1120,111 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
   }
 
   const orderCode = await generateOrderCode();
-  const lineDiscountTotal = quotation.items.reduce((sum, item) => sum + Number(item.discountVnd || 0), 0);
-  const afterLineDiscount = quotation.items.reduce((sum, item) => {
-    const gross = Number(item.quantity) * Number(item.unitPrice);
-    return sum + Math.max(0, gross - Number(item.discountVnd || 0));
-  }, 0);
-  const orderDiscount = Math.max(0, Number(quotation.discountAmount || 0) - lineDiscountTotal);
-  let allocatedOrderDiscount = 0;
+  const inventoryIds = quotation.items
+    .filter((item) =>
+      (item.itemType === 'SPARE_PART' || (item.itemType === 'EQUIPMENT' && !item.equipmentId)) &&
+      item.inventoryItemId,
+    )
+    .map((item) => Number(item.inventoryItemId));
+  const stockRows = inventoryIds.length
+    ? await prisma.inventoryStock.findMany({
+        where: { itemId: { in: [...new Set(inventoryIds)] } },
+        select: { itemId: true, quantity: true },
+      })
+    : [];
+  const availableByItem = new Map<number, number>();
+  for (const stock of stockRows) {
+    availableByItem.set(stock.itemId, (availableByItem.get(stock.itemId) || 0) + stock.quantity);
+  }
+  const requiredByItem = new Map<number, number>();
+  const hasUnmappedSparePart = quotation.items.some((item) =>
+    item.itemType === 'SPARE_PART' && !item.inventoryItemId,
+  );
+  for (const item of quotation.items) {
+    if (
+      item.itemType !== 'SPARE_PART' &&
+      !(item.itemType === 'EQUIPMENT' && item.inventoryItemId && !item.equipmentId)
+    ) continue;
+    if (!item.inventoryItemId) continue;
+    const itemId = Number(item.inventoryItemId);
+    requiredByItem.set(itemId, (requiredByItem.get(itemId) || 0) + item.quantity);
+  }
+  const hasShortage = hasUnmappedSparePart || [...requiredByItem].some(([itemId, quantity]) =>
+    (availableByItem.get(itemId) || 0) < quantity,
+  );
+  const lineAmounts = quotation.items.map((item) => {
+    const gross = Math.max(0, Number(item.quantity) * Number(item.unitPrice));
+    return {
+      gross,
+      lineDiscount: Math.min(gross, Math.max(0, Number(item.discountVnd || 0))),
+    };
+  });
+  const grossAmount = lineAmounts.reduce((sum, line) => sum + line.gross, 0);
+  const targetDiscount = Math.round(Math.min(
+    grossAmount,
+    Math.max(0, Number(quotation.discountAmount || 0)),
+  ));
+  const allocateProportionally = (bases: number[], requested: number) => {
+    const totalBase = bases.reduce((sum, base) => sum + Math.max(0, base), 0);
+    const target = Math.round(Math.min(totalBase, Math.max(0, requested)));
+    if (target <= 0 || totalBase <= 0) return bases.map(() => 0);
+
+    const exactShares = bases.map((base) => (target * Math.max(0, base)) / totalBase);
+    const allocations = exactShares.map(Math.floor);
+    let remainder = target - allocations.reduce((sum, amount) => sum + amount, 0);
+    const byLargestRemainder = exactShares
+      .map((share, index) => ({ index, remainder: share - allocations[index] }))
+      .filter(({ index }) => allocations[index] < Math.max(0, bases[index]))
+      .sort((left, right) => right.remainder - left.remainder);
+
+    for (const { index } of byLargestRemainder) {
+      if (remainder <= 0) break;
+      allocations[index] += 1;
+      remainder -= 1;
+    }
+    return allocations;
+  };
+  const requestedLineDiscount = lineAmounts.reduce((sum, line) => sum + line.lineDiscount, 0);
+  // Keep line-level discounts where possible. If an old quote has inconsistent
+  // snapshots, scale those discounts so the order still matches the quote total.
+  const lineDiscounts = requestedLineDiscount > targetDiscount
+    ? allocateProportionally(lineAmounts.map((line) => line.lineDiscount), targetDiscount)
+    : lineAmounts.map((line) => line.lineDiscount);
+
+  const appliedLineDiscount = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
+  const remainingDiscount = Math.max(0, targetDiscount - appliedLineDiscount);
+  const remainingBases = lineAmounts.map((line, index) =>
+    Math.max(0, line.gross - lineDiscounts[index]),
+  );
+  const additionalDiscounts = allocateProportionally(remainingBases, remainingDiscount);
   const items = quotation.items.map((item, index) => {
-    const gross = Number(item.quantity) * Number(item.unitPrice);
-    const lineDiscount = Math.min(gross, Number(item.discountVnd || 0));
-    const netAfterLineDiscount = Math.max(0, gross - lineDiscount);
-    const allocated = afterLineDiscount > 0
-      ? index === quotation.items.length - 1
-        ? Math.max(0, orderDiscount - allocatedOrderDiscount)
-        : Math.round((netAfterLineDiscount / afterLineDiscount) * orderDiscount)
-      : 0;
-    allocatedOrderDiscount += allocated;
-    const totalPrice = Math.max(0, netAfterLineDiscount - allocated);
+    const gross = lineAmounts[index].gross;
+    const totalPrice = Math.max(
+      0,
+      gross - lineDiscounts[index] - additionalDiscounts[index],
+    );
     return {
       itemType: item.itemType,
       name: item.name,
       quantity: item.quantity,
       unitPrice: Number(item.unitPrice),
       totalPrice,
-      discountAmount: Math.max(0, gross - totalPrice),
+      discountAmount: gross - totalPrice,
+      unitCostVnd: item.unitCostVnd != null ? Number(item.unitCostVnd) : null,
+      unitPriceEur: item.unitPriceEur != null ? Number(item.unitPriceEur) : null,
+      shippingFee: item.shippingFee != null ? Number(item.shippingFee) : null,
+      customsFee: item.customsFee != null ? Number(item.customsFee) : null,
       equipmentId: item.equipmentId,
       inventoryItemId: item.inventoryItemId,
       notes: item.notes,
     };
   });
 
-  const orderTotals = summarizeOrder(
-    items,
-    Number(quotation.vatRate || 0),
-    0,
-  );
+  const customerShippingFee = Number(quotation.shippingFee || 0);
+  // The quotation is the accepted commercial snapshot: preserve its VAT and
+  // payable total exactly instead of recalculating from rounded allocations.
+  const goodsAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
+  const vatAmount = Number(quotation.vatAmount || 0);
 
   const [order] = await prisma.$transaction([
     prisma.customerOrder.create({
@@ -1068,13 +1233,14 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
         customerId: quotation.customerId,
         locationId: quotation.locationId,
         quotationId: quotation.id,
+        exchangeRate: Number(quotation.exchangeRate || 32500),
         orderType,
-        status: 'PENDING',
-        goodsAmount: orderTotals.goodsAmount,
-        shippingFee: 0,
+        status: hasShortage ? 'AWAITING_STOCK' : 'PENDING',
+        goodsAmount,
+        shippingFee: customerShippingFee,
         vatRate: Number(quotation.vatRate || 0),
-        vatAmount: orderTotals.vatAmount,
-        totalAmount: orderTotals.totalAmount,
+        vatAmount,
+        totalAmount: Number(quotation.totalAmount),
         orderDate: new Date(),
         notes: `Chốt từ báo giá ${quotation.quoteCode}`,
         items: { create: items },
@@ -1102,20 +1268,83 @@ export async function getCustomerOrderFulfillment(orderId: number) {
     include: {
       items: { include: { inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true } } } },
       customer: { select: { id: true, name: true } },
-      sparePartOrders: { select: { id: true, orderCode: true, status: true } },
     },
   });
   if (!order) return null;
 
-  const spareLines = order.items.filter((i) => i.itemType === 'SPARE_PART');
+  const relevantLines = order.items.filter(
+    (item) => item.itemType === 'SPARE_PART' || (item.itemType === 'EQUIPMENT' && item.inventoryItemId && !item.equipmentId),
+  );
+  const itemIds = [...new Set(relevantLines.flatMap((item) => item.inventoryItemId ? [item.inventoryItemId] : []))];
+  const [stockRows, openPurchaseOrders] = await Promise.all([
+    itemIds.length
+      ? prisma.inventoryStock.findMany({
+          where: { itemId: { in: itemIds } },
+          select: { itemId: true, warehouseId: true, quantity: true },
+        })
+      : Promise.resolve([]),
+    prisma.sparePartOrder.findMany({
+      where: {
+        customerOrderId: numId,
+        status: { notIn: ['STOCKED', 'COMPLETED', 'CANCELLED'] },
+      },
+      include: { items: { select: { itemId: true, quantity: true } } },
+    }),
+  ]);
+  const stockByItem = new Map<number, number>();
+  const stockByItemWarehouse = new Map<string, number>();
+  for (const stock of stockRows) {
+    stockByItem.set(stock.itemId, (stockByItem.get(stock.itemId) || 0) + stock.quantity);
+    stockByItemWarehouse.set(`${stock.itemId}:${stock.warehouseId}`, stock.quantity);
+  }
+  const openPoByItem = new Map<number, number>();
+  for (const po of openPurchaseOrders) {
+    for (const line of po.items) {
+      openPoByItem.set(line.itemId, (openPoByItem.get(line.itemId) || 0) + line.quantity);
+    }
+  }
+  // Nếu cùng một mã hàng xuất hiện ở nhiều dòng (chẳng hạn giá/ghi chú khác
+  // nhau), phân bổ tồn và PO đang mở theo thứ tự dòng để không đếm lặp tồn.
+  const remainingStockByItem = new Map(stockByItem);
+  const remainingPoByItem = new Map(openPoByItem);
+  const withAvailability = (line: (typeof relevantLines)[number]) => {
+    const itemId = line.inventoryItemId;
+    const availableQty = itemId
+      ? Math.min(line.quantity, remainingStockByItem.get(itemId) || 0)
+      : 0;
+    const orderedQty = itemId
+      ? Math.min(
+          Math.max(0, line.quantity - availableQty),
+          remainingPoByItem.get(itemId) || 0,
+        )
+      : 0;
+    if (itemId) {
+      remainingStockByItem.set(itemId, Math.max(0, (remainingStockByItem.get(itemId) || 0) - availableQty));
+      remainingPoByItem.set(itemId, Math.max(0, (remainingPoByItem.get(itemId) || 0) - orderedQty));
+    }
+    return {
+      ...line,
+      availableQty,
+      orderedQty,
+      shortageQty: Math.max(0, line.quantity - availableQty),
+      uncoveredShortageQty: Math.max(0, line.quantity - availableQty - orderedQty),
+      stockByWarehouse: itemId
+        ? [...stockByItemWarehouse.entries()]
+            .filter(([key]) => key.startsWith(`${itemId}:`))
+            .map(([key, quantity]) => ({ warehouseId: Number(key.split(':')[1]), quantity }))
+        : [],
+    };
+  };
+
+  const spareLines = order.items.filter((i) => i.itemType === 'SPARE_PART').map(withAvailability);
   // Máy bán từ kho: có mã danh mục nhưng CHƯA gắn hồ sơ máy nào.
   // Xuất kho sẽ vừa trừ tồn vừa sinh hồ sơ máy theo serial người xuất nhập vào.
   const machineFromStock = order.items.filter(
     (i) => i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId,
-  );
+  ).map(withAvailability);
   return {
     order,
-    /** Dòng xuất kho được (đã có mã linh kiện). */
+    /** Dòng phụ tùng xuất kho được (đã có mã danh mục), kèm số lượng cần/đang PO. */
     issuable: spareLines.filter((i) => i.inventoryItemId),
     /** Dòng chưa có mã trong danh mục — phải tạo mã trước khi xuất/đặt hàng. */
     unmapped: spareLines.filter((i) => !i.inventoryItemId),
@@ -1155,6 +1384,30 @@ export async function issueCustomerOrderStock(
 
   if (order.stockIssuedAt) {
     throw new Error(`Đơn ${order.orderCode} đã giao trước đó`);
+  }
+
+  if (data.unmapped.length > 0) {
+    throw new Error('Đơn còn dòng linh kiện chưa có mã kho. Hãy tạo mã và nhập hàng trước khi xuất kho.');
+  }
+
+  const linesToIssue = [...issuable, ...machineFromStock];
+  const demandByItem = new Map<number, { name: string; quantity: number; stockByWarehouse: any[] }>();
+  for (const line of linesToIssue as any[]) {
+    const current = demandByItem.get(line.inventoryItemId) || {
+      name: line.name,
+      quantity: 0,
+      stockByWarehouse: line.stockByWarehouse || [],
+    };
+    current.quantity += Number(line.quantity);
+    demandByItem.set(line.inventoryItemId, current);
+  }
+  for (const [itemId, demand] of demandByItem) {
+    const qty = (demand.stockByWarehouse || [])
+      .filter((stock: any) => Number(stock.warehouseId) === Number(sourceWarehouseId))
+      .reduce((sum: number, stock: any) => sum + Number(stock.quantity || 0), 0);
+    if (qty < demand.quantity) {
+      throw new Error(`Kho xuất không đủ "${demand.name}" (còn ${qty}, cần ${demand.quantity}).`);
+    }
   }
 
   // Máy móc trong đơn: giao là đổi chủ sở hữu luôn, không để hồ sơ máy nói
@@ -1203,7 +1456,8 @@ export async function issueCustomerOrderStock(
   }
 
   // Máy lấy từ kho cũng trừ tồn như linh kiện
-  const outLines = [
+  const outLineMap = new Map<number, { itemId: number; quantity: number; unitPrice: number }>();
+  for (const line of [
     ...issuable.map((i) => ({
       itemId: i.inventoryItemId!,
       quantity: i.quantity,
@@ -1214,7 +1468,15 @@ export async function issueCustomerOrderStock(
       quantity: i.quantity,
       unitPrice: Number(i.unitPrice),
     })),
-  ];
+  ]) {
+    const current = outLineMap.get(line.itemId);
+    outLineMap.set(line.itemId, {
+      itemId: line.itemId,
+      quantity: (current?.quantity || 0) + line.quantity,
+      unitPrice: current?.unitPrice ?? line.unitPrice,
+    });
+  }
+  const outLines = [...outLineMap.values()];
 
   let trans = null;
   if (outLines.length > 0) {
@@ -1438,9 +1700,10 @@ export async function createSupplierOrderFromCustomerOrder(
 
   const data = await getCustomerOrderFulfillment(orderId);
   if (!data) throw new Error('Không tìm thấy đơn hàng');
-  const { order, issuable, unmapped } = data;
+  const { order, issuable, unmapped, machineFromStock } = data;
 
-  if (issuable.length === 0) {
+  const procurementLines = [...issuable, ...machineFromStock];
+  if (procurementLines.length === 0) {
     throw new Error(
       unmapped.length > 0
         ? 'Các dòng linh kiện chưa có mã danh mục. Hãy tạo mã trước khi đặt hàng nhà cung cấp.'
@@ -1448,25 +1711,39 @@ export async function createSupplierOrderFromCustomerOrder(
     );
   }
 
+  const itemsToOrder = procurementLines.filter((line: any) => Number(line.uncoveredShortageQty) > 0);
+  if (itemsToOrder.length === 0) {
+    const alreadyOrdered = procurementLines.some((line: any) => Number(line.orderedQty) > 0);
+    throw new Error(
+      alreadyOrdered
+        ? 'Số hàng còn thiếu đã nằm trong PO đang xử lý.'
+        : 'Tồn kho hiện đã đủ cho đơn hàng, chưa cần tạo PO.',
+    );
+  }
+
   const items = await prisma.inventoryItem.findMany({
-    where: { id: { in: issuable.map((i) => i.inventoryItemId!) } },
+    where: { id: { in: itemsToOrder.map((i: any) => i.inventoryItemId!) } },
     select: { id: true, priceEur: true },
   });
   const eurById = new Map(items.map((i) => [i.id, Number(i.priceEur || 0)]));
   const pricing = await getSparePartPricingConfig();
-  const orderItems = issuable.map((i) => ({
+  const orderItems = itemsToOrder.map((i: any) => {
+    const quantity = Number(i.uncoveredShortageQty);
+    const feeRatio = i.quantity > 0 ? quantity / i.quantity : 0;
+    return {
     itemId: i.inventoryItemId!,
-    quantity: i.quantity,
-    unitPriceEur: eurById.get(i.inventoryItemId!) || 0,
-    shippingFee: pricing.defaultShippingFee * i.quantity,
-    customsFee: pricing.defaultCustomsFee * i.quantity,
-  }));
+    quantity,
+    unitPriceEur: i.unitPriceEur != null ? Number(i.unitPriceEur) : eurById.get(i.inventoryItemId!) || 0,
+    shippingFee: i.shippingFee != null ? Math.round(Number(i.shippingFee) * feeRatio) : pricing.defaultShippingFee * quantity,
+    customsFee: i.customsFee != null ? Math.round(Number(i.customsFee) * feeRatio) : pricing.defaultCustomsFee * quantity,
+    };
+  });
 
   const supplierOrder = await createSparePartOrder(
     {
       supplier: input.supplier?.trim() || 'Selmi',
       currency: 'EUR',
-      exchangeRate: input.exchangeRate ?? 32500,
+      exchangeRate: input.exchangeRate ?? Number(order.exchangeRate || 32500),
       shippingFee: orderItems.reduce((sum, item) => sum + item.shippingFee, 0),
       customsFee: orderItems.reduce((sum, item) => sum + item.customsFee, 0),
       extraShippingRate: 0,
@@ -1484,7 +1761,7 @@ export async function createSupplierOrderFromCustomerOrder(
   );
 
   // Đơn khách chuyển sang "Chờ hàng về" để sale biết chưa gọi khách được
-  if (['PENDING', 'CONFIRMED'].includes(order.status)) {
+  if (['PENDING', 'CONFIRMED', 'READY_TO_DELIVER'].includes(order.status)) {
     await prisma.customerOrder.update({
       where: { id: order.id },
       data: { status: 'AWAITING_STOCK' },
@@ -1637,6 +1914,42 @@ export async function generateReturnCode(): Promise<string> {
 export async function createCustomerReturn(input: SaveCustomerReturnInput, userId?: number) {
   const items = input.items.filter((i) => i.name?.trim() && Number(i.quantity) > 0);
   if (items.length === 0) throw new Error('Chưa chọn hàng nào để trả lại');
+  if (input.orderId) {
+    const order = await prisma.customerOrder.findUnique({
+      where: { id: Number(input.orderId) },
+      include: {
+        items: { select: { id: true, quantity: true } },
+        returns: { select: { items: { select: { orderItemId: true, quantity: true } } } },
+      },
+    });
+    if (!order || order.customerId !== Number(input.customerId) || order.status === 'CANCELLED') {
+      throw new Error('Đơn không thuộc khách hàng hoặc đã hủy');
+    }
+    if (!order.stockIssuedAt) throw new Error('Đơn chưa giao hàng; hãy hủy đơn thay vì lập phiếu trả hàng');
+    const returnedQuantityByLine = new Map<number, number>();
+    for (const customerReturn of order.returns) {
+      for (const returnedLine of customerReturn.items) {
+        if (!returnedLine.orderItemId) continue;
+        returnedQuantityByLine.set(
+          returnedLine.orderItemId,
+          (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + returnedLine.quantity,
+        );
+      }
+    }
+    const requestedQuantityByLine = new Map<number, number>();
+    for (const item of items) {
+      if (!item.orderItemId) throw new Error('Dòng hàng trả lại chưa gắn với dòng hàng của đơn');
+      requestedQuantityByLine.set(item.orderItemId, (requestedQuantityByLine.get(item.orderItemId) || 0) + Number(item.quantity));
+    }
+    for (const [orderItemId, requestedQty] of requestedQuantityByLine) {
+      const orderLine = order.items.find((line) => line.id === Number(orderItemId));
+      if (!orderLine) throw new Error('Có dòng hàng trả lại không thuộc đơn này');
+      const remainingQty = Math.max(0, orderLine.quantity - (returnedQuantityByLine.get(orderItemId) || 0));
+      if (requestedQty > remainingQty) {
+        throw new Error(`Số lượng trả vượt số còn lại của dòng hàng (còn ${remainingQty})`);
+      }
+    }
+  }
 
   const totalValue = items.reduce(
     (sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),

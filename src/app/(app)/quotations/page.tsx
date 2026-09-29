@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { requireAuth, can } from '@/server/auth/context';
-import { listSpareParts, getSparePartPricingConfig } from '@/server/modules/spare-parts/service';
+import { listSpareParts, listWarehouses, getSparePartPricingConfig } from '@/server/modules/spare-parts/service';
 import { listEquipment } from '@/server/modules/equipment/service';
 import { getCompanyInfo } from '@/server/modules/settings/branding';
 import { prisma } from '@/lib/prisma';
@@ -23,7 +23,7 @@ export default async function QuotationsPage() {
 
   if (!canView) redirect('/dashboard');
 
-  const [quotations, customers, spareParts, stockMachines, pricingConfig, companyInfo] = await Promise.all([
+  const [quotations, customers, spareParts, stockMachines, warehouses, pricingConfig, companyInfo] = await Promise.all([
     prisma.customerQuotation.findMany({
       include: {
         customer: { select: { id: true, name: true, phone: true, code: true } },
@@ -51,6 +51,7 @@ export default async function QuotationsPage() {
     }).catch(() => []),
     listSpareParts({}),
     listEquipment({ status: 'IN_STOCK' }),
+    listWarehouses(),
     getSparePartPricingConfig(),
     getCompanyInfo(),
   ]);
@@ -62,6 +63,7 @@ export default async function QuotationsPage() {
         customers={JSON.parse(JSON.stringify(customers))}
         spareParts={JSON.parse(JSON.stringify(spareParts))}
         stockMachines={JSON.parse(JSON.stringify(stockMachines))}
+        warehouses={JSON.parse(JSON.stringify(warehouses))}
         pricingConfig={JSON.parse(JSON.stringify(pricingConfig))}
         companyInfo={JSON.parse(JSON.stringify(companyInfo))}
         canManage={can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin}

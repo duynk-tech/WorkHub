@@ -27,6 +27,7 @@ import {
   CustomerQuotationModal,
   CustomerQuotationPrintModal,
 } from '@/components/domain/customer-quotation-modal';
+import { OrderFulfillmentModal } from '@/components/domain/order-fulfillment-modal';
 import {
   deleteCustomerQuotationAction,
   convertQuotationToOrderAction,
@@ -38,6 +39,7 @@ export function QuotationsScreen({
   customers = [],
   spareParts = [],
   stockMachines = [],
+  warehouses = [],
   pricingConfig,
   companyInfo,
   canManage = false,
@@ -46,6 +48,7 @@ export function QuotationsScreen({
   customers?: any[];
   spareParts?: any[];
   stockMachines?: any[];
+  warehouses?: any[];
   pricingConfig?: any;
   companyInfo?: any;
   canManage?: boolean;
@@ -62,6 +65,8 @@ export function QuotationsScreen({
 
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [quotationForPrint, setQuotationForPrint] = useState<any | null>(null);
+  const [poPromptOrder, setPoPromptOrder] = useState<any | null>(null);
+  const [supplierOrder, setSupplierOrder] = useState<any | null>(null);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -360,6 +365,9 @@ export function QuotationsScreen({
                                             if (res.ok) {
                                               toast.success(res.message);
                                               startTransition(() => router.refresh());
+                                              if (res.order?.status === 'AWAITING_STOCK') {
+                                                setPoPromptOrder(res.order);
+                                              }
                                             } else {
                                               toast.error(res.message);
                                             }
@@ -434,6 +442,31 @@ export function QuotationsScreen({
           quotation={quotationForPrint}
           customer={quotationForPrint.customer}
           companyInfo={companyInfo}
+        />
+      )}
+
+      <ConfirmDialog
+        open={Boolean(poPromptOrder)}
+        title="Đơn hàng đang thiếu tồn kho"
+        message={`Đơn ${poPromptOrder?.orderCode} đã được tạo và đang chờ hàng. Bạn muốn tạo PO cho phần còn thiếu ngay bây giờ?`}
+        confirmText="Tạo PO ngay"
+        cancelText="Để sau"
+        onClose={() => setPoPromptOrder(null)}
+        onConfirm={() => {
+          setSupplierOrder(poPromptOrder);
+          setPoPromptOrder(null);
+        }}
+      />
+
+      {supplierOrder && (
+        <OrderFulfillmentModal
+          open={Boolean(supplierOrder)}
+          order={supplierOrder}
+          customerId={supplierOrder.customerId}
+          warehouses={warehouses}
+          mode="SUPPLIER"
+          onClose={() => setSupplierOrder(null)}
+          onSuccess={() => startTransition(() => router.refresh())}
         />
       )}
 

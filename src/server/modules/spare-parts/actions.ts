@@ -11,6 +11,7 @@ import {
   createSparePartOrder,
   updateSparePartOrder,
   updateSparePartOrderStatus,
+  deleteNewSparePartOrder,
 } from './service';
 import type {
   SaveSparePartInput,
@@ -153,6 +154,26 @@ export async function updateSparePartOrderAction(orderId: number, input: any) {
   } catch (error: any) {
     console.error('[updateSparePartOrderAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi cập nhật đơn hàng order' };
+  }
+}
+
+export async function deleteNewSparePartOrderAction(orderId: number) {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn không có quyền xóa phiếu mua hàng NCC' };
+  }
+
+  try {
+    const order = await deleteNewSparePartOrder(orderId);
+    revalidatePath('/purchases');
+    revalidatePath('/spare-parts');
+    revalidatePath('/sales');
+    revalidatePath('/customers');
+    if (order.customerId) revalidatePath(`/customers/${order.customerId}`);
+    return { ok: true, message: `Đã xóa phiếu mua hàng ${order.orderCode}` };
+  } catch (error: any) {
+    console.error('[deleteNewSparePartOrderAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi xóa phiếu mua hàng NCC' };
   }
 }
 
@@ -421,6 +442,7 @@ export async function recordSupplierPaymentAction(input: {
     const { recordSupplierPayment } = await import('./service');
     const payment = await recordSupplierPayment(input, ctx.userId);
     revalidatePath('/spare-parts');
+    revalidatePath('/purchases');
     return {
       ok: true,
       message: `Đã ghi nhận phiếu chi ${payment.paymentCode}`,

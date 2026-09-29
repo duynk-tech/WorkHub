@@ -7,6 +7,7 @@ import {
   deleteCustomer,
   saveCustomerOrder,
   deleteCustomerOrder,
+  cancelCustomerOrder,
   saveCustomerQuotation,
   deleteCustomerQuotation,
   convertQuotationToOrder,
@@ -90,6 +91,23 @@ export async function deleteCustomerOrderAction(id: number, customerId: number) 
   }
 }
 
+export async function cancelCustomerOrderAction(id: number) {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn không có quyền hủy đơn hàng' };
+  }
+
+  try {
+    await cancelCustomerOrder(id);
+    revalidatePath('/sales');
+    revalidatePath('/customers');
+    return { ok: true, message: 'Đã hủy đơn hàng' };
+  } catch (error: any) {
+    console.error('[cancelCustomerOrderAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi hủy đơn hàng' };
+  }
+}
+
 export async function saveCustomerQuotationAction(
   id: number | null,
   input: SaveCustomerQuotationInput,
@@ -109,7 +127,9 @@ export async function saveCustomerQuotationAction(
     return {
       ok: true,
       message: id ? 'Cập nhật báo giá thành công' : 'Tạo báo giá mới thành công',
-      quotation,
+      // Server Actions cũng phải trả plain objects. Prisma Decimal không được
+      // Next serialize trực tiếp khi modal đưa báo giá vừa lưu vào client state.
+      quotation: JSON.parse(JSON.stringify(quotation)),
     };
   } catch (error: any) {
     console.error('[saveCustomerQuotationAction error]:', error);
@@ -149,7 +169,14 @@ export async function convertQuotationToOrderAction(
     revalidatePath('/customers');
     revalidatePath(`/customers/${customerId}`);
     revalidatePath('/spare-parts');
-    return { ok: true, message: `Đã chốt báo giá thành đơn ${order.orderCode}`, order };
+    revalidatePath('/sales');
+    return {
+      ok: true,
+      message: order.status === 'AWAITING_STOCK'
+        ? `Đã chốt báo giá thành đơn ${order.orderCode}. Đơn đang chờ hàng; hãy tạo PO cho phần thiếu, nhận đủ hàng rồi mới xuất giao.`
+        : `Đã chốt báo giá thành đơn ${order.orderCode}`,
+      order: JSON.parse(JSON.stringify(order)),
+    };
   } catch (error: any) {
     console.error('[convertQuotationToOrderAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi chốt báo giá thành đơn hàng' };
@@ -215,7 +242,7 @@ export async function issueOrderStockAction(
   try {
     const res = await issueCustomerOrderStock(orderId, sourceWarehouseId, ctx.userId, machineUnits);
     revalidatePath(`/customers/${customerId}`);
-    revalidatePath('/spare-parts');
+    revalidatePath('/sales');
     revalidatePath('/spare-parts');
 
     const parts: string[] = [];
@@ -283,6 +310,7 @@ export async function recordCustomerPaymentAction(input: SaveCustomerPaymentInpu
     const payment = await recordCustomerPayment(input, ctx.userId);
     revalidatePath('/customers');
     revalidatePath(`/customers/${input.customerId}`);
+    revalidatePath('/sales');
     return {
       ok: true,
       message: `Đã ghi nhận phiếu thu ${payment.paymentCode}`,
@@ -305,6 +333,7 @@ export async function deleteCustomerPaymentAction(id: number, customerId: number
     await deleteCustomerPayment(id, ctx.userId);
     revalidatePath('/customers');
     revalidatePath(`/customers/${customerId}`);
+    revalidatePath('/sales');
     return { ok: true, message: 'Đã xóa phiếu thu và hoàn lại công nợ' };
   } catch (error: any) {
     console.error('[deleteCustomerPaymentAction error]:', error);
@@ -323,6 +352,7 @@ export async function createCustomerReturnAction(input: SaveCustomerReturnInput)
     const record = await createCustomerReturn(input, ctx.userId);
     revalidatePath('/customers');
     revalidatePath(`/customers/${input.customerId}`);
+    revalidatePath('/sales');
     revalidatePath('/spare-parts');
     return {
       ok: true,
@@ -348,6 +378,7 @@ export async function deleteCustomerReturnAction(id: number, customerId: number)
     const { deleteCustomerReturn } = await import('./service');
     await deleteCustomerReturn(id);
     revalidatePath(`/customers/${customerId}`);
+    revalidatePath('/sales');
     return { ok: true, message: 'Đã xóa phiếu trả hàng và hoàn lại công nợ' };
   } catch (error: any) {
     console.error('[deleteCustomerReturnAction error]:', error);

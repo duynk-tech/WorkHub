@@ -122,6 +122,7 @@ export function CustomerDetailScreen({
   const [printingQuotation, setPrintingQuotation] = useState<any>(null);
   const [printingOrder, setPrintingOrder] = useState<any>(null);
   const [fulfillment, setFulfillment] = useState<{ order: any; mode: FulfillmentMode } | null>(null);
+  const [poPromptOrder, setPoPromptOrder] = useState<any | null>(null);
   const [paymentOrderId, setPaymentOrderId] = useState<number | 'GENERAL' | null>(null);
   const [returnOrder, setReturnOrder] = useState<any>(null);
   const [editCustomerModalOpen, setEditCustomerModalOpen] = useState(false);
@@ -179,6 +180,7 @@ export function CustomerDetailScreen({
         if (res.ok) {
           toast.success(res.message);
           setActiveTab('orders');
+          if (res.order?.status === 'AWAITING_STOCK') setPoPromptOrder(res.order);
           router.refresh();
         } else {
           toast.error(res.message);
@@ -1828,6 +1830,19 @@ export function CustomerDetailScreen({
           onSuccess={() => router.refresh()}
         />
       )}
+
+      <ConfirmDialog
+        open={Boolean(poPromptOrder)}
+        title="Đơn hàng đang thiếu tồn kho"
+        message={`Đơn ${poPromptOrder?.orderCode} đã được tạo và đang chờ hàng. Bạn muốn tạo PO cho phần còn thiếu ngay bây giờ?`}
+        confirmText="Tạo PO ngay"
+        cancelText="Để sau"
+        onClose={() => setPoPromptOrder(null)}
+        onConfirm={() => {
+          setFulfillment({ order: poPromptOrder, mode: 'SUPPLIER' });
+          setPoPromptOrder(null);
+        }}
+      />
 
       {returnOrder && (
         <CustomerReturnModal

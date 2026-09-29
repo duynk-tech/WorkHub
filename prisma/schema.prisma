@@ -1160,6 +1160,7 @@ model CustomerOrder {
   status          String    @default("COMPLETED") @db.VarChar(32) // PENDING, CONFIRMED, DELIVERED, COMPLETED, CANCELLED
   goodsAmount     Decimal   @default(0) @db.Decimal(15, 2) // Tiền hàng (chưa cước, chưa VAT)
   shippingFee     Decimal   @default(0) @db.Decimal(15, 2) // Cước vận chuyển thu của khách
+  exchangeRate    Decimal?  @db.Decimal(15, 2) // Tỷ giá snapshot từ báo giá khi có
   vatRate         Decimal   @default(0) @db.Decimal(5, 2) // %
   vatAmount       Decimal   @default(0) @db.Decimal(15, 2)
   totalAmount     Decimal?  @db.Decimal(15, 2) // Tổng khách phải trả = hàng + cước + VAT
@@ -1207,6 +1208,7 @@ model CustomerOrderItem {
   unitCostVnd Decimal? @db.Decimal(15, 2) // Giá vốn đơn vị tại thời điểm lập đơn
   shippingFee Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm lập đơn
   customsFee Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm lập đơn
+  unitPriceEur Decimal? @db.Decimal(15, 2) // Giá NCC EUR snapshot từ báo giá
   equipmentId Int?
   notes       String? @db.Text
 
@@ -1229,6 +1231,9 @@ model CustomerQuotation {
   discountRate   Decimal   @default(0) @db.Decimal(5, 2) // % chiết khấu trên tổng đơn
   discountAmount Decimal   @default(0) @db.Decimal(15, 2)
   shippingFee    Decimal   @default(0) @db.Decimal(15, 2) // Cước vận chuyển báo riêng cho khách
+  exchangeRate   Decimal   @default(32500) @db.Decimal(15, 2) // Tỷ giá snapshot khi lập báo giá
+  marginPercent  Decimal   @default(30) @db.Decimal(5, 2) // Biên lợi nhuận snapshot khi lập báo giá
+  pricingMethod  String    @default("MARGIN") @db.VarChar(16)
   vatRate        Decimal   @default(0) @db.Decimal(5, 2) // %
   vatAmount      Decimal   @default(0) @db.Decimal(15, 2)
   totalAmount    Decimal   @default(0) @db.Decimal(15, 2)
@@ -1259,6 +1264,11 @@ model CustomerQuotationItem {
   unitPrice   Decimal @db.Decimal(15, 2)
   discountVnd Decimal @default(0) @db.Decimal(15, 2) // Chiết khấu theo dòng
   totalPrice  Decimal @db.Decimal(15, 2)
+  unitPriceEur Decimal? @db.Decimal(15, 2)
+  unitCostVnd Decimal? @db.Decimal(15, 2) // Giá hàng cơ sở tại thời điểm báo giá
+  shippingFee Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm báo giá
+  customsFee Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm báo giá
+  priceSource String? @db.VarChar(32)
   equipmentId Int?
   notes       String? @db.Text
 

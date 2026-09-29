@@ -67,7 +67,28 @@ export function OrderFulfillmentModal({
   const issuable: any[] = data?.issuable || [];
   const unmapped: any[] = data?.unmapped || [];
   const machineLines: any[] = data?.machineFromStock || [];
+  const supplierLines = [...issuable, ...machineLines];
   const alreadyIssued = Boolean(data?.order?.stockIssuedAt);
+  const issueLines = [...issuable, ...machineLines];
+  const demandByInventoryItem = new Map<number, { name: string; quantity: number; stockByWarehouse: any[] }>();
+  for (const line of issueLines) {
+    const current = demandByInventoryItem.get(Number(line.inventoryItemId)) || {
+      name: line.name,
+      quantity: 0,
+      stockByWarehouse: line.stockByWarehouse || [],
+    };
+    current.quantity += Number(line.quantity);
+    demandByInventoryItem.set(Number(line.inventoryItemId), current);
+  }
+  const selectedWarehouseShortages = [...demandByInventoryItem.entries()]
+    .map(([itemId, line]) => {
+      const available = (line.stockByWarehouse || [])
+        .filter((stock: any) => Number(stock.warehouseId) === Number(warehouseId))
+        .reduce((sum: number, stock: any) => sum + Number(stock.quantity || 0), 0);
+      return { itemId, name: line.name, required: line.quantity, available, shortage: Math.max(0, line.quantity - available) };
+    })
+    .filter((line) => line.shortage > 0);
+  const shortageInSelectedWarehouse = isIssue && Boolean(warehouseId) && selectedWarehouseShortages.length > 0;
 
   /** Serial từng chiếc máy, khóa theo `${dòng}-${thứ tự chiếc}`. */
   const [serials, setSerials] = useState<Record<string, string>>({});
@@ -142,6 +163,7 @@ export function OrderFulfillmentModal({
     <Modal
       open={open}
       onClose={onClose}
+      zIndex={610}
       title={isIssue ? `Xuất kho giao khách: ${order.orderCode}` : `Đặt hàng nhà cung cấp cho đơn: ${order.orderCode}`}
       description={
         isIssue
@@ -158,7 +180,12 @@ export function OrderFulfillmentModal({
             variant="primary"
             onClick={handleSubmit}
             loading={loading}
-            disabled={alreadyIssued || (isIssue && issuable.length === 0 && machineLines.length === 0)}
+            disabled={alreadyIssued || (isIssue && (
+              (issuable.length === 0 && machineLines.length === 0) ||
+              unmapped.length > 0 ||
+              !warehouseId ||
+              shortageInSelectedWarehouse
+            ))}
           >
             {isIssue ? 'Xác nhận xuất kho' : 'Tạo phiếu đặt hàng'}
           </Button>
@@ -209,15 +236,15 @@ export function OrderFulfillmentModal({
         {/* Dòng đã có mã danh mục */}
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-strong)', marginBottom: 6 }}>
-            Linh kiện {isIssue ? 'xuất kho' : 'cần đặt hàng'} ({issuable.length} dòng)
+            {isIssue ? 'Linh kiện xuất kho' : 'Mặt hàng cần đặt'} ({isIssue ? issuable.length : supplierLines.length} dòng)
           </div>
-          {issuable.length === 0 ? (
+          {(isIssue ? issuable : supplierLines).length === 0 ? (
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)', fontStyle: 'italic' }}>
               Không có dòng linh kiện nào đã gắn mã danh mục kho.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {issuable.map((line: any) => (
+              {(isIssue ? issuable : supplierLines).map((line: any) => (
                 <div key={line.id} style={rowStyle}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{line.name}</div>
@@ -226,7 +253,18 @@ export function OrderFulfillmentModal({
                     </div>
                   </div>
                   <div style={{ whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
-                    SL {line.quantity} · {fmt(Number(line.unitPrice))} ₫
+                    {isIssue ? (() => {
+                      const demand = demandByInventoryItem.get(Number(line.inventoryItemId));
+                      const selected = demand?.stockByWarehouse
+                        .filter((stock: any) => Number(stock.warehouseId) === Number(warehouseId))
+                        .reduce((sum: number, stock: any) => sum + Number(stock.quantity || 0), 0) || 0;
+                      const required = demand?.quantity || Number(line.quantity || 0);
+                      return `SL ${line.quantity}${required !== Number(line.quantity) ? ` (tổng ${required})` : ''} · Kho này ${selected} · Thiếu ${Math.max(0, required - selected)}`;
+                    })() : `SL ${line.quantity} · Tồn ${Number(line.availableQty || 0)} · Thiếu ${Number(line.shortageQty || 0)}`}
+                    {!isIssue && Number(line.uncoveredShortageQty || 0) === 0 && Number(line.shortageQty || 0) > 0
+                      ? ' · Đã có PO'
+                      : ''}
+                    {' · '}{fmt(Number(line.unitPrice))} ₫
                   </div>
                 </div>
               ))}
@@ -266,7 +304,7 @@ export function OrderFulfillmentModal({
                       {line.name}
                     </span>
                     <span style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                      {line.inventoryItem?.itemCode} · SL {line.quantity}
+                      {line.inventoryItem?.itemCode} · SL {line.quantity} · Tồn {Number(line.availableQty || 0)} · Thiếu {Number(line.shortageQty || 0)}
                     </span>
                   </div>
 
@@ -374,6 +412,16 @@ export function OrderFulfillmentModal({
               Phiếu tạo ra ở trạng thái <strong>Yêu cầu</strong>. Theo dõi tiến độ tại màn hình Quản lý Phụ
               tùng. Khi chuyển sang <strong>Về kho</strong>, hệ thống tự nhập kho và đơn hàng này chuyển sang
               <strong> Đã có hàng, chờ giao</strong>.
+            </span>
+          </div>
+        )}
+        {isIssue && shortageInSelectedWarehouse && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: '#fff7ed', border: '1px solid #fed7aa', fontSize: 12.5, color: '#9a3412' }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              Kho đã chọn còn thiếu:{' '}
+              {selectedWarehouseShortages.map((line) => `${line.name} (cần ${line.required}, tồn ${line.available}, thiếu ${line.shortage})`).join(' · ')}.
+              {' '}Chọn kho có đủ hàng hoặc nhập nốt hàng còn thiếu trước khi xuất.
             </span>
           </div>
         )}

@@ -104,23 +104,18 @@ export function SparePartQuotationModal({
   const items = order.items || [];
   const poItems = items.map((it: any) => {
     const quantity = Math.max(1, Number(it.quantity) || 1);
-    const unitPriceEur = Number(it.unitPriceEur || 0);
-    const unitPriceVnd = Number(it.unitPriceVnd || (unitPriceEur > 0 ? Math.round(unitPriceEur * exchangeRate) : 0));
-    const subtotalEur = unitPriceEur * quantity;
+    const unitPriceVnd = Number(it.unitPriceVnd || (Number(it.unitPriceEur || 0) > 0 ? Math.round(Number(it.unitPriceEur) * exchangeRate) : 0));
     const subtotalVnd = unitPriceVnd * quantity;
 
     return {
       item: it.item || { name: 'Phụ tùng / Linh kiện', itemCode: 'FK' },
       quantity,
-      unitPriceEur,
       unitPriceVnd,
-      subtotalEur,
       subtotalVnd,
     };
   });
 
   const totalQty = poItems.reduce((sum: number, it: any) => sum + it.quantity, 0);
-  const totalGoodsEur = poItems.reduce((sum: number, it: any) => sum + it.subtotalEur, 0);
   const totalGoodsVnd = poItems.reduce((sum: number, it: any) => sum + it.subtotalVnd, 0);
 
   const shippingFee = Number(order.shippingFee || 0);
@@ -432,7 +427,7 @@ export function SparePartQuotationModal({
                 </div>
                 <div style={{ fontSize: '11.5px', fontStyle: 'italic', marginTop: 4, color: '#000000' }}>
                   Số PO: <strong style={{ fontFamily: 'monospace', fontSize: 13, color: '#000000' }}>{poCode}</strong>
-                  {currency === 'EUR' ? ` • Tỉ giá EUR/VND: ${exchangeRate.toLocaleString('vi-VN')} ₫/€` : ''}
+                  {currency === 'EUR' ? ` • Tỉ giá EUR/VND: ${exchangeRate.toLocaleString('vi-VN')}` : ''}
                 </div>
                 <div style={{ fontSize: '11.5px', fontStyle: 'italic', marginTop: 1, color: '#000000' }}>
                   Ngày {day} tháng {month} năm {year}
@@ -488,19 +483,19 @@ export function SparePartQuotationModal({
                       <th style={{ border: '1px solid #000000', padding: '5px 6px', textAlign: 'center', fontWeight: 700, color: '#000000' }}>Tên phụ tùng / Mô tả chi tiết</th>
                       <th style={{ border: '1px solid #000000', padding: '5px 6px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#000000' }}>ĐVT</th>
                       <th style={{ border: '1px solid #000000', padding: '5px 6px', width: '45px', textAlign: 'center', fontWeight: 700, color: '#000000' }}>SL</th>
-                      <th style={{ border: '1px solid #000000', padding: '5px 6px', width: '105px', textAlign: 'center', fontWeight: 700, color: '#000000' }}>
-                        {currency === 'EUR' ? 'Đơn giá (€)' : 'Đơn giá (₫)'}
+                      <th style={{ border: '1px solid #000000', padding: '5px 6px', width: '125px', textAlign: 'right', fontWeight: 700, color: '#000000' }}>
+                        Đơn giá
                       </th>
-                      <th style={{ border: '1px solid #000000', padding: '5px 6px', width: '115px', textAlign: 'center', fontWeight: 700, color: '#000000' }}>
-                        {currency === 'EUR' ? 'Thành tiền (€)' : 'Thành tiền (₫)'}
+                      <th style={{ border: '1px solid #000000', padding: '5px 6px', width: '135px', textAlign: 'right', fontWeight: 700, color: '#000000' }}>
+                        Thành tiền
                       </th>
                     </tr>
                   </thead>
                   <tbody style={{ background: 'transparent', color: '#000000' }}>
                     {poItems.map((it: any, idx: number) => {
                       const unit = it.item?.unit || 'cái';
-                      const price = currency === 'EUR' ? it.unitPriceEur : it.unitPriceVnd;
-                      const subtotal = currency === 'EUR' ? it.subtotalEur : it.subtotalVnd;
+                      const price = it.unitPriceVnd;
+                      const subtotal = it.subtotalVnd;
 
                       return (
                         <tr key={idx} style={{ background: 'transparent', color: '#000000' }}>
@@ -521,15 +516,11 @@ export function SparePartQuotationModal({
                           <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center', fontWeight: 700, color: '#000000' }}>
                             {it.quantity}
                           </td>
-                          <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center', color: '#000000' }}>
-                            {currency === 'EUR'
-                              ? `${price.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                              : `${price.toLocaleString('vi-VN')} ₫`}
+                          <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', whiteSpace: 'nowrap', color: '#000000' }}>
+                            {price.toLocaleString('vi-VN')}
                           </td>
-                          <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center', fontWeight: 600, color: '#000000' }}>
-                            {currency === 'EUR'
-                              ? `${subtotal.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                              : `${subtotal.toLocaleString('vi-VN')} ₫`}
+                          <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600, color: '#000000' }}>
+                            {subtotal.toLocaleString('vi-VN')}
                           </td>
                         </tr>
                       );
@@ -544,24 +535,10 @@ export function SparePartQuotationModal({
                         {totalQty}
                       </td>
                       <td style={{ border: '1px solid #000000', padding: '5px 6px' }}></td>
-                      <td style={{ border: '1px solid #000000', padding: '5px 6px', textAlign: 'right', fontWeight: 700, color: '#000000' }}>
-                        {currency === 'EUR'
-                          ? `${totalGoodsEur.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                          : `${totalGoodsVnd.toLocaleString('vi-VN')} ₫`}
+                      <td style={{ border: '1px solid #000000', padding: '5px 6px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700, color: '#000000' }}>
+                        {totalGoodsVnd.toLocaleString('vi-VN')}
                       </td>
                     </tr>
-
-                    {/* Dòng quy đổi VND nếu đơn là EUR */}
-                    {currency === 'EUR' && (
-                      <tr style={{ background: 'transparent', color: '#000000' }}>
-                        <td colSpan={5} style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', color: '#000000' }}>
-                          Quy đổi tiền hàng (tỉ giá {exchangeRate.toLocaleString('vi-VN')} ₫/€):
-                        </td>
-                        <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: '#000000' }}>
-                          {totalGoodsVnd.toLocaleString('vi-VN')} ₫
-                        </td>
-                      </tr>
-                    )}
 
                     {/* Cước vận chuyển nếu có */}
                     {shippingFee !== 0 && (
@@ -570,7 +547,7 @@ export function SparePartQuotationModal({
                           Cước vận chuyển quốc tế phân bổ:
                         </td>
                         <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: '#000000' }}>
-                          {shippingFee.toLocaleString('vi-VN')} ₫
+                          {shippingFee.toLocaleString('vi-VN')}
                         </td>
                       </tr>
                     )}
@@ -582,7 +559,7 @@ export function SparePartQuotationModal({
                           Phí hải quan / thủ tục nhập khẩu:
                         </td>
                         <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: '#000000' }}>
-                          {customsFee.toLocaleString('vi-VN')} ₫
+                          {customsFee.toLocaleString('vi-VN')}
                         </td>
                       </tr>
                     )}
@@ -594,7 +571,7 @@ export function SparePartQuotationModal({
                           Thuế VAT ({vatRateNum}%):
                         </td>
                         <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'right', fontWeight: 600, color: '#000000' }}>
-                          {vatAmountVnd.toLocaleString('vi-VN')} ₫
+                          {vatAmountVnd.toLocaleString('vi-VN')}
                         </td>
                       </tr>
                     )}
@@ -605,7 +582,7 @@ export function SparePartQuotationModal({
                         TỔNG CỘNG GIÁ TRỊ ĐƠN HÀNG{vatRateNum > 0 ? ' (ĐÃ GỒM VAT)' : ''}:
                       </td>
                       <td style={{ border: '1px solid #000000', padding: '6px 8px', textAlign: 'right', color: '#000000', fontSize: '13.5px' }}>
-                        {finalTotalVnd.toLocaleString('vi-VN')}&nbsp;₫
+                        {finalTotalVnd.toLocaleString('vi-VN')}
                       </td>
                     </tr>
                   </tbody>

@@ -6,6 +6,7 @@ import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/s
 import { Plus, Trash2, AlertTriangle, Package, Info } from 'lucide-react';
 import {
   calculateQuotedUnitPrice,
+  calculateSellingPriceFromMargin,
   type SparePartPricingConfig,
 } from '@/server/modules/spare-parts/types';
 import { getEquipmentSpecRows, getEquipmentQuickPills } from '@/lib/equipment-specs';
@@ -202,6 +203,7 @@ export function useLineItems({
   pricingConfig,
   strictSellingPrice = false,
   useConfiguredFeesWhenCostBreakdownIsZero = false,
+  recalculatePriceFromCostWithFees = false,
   exchangeRate = 27800,
   onWarning,
 }: {
@@ -215,6 +217,8 @@ export function useLineItems({
   strictSellingPrice?: boolean;
   /** Use current fee defaults as an estimate in a new quotation when inventory has no fee breakdown. */
   useConfiguredFeesWhenCostBreakdownIsZero?: boolean;
+  /** Recalculate a new quotation's unit price from landed cost plus margin. */
+  recalculatePriceFromCostWithFees?: boolean;
   exchangeRate?: number;
   /** Callback phát cảnh báo khi chọn sản phẩm chưa có giá bán */
   onWarning?: (msg: string) => void;
@@ -386,7 +390,38 @@ export function useLineItems({
         const costVnd = hasCostBreakdown ? Number(p.avgBaseCost) : undefined;
         const unitEur = eur > 0 ? eur : rateNum > 0 && Number(costVnd) > 0 ? Number((Number(costVnd) / rateNum).toFixed(2)) : 0;
         const hasRecordedFees = hasCostBreakdown && (Number(p.avgShippingCost) > 0 || Number(p.avgOtherCost) > 0);
-        const useConfiguredFees = useConfiguredFeesWhenCostBreakdownIsZero && !hasRecordedFees;
+        const hasBaseCostSource = Number(costVnd) > 0 || Number(p.costPrice) > 0 || eur > 0;
+        const useConfiguredFees = useConfiguredFeesWhenCostBreakdownIsZero && !hasRecordedFees && hasBaseCostSource;
+        const shippingFee = hasRecordedFees
+          ? Number(p.avgShippingCost) * currentQty
+          : useConfiguredFees
+            ? Math.max(0, Number(pricingConfig?.defaultShippingFee ?? 3500000)) * currentQty
+            : hasCostBreakdown
+              ? 0
+              : undefined;
+        const customsFee = hasRecordedFees
+          ? Number(p.avgOtherCost) * currentQty
+          : useConfiguredFees
+            ? Math.max(0, Number(pricingConfig?.defaultCustomsFee ?? 0)) * currentQty
+            : hasCostBreakdown
+              ? 0
+              : undefined;
+        const pricingCost = Number(costVnd) > 0
+          ? Number(costVnd)
+          : Number(p.costPrice) > 0
+            ? Number(p.costPrice)
+            : eur > 0
+              ? Math.round(eur * rateNum)
+              : Number(p.avgCost) || 0;
+        const perUnitFees = (Number(shippingFee) + Number(customsFee)) / currentQty;
+        if (recalculatePriceFromCostWithFees && pricingCost > 0) {
+          price = calculateSellingPriceFromMargin(
+            pricingCost,
+            pricingConfig?.defaultMarginPercent ?? 30,
+            pricingConfig?.pricingMethod ?? 'MARGIN',
+          ) + perUnitFees;
+          source = 'ESTIMATED';
+        }
 
         updated[index] = {
           ...updated[index],
@@ -397,21 +432,9 @@ export function useLineItems({
           unitPrice: price,
           priceSource: source,
           unitPriceEur: unitEur,
-          unitCostVnd: costVnd,
-          shippingFee: hasRecordedFees
-            ? Number(p.avgShippingCost) * currentQty
-            : useConfiguredFees
-              ? Math.max(0, Number(pricingConfig?.defaultShippingFee ?? 3500000)) * currentQty
-              : hasCostBreakdown
-                ? 0
-                : undefined,
-          customsFee: hasRecordedFees
-            ? Number(p.avgOtherCost) * currentQty
-            : useConfiguredFees
-              ? Math.max(0, Number(pricingConfig?.defaultCustomsFee ?? 0)) * currentQty
-              : hasCostBreakdown
-                ? 0
-                : undefined,
+          unitCostVnd: pricingCost > 0 ? pricingCost : costVnd,
+          shippingFee,
+          customsFee,
         };
       }
     }

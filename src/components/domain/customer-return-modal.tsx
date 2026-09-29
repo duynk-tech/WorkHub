@@ -42,6 +42,17 @@ export function CustomerReturnModal({
   const [returnedAt, setReturnedAt] = useState(new Date().toISOString().slice(0, 10));
 
   const lines: any[] = order?.items || [];
+  const returnedQuantityByLine = new Map<number, number>();
+  for (const customerReturn of order?.returns || []) {
+    for (const returnedLine of customerReturn.items || []) {
+      if (!returnedLine.orderItemId) continue;
+      returnedQuantityByLine.set(
+        returnedLine.orderItemId,
+        (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + Number(returnedLine.quantity || 0),
+      );
+    }
+  }
+  const remainingQuantity = (line: any) => Math.max(0, Number(line.quantity || 0) - (returnedQuantityByLine.get(line.id) || 0));
   const picked = lines
     .map((l) => ({ line: l, q: Number(qty[l.id] || 0) }))
     .filter((x) => x.q > 0);
@@ -56,7 +67,7 @@ export function CustomerReturnModal({
       toast.error('Vui lòng nhập số lượng trả cho ít nhất một dòng hàng');
       return;
     }
-    const over = picked.find((x) => x.q > x.line.quantity);
+    const over = picked.find((x) => x.q > remainingQuantity(x.line));
     if (over) {
       toast.error(`Số lượng trả của "${over.line.name}" vượt quá số đã bán`);
       return;
@@ -135,15 +146,16 @@ export function CustomerReturnModal({
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>
-                  Đã bán {l.quantity}
+                  Còn trả {remainingQuantity(l)} / {l.quantity}
                 </div>
                 <Input
                   type="number"
                   min="0"
-                  max={l.quantity}
+                  max={remainingQuantity(l)}
                   placeholder="0"
                   value={qty[l.id] ?? ''}
                   onChange={(e) => setQty({ ...qty, [l.id]: e.target.value })}
+                  disabled={remainingQuantity(l) === 0}
                   sizeSm
                   style={{ textAlign: 'right' }}
                 />

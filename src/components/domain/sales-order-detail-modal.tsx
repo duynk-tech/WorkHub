@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Phone, MapPin, Wallet, Undo2, FileText, Wrench, ExternalLink, Printer } from 'lucide-react';
+import { Building2, Phone, MapPin, Wallet, Undo2, FileText, Wrench, ExternalLink, Printer, PackageCheck } from 'lucide-react';
 import { Modal } from '@/components/ui/modal';
 import { Badge, Button, EmptyState } from '@/components/ui';
 import { fmtDate } from '@/lib/date';
@@ -14,6 +14,7 @@ import {
 } from '@/server/modules/customer/types';
 import { getSalesOrderDetailAction } from '@/server/modules/customer/actions';
 import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
+import { OrderFulfillmentModal } from '@/components/domain/order-fulfillment-modal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -79,17 +80,25 @@ export function SalesOrderDetailModal({
   open,
   orderId,
   companyInfo,
+  warehouses = [],
+  canManage = false,
+  onRefresh,
   onClose,
 }: {
   open: boolean;
   orderId: number | null;
   companyInfo?: any;
+  warehouses?: any[];
+  canManage?: boolean;
+  onRefresh?: () => void;
   onClose: () => void;
 }) {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [printOpen, setPrintOpen] = useState(false);
+  const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
     if (!open || !orderId) return;
@@ -109,7 +118,7 @@ export function SalesOrderDetailModal({
     return () => {
       alive = false;
     };
-  }, [open, orderId]);
+  }, [open, orderId, reloadVersion]);
 
   const st = order ? ORDER_STATUSES[order.status] : null;
   const ty = order ? ORDER_TYPES[order.orderType] : null;
@@ -154,6 +163,15 @@ export function SalesOrderDetailModal({
               )}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
+              {canManage && order && !order.stockIssuedAt && ['AWAITING_STOCK', 'READY_TO_DELIVER'].includes(order.status) && (
+                <Button
+                  variant="primary"
+                  onClick={() => setFulfillmentOpen(true)}
+                  style={{ background: '#0284c7', color: '#fff' }}
+                >
+                  <PackageCheck size={14} /> Xuất giao khách
+                </Button>
+              )}
               {order?.customer?.id && (
                 <Link href={`/customers/${order.customer.id}`} className="btn btn-secondary">
                   <ExternalLink size={14} /> Mở hồ sơ khách
@@ -383,6 +401,13 @@ export function SalesOrderDetailModal({
                       <td style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-strong)' }}>{money(Number(order.goodsAmount))}</td>
                     </tr>
 
+                    {Number(order.shippingFee) > 0 && (
+                      <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
+                        <td colSpan={8} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-strong)' }}>Cước vận chuyển:</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-strong)' }}>{money(Number(order.shippingFee))}</td>
+                      </tr>
+                    )}
+
                     {/* 3. Thuế VAT */}
                     <tr style={{ background: '#ffffff', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
                       <td
@@ -403,34 +428,7 @@ export function SalesOrderDetailModal({
                       </td>
                     </tr>
 
-                    {/* 4. Hàng trả lại (nếu có) */}
-                    {order.returned > 0 && (
-                      <tr style={{ background: '#fffbeb', borderTop: '1px solid var(--border-base, #e2e8f0)' }}>
-                        <td
-                          colSpan={8}
-                          style={{
-                            padding: '6px 10px',
-                            textAlign: 'right',
-                            fontWeight: 600,
-                            color: '#b45309',
-                          }}
-                        >
-                          Hàng khách trả lại:
-                        </td>
-                        <td
-                          style={{
-                            padding: '6px 10px',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                            color: '#b45309',
-                          }}
-                        >
-                          -{money(order.returned)}
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* 5. Tổng cộng thanh toán */}
+                    {/* Tổng đơn gốc; tiền trả hàng và thu/hoàn tiền đối soát ở các mục bên dưới. */}
                     <tr style={{ background: '#f1f5f9', borderTop: '1px solid #94a3b8', fontWeight: 800 }}>
                       <td
                         colSpan={8}
@@ -465,34 +463,37 @@ export function SalesOrderDetailModal({
             )}
           </Section>
 
-          <Section title={`Đã thu của khách (${order.payments?.length ?? 0})`} icon={<Wallet size={13} />}>
+          <Section title={`Thu / hoàn tiền khách (${order.payments?.length ?? 0})`} icon={<Wallet size={13} />}>
             {(order.payments ?? []).length === 0 ? (
               <div className="hint">Chưa thu khoản nào</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {order.payments.map((p: any) => (
-                  <div
-                    key={p.id}
-                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, flexWrap: 'wrap' }}
-                  >
+                {order.payments.map((p: any) => {
+                  const amount = Number(p.amount || 0);
+                  return (
+                    <div
+                      key={p.id}
+                      style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, flexWrap: 'wrap' }}
+                    >
                     <span style={{ display: 'flex', gap: 8, minWidth: 0 }}>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{p.paymentCode}</span>
                       <span style={{ color: 'var(--text-muted)' }}>
                         {fmtDate(p.paidAt)} · {PAYMENT_METHODS[p.method]?.label ?? p.method}
-                        {p.reference ? ` · ${p.reference}` : ''}
+                        {p.reference ? ` · ${p.reference}` : ''}{p.note ? ` · ${p.note}` : ''}
                       </span>
                     </span>
-                    <strong style={{ color: '#15803d', whiteSpace: 'nowrap' }}>
-                      +{money(Number(p.amount))}
+                    <strong style={{ color: amount < 0 ? '#dc2626' : '#15803d', whiteSpace: 'nowrap' }}>
+                      {amount > 0 ? '+' : ''}{money(amount)}
                     </strong>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Section>
 
           {(order.returns ?? []).length > 0 && (
-            <Section title={`Hàng khách trả lại (${order.returns.length})`} icon={<Undo2 size={13} />}>
+            <Section title={`Điều chỉnh hàng khách trả (${order.returns.length})`} icon={<Undo2 size={13} />}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {order.returns.map((r: any) => (
                   <div
@@ -523,6 +524,22 @@ export function SalesOrderDetailModal({
         </div>
       )}
     </Modal>
+
+    {fulfillmentOpen && order?.customer?.id && (
+      <OrderFulfillmentModal
+        open
+        order={order}
+        mode="ISSUE"
+        customerId={order.customer.id}
+        warehouses={warehouses}
+        onClose={() => setFulfillmentOpen(false)}
+        onSuccess={() => {
+          setFulfillmentOpen(false);
+          setReloadVersion((version) => version + 1);
+          onRefresh?.();
+        }}
+      />
+    )}
 
     {printOpen && order && (
       <CustomerOrderPrintModal

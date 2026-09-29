@@ -78,6 +78,17 @@ export function CustomerQuotationModal({
   const activeLocations = activeCustomer?.locations || locations;
   const activeMachines = activeCustomer?.machines || machines;
   const displayCustomerName = propCustomerName || activeCustomer?.name || quotation?.customer?.name || '';
+  const tiers = pricingConfig?.volumeDiscountTiers ?? VOLUME_DISCOUNT_TIERS;
+  const savedQuoteQuantity = (quotation?.items || []).reduce(
+    (sum: number, item: any) => sum + (Number(item.quantity) || 0),
+    0,
+  );
+  const savedAutomaticRate = Math.round(
+    ((tiers.find((tier: any) => savedQuoteQuantity >= tier.min && savedQuoteQuantity <= tier.max)?.rate || 0) * 100) * 10,
+  ) / 10;
+  const savedDiscountRate = quotation?.discountRate == null
+    ? null
+    : Math.round(Number(quotation.discountRate) * 10) / 10;
 
   const [status, setStatus] = useState(quotation?.status || 'DRAFT');
   const [locationId, setLocationId] = useState<number | ''>(quotation?.locationId || '');
@@ -99,12 +110,17 @@ export function CustomerQuotationModal({
   );
   const [shippingFee, setShippingFee] = useState<number>(Number(quotation?.shippingFee ?? 0));
   const [exchangeRate, setExchangeRate] = useState<number>(
-    pricingConfig?.defaultExchangeRateEur || 27800,
+    Number(quotation?.exchangeRate || pricingConfig?.defaultExchangeRateEur || 32500),
   );
+  const quotePricingConfig = {
+    ...pricingConfig,
+    defaultMarginPercent: Number(quotation?.marginPercent ?? pricingConfig?.defaultMarginPercent ?? 30),
+    pricingMethod: quotation?.pricingMethod ?? pricingConfig?.pricingMethod ?? 'MARGIN',
+  };
   const [newPartModalOpen, setNewPartModalOpen] = useState(false);
   const [manualDiscountRate, setManualDiscountRate] = useState<string | null>(
-    quotation?.discountRate !== undefined && quotation?.discountRate !== null
-      ? String(quotation.discountRate)
+    savedDiscountRate !== null && savedDiscountRate !== savedAutomaticRate
+      ? String(savedDiscountRate)
       : null,
   );
   const [paymentTerms, setPaymentTerms] = useState(
@@ -138,18 +154,19 @@ export function CustomerQuotationModal({
       discountVnd: Number(i.discountVnd || 0),
       equipmentId: i.equipmentId || undefined,
       inventoryItemId: i.inventoryItemId || undefined,
-      priceSource: i.inventoryItemId ? 'LIST' : undefined,
       notes: i.notes || '',
-      unitPriceEur: i.unitPriceEur,
-      unitCostVnd: i.unitCostVnd,
-      shippingFee: i.shippingFee,
-      customsFee: i.customsFee,
+      unitPriceEur: i.unitPriceEur == null ? undefined : Number(i.unitPriceEur),
+      unitCostVnd: i.unitCostVnd == null ? undefined : Number(i.unitCostVnd),
+      shippingFee: i.shippingFee == null ? undefined : Number(i.shippingFee),
+      customsFee: i.customsFee == null ? undefined : Number(i.customsFee),
+      priceSource: i.priceSource || undefined,
     })),
     machines: activeMachines,
     stockMachines,
     spareParts,
-    pricingConfig,
+    pricingConfig: quotePricingConfig,
     useConfiguredFeesWhenCostBreakdownIsZero: true,
+    recalculatePriceFromCostWithFees: true,
     exchangeRate,
   });
 
@@ -162,11 +179,9 @@ export function CustomerQuotationModal({
 
   /** Tỷ lệ chiết khấu gợi ý theo tổng sản lượng, lấy đúng bậc thang của cấu hình giá. */
   const totalQty = items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-  const tiers = pricingConfig?.volumeDiscountTiers || VOLUME_DISCOUNT_TIERS;
   const suggestedRate =
-    (tiers.find((t: any) => totalQty >= t.min && totalQty <= t.max)?.rate || 0) * 100;
+    Math.round((tiers.find((t: any) => totalQty >= t.min && totalQty <= t.max)?.rate || 0) * 100 * 10) / 10;
   const effectiveDiscountRate = manualDiscountRate !== null ? (Number(manualDiscountRate) || 0) : suggestedRate;
-  const discountRateInput = manualDiscountRate !== null ? manualDiscountRate : String(suggestedRate);
 
   const totalCost = items.reduce((sum, it) => sum + costOf(it) * (Number(it.quantity) || 0), 0);
   const gross = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
@@ -226,6 +241,9 @@ export function CustomerQuotationModal({
       validUntil: validUntil || undefined,
       vatRate: Number(vatRate) || 0,
       shippingFee: freight,
+      exchangeRate,
+      marginPercent: quotePricingConfig.defaultMarginPercent,
+      pricingMethod: quotePricingConfig.pricingMethod,
       discountRate: rate,
       paymentTerms: paymentTerms.trim() || undefined,
       deliveryTime: deliveryTime.trim() || undefined,

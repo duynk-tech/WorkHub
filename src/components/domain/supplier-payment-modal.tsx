@@ -195,6 +195,7 @@ export function SupplierPaymentModal({
       title={`Thanh toán đơn hàng: ${order.orderCode}`}
       description={`Nhà cung cấp: ${order.supplier} • Quản lý chi trả tiền hàng & chi phí khác`}
       size="lg"
+      className="supplier-payment-modal"
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>

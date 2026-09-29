@@ -22,7 +22,7 @@ export default async function SalesPage() {
 
   // Dữ liệu dùng chung cho mọi khách nạp sẵn; phần riêng của từng khách
   // (địa điểm, máy, báo giá) đợi chọn khách rồi mới lấy
-  const [orders, customers, spareParts, stockMachines, pricingConfig, companyInfo] = await Promise.all([
+  const [orders, customers, spareParts, stockMachines, pricingConfig, companyInfo, warehouses] = await Promise.all([
     listSalesOrders(ctx),
     prisma.customer.findMany({
       where: { status: 'ACTIVE' },
@@ -33,6 +33,10 @@ export default async function SalesPage() {
     listEquipment({ status: 'IN_STOCK' }),
     getSparePartPricingConfig(),
     getCompanyInfo(),
+    prisma.warehouse.findMany({
+      select: { id: true, name: true, code: true },
+      orderBy: [{ type: 'asc' }, { createdAt: 'asc' }],
+    }),
   ]);
 
   return (
@@ -44,6 +48,7 @@ export default async function SalesPage() {
         stockMachines={JSON.parse(JSON.stringify(stockMachines))}
         pricingConfig={JSON.parse(JSON.stringify(pricingConfig))}
         companyInfo={JSON.parse(JSON.stringify(companyInfo))}
+        warehouses={JSON.parse(JSON.stringify(warehouses))}
         canManage={can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin}
       />
     </Suspense>

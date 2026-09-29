@@ -550,6 +550,7 @@
   .modal-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--border-subtle); }
   .modal-lg { max-width: 780px; }
   .modal-xl { max-width: 1140px; }
+  .supplier-payment-modal { max-width: 920px; }
 
   /* ---- Khác ---- */
   .avatar {

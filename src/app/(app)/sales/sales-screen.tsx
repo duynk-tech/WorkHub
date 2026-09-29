@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle, Printer } from 'lucide-react';
+import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle, Printer, Undo2, PackageCheck, CircleX } from 'lucide-react';
 import {
   Badge, Button, Card, PageHeader, Pagination, SearchInput, SearchableSelect, StatCard, usePaged,
 } from '@/components/ui';
@@ -10,8 +11,12 @@ import { fmtDate } from '@/lib/date';
 import { SalesOrderDetailModal } from '@/components/domain/sales-order-detail-modal';
 import { QuickSaleModal } from '@/components/domain/quick-sale-modal';
 import { CustomerOrderModal } from '@/components/domain/customer-modals';
-import { getCustomerOrderContextAction } from '@/server/modules/customer/actions';
-import { Modal } from '@/components/ui/modal';
+import { CustomerPaymentModal } from '@/components/domain/customer-payment-modal';
+import { CustomerReturnModal } from '@/components/domain/customer-return-modal';
+import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
+import { OrderFulfillmentModal, type FulfillmentMode } from '@/components/domain/order-fulfillment-modal';
+import { cancelCustomerOrderAction, getCustomerOrderContextAction, getSalesOrderDetailAction } from '@/server/modules/customer/actions';
+import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -22,6 +27,113 @@ import {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(n || 0))} ₫`;
+const orderActionButton = (background: string, color: string, borderColor: string): React.CSSProperties => ({
+  width: 34,
+  height: 34,
+  padding: 0,
+  borderRadius: 'var(--radius-sm)',
+  background,
+  color,
+  border: `1px solid ${borderColor}`,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+});
+
+function OrderActionButton({
+  label,
+  style,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  style: React.CSSProperties;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; anchorLeft: number; top: number; arrowLeft?: number } | null>(null);
+  const showTooltip = () => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) {
+      const center = rect.left + rect.width / 2;
+      setTooltipPosition({ left: center, anchorLeft: center, top: rect.top - 7 });
+    }
+  };
+  useEffect(() => {
+    if (!tooltipPosition || !tooltipRef.current) return;
+    const tooltipWidth = tooltipRef.current.getBoundingClientRect().width;
+    const margin = 8;
+    const minCenter = tooltipWidth / 2 + margin;
+    const maxCenter = window.innerWidth - minCenter;
+    const left = Math.min(Math.max(tooltipPosition.anchorLeft, minCenter), maxCenter);
+    const arrowLeft = Math.min(100, Math.max(0, ((tooltipPosition.anchorLeft - left + tooltipWidth / 2) / tooltipWidth) * 100));
+    if (left !== tooltipPosition.left || arrowLeft !== tooltipPosition.arrowLeft) {
+      setTooltipPosition((current) => current ? { ...current, left, arrowLeft } : current);
+    }
+  }, [tooltipPosition]);
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={label}
+        style={style}
+        disabled={disabled}
+        onClick={onClick}
+        onMouseEnter={showTooltip}
+        onMouseLeave={() => setTooltipPosition(null)}
+        onFocus={showTooltip}
+        onBlur={() => setTooltipPosition(null)}
+      >
+        {children}
+      </button>
+      {tooltipPosition && typeof document !== 'undefined' && createPortal(
+        <span
+          ref={tooltipRef}
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            left: tooltipPosition.left,
+            top: tooltipPosition.top,
+            transform: 'translate(-50%, -100%)',
+            zIndex: 10000,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            padding: '5px 9px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--surface-inverse)',
+            color: 'var(--text-inverse)',
+            fontSize: 11.5,
+            fontWeight: 500,
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          {label}
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: `${tooltipPosition.arrowLeft ?? 50}%`,
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderTop: '5px solid var(--surface-inverse)',
+            }}
+          />
+        </span>,
+        document.body,
+      )}
+    </>
+  );
+}
 
 const isCompletedOrCancelled = (o: any) =>
   ['COMPLETED', 'CANCELLED'].includes(o.status) || (Boolean(o.stockIssuedAt) && Number(o.remaining || 0) <= 0);
@@ -51,6 +163,7 @@ export function SalesScreen({
   stockMachines = [],
   pricingConfig,
   companyInfo,
+  warehouses = [],
   canManage = false,
 }: {
   orders?: any[];
@@ -60,6 +173,7 @@ export function SalesScreen({
   stockMachines?: any[];
   pricingConfig?: any;
   companyInfo?: any;
+  warehouses?: any[];
   canManage?: boolean;
 }) {
   const router = useRouter();
@@ -70,6 +184,11 @@ export function SalesScreen({
   const [typeFilter, setTypeFilter] = useState('');
   // Xem chi tiết bằng popup: bấm xong đóng lại là vẫn ở đúng trang và bộ lọc đang xem
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [actionOrder, setActionOrder] = useState<any>(null);
+  const [actionType, setActionType] = useState<'PRINT' | 'PAYMENT' | 'RETURN' | FulfillmentMode | null>(null);
+  const [loadingActionId, setLoadingActionId] = useState<number | null>(null);
+  const [cancelOrder, setCancelOrder] = useState<any>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   /**
    * Lập đơn ngay tại đây: chọn khách trước, lấy dữ liệu riêng của khách đó rồi
@@ -95,6 +214,41 @@ export function SalesScreen({
     setPickCustomerOpen(false);
     setPickedCustomerId('');
     setOrderCtx((res as any).data);
+  };
+
+  const openOrderAction = async (order: any, type: 'PRINT' | 'PAYMENT' | 'RETURN' | FulfillmentMode) => {
+    if (type === 'PAYMENT') {
+      setActionOrder({
+        ...order,
+        totalAmount: Number(order.total ?? order.totalAmount ?? 0),
+        paidAmount: Number(order.paid ?? order.paidAmount ?? 0),
+      });
+      setActionType(type);
+      return;
+    }
+    setLoadingActionId(order.id);
+    const res = await getSalesOrderDetailAction(order.id);
+    setLoadingActionId(null);
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    setActionOrder((res as any).data);
+    setActionType(type);
+  };
+
+  const confirmCancelOrder = async () => {
+    if (!cancelOrder) return;
+    setCancelLoading(true);
+    const res = await cancelCustomerOrderAction(cancelOrder.id);
+    setCancelLoading(false);
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    toast.success(res.message);
+    setCancelOrder(null);
+    router.refresh();
   };
 
   useEffect(() => {
@@ -248,18 +402,18 @@ export function SalesScreen({
               <tr>
                 <th>Mã đơn</th>
                 <th>Khách hàng</th>
-                <th style={{ width: 150 }}>Loại đơn</th>
-                <th style={{ width: 170 }}>Trạng thái</th>
+                <th style={{ width: 170 }}>Trạng thái đơn</th>
+                <th style={{ width: 125 }}>Giao hàng</th>
                 <th style={{ width: 110 }}>Ngày đặt</th>
                 <th className="num" style={{ width: 130 }}>Tổng tiền</th>
                 <th className="num" style={{ width: 130 }}>Còn phải thu</th>
-                <th style={{ width: 60, textAlign: 'center' }}>In</th>
+                <th style={{ width: 220, textAlign: 'center' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {paged.pageRows.map((o: any) => {
                 const st = ORDER_STATUSES[o.status];
-                const ty = ORDER_TYPES[o.orderType];
+                const isFullyReturned = Boolean(o.hasReturns) && !o.hasReturnableItems;
                 return (
                   <tr key={o.id} onClick={() => setDetailId(o.id)} style={{ cursor: 'pointer' }}>
                     <td>
@@ -268,29 +422,8 @@ export function SalesScreen({
                       </span>
                       <div className="hint">{o._count?.items ?? 0} dòng hàng</div>
                     </td>
-                    <td>
+                    <td style={{ minWidth: 300 }}>
                       <div style={{ fontWeight: 540, color: 'var(--text-strong)' }}>{o.customer?.name ?? '—'}</div>
-                      <div className="hint">
-                        {o.customer?.code}
-                        {o.location?.name ? ` · ${o.location.name}` : ''}
-                      </div>
-                    </td>
-                    <td>
-                      {ty ? (
-                        <span
-                          className="badge"
-                          style={{
-                            background: ty.bg,
-                            color: ty.color,
-                            border: `1px solid ${ty.color}35`,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {ty.label}
-                        </span>
-                      ) : (
-                        o.orderType
-                      )}
                     </td>
                     <td>
                       {st ? (
@@ -308,8 +441,17 @@ export function SalesScreen({
                       ) : (
                         o.status
                       )}
-                      {!o.stockIssuedAt && ['AWAITING_STOCK', 'READY_TO_DELIVER'].includes(o.status) && (
-                        <div className="hint" style={{ color: 'var(--warning)' }}>Chưa xuất kho</div>
+                    </td>
+                    <td>
+                      {o.status === 'CANCELLED' ? (
+                        <span className="badge badge-outline">Không giao</span>
+                      ) : o.stockIssuedAt ? (
+                        <>
+                          <span className="badge badge-success">Đã xuất kho</span>
+                          <div className="hint">{fmtDate(o.stockIssuedAt)}</div>
+                        </>
+                      ) : (
+                        <span className="badge badge-warning">Chưa xuất kho</span>
                       )}
                     </td>
                     <td style={{ fontSize: 12.5 }}>{fmtDate(o.orderDate)}</td>
@@ -323,21 +465,44 @@ export function SalesScreen({
                         <span style={{ color: '#15803d' }}>Đã thu đủ</span>
                       )}
                     </td>
-                    <td style={{ textAlign: 'center' }} onClick={(e) => { e.stopPropagation(); setDetailId(o.id); }}>
-                      <button
-                        type="button"
-                        style={{
-                          padding: '4px 7px',
-                          borderRadius: 'var(--radius-sm)',
-                          background: '#faf5ff',
-                          color: '#7c3aed',
-                          border: '1px solid #ddd6fe',
-                          cursor: 'pointer',
-                        }}
-                        title="Xem chi tiết & in hóa đơn / bàn giao"
-                      >
-                        <Printer size={13} />
-                      </button>
+                    <td
+                      style={{ textAlign: 'center', whiteSpace: 'nowrap' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                        <OrderActionButton style={orderActionButton('#faf5ff', '#7c3aed', '#ddd6fe')} label="In hóa đơn & bàn giao" disabled={loadingActionId === o.id} onClick={() => openOrderAction(o, 'PRINT')}>
+                          <Printer size={14} />
+                        </OrderActionButton>
+                        {canManage && !isFullyReturned && Number(o.remaining || 0) > 0 && !['CANCELLED', 'COMPLETED'].includes(o.status) && (
+                          <OrderActionButton style={orderActionButton('#fef3c7', '#b45309', '#fde68a')} label="Thu tiền đơn hàng" onClick={() => openOrderAction(o, 'PAYMENT')}>
+                            <Wallet size={14} />
+                          </OrderActionButton>
+                        )}
+                        {canManage && !isFullyReturned && !o.stockIssuedAt && !['CANCELLED', 'COMPLETED'].includes(o.status) && (
+                          <OrderActionButton style={orderActionButton('#fff1f2', '#be123c', '#fecdd3')} label="Hủy đơn chưa giao" onClick={() => setCancelOrder(o)}>
+                            <CircleX size={14} />
+                          </OrderActionButton>
+                        )}
+                        {canManage && !isFullyReturned && Boolean(o.stockIssuedAt) && o.hasReturnableItems && o.status !== 'CANCELLED' && Number(o._count?.items || 0) > 0 && (
+                          <OrderActionButton style={orderActionButton('#f5f3ff', '#7c3aed', '#e9d5ff')} label="Khách trả hàng" disabled={loadingActionId === o.id} onClick={() => openOrderAction(o, 'RETURN')}>
+                            <Undo2 size={14} />
+                          </OrderActionButton>
+                        )}
+                        {canManage && !isFullyReturned && o.status !== 'CANCELLED' && Number(o._count?.items || 0) > 0 && (
+                          <>
+                            {o.needsSupplierOrder && !o.stockIssuedAt && o.status !== 'CANCELLED' && (
+                              <OrderActionButton style={orderActionButton('#ede9fe', '#6d28d9', '#ddd6fe')} label="Đặt hàng NCC (PO)" disabled={loadingActionId === o.id} onClick={() => openOrderAction(o, 'SUPPLIER')}>
+                                <Truck size={14} />
+                              </OrderActionButton>
+                            )}
+                            {!o.stockIssuedAt && (
+                              <OrderActionButton style={orderActionButton('#e0f2fe', '#0369a1', '#bae6fd')} label="Xuất kho giao khách" disabled={loadingActionId === o.id} onClick={() => openOrderAction(o, 'ISSUE')}>
+                                <PackageCheck size={14} />
+                              </OrderActionButton>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -353,8 +518,67 @@ export function SalesScreen({
         open={detailId !== null}
         orderId={detailId}
         companyInfo={companyInfo}
+        warehouses={warehouses}
+        canManage={canManage}
+        onRefresh={() => router.refresh()}
         onClose={() => setDetailId(null)}
       />
+
+      <ConfirmDialog
+        open={Boolean(cancelOrder)}
+        onClose={() => { if (!cancelLoading) setCancelOrder(null); }}
+        onConfirm={confirmCancelOrder}
+        title="Hủy đơn bán chưa giao"
+        confirmText="Hủy đơn"
+        cancelText="Quay lại"
+        danger
+        loading={cancelLoading}
+        message={<>Bạn muốn hủy đơn <strong>{cancelOrder?.orderCode}</strong>? Đơn đã giao phải lập phiếu trả hàng. Đơn này chưa xuất kho nên sẽ được giữ lại trong lịch sử với trạng thái đã hủy; khoản đã thu (nếu có) không tự động hoàn lại.</>}
+      />
+
+      {actionOrder && actionType === 'PRINT' && (
+        <CustomerOrderPrintModal
+          open
+          onClose={() => { setActionType(null); setActionOrder(null); }}
+          order={actionOrder}
+          customer={actionOrder.customer}
+          location={actionOrder.location}
+          companyInfo={companyInfo}
+          machines={actionOrder.machines || []}
+        />
+      )}
+      {actionOrder && actionType === 'PAYMENT' && (
+        <CustomerPaymentModal
+          open
+          customerId={actionOrder.customer.id}
+          customerName={actionOrder.customer.name}
+          orders={[actionOrder]}
+          defaultOrderId={actionOrder.id}
+          onClose={() => { setActionType(null); setActionOrder(null); }}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+      {actionOrder && actionType === 'RETURN' && (
+        <CustomerReturnModal
+          open
+          order={actionOrder}
+          customerId={actionOrder.customer.id}
+          warehouses={warehouses}
+          onClose={() => { setActionType(null); setActionOrder(null); }}
+          onSuccess={() => router.refresh()}
+        />
+      )}
+      {actionOrder && (actionType === 'ISSUE' || actionType === 'SUPPLIER') && (
+        <OrderFulfillmentModal
+          open
+          order={actionOrder}
+          mode={actionType}
+          customerId={actionOrder.customer.id}
+          warehouses={warehouses}
+          onClose={() => { setActionType(null); setActionOrder(null); }}
+          onSuccess={() => router.refresh()}
+        />
+      )}
 
       <Modal
         open={pickCustomerOpen}

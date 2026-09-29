@@ -1581,6 +1581,19 @@ export function OrderStatusModal({
   const [notes, setNotes] = useState(order?.notes || '');
   const [inspectionNote, setInspectionNote] = useState(order?.inspectionNote || '');
 
+  useEffect(() => {
+    if (!open || !order) return;
+    const currentStep = ORDER_STATUSES[order.status]?.step ?? 0;
+    const nextStatus = Object.entries(ORDER_STATUSES).find(
+      ([key, config]) => key !== 'CANCELLED' && config.step === currentStep + 1,
+    )?.[0];
+    setStatus(nextStatus || order.status || 'REQUESTED');
+    setTrackingNumber(order.trackingNumber || '');
+    setEtaDate(order.etaDate ? new Date(order.etaDate).toISOString().split('T')[0] : '');
+    setNotes(order.notes || '');
+    setInspectionNote(order.inspectionNote || '');
+  }, [open, order?.id, order?.status]);
+
   if (!open || !order) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {

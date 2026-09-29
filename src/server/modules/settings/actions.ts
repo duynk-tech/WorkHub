@@ -63,12 +63,25 @@ export async function deployPendingMigrationsAction(): Promise<Result> {
       env: process.env,
     });
     await assertDemoSeedSchema(prisma);
-    revalidatePath('/settings');
-    return { ok: true, message: 'Đã triển khai các migration đang chờ. Có thể tiếp tục nạp dữ liệu seed.' };
   } catch (error) {
     console.error('Prisma migrate deploy thất bại:', error);
     return { ok: false, message: 'Triển khai migration thất bại. Kiểm tra log máy chủ để biết chi tiết.' };
   }
+
+  try {
+    await execFileAsync(process.execPath, [prismaCli, 'generate', '--schema', schemaPath], {
+      cwd: projectRoot,
+      timeout: 180_000,
+      maxBuffer: 1024 * 1024,
+      env: process.env,
+    });
+  } catch (error) {
+    console.error('Prisma generate sau migration thất bại:', error);
+    return { ok: false, message: 'Migration đã áp dụng nhưng tạo Prisma Client thất bại. Kiểm tra log máy chủ.' };
+  }
+
+  revalidatePath('/settings');
+  return { ok: true, message: 'Đã áp dụng migration và tạo Prisma Client mới. Hãy khởi động lại server để nạp client mới.' };
 }
 
 const SECRET_KEYS = SECRET_SETTING_KEYS;
@@ -611,5 +624,77 @@ export async function resetDemoDataAction(options?: { clean?: boolean }): Promis
     const msg = error instanceof Error ? error.message : 'Nạp dữ liệu mẫu thất bại';
     console.error('Lỗi khi nạp dữ liệu mẫu:', error);
     return { ok: false, message: `Thao tác thất bại: ${msg}` };
+  }
+}
+
+/** Xóa chứng từ bán/mua và giữ nguyên dữ liệu danh mục cùng số tồn kho. */
+export async function clearSalesAndPurchaseDocumentsAction(): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_SETTING_GENERAL');
+
+  try {
+    const deleted = await prisma.$transaction(async (tx) => {
+      const orders = await tx.customerOrder.findMany({ select: { id: true } });
+      const orderIds = orders.map((order) => order.id);
+      const purchaseOrders = await tx.sparePartOrder.findMany({ select: { id: true } });
+      const purchaseOrderIds = purchaseOrders.map((order) => order.id);
+
+      // Bỏ liên kết chứng từ kho với PO/đơn sắp xóa nhưng giữ sổ kho và tồn.
+      if (orderIds.length > 0) {
+        await tx.inventoryTransaction.updateMany({
+          where: { customerOrderId: { in: orderIds } },
+          data: { customerOrderId: null },
+        });
+        await tx.customerOrder.updateMany({
+          where: { serviceTicketId: { not: null } },
+          data: { serviceTicketId: null },
+        });
+        await tx.customerPaymentAllocation.deleteMany({ where: { orderId: { in: orderIds } } });
+      }
+      if (purchaseOrderIds.length > 0) {
+        await tx.inventoryTransaction.updateMany({
+          where: { sparePartOrderId: { in: purchaseOrderIds } },
+          data: { sparePartOrderId: null },
+        });
+        await tx.supplierPaymentAllocation.deleteMany({ where: { orderId: { in: purchaseOrderIds } } });
+      }
+
+      const returns = await tx.customerReturn.deleteMany({});
+      const payments = await tx.customerPayment.deleteMany({});
+      const supplierPayments = await tx.supplierPayment.deleteMany({});
+      const orderResult = await tx.customerOrder.deleteMany({});
+      const quotations = await tx.customerQuotation.deleteMany({});
+      const purchaseOrderResult = await tx.sparePartOrder.deleteMany({});
+
+      return {
+        orders: orderResult.count,
+        quotations: quotations.count,
+        purchaseOrders: purchaseOrderResult.count,
+        returns: returns.count,
+        payments: payments.count,
+        supplierPayments: supplierPayments.count,
+      };
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: ctx.userId,
+        entityType: 'SystemDatabase',
+        entityId: 'CLEAR_SALES_AND_PURCHASE_DOCUMENTS',
+        action: 'DELETE',
+        diffJson: { ...deleted, timestamp: new Date().toISOString() } as never,
+      },
+    });
+
+    for (const path of ['/sales', '/customers', '/quotations', '/reports', '/spare-parts', '/settings']) {
+      revalidatePath(path);
+    }
+    return {
+      ok: true,
+      message: `Đã xóa ${deleted.orders} đơn bán, ${deleted.quotations} báo giá, ${deleted.purchaseOrders} PO, ${deleted.payments} phiếu thu khách, ${deleted.supplierPayments} phiếu thanh toán NCC và ${deleted.returns} phiếu trả hàng. Khách hàng, máy móc, phụ tùng, tồn kho và lịch sử kho được giữ lại.`,
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Không thể xóa chứng từ bán/mua';
+    console.error('Lỗi khi xóa chứng từ bán/mua:', error);
+    return { ok: false, message: `Xóa dữ liệu thất bại: ${msg}` };
   }
 }

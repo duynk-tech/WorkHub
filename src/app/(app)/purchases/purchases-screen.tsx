@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   MapPin,
   Package,
+  Trash2,
 } from 'lucide-react';
 import {
   Card,
@@ -45,6 +46,7 @@ import {
 } from '@/components/domain/spare-part-order-modal';
 import { SupplierPaymentModal } from '@/components/domain/supplier-payment-modal';
 import { SparePartQuotationModal } from '@/components/domain/spare-part-quotation-modal';
+import { deleteNewSparePartOrderAction } from '@/server/modules/spare-parts/actions';
 
 export function PurchasesScreen({
   orders = [],
@@ -81,6 +83,7 @@ export function PurchasesScreen({
 
   const [payOrder, setPayOrder] = useState<any | null>(null);
   const [printOrder, setPrintOrder] = useState<any | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState<any | null>(null);
 
   const [openOrderIds, setOpenOrderIds] = useState<Set<number>>(new Set());
   const toggleOrder = (id: number) =>
@@ -501,6 +504,17 @@ export function PurchasesScreen({
                                       label: 'Thanh toán đơn hàng',
                                       icon: <Wallet size={15} />,
                                       onClick: () => setPayOrder(order),
+                                    },
+                                  ]
+                                : []),
+                              ...(canManage && order.status === 'REQUESTED'
+                                ? [
+                                    {
+                                      key: 'delete',
+                                      label: 'Xóa phiếu mới',
+                                      icon: <Trash2 size={15} />,
+                                      danger: true,
+                                      onClick: () => setDeletingOrder(order),
                                     },
                                   ]
                                 : []),
@@ -947,6 +961,35 @@ export function PurchasesScreen({
           onClose={() => setPrintOrder(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={Boolean(deletingOrder)}
+        onClose={() => {
+          if (!isPending) setDeletingOrder(null);
+        }}
+        onConfirm={() => {
+          if (!deletingOrder || isPending) return;
+          startTransition(async () => {
+            const result = await deleteNewSparePartOrderAction(deletingOrder.id);
+            if (result.ok) {
+              toast.success(result.message);
+              setDeletingOrder(null);
+              router.refresh();
+            } else {
+              toast.error(result.message);
+            }
+          });
+        }}
+        title="Xóa phiếu mua hàng NCC"
+        message={
+          <>
+            Xóa phiếu <strong>{deletingOrder?.orderCode}</strong>? Chỉ phiếu mới chưa đặt NCC, chưa thanh toán và chưa nhập kho mới được xóa.
+          </>
+        }
+        confirmText="Xóa phiếu"
+        danger
+        loading={isPending}
+      />
     </div>
   );
 }

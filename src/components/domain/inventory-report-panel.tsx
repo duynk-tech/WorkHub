@@ -8,6 +8,7 @@ import { getInventoryReportAction } from '@/server/modules/spare-parts/actions';
 
 type Preset = 'MONTH' | 'QUARTER' | 'YEAR' | 'CUSTOM';
 type ReportLine = {
+  isReturn?: boolean;
   kind: 'Phụ tùng' | 'Thiết bị'; orderCode: string; orderDate: string; customerName: string;
   itemCode: string; name: string; unit: string; quantity: number; unitPrice: number;
   discount: number; revenue: number; baseCost: number | null; shippingCost: number | null;
@@ -43,7 +44,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
   const lines: ReportLine[] = useMemo(() => {
     if (!report) return [];
     const parts: ReportLine[] = (report.salesDetails || []).map((d: any) => ({
-      kind: 'Phụ tùng', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
+      isReturn: d.isReturn, kind: 'Phụ tùng', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
       itemCode: d.itemCode, name: d.name, unit: d.unit || '', quantity: d.quantity,
       unitPrice: d.unitPrice, discount: d.discount, revenue: d.revenue,
       baseCost: d.breakdownComplete ? d.baseCost : null,
@@ -52,7 +53,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
       cogs: d.cogs, grossProfit: d.grossProfit, costKnown: true,
     }));
     const machines: ReportLine[] = (report.machineSalesDetails || []).map((d: any) => ({
-      kind: 'Thiết bị', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
+      isReturn: d.isReturn, kind: 'Thiết bị', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
       itemCode: d.key, name: d.name, unit: 'cái', quantity: d.quantity,
       unitPrice: d.unitPrice, discount: d.discount, revenue: d.revenue,
       baseCost: d.breakdownComplete ? d.baseCost : null,
@@ -97,7 +98,7 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
           <div style={{ width: 155 }}><Field label="Từ ngày"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field></div>
           <div style={{ width: 155 }}><Field label="Đến ngày"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field></div>
         </> : <div style={{ width: 175 }}><Field label="Ngày trong kỳ"><Input type="date" value={anchor} onChange={(e) => setAnchor(e.target.value)} /></Field></div>}
-        {report && <div style={{ alignSelf: 'center', fontSize: 12, color: 'var(--text-muted)', padding: '0 4px' }}>
+        {report && <div style={{ alignSelf: 'flex-end', height: 38, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--text-muted)', padding: '0 4px' }}>
           <strong style={{ color: 'var(--text-strong)' }}>{report.range.label}</strong> · {new Date(report.range.from).toLocaleDateString('vi-VN')} – {new Date(report.range.to).toLocaleDateString('vi-VN')}
         </div>}
         <div style={{ flex: 1 }} />
@@ -118,19 +119,19 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
       </div>
       {loading ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>Đang tổng hợp giao dịch…</div> : !report ? <div style={{ padding: 32, textAlign: 'center' }}>Chưa có dữ liệu báo cáo.</div> : <>
         <div className="inventory-report-scroll" style={{ maxHeight: 'min(68vh, 760px)' }}>
-          <table className="table table-compact revenue-ledger" style={{ minWidth: 2040, tableLayout: 'fixed' }}>
-            <colgroup>{[135,105,230,100,150,330,65,140,135,150,140,130,130,155,155].map((width, i) => <col key={i} style={{ width }} />)}</colgroup>
+          <table className="table table-compact revenue-ledger" style={{ minWidth: 2290, tableLayout: 'fixed' }}>
+            <colgroup>{[135,105,230,100,190,330,65,140,135,150,140,130,130,155,155].map((width, i) => <col key={i} style={{ width }} />)}</colgroup>
             <thead><tr>
               <th style={textTh}>Mã đơn</th><th style={th}>Ngày</th><th style={textTh}>Khách hàng</th><th style={textTh}>Loại</th><th style={textTh}>Mã hàng</th><th style={textTh}>Tên hàng</th>
-              <th style={th}>SL</th><th style={th}>Đơn giá bán</th><th style={th}>Chiết khấu</th><th style={th}>Doanh thu thuần</th><th style={th}>Tiền hàng vốn</th><th style={th}>Cước mua</th><th style={th}>Phí mua khác</th><th style={th}>Tổng giá vốn</th><th style={th}>Lợi nhuận gộp</th>
+              <th style={th}>SL</th><th style={th}>Đơn giá bán</th><th style={th}>Chiết khấu</th><th style={th}>Doanh thu thuần</th><th style={th}>Tiền hàng vốn</th><th style={th}>Phí vận chuyển</th><th style={th}>Phí khác</th><th style={th}>Tổng giá vốn</th><th style={th}>Lợi nhuận gộp</th>
             </tr></thead>
             <tbody>{shown.length === 0 ? <tr><td colSpan={15} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}><Search size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} />Không có giao dịch khớp bộ lọc</td></tr> : shown.map((line, i) => <tr key={`${line.orderCode}-${line.kind}-${line.itemCode}-${i}`}>
               <td style={{ ...textTd, color: 'var(--brand)', fontWeight: 700 }}>{line.orderCode}</td>
               <td style={td}>{new Date(`${line.orderDate}T00:00:00`).toLocaleDateString('vi-VN')}</td>
               <td style={{ ...textTd, whiteSpace: 'normal' }}>{line.customerName}</td>
-              <td style={textTd}>{line.kind}</td><td style={{ ...textTd, color: 'var(--brand)' }}>{line.itemCode}</td>
+              <td style={{ ...textTd, whiteSpace: 'normal' }}>{line.isReturn ? 'Trả hàng' : line.kind}</td><td title={line.itemCode} style={{ ...textTd, color: 'var(--brand)', fontFamily: 'var(--font-mono)', fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis' }}>{line.itemCode}</td>
               <td style={{ ...textTd, whiteSpace: 'normal' }}>{line.name}</td><td style={td}>{fmt(line.quantity)} {line.unit}</td>
-              <td style={td}>{money(line.unitPrice)}</td><td style={td}>{line.discount ? `−${money(line.discount)}` : '—'}</td>
+              <td style={td}>{money(line.unitPrice)}</td><td style={td}>{line.discount ? `${line.discount < 0 ? '+' : '−'}${money(Math.abs(line.discount))}` : '—'}</td>
               <td style={{ ...td, fontWeight: 650 }}>{money(line.revenue)}</td><td style={td}>{money(line.baseCost)}</td><td style={td}>{money(line.shippingCost)}</td><td style={td}>{money(line.otherCost)}</td>
               <td style={td} title={!line.costKnown ? 'Chưa có giá vốn thiết bị' : line.kind === 'Phụ tùng' && !costComponentsKnown ? 'Một số phiếu cũ không có tách chi phí' : undefined}>{money(line.cogs)}</td>
               <td style={{ ...td, fontWeight: 650, color: line.grossProfit == null ? 'var(--text-muted)' : line.grossProfit < 0 ? '#dc2626' : '#15803d' }}>{money(line.grossProfit)}</td>
@@ -156,8 +157,8 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
     {report && <section className="inventory-report-print">
       <header className="inventory-report-print-header"><div><div className="inventory-report-print-company">{companyInfo?.name || 'Đơn vị lập báo cáo'}</div>{companyInfo?.address && <div>{companyInfo.address}</div>}<div>{[companyInfo?.phone && `Điện thoại: ${companyInfo.phone}`, companyInfo?.taxCode && `MST: ${companyInfo.taxCode}`].filter(Boolean).join(' · ')}</div></div>
         <div className="inventory-report-print-meta"><h1>BÁO CÁO DOANH THU</h1><div>Kỳ {report.range.label}: {report.range.from} – {report.range.to}</div><div>Ngày xuất: {new Date().toLocaleDateString('vi-VN')}</div></div></header>
-      <table className="inventory-report-print-table"><thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách hàng</th><th>Loại</th><th>Mã hàng</th><th>Tên hàng</th><th>SL</th><th>Đơn giá</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Tiền hàng vốn</th><th>Cước mua</th><th>Phí khác</th><th>Tổng giá vốn</th><th>Lợi nhuận gộp</th></tr></thead>
-        <tbody>{filtered.map((line, i) => <tr key={`print-${line.orderCode}-${line.kind}-${i}`}><td>{line.orderCode}</td><td>{line.orderDate}</td><td>{line.customerName}</td><td>{line.kind}</td><td>{line.itemCode}</td><td>{line.name}</td><td className="numeric">{fmt(line.quantity)}</td><td className="numeric">{money(line.unitPrice)}</td><td className="numeric">{money(line.discount)}</td><td className="numeric">{money(line.revenue)}</td><td className="numeric">{money(line.baseCost)}</td><td className="numeric">{money(line.shippingCost)}</td><td className="numeric">{money(line.otherCost)}</td><td className="numeric">{money(line.cogs)}</td><td className="numeric">{money(line.grossProfit)}</td></tr>)}</tbody>
+      <table className="inventory-report-print-table"><thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách hàng</th><th>Loại</th><th>Mã hàng</th><th>Tên hàng</th><th>SL</th><th>Đơn giá</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Tiền hàng vốn</th><th>Phí vận chuyển</th><th>Phí khác</th><th>Tổng giá vốn</th><th>Lợi nhuận gộp</th></tr></thead>
+        <tbody>{filtered.map((line, i) => <tr key={`print-${line.orderCode}-${line.kind}-${i}`}><td>{line.orderCode}</td><td>{line.orderDate}</td><td>{line.customerName}</td><td>{line.isReturn ? 'Trả hàng' : line.kind}</td><td>{line.itemCode}</td><td>{line.name}</td><td className="numeric">{fmt(line.quantity)}</td><td className="numeric">{money(line.unitPrice)}</td><td className="numeric">{line.discount < 0 ? `+${money(Math.abs(line.discount))}` : money(line.discount)}</td><td className="numeric">{money(line.revenue)}</td><td className="numeric">{money(line.baseCost)}</td><td className="numeric">{money(line.shippingCost)}</td><td className="numeric">{money(line.otherCost)}</td><td className="numeric">{money(line.cogs)}</td><td className="numeric">{money(line.grossProfit)}</td></tr>)}</tbody>
         <tfoot><tr><td colSpan={9}>TỔNG CỘNG · {filtered.length} dòng</td><td className="numeric">{money(sum('revenue'))}</td><td colSpan={3}></td><td className="numeric">{unknownMachineCost ? 'Chưa đủ' : money(sum('cogs'))}</td><td className="numeric">{unknownMachineCost ? 'Chưa đủ' : money(sum('grossProfit'))}</td></tr></tfoot>
       </table><p className="inventory-report-print-definition">Doanh thu thuần chưa gồm VAT. Giá vốn gồm chi phí mua được ghi nhận. Cước giao khách và VAT theo dõi riêng.</p>
     </section>}

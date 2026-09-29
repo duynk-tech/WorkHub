@@ -1249,6 +1249,36 @@ export async function updateSparePartOrder(
   });
 }
 
+/** Xóa PO nháp mới tạo, chưa đặt NCC, chưa thanh toán và chưa nhập kho. */
+export async function deleteNewSparePartOrder(orderId: number) {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.sparePartOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        supplierPayments: { select: { id: true } },
+        allocations: { select: { id: true } },
+      },
+    });
+    if (!order) throw new Error('Không tìm thấy phiếu mua hàng NCC');
+    if (order.status !== 'REQUESTED') {
+      throw new Error('Chỉ xóa được phiếu mới chưa chuyển sang bước đặt nhà cung cấp.');
+    }
+    if (Number(order.paidAmount) > 0 || order.supplierPayments.length > 0 || order.allocations.length > 0) {
+      throw new Error('Phiếu đã có thanh toán NCC nên không thể xóa.');
+    }
+
+    const receipt = await tx.inventoryTransaction.findFirst({
+      where: { sparePartOrderId: order.id },
+      select: { id: true },
+    });
+    if (receipt || order.stockedAt) {
+      throw new Error('Phiếu đã phát sinh nhập kho nên không thể xóa.');
+    }
+
+    return tx.sparePartOrder.delete({ where: { id: order.id } });
+  }, { isolationLevel: 'Serializable' });
+}
+
 /** Cập nhật trạng thái / Tiến trình Đơn hàng Order */
 export async function updateSparePartOrderStatus(
   orderId: number,
@@ -1306,19 +1336,6 @@ export async function updateSparePartOrderStatus(
     },
   });
 
-  // Nhập kho xong → đơn hàng khách đang chờ lô này chuyển sang "Đã có hàng, chờ giao".
-  // Hàng mới về mà chưa kiểm thì chưa giao khách được nên không báo ở bước đó.
-  // Cập nhật trực tiếp qua prisma để tránh vòng lặp import giữa 2 module.
-  if (shouldStockIn && order.customerOrderId) {
-    await prisma.customerOrder.updateMany({
-      where: {
-        id: order.customerOrderId,
-        status: { in: ['PENDING', 'CONFIRMED', 'AWAITING_STOCK'] },
-      },
-      data: { status: 'READY_TO_DELIVER' },
-    });
-  }
-
   // Chốt kiểm hàng (chuyển sang "Đã nhập kho") -> sinh phiếu nhập kho (IN)
   if (shouldStockIn) {
     const warehouseId = order.targetWarehouseId || (await getOrCreateDefaultWarehouseId());
@@ -1359,6 +1376,29 @@ export async function updateSparePartOrderStatus(
       data: { shippingFee: shippingByLine[index], customsFee: otherByLine[index] },
     })));
 
+    const receiptByItem = new Map<number, {
+      itemId: number;
+      quantity: number;
+      baseValue: number;
+      shippingValue: number;
+      otherValue: number;
+    }>();
+    order.items.forEach((it, index) => {
+      const quantity = it.quantity || 1;
+      const line = receiptByItem.get(it.itemId) || {
+        itemId: it.itemId,
+        quantity: 0,
+        baseValue: 0,
+        shippingValue: 0,
+        otherValue: 0,
+      };
+      line.quantity += quantity;
+      line.baseValue += Number(it.finalPriceVnd || 0);
+      line.shippingValue += Number(shippingByLine[index] || 0);
+      line.otherValue += Number(otherByLine[index] || 0);
+      receiptByItem.set(it.itemId, line);
+    });
+
     await createStockTransaction(
       {
         type: 'IN',
@@ -1377,13 +1417,13 @@ export async function updateSparePartOrderStatus(
         ]
           .filter(Boolean)
           .join(' · '),
-        items: order.items.map((it, index) => {
-          const quantity = it.quantity || 1;
-          const basePrice = Number(it.finalPriceVnd) / quantity;
-          const allocatedShipping = Number(shippingByLine[index] || 0) / quantity;
-          const allocatedOtherFee = Number(otherByLine[index] || 0) / quantity;
+        items: [...receiptByItem.values()].map((line) => {
+          const quantity = line.quantity || 1;
+          const basePrice = line.baseValue / quantity;
+          const allocatedShipping = line.shippingValue / quantity;
+          const allocatedOtherFee = line.otherValue / quantity;
           return {
-            itemId: it.itemId,
+            itemId: line.itemId,
             quantity,
             baseUnitPrice: basePrice,
             unitPrice: basePrice,
@@ -1395,6 +1435,53 @@ export async function updateSparePartOrderStatus(
       },
       userId
     );
+
+    // Chỉ báo đơn khách sẵn sàng giao khi tồn thực tế sau phiếu nhập đủ cho
+    // toàn bộ các dòng cần lấy từ kho; một PO về chưa chắc đã bao phủ hết đơn.
+    if (order.customerOrderId) {
+      const customerOrder = await prisma.customerOrder.findUnique({
+        where: { id: order.customerOrderId },
+        include: { items: { select: { itemType: true, inventoryItemId: true, equipmentId: true, quantity: true } } },
+      });
+      if (customerOrder && !customerOrder.stockIssuedAt) {
+        const stockLines = customerOrder.items.filter((line) =>
+          line.itemType === 'SPARE_PART' || (line.itemType === 'EQUIPMENT' && line.inventoryItemId && !line.equipmentId),
+        );
+        const itemIds = [...new Set(stockLines.flatMap((line) => line.inventoryItemId ? [line.inventoryItemId] : []))];
+        const stockRows = itemIds.length
+          ? await prisma.inventoryStock.findMany({
+              where: { itemId: { in: itemIds } },
+              select: { itemId: true, quantity: true },
+            })
+          : [];
+        const qtyByItem = new Map<number, number>();
+        for (const stock of stockRows) {
+          qtyByItem.set(stock.itemId, (qtyByItem.get(stock.itemId) || 0) + stock.quantity);
+        }
+        const requiredByItem = new Map<number, number>();
+        let hasUnmappedLine = false;
+        for (const line of stockLines) {
+          if (!line.inventoryItemId) {
+            hasUnmappedLine = true;
+            continue;
+          }
+          requiredByItem.set(
+            line.inventoryItemId,
+            (requiredByItem.get(line.inventoryItemId) || 0) + line.quantity,
+          );
+        }
+        const ready = !hasUnmappedLine && [...requiredByItem].every(([itemId, quantity]) =>
+          (qtyByItem.get(itemId) || 0) >= quantity,
+        );
+        await prisma.customerOrder.updateMany({
+          where: {
+            id: customerOrder.id,
+            status: { in: ['PENDING', 'CONFIRMED', 'AWAITING_STOCK', 'READY_TO_DELIVER'] },
+          },
+          data: { status: ready ? 'READY_TO_DELIVER' : 'AWAITING_STOCK' },
+        });
+      }
+    }
   }
 
   return updated;
@@ -1920,8 +2007,18 @@ export async function recordSupplierPayment(
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
   const paymentCode = await generateSupplierPaymentCode();
   return prisma.$transaction(async (tx) => {
-    const orders = await tx.sparePartOrder.findMany({ where: { supplier: input.supplier.trim(), status: { not: 'CANCELLED' }, ...(input.orderId ? { id: input.orderId } : {}) }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
-    if (input.orderId && !orders.length) throw new Error('Đơn không thuộc nhà cung cấp hoặc đã hủy');
+    // Với thanh toán gắn trực tiếp PO, người nhận tiền có thể là hãng vận
+    // chuyển/hải quan chứ không trùng tên nhà cung cấp trên PO.
+    const orders = input.orderId
+      ? await tx.sparePartOrder.findMany({
+          where: { id: input.orderId, status: { not: 'CANCELLED' } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        })
+      : await tx.sparePartOrder.findMany({
+          where: { supplier: input.supplier.trim(), status: { not: 'CANCELLED' } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        });
+    if (input.orderId && !orders.length) throw new Error('Phiếu mua hàng không tồn tại hoặc đã hủy');
     const { allocations, unapplied } = allocatePayment(amount, orders.map((order) => ({ id: order.id, remaining: supplierOrderDebt(order).remaining })));
     const payment = await tx.supplierPayment.create({ data: {
       allocationVersion: 1, paymentCode, supplier: input.supplier.trim(), orderId: input.orderId || null, amount,

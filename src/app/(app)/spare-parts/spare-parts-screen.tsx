@@ -27,7 +27,6 @@ import {
   Plane,
   Clock,
   CheckCircle2,
-  SlidersHorizontal,
   Printer,
   FileDown,
   Wallet,
@@ -59,7 +58,6 @@ import {
   parseFeesFromDescription,
 } from '@/components/domain/spare-parts-modals';
 import { saveSparePartAction } from '@/server/modules/spare-parts/actions';
-import { SparePartPricingModal } from '@/components/domain/spare-part-pricing-modal';
 import { InventoryTransactionReportModal } from '@/components/domain/inventory-transaction-report-modal';
 import { StockHistoryPanel } from '@/components/domain/stock-history-panel';
 import { StockCountModal } from '@/components/domain/stock-count-modal';
@@ -145,7 +143,6 @@ export function SparePartsScreen({
   const [lowStockOnly, setLowStockOnly] = useState(false);
 
   // Modals state
-  const [pricingModalOpen, setPricingModalOpen] = useState(false);
   const [partModalOpen, setPartModalOpen] = useState(false);
   const [editingPart, setEditingPart] = useState<any | null>(null);
   const [calcModalOpen, setCalcModalOpen] = useState(false);
@@ -304,17 +301,6 @@ export function SparePartsScreen({
               title="Khai báo mã mới, thêm máy tại khách, hoặc lập phiếu kho"
             >
               <FilePlus2 size={15} style={{ marginRight: 6 }} /> Tạo mới
-            </Button>
-
-            <Button
-              size="sm"
-              variant="secondary"
-              iconOnly
-              onClick={() => setPricingModalOpen(true)}
-              title="Cấu hình Chính sách Giá & Margin Phụ tùng"
-              aria-label="Cấu hình Chính sách Giá & Margin Phụ tùng"
-            >
-              <SlidersHorizontal size={15} />
             </Button>
 
           </div>
@@ -1232,15 +1218,6 @@ export function SparePartsScreen({
           open={warehouseModalOpen}
           warehouse={editingWarehouse}
           onClose={() => setWarehouseModalOpen(false)}
-          onSuccess={() => startTransition(() => router.refresh())}
-        />
-      )}
-
-      {pricingModalOpen && (
-        <SparePartPricingModal
-          open={pricingModalOpen}
-          initialConfig={pricingConfig}
-          onClose={() => setPricingModalOpen(false)}
           onSuccess={() => startTransition(() => router.refresh())}
         />
       )}
