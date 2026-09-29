@@ -83,19 +83,11 @@ function getPartPriceInfo(
   const unitCost = eur > 0 ? Math.round(eur * rateNum) : costVnd;
   const unitPriceEur = eur > 0 ? eur : (unitCost > 0 ? Math.round((unitCost / rateNum) * 100) / 100 : 0);
 
-  // Parse custom fees from description if any
-  let unitShip = defaultShippingFee;
-  let unitOther = defaultCustomsFee;
-  if (part.description) {
-    const match = String(part.description).match(/<!--fees:({.*?})-->/);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[1]);
-        if (parsed.shippingFee !== undefined && Number(parsed.shippingFee) >= 0) unitShip = Number(parsed.shippingFee);
-        if (parsed.otherFee !== undefined && Number(parsed.otherFee) >= 0) unitOther = Number(parsed.otherFee);
-      } catch {}
-    }
-  }
+  // New PO lines start from the current purchasing configuration. Historical
+  // fee metadata embedded in a part description may be stale and must not
+  // override the configured defaults; the buyer can still edit the line fees.
+  const unitShip = defaultShippingFee;
+  const unitOther = defaultCustomsFee;
 
   const listSelling = part.sellingPrice && Number(part.sellingPrice) > 0 ? Number(part.sellingPrice) : 0;
   const baseSelling = unitCost > 0 ? calculateSellingPriceFromMargin(unitCost, marginPercent, pricingMethod) : 0;
