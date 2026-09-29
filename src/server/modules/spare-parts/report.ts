@@ -177,15 +177,18 @@ export interface InventoryProfitReport {
     discount: number;
     revenue: number;
     cogs: number | null;
+    baseCost: number | null;
+    shippingCost: number | null;
+    otherCost: number | null;
+    breakdownComplete: boolean;
     grossProfit: number | null;
     costKnown: boolean;
   }[];
 }
 
 export async function getInventoryProfitReport(range: ReportRange): Promise<InventoryProfitReport> {
-  // 1. Bản đồ Đơn giá vốn thực tế về kho từ các đơn mua hàng NCC (PO)
-  //    Phân bổ cước VC + hải quan theo tỷ trọng giá trị hàng (đúng nguyên tắc kế toán),
-  //    không chia đều theo số dòng.
+  // 1. Bản đồ đơn giá vốn nhập gần nhất từ PO. Ưu tiên phí đã chốt theo từng dòng;
+  //    PO cũ chưa có tách dòng thì dùng cùng cách phân bổ theo số lượng như lúc nhận kho.
   const poOrders = await prisma.sparePartOrder.findMany({
     where: { status: { not: 'CANCELLED' } },
     include: {
@@ -201,9 +204,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     const customsFee = Number(po.customsFee || 0);
     const extraShippingRate = Number(po.extraShippingRate || 0); // VD 0.25 = 25% phụ phí VC
 
-    // Tính tổng giá trị hàng (finalPriceVnd) của toàn PO để phân bổ theo tỷ trọng
-    const totalLineValue = po.items.reduce((sum, it) => sum + Number(it.finalPriceVnd || it.unitPriceVnd || 0), 0);
-    const totalOverhead = shippingFee + customsFee; // Tổng phí phân bổ
+    const totalQty = po.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
 
     for (const poItem of po.items) {
       if (actualUnitCostMap.has(poItem.itemId)) continue;
@@ -213,15 +214,15 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       // Đơn giá hàng thuần (đã trừ chiết khấu NCC dòng) trên mỗi đơn vị
       const itemBasePerUnit = lineValue / qty;
 
-      // Phụ phí VC thêm (extraShippingRate × giá hàng dòng)
+      const allocatedShipping = poItem.shippingFee != null
+        ? Number(poItem.shippingFee)
+        : totalQty > 0 ? shippingFee * qty / totalQty : 0;
+      const allocatedCustoms = poItem.customsFee != null
+        ? Number(poItem.customsFee)
+        : totalQty > 0 ? customsFee * qty / totalQty : 0;
+      // Phụ phí VC cũ nếu đơn thực sự ghi nhận tỷ lệ này
       const extraShipping = itemBasePerUnit * extraShippingRate;
-
-      // Phân bổ cước VC + hải quan theo tỷ trọng giá trị dòng / tổng PO
-      const overheadRatio = totalLineValue > 0 ? lineValue / totalLineValue : (1 / (po.items.length || 1));
-      const allocatedOverhead = totalOverhead * overheadRatio;
-      const overheadPerUnit = allocatedOverhead / qty;
-
-      const actualUnitCost = Math.round(itemBasePerUnit + extraShipping + overheadPerUnit);
+      const actualUnitCost = Math.round(itemBasePerUnit + extraShipping + (allocatedShipping + allocatedCustoms) / qty);
       if (actualUnitCost > 0) {
         actualUnitCostMap.set(poItem.itemId, actualUnitCost);
       }
@@ -443,11 +444,19 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       current.gross += gross;
       current.revenue += lineRevenue;
       current.discount += lineDiscount;
-      if (machine?.unitCost == null) current.costKnown = false;
-      else current.cogs += Number(machine.unitCost) * quantity;
+      const stockCost = line.inventoryItemId
+        ? saleCostByOrderItem.get(`${order.id}:${line.inventoryItemId}`)
+        : undefined;
+      const hasStockCost = Boolean(stockCost?.qty);
+      const lineCogs = hasStockCost
+        ? stockCost!.cost * quantity / stockCost!.qty
+        : machine?.unitCost == null ? null : Number(machine.unitCost) * quantity;
+      const breakdownComplete = hasStockCost && stockCost!.breakdownComplete;
+      const componentScale = hasStockCost ? quantity / stockCost!.qty : 0;
+      if (lineCogs == null) current.costKnown = false;
+      else current.cogs += lineCogs;
       machineSalesMap.set(mapKey, current);
-      const machineCostKnown = machine?.unitCost != null;
-      const lineCogs = machineCostKnown ? (Number(machine.unitCost) || 0) * quantity : null;
+      const machineCostKnown = lineCogs != null;
       machineSalesDetails.push({
         orderCode: order.orderCode,
         orderDate: toLocalDateString(order.orderDate),
@@ -459,6 +468,10 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
         discount: lineDiscount,
         revenue: lineRevenue,
         cogs: lineCogs,
+        baseCost: breakdownComplete ? stockCost!.baseCost * componentScale : null,
+        shippingCost: breakdownComplete ? stockCost!.shippingCost * componentScale : null,
+        otherCost: breakdownComplete ? stockCost!.otherCost * componentScale : null,
+        breakdownComplete,
         grossProfit: lineCogs == null ? null : lineRevenue - lineCogs,
         costKnown: machineCostKnown,
       });
@@ -774,11 +787,14 @@ export function reportToCsv(report: InventoryProfitReport): string {
 
   lines.push('');
   lines.push('CHI TIẾT BÁN MÁY MÓC THEO ĐƠN');
-  lines.push('Mã đơn;Ngày;Khách hàng;Mã máy;Tên máy;SL;Giá bán;Chiết khấu;Doanh thu;Giá vốn;Lãi gộp');
+  lines.push('Mã đơn;Ngày;Khách hàng;Mã máy;Tên máy;SL;Giá bán;Chiết khấu;Doanh thu;Tiền hàng vốn;Cước mua phân bổ;Phí mua khác phân bổ;Tổng giá vốn;Lãi gộp');
   for (const machine of report.machineSalesDetails || []) {
     lines.push([
       esc(machine.orderCode), machine.orderDate, esc(machine.customerName), esc(machine.key), esc(machine.name),
       machine.quantity, machine.unitPrice, machine.discount, machine.revenue,
+      machine.breakdownComplete ? machine.baseCost ?? 0 : '',
+      machine.breakdownComplete ? machine.shippingCost ?? 0 : '',
+      machine.breakdownComplete ? machine.otherCost ?? 0 : '',
       machine.costKnown ? machine.cogs ?? 0 : '', machine.costKnown ? machine.grossProfit ?? 0 : '',
     ].join(';'));
   }

@@ -1644,8 +1644,8 @@ model SparePartOrder {
   currency          String    @default("EUR") @db.VarChar(10)
   exchangeRate      Decimal   @default(32500) @db.Decimal(15, 2)
   shippingFee       Decimal   @default(3500000) @db.Decimal(15, 2)
-  customsFee        Decimal   @default(1000000) @db.Decimal(15, 2)
-  extraShippingRate Decimal   @default(0.25) @db.Decimal(5, 2)
+  customsFee        Decimal   @default(0) @db.Decimal(15, 2)
+  extraShippingRate Decimal   @default(0) @db.Decimal(5, 2)
   discountRate      Decimal   @default(0) @db.Decimal(5, 4)
   totalItemsQty     Int       @default(0)
   subtotalVnd       Decimal   @default(0) @db.Decimal(15, 2)
@@ -1693,6 +1693,8 @@ model SparePartOrderItem {
   unitPriceVnd  Decimal  @db.Decimal(15, 2)
   discountVnd   Decimal  @default(0) @db.Decimal(15, 2)
   finalPriceVnd Decimal  @db.Decimal(15, 2)
+  shippingFee   Decimal? @db.Decimal(15, 2) // Cước thực tế ghi cho dòng hàng trên PO
+  customsFee    Decimal? @db.Decimal(15, 2) // Phí khác thực tế ghi cho dòng hàng trên PO
 
   order SparePartOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item  InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)

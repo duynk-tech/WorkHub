@@ -350,7 +350,7 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
               otherFee: totalOther,
               merchandiseTotal,
               totalLandedCost: merchandiseTotal + totalShipping + totalOther,
-              allocationMethod: (input.allocationMethod || 'QUANTITY') as 'QUANTITY' | 'VALUE',
+              allocationMethod: (input.allocationMethod || 'QUANTITY') as 'QUANTITY' | 'VALUE' | 'LINE' | 'EXPLICIT',
               items: input.items.map((it) => ({
                 itemId: it.itemId,
                 quantity: Number(it.quantity) || 0,
@@ -926,8 +926,8 @@ export const DEFAULT_PRICING_CONFIG: SparePartPricingConfig = {
   defaultMarginPercent: 30,
   pricingMethod: 'MARGIN',
   defaultShippingFee: 3500000,
-  defaultCustomsFee: 1000000,
-  defaultExtraShippingRate: 0.25,
+  defaultCustomsFee: 0,
+  defaultExtraShippingRate: 0,
   defaultVatRate: 8,
   volumeDiscountTiers: VOLUME_DISCOUNT_TIERS,
   defaultValidDays: 15,
@@ -969,7 +969,15 @@ export async function saveSparePartPricingConfig(config: SparePartPricingConfig)
  * hải quan; cả hai đã bỏ theo quy định giá mới, chỉ còn cước vận chuyển.
  */
 export function calculateOrderPricing(
-  items: { itemId: number; quantity: number; unitPriceEur?: number; name?: string; itemCode?: string }[],
+  items: {
+    itemId: number;
+    quantity: number;
+    unitPriceEur?: number;
+    name?: string;
+    itemCode?: string;
+    shippingFee?: number | null;
+    customsFee?: number | null;
+  }[],
   options: {
     exchangeRate?: number;
     shippingFee?: number;
@@ -1121,6 +1129,8 @@ export async function createSparePartOrder(input: SaveSparePartOrderInput, userI
           unitPriceVnd: it.unitPriceVnd,
           discountVnd: it.discountVnd,
           finalPriceVnd: it.finalPriceVnd,
+          shippingFee: it.shippingFee ?? null,
+          customsFee: it.customsFee ?? null,
         })),
       },
     },
@@ -1224,6 +1234,8 @@ export async function updateSparePartOrder(
             unitPriceVnd: it.unitPriceVnd,
             discountVnd: it.discountVnd,
             finalPriceVnd: it.finalPriceVnd,
+            shippingFee: it.shippingFee ?? null,
+            customsFee: it.customsFee ?? null,
           })),
         },
       },
@@ -1316,6 +1328,36 @@ export async function updateSparePartOrderStatus(
     const effectiveOther = input.customsFee !== undefined && input.customsFee !== null
       ? Number(input.customsFee)
       : Number(order.customsFee || 0);
+    const allocateLineFee = (total: number, feeByLine: number[], hasRecordedBreakdown: boolean) => {
+      const weights = hasRecordedBreakdown && feeByLine.some((fee) => fee > 0)
+        ? feeByLine
+        : order.items.map((it) => Number(it.quantity) || 0);
+      const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+      let allocated = 0;
+      return order.items.map((_, index) => {
+        const amount = index === order.items.length - 1
+          ? Math.round((total - allocated) * 100) / 100
+          : weightTotal > 0 ? Math.round(total * weights[index] / weightTotal * 100) / 100 : 0;
+        allocated += amount;
+        return amount;
+      });
+    };
+    // Nếu cước thực tế thay đổi khi nhận hàng, giữ tỷ trọng dòng đã khai trên PO;
+    // đơn cũ chưa có tách dòng thì chia tổng theo số lượng và chốt lại snapshot.
+    const shippingByLine = allocateLineFee(
+      effectiveShipping,
+      order.items.map((it) => Number(it.shippingFee || 0)),
+      order.items.every((it) => it.shippingFee != null),
+    );
+    const otherByLine = allocateLineFee(
+      effectiveOther,
+      order.items.map((it) => Number(it.customsFee || 0)),
+      order.items.every((it) => it.customsFee != null),
+    );
+    await Promise.all(order.items.map((it, index) => prisma.sparePartOrderItem.update({
+      where: { id: it.id },
+      data: { shippingFee: shippingByLine[index], customsFee: otherByLine[index] },
+    })));
 
     await createStockTransaction(
       {
@@ -1326,7 +1368,8 @@ export async function updateSparePartOrderStatus(
         targetWarehouseId: warehouseId,
         shippingFee: effectiveShipping,
         otherFee: effectiveOther,
-        allocationMethod: 'QUANTITY',
+        // Snapshot đã được chốt theo từng dòng PO ngay lúc nhận hàng.
+        allocationMethod: 'EXPLICIT',
         reason: `Nhập kho từ phiếu đặt hàng ${order.orderCode} (${order.supplier})`,
         note: [
           `Mã vận đơn: ${order.trackingNumber || 'N/A'}`,
@@ -1334,13 +1377,19 @@ export async function updateSparePartOrderStatus(
         ]
           .filter(Boolean)
           .join(' · '),
-        items: order.items.map((it) => {
-          const basePrice = Number(it.finalPriceVnd) / (it.quantity || 1);
+        items: order.items.map((it, index) => {
+          const quantity = it.quantity || 1;
+          const basePrice = Number(it.finalPriceVnd) / quantity;
+          const allocatedShipping = Number(shippingByLine[index] || 0) / quantity;
+          const allocatedOtherFee = Number(otherByLine[index] || 0) / quantity;
           return {
             itemId: it.itemId,
-            quantity: it.quantity,
+            quantity,
             baseUnitPrice: basePrice,
             unitPrice: basePrice,
+            allocatedShipping,
+            allocatedOtherFee,
+            landedCost: basePrice + allocatedShipping + allocatedOtherFee,
           };
         }),
       },

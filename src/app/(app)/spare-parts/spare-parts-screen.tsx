@@ -1117,7 +1117,7 @@ export function SparePartsScreen({
             const parsed = parseFeesFromDescription(pricingTargetPart.description);
             let finalDesc = parsed.cleanDesc || '';
             const defShip = Number(pricingConfig?.defaultShippingFee ?? 3500000);
-            const defCustoms = Number(pricingConfig?.defaultCustomsFee ?? 1000000);
+            const defCustoms = Number(pricingConfig?.defaultCustomsFee ?? 0);
             if (shippingFee !== defShip || otherFee !== defCustoms) {
               finalDesc = finalDesc
                 ? `${finalDesc}\n<!--fees:${JSON.stringify({ shippingFee, otherFee })}-->`

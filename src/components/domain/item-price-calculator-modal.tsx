@@ -57,7 +57,7 @@ export function ItemPriceCalculatorModal({
   const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
   const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
   const defaultShippingFee = Number(pricingConfig?.defaultShippingFee ?? 3500000);
-  const defaultCustomsFee = Number(pricingConfig?.defaultCustomsFee ?? 1000000);
+  const defaultCustomsFee = Number(pricingConfig?.defaultCustomsFee ?? 0);
 
   const isMachine = category === 'EQUIPMENT' || category === 'MACHINE';
   const catInfo = PART_CATEGORIES[category] || {

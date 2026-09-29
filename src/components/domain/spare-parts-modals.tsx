@@ -71,7 +71,7 @@ export function SparePartModal({
   const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
   const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
   const defaultShippingFee = Number(pricingConfig?.defaultShippingFee ?? 3500000);
-  const defaultCustomsFee = Number(pricingConfig?.defaultCustomsFee ?? 1000000);
+  const defaultCustomsFee = Number(pricingConfig?.defaultCustomsFee ?? 0);
 
   const parsedDesc = useMemo(() => parseFeesFromDescription(part?.description), [part?.description]);
 
@@ -558,7 +558,7 @@ export function StockTransactionModal({
   );
   const [shippingFee, setShippingFee] = useState<number | undefined>(undefined);
   const [otherFee, setOtherFee] = useState<number | undefined>(undefined);
-  const [allocationMethod, setAllocationMethod] = useState<'QUANTITY' | 'VALUE'>('QUANTITY');
+  const [allocationMethod, setAllocationMethod] = useState<'QUANTITY' | 'VALUE' | 'LINE'>('QUANTITY');
 
   const [items, setItems] = useState<
     Array<{ itemId: number; quantity: number; unitPrice?: number; allocatedShipping?: number; allocatedOtherFee?: number }>
@@ -1044,10 +1044,11 @@ export function StockTransactionModal({
               <select
                 className="select"
                 value={allocationMethod}
-                onChange={(e) => setAllocationMethod(e.target.value as 'QUANTITY' | 'VALUE')}
+                onChange={(e) => setAllocationMethod(e.target.value as 'QUANTITY' | 'VALUE' | 'LINE')}
               >
                 <option value="QUANTITY">Theo số lượng (đều)</option>
                 <option value="VALUE">Theo tỷ lệ giá trị</option>
+                <option value="LINE">Chia đều theo dòng hàng</option>
               </select>
             </Field>
           </div>

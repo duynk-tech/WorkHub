@@ -469,7 +469,13 @@ export function InventoryTransactionReportModal({
                   </tbody>
                 </table>
                 <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', marginTop: 4 }}>
-                  Phân bổ theo phương thức: {costMetrics.allocationMethod === 'VALUE' ? 'Tỷ lệ giá trị hàng' : 'Số lượng (chia đều)'}
+                  Phân bổ theo phương thức: {costMetrics.allocationMethod === 'EXPLICIT'
+                    ? 'Theo chi phí từng dòng đã ghi nhận'
+                    : costMetrics.allocationMethod === 'VALUE'
+                      ? 'Tỷ lệ giá trị hàng'
+                      : costMetrics.allocationMethod === 'LINE'
+                        ? 'Chia đều theo dòng hàng'
+                        : 'Theo số lượng'}
                 </div>
               </div>
             )}

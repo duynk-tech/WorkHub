@@ -616,9 +616,12 @@ export function PurchasesScreen({
 
                             {/* Chi tiết 2 cột */}
                             {(() => {
-                              const itemsCount = order.items?.length || 1;
-                              const shippingPerLine = (order.items?.length || 0) > 0 ? Number(order.shippingFee || 0) / itemsCount : 0;
-                              const otherPerLine = (order.items?.length || 0) > 0 ? Number(order.customsFee || 0) / itemsCount : 0;
+                              const totalOrderQty = (order.items || []).reduce(
+                                (sum: number, it: any) => sum + (Number(it.quantity) || 0),
+                                0,
+                              );
+                              const shippingPerUnit = totalOrderQty > 0 ? Number(order.shippingFee || 0) / totalOrderQty : 0;
+                              const otherPerUnit = totalOrderQty > 0 ? Number(order.customsFee || 0) / totalOrderQty : 0;
                               const exchangeRate = Number(order.exchangeRate || 32500);
                               const curSym = order.currency === 'USD' ? '$' : order.currency === 'VND' ? '₫' : '€';
 
@@ -630,17 +633,25 @@ export function PurchasesScreen({
                                     : Number(it.unitPriceEur || 0) > 0
                                     ? Math.round(Number(it.unitPriceEur) * exchangeRate)
                                     : Number(it.item?.avgCost || it.item?.costPrice || 0);
-                                const freightPerUnit = qty > 0 ? Math.round(shippingPerLine / qty) : 0;
-                                const otherFeePerUnit = qty > 0 ? Math.round(otherPerLine / qty) : 0;
+                                const lineShipping = it.shippingFee != null
+                                  ? Number(it.shippingFee)
+                                  : shippingPerUnit * qty;
+                                const lineOther = it.customsFee != null
+                                  ? Number(it.customsFee)
+                                  : otherPerUnit * qty;
+                                const freightPerUnit = qty > 0 ? lineShipping / qty : 0;
+                                const otherFeePerUnit = qty > 0 ? lineOther / qty : 0;
                                 const unitCostWithFees = baseCost + freightPerUnit + otherFeePerUnit;
                                 return {
                                   ...it,
                                   baseCost,
+                                  lineShipping,
+                                  lineOther,
                                   freightPerUnit,
                                   otherFeePerUnit,
                                   unitCostWithFees,
                                   costSubtotal: baseCost * qty,
-                                  totalCostWithFees: unitCostWithFees * qty,
+                                  totalCostWithFees: baseCost * qty + lineShipping + lineOther,
                                 };
                               });
 
@@ -722,8 +733,10 @@ export function PurchasesScreen({
                                               x{it.quantity} {it.item?.unit || 'cái'}
                                             </div>
                                             <div style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 700 }}>
-                                              {new Intl.NumberFormat('vi-VN').format(it.costSubtotal)} ₫
-                                              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>(Giá vốn)</div>
+                                              {new Intl.NumberFormat('vi-VN').format(it.totalCostWithFees)} ₫
+                                              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>
+                                                Tiền hàng {new Intl.NumberFormat('vi-VN').format(it.costSubtotal)} · Cước {new Intl.NumberFormat('vi-VN').format(it.lineShipping)} · Phí khác {new Intl.NumberFormat('vi-VN').format(it.lineOther)}
+                                              </div>
                                             </div>
                                           </div>
                                         </div>

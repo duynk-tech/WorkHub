@@ -200,7 +200,7 @@ export function SparePartOrderModal({
   const marginPercent = pricingConfig?.defaultMarginPercent ?? 30;
   const pricingMethod = pricingConfig?.pricingMethod ?? 'MARGIN';
   const defaultShippingFee = pricingConfig?.defaultShippingFee ?? 3500000;
-  const defaultCustomsFee = pricingConfig?.defaultCustomsFee ?? 1000000;
+  const defaultCustomsFee = pricingConfig?.defaultCustomsFee ?? 0;
 
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -285,14 +285,21 @@ export function SparePartOrderModal({
     }>
   >(() => {
     if (initialOrder?.items && initialOrder.items.length > 0) {
+      const totalQty = initialOrder.items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
       return initialOrder.items.map((it: any) => ({
         itemId: it.itemId || it.item?.id || '',
         quantity: Number(it.quantity) || 1,
         unitPriceEur: Number(it.unitPriceEur || 0),
         unitCostVnd: Number(it.unitPriceVnd || 0),
         sellingPrice: it.sellingPrice !== undefined ? Number(it.sellingPrice) : undefined,
-        shippingFee: it.shippingFee !== undefined ? Number(it.shippingFee) : undefined,
-        otherFee: it.otherFee !== undefined ? Number(it.otherFee) : undefined,
+        // Đơn cũ chỉ có tổng phí ở đầu PO: phân bổ tạm theo số lượng để khi sửa
+        // và lưu lại, tổng phí vẫn giữ nguyên thay vì tự áp lại mức mặc định.
+        shippingFee: it.shippingFee != null
+          ? Number(it.shippingFee)
+          : totalQty > 0 ? Number(initialOrder.shippingFee || 0) * Number(it.quantity || 0) / totalQty : undefined,
+        otherFee: it.customsFee != null
+          ? Number(it.customsFee)
+          : totalQty > 0 ? Number(initialOrder.customsFee || 0) * Number(it.quantity || 0) / totalQty : undefined,
       }));
     }
     return [
@@ -317,7 +324,7 @@ export function SparePartOrderModal({
           return {
             ...it,
             shippingFee: it.shippingFee !== undefined ? it.shippingFee : (pricingConfig.defaultShippingFee ?? 3500000) * qty,
-            otherFee: it.otherFee !== undefined ? it.otherFee : (pricingConfig.defaultCustomsFee ?? 1000000) * qty,
+            otherFee: it.otherFee !== undefined ? it.otherFee : (pricingConfig.defaultCustomsFee ?? 0) * qty,
           };
         })
       );
@@ -593,7 +600,7 @@ export function SparePartOrderModal({
         : (pricingConfig?.defaultShippingFee ?? 3500000) * qty;
       const lineOther = it.otherFee !== undefined
         ? Math.max(0, Number(it.otherFee) || 0)
-        : (pricingConfig?.defaultCustomsFee ?? 1000000) * qty;
+        : (pricingConfig?.defaultCustomsFee ?? 0) * qty;
 
       const freightPerUnit = qty > 0 ? Math.round(lineShipping / qty) : 0;
       const otherFeePerUnit = qty > 0 ? Math.round(lineOther / qty) : 0;
@@ -716,11 +723,17 @@ export function SparePartOrderModal({
         trackingNumber: trackingNumber.trim() || null,
         etaDate: etaDate || null,
         notes: notesWithVat || null,
-        items: validItems.map((it) => ({
-          itemId: Number(it.itemId),
-          quantity: Number(it.quantity),
-          unitPriceEur: Number(it.unitPriceEur),
-        })),
+        items: items.flatMap((it, index) => {
+          if (!it.itemId || Number(it.quantity) <= 0) return [];
+          const costs = calculation.calculatedItems[index];
+          return [{
+            itemId: Number(it.itemId),
+            quantity: Number(it.quantity),
+            unitPriceEur: Number(it.unitPriceEur),
+            shippingFee: costs?.shippingFee ?? 0,
+            customsFee: costs?.otherFee ?? 0,
+          }];
+        }),
       };
 
       const res = initialOrder?.id

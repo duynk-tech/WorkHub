@@ -10,7 +10,6 @@ import {
 } from '@/server/modules/spare-parts/types';
 import { getEquipmentSpecRows, getEquipmentQuickPills } from '@/lib/equipment-specs';
 import { EquipmentSpecGrid } from '@/components/domain/equipment-spec-grid';
-import { parseFeesFromDescription } from '@/components/domain/spare-parts-modals';
 
 /**
  * Bảng chọn hàng dùng chung cho Đơn hàng và Báo giá khách hàng.
@@ -203,8 +202,6 @@ export function useLineItems({
   pricingConfig,
   strictSellingPrice = false,
   exchangeRate = 27800,
-  defaultShippingFee = 0,
-  defaultCustomsFee = 0,
   onWarning,
 }: {
   initialItems?: LineItem[];
@@ -216,8 +213,6 @@ export function useLineItems({
   /** Khi bật: chỉ lấy giá bán niêm yết/tính sẵn trong danh mục, không tính lại động từ giá vốn */
   strictSellingPrice?: boolean;
   exchangeRate?: number;
-  defaultShippingFee?: number;
-  defaultCustomsFee?: number;
   /** Callback phát cảnh báo khi chọn sản phẩm chưa có giá bán */
   onWarning?: (msg: string) => void;
 }) {
@@ -258,16 +253,12 @@ export function useLineItems({
       const prevQty = Math.max(1, Number(items[index].quantity) || 1);
       const qty = Math.max(1, Number(value) || 1);
       current.quantity = qty;
-      const unitShip =
-        items[index].shippingFee !== undefined && prevQty > 0
-          ? Math.round(items[index].shippingFee / prevQty)
-          : defaultShippingFee;
-      const unitOther =
-        items[index].customsFee !== undefined && prevQty > 0
-          ? Math.round(items[index].customsFee / prevQty)
-          : defaultCustomsFee;
-      current.shippingFee = unitShip * qty;
-      current.customsFee = unitOther * qty;
+      current.shippingFee = items[index].shippingFee !== undefined
+        ? Math.round(items[index].shippingFee / prevQty) * qty
+        : undefined;
+      current.customsFee = items[index].customsFee !== undefined
+        ? Math.round(items[index].customsFee / prevQty) * qty
+        : undefined;
     } else if (field === 'unitPriceEur') {
       const eur = Math.max(0, Number(value) || 0);
       current.unitPriceEur = eur;
@@ -383,13 +374,14 @@ export function useLineItems({
           source = quoted.source;
         }
 
-        const parsed = parseFeesFromDescription(p.description);
         const eur = Number(p.priceEur || 0);
-        const costVnd =
-          Number(p.costPrice || p.avgCost || 0) || (eur > 0 ? Math.round(eur * rateNum) : 0);
-        const unitEur = eur > 0 ? eur : rateNum > 0 && costVnd > 0 ? Number((costVnd / rateNum).toFixed(2)) : 0;
-        const unitShip = parsed.shippingFee !== undefined ? parsed.shippingFee : defaultShippingFee;
-        const unitOther = parsed.otherFee !== undefined ? parsed.otherFee : defaultCustomsFee;
+        // Giá vốn và các khoản phí bán phải lấy từ bình quân tồn kho đã vốn hóa,
+        // không lấy cước mặc định cấu hình lần nữa (tránh cộng cước hai lần).
+        // Nếu kho chưa có đủ breakdown thì để trống đến lúc xuất kho chốt snapshot.
+        const hasCostBreakdown =
+          p.avgBaseCost != null && p.avgShippingCost != null && p.avgOtherCost != null;
+        const costVnd = hasCostBreakdown ? Number(p.avgBaseCost) : undefined;
+        const unitEur = eur > 0 ? eur : rateNum > 0 && Number(costVnd) > 0 ? Number((Number(costVnd) / rateNum).toFixed(2)) : 0;
 
         updated[index] = {
           ...updated[index],
@@ -401,8 +393,8 @@ export function useLineItems({
           priceSource: source,
           unitPriceEur: unitEur,
           unitCostVnd: costVnd,
-          shippingFee: unitShip * currentQty,
-          customsFee: unitOther * currentQty,
+          shippingFee: hasCostBreakdown ? Number(p.avgShippingCost) * currentQty : undefined,
+          customsFee: hasCostBreakdown ? Number(p.avgOtherCost) * currentQty : undefined,
         };
       }
     }

@@ -55,7 +55,9 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
       kind: 'Thiết bị', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
       itemCode: d.key, name: d.name, unit: 'cái', quantity: d.quantity,
       unitPrice: d.unitPrice, discount: d.discount, revenue: d.revenue,
-      baseCost: null, shippingCost: null, otherCost: null,
+      baseCost: d.breakdownComplete ? d.baseCost : null,
+      shippingCost: d.breakdownComplete ? d.shippingCost : null,
+      otherCost: d.breakdownComplete ? d.otherCost : null,
       cogs: d.costKnown ? d.cogs : null, grossProfit: d.costKnown ? d.grossProfit : null, costKnown: d.costKnown,
     }));
     return [...parts, ...machines].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || a.orderCode.localeCompare(b.orderCode) || a.name.localeCompare(b.name));
@@ -70,8 +72,8 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
   const currentPage = Math.min(page, pageCount);
   const shown = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const sum = (key: keyof ReportLine) => filtered.reduce((total, row) => total + (typeof row[key] === 'number' ? row[key] as number : 0), 0);
-  const partLines = filtered.filter((row) => row.kind === 'Phụ tùng');
-  const costComponentsKnown = partLines.length > 0 && partLines.every((row) => row.baseCost != null);
+  const costLines = filtered.filter((row) => row.kind === 'Phụ tùng' || row.kind === 'Thiết bị');
+  const costComponentsKnown = costLines.length > 0 && costLines.every((row) => row.baseCost != null);
   const unknownMachineCost = filtered.filter((row) => row.kind === 'Thiết bị' && !row.costKnown).length;
 
   const handleExport = () => {

@@ -131,8 +131,8 @@ export const SaveStockTransactionSchema = z.object({
   shippingFee: z.coerce.number().min(0).optional().nullable(),
   /** Chi phí khác phát sinh cho lô hàng (chỉ dùng cho phiếu IN). */
   otherFee: z.coerce.number().min(0).optional().nullable(),
-  /** Phương thức phân bổ cước & chi phí: QUANTITY (theo số lượng) hoặc VALUE (theo giá trị). */
-  allocationMethod: z.enum(['QUANTITY', 'VALUE']).optional(),
+  /** Phương thức phân bổ chi phí lô: theo số lượng, giá trị hàng, hoặc chia đều từng dòng hàng. */
+  allocationMethod: z.enum(['QUANTITY', 'VALUE', 'LINE', 'EXPLICIT']).optional(),
   items: z.array(StockTransactionItemSchema).min(1, 'Phải có ít nhất một mặt hàng'),
 });
 
@@ -153,6 +153,10 @@ export const OrderItemInputSchema = z.object({
   itemId: z.number().int().positive('Chọn linh kiện hợp lệ'),
   quantity: z.number().int().positive('Số lượng phải lớn hơn 0'),
   unitPriceEur: z.number().min(0).optional().nullable(),
+  /** Cước thực tế của dòng hàng trên PO; null ở các đơn cũ chưa lưu tách dòng. */
+  shippingFee: z.coerce.number().min(0).optional().nullable(),
+  /** Phí khác thực tế của dòng hàng trên PO. */
+  customsFee: z.coerce.number().min(0).optional().nullable(),
 });
 
 export const SaveSparePartOrderSchema = z.object({
@@ -160,8 +164,8 @@ export const SaveSparePartOrderSchema = z.object({
   currency: z.string().default('EUR'),
   exchangeRate: z.coerce.number().positive().default(32500),
   shippingFee: z.coerce.number().min(0).default(3500000),
-  customsFee: z.coerce.number().min(0).default(1000000),
-  extraShippingRate: z.coerce.number().min(0).default(0.25),
+  customsFee: z.coerce.number().min(0).default(0),
+  extraShippingRate: z.coerce.number().min(0).default(0),
   targetWarehouseId: z.number().int().positive().optional().nullable(),
   customerId: z.number().int().positive().optional().nullable(),
   customerOrderId: z.number().int().positive().optional().nullable(),
@@ -218,8 +222,8 @@ export const SparePartPricingConfigSchema = z.object({
   defaultMarginPercent: z.coerce.number().min(0).max(1000).default(30),
   pricingMethod: z.enum(['MARGIN', 'MARKUP']).default('MARGIN'),
   defaultShippingFee: z.coerce.number().min(0).default(3500000),
-  defaultCustomsFee: z.coerce.number().min(0).default(1000000),
-  defaultExtraShippingRate: z.coerce.number().min(0).max(5).default(0.25),
+  defaultCustomsFee: z.coerce.number().min(0).default(0),
+  defaultExtraShippingRate: z.coerce.number().min(0).max(5).default(0),
   defaultVatRate: z.coerce.number().min(0).max(100).default(8),
   volumeDiscountTiers: z.array(VolumeDiscountTierSchema).default(VOLUME_DISCOUNT_TIERS),
   defaultValidDays: z.coerce.number().int().min(1).default(15),
@@ -325,15 +329,10 @@ export function calculateQuotedUnitPrice(
   };
 }
 
-/**
- * Tổng cước nhập khẩu cho một lô hàng: mỗi mặt hàng trong đơn cộng một suất cước.
- *
- * Phụ trội đa mã và phí hải quan đã bỏ khỏi công thức giá; phần còn lại là cước
- * tính thẳng theo số mặt hàng.
- */
-export function estimateImportFreight(lineCount: number, config?: Partial<SparePartPricingConfig>) {
-  if (lineCount <= 0) return 0;
-  return Math.round((config?.defaultShippingFee ?? 3500000) * lineCount);
+/** Cước mặc định được cấu hình theo mỗi món, nên tổng lô = suất cước × tổng số lượng. */
+export function estimateImportFreight(totalQuantity: number, config?: Partial<SparePartPricingConfig>) {
+  if (totalQuantity <= 0) return 0;
+  return Math.round((config?.defaultShippingFee ?? 3500000) * totalQuantity);
 }
 
 /**
@@ -424,7 +423,7 @@ export interface StockCostMetrics {
   otherFee: number;
   merchandiseTotal: number;
   totalLandedCost: number;
-  allocationMethod: 'QUANTITY' | 'VALUE';
+  allocationMethod: 'QUANTITY' | 'VALUE' | 'LINE' | 'EXPLICIT';
   items: StockCostItemMetric[];
 }
 
@@ -436,7 +435,7 @@ export function calculateLandedCostAllocation(
   items: Array<{ itemId: number; quantity: number; unitPrice?: number | null; baseUnitPrice?: number | null }>,
   shippingFee = 0,
   otherFee = 0,
-  method: 'QUANTITY' | 'VALUE' = 'QUANTITY',
+  method: 'QUANTITY' | 'VALUE' | 'LINE' | 'EXPLICIT' = 'QUANTITY',
 ): StockCostMetrics {
   const safeShipping = Math.max(0, Number(shippingFee) || 0);
   const safeOther = Math.max(0, Number(otherFee) || 0);
@@ -463,7 +462,17 @@ export function calculateLandedCostAllocation(
       lineShipping = safeShipping - allocatedShippingTotal;
       lineOther = safeOther - allocatedOtherTotal;
     } else {
-      if (method === 'VALUE' && merchandiseTotal > 0) {
+      if (method === 'EXPLICIT') {
+        // Explicit allocations are supplied per item; this helper is only used
+        // as a fallback when those values are incomplete, so use quantity.
+        const ratio = totalQty > 0 ? qty / totalQty : 0;
+        lineShipping = Math.round(safeShipping * ratio);
+        lineOther = Math.round(safeOther * ratio);
+      } else if (method === 'LINE') {
+        const ratio = items.length > 0 ? 1 / items.length : 0;
+        lineShipping = Math.round(safeShipping * ratio);
+        lineOther = Math.round(safeOther * ratio);
+      } else if (method === 'VALUE' && merchandiseTotal > 0) {
         const ratio = lineGoodsTotal / merchandiseTotal;
         lineShipping = Math.round(safeShipping * ratio);
         lineOther = Math.round(safeOther * ratio);
@@ -537,4 +546,3 @@ export function getCleanStockNote(note?: string | null): string {
   if (!note) return '';
   return note.replace(COST_METRICS_TAG_REGEX, '').trim();
 }
-

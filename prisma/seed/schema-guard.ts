@@ -9,6 +9,7 @@ export async function assertDemoSeedSchema(db: PrismaClient) {
       AND (
         (TABLE_NAME = 'InventoryItem' AND COLUMN_NAME IN ('avgBaseCost', 'avgShippingCost', 'avgOtherCost'))
         OR (TABLE_NAME = 'InventoryTransactionItem' AND COLUMN_NAME IN ('baseUnitCost', 'shippingUnitCost', 'otherUnitCost'))
+        OR (TABLE_NAME = 'SparePartOrderItem' AND COLUMN_NAME IN ('shippingFee', 'customsFee'))
         OR (TABLE_NAME = 'CustomerOrderItem' AND COLUMN_NAME = 'discountAmount')
       )
   `;
@@ -20,6 +21,8 @@ export async function assertDemoSeedSchema(db: PrismaClient) {
     'InventoryTransactionItem.baseUnitCost',
     'InventoryTransactionItem.shippingUnitCost',
     'InventoryTransactionItem.otherUnitCost',
+    'SparePartOrderItem.shippingFee',
+    'SparePartOrderItem.customsFee',
     'CustomerOrderItem.discountAmount',
   ];
   const missing = required.filter((column) => !found.has(column));

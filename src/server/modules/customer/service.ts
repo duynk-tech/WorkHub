@@ -7,6 +7,7 @@ import { generateMachineCode } from '@/server/modules/equipment/service';
 import {
   createStockTransaction,
   createSparePartOrder,
+  getSparePartPricingConfig,
 } from '@/server/modules/spare-parts/service';
 import type { Prisma } from '@prisma/client';
 import type {
@@ -1237,13 +1238,48 @@ export async function issueCustomerOrderStock(
   const createdMachines: { machineCode: string; serialNumber: string }[] = [];
   // Giá vốn của chính lần xuất này, do createStockTransaction chốt theo bình quân
   // gia quyền — đọc lại từ phiếu thay vì lấy giá danh mục (giá danh mục đổi được)
-  const issuedCostByItem = new Map<number, number>();
+  const issuedCostByItem = new Map<number, {
+    total: number | null;
+    base: number | null;
+    shipping: number | null;
+    other: number | null;
+  }>();
   if (trans) {
     const issuedLines = await prisma.inventoryTransactionItem.findMany({
       where: { transactionId: trans.id },
-      select: { itemId: true, unitCost: true },
+      select: {
+        itemId: true,
+        unitCost: true,
+        baseUnitCost: true,
+        shippingUnitCost: true,
+        otherUnitCost: true,
+      },
     });
-    for (const l of issuedLines) issuedCostByItem.set(l.itemId, Number(l.unitCost || 0));
+    for (const l of issuedLines) {
+      issuedCostByItem.set(l.itemId, {
+        total: l.unitCost == null ? null : Number(l.unitCost),
+        base: l.baseUnitCost == null ? null : Number(l.baseUnitCost),
+        shipping: l.shippingUnitCost == null ? null : Number(l.shippingUnitCost),
+        other: l.otherUnitCost == null ? null : Number(l.otherUnitCost),
+      });
+    }
+
+    // Chi tiết đơn bán phải phản ánh đúng snapshot ở lần xuất kho. Không giữ
+    // cước cấu hình/ước tính tại lúc tạo đơn vì chi phí đã được vốn hóa ở lô nhập.
+    for (const line of order.items) {
+      if (!line.inventoryItemId) continue;
+      const issued = issuedCostByItem.get(line.inventoryItemId);
+      if (!issued) continue;
+      const hasBreakdown = issued.base != null && issued.shipping != null && issued.other != null;
+      await prisma.customerOrderItem.update({
+        where: { id: line.id },
+        data: {
+          unitCostVnd: hasBreakdown ? issued.base : null,
+          shippingFee: hasBreakdown ? issued.shipping! * line.quantity : null,
+          customsFee: hasBreakdown ? issued.other! * line.quantity : null,
+        },
+      });
+    }
   }
   const now = new Date();
   // installedDate và warrantyExpiresAt là cột @db.Date — Prisma lấy phần ngày theo
@@ -1279,7 +1315,7 @@ export async function issueCustomerOrderStock(
           status: 'OPERATING',
           installedDate: today,
           warrantyExpiresAt,
-          unitCost: line.inventoryItemId ? issuedCostByItem.get(line.inventoryItemId) ?? null : null,
+          unitCost: line.inventoryItemId ? issuedCostByItem.get(line.inventoryItemId)?.total ?? null : null,
           soldPrice: Number(line.unitPrice || 0),
           customerOrderId: order.id,
           notes: `Sinh tự động khi giao đơn ${order.orderCode}`,
@@ -1417,15 +1453,23 @@ export async function createSupplierOrderFromCustomerOrder(
     select: { id: true, priceEur: true },
   });
   const eurById = new Map(items.map((i) => [i.id, Number(i.priceEur || 0)]));
+  const pricing = await getSparePartPricingConfig();
+  const orderItems = issuable.map((i) => ({
+    itemId: i.inventoryItemId!,
+    quantity: i.quantity,
+    unitPriceEur: eurById.get(i.inventoryItemId!) || 0,
+    shippingFee: pricing.defaultShippingFee * i.quantity,
+    customsFee: pricing.defaultCustomsFee * i.quantity,
+  }));
 
   const supplierOrder = await createSparePartOrder(
     {
       supplier: input.supplier?.trim() || 'Selmi',
       currency: 'EUR',
       exchangeRate: input.exchangeRate ?? 32500,
-      shippingFee: 3500000,
-      customsFee: 1000000,
-      extraShippingRate: 0.25,
+      shippingFee: orderItems.reduce((sum, item) => sum + item.shippingFee, 0),
+      customsFee: orderItems.reduce((sum, item) => sum + item.customsFee, 0),
+      extraShippingRate: 0,
       targetWarehouseId: input.targetWarehouseId ?? null,
       customerId: order.customerId,
       customerOrderId: order.id,
@@ -1434,11 +1478,7 @@ export async function createSupplierOrderFromCustomerOrder(
       trackingNumber: null,
       etaDate: null,
       notes: `Đặt hàng phục vụ đơn khách ${order.orderCode}`,
-      items: issuable.map((i) => ({
-        itemId: i.inventoryItemId!,
-        quantity: i.quantity,
-        unitPriceEur: eurById.get(i.inventoryItemId!) || 0,
-      })),
+      items: orderItems,
     },
     userId,
   );

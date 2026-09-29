@@ -44,7 +44,23 @@ export async function completeQuickSale(raw: unknown, userId: number) {
           invoiceNo: input.invoiceNo, invoiceSerial: input.invoiceSerial, invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : null,
           orderCode: code, customerId: customer.id, orderType: 'SPARE_PART', status: 'COMPLETED', goodsAmount: goods,
           vatRate: input.vatRate, vatAmount: vat, totalAmount: total, paidAmount: total, stockIssuedAt: now, deliveryDate: now, notes: note,
-          items: { create: input.items.map(i => ({ inventoryItemId: i.itemId, itemType: 'SPARE_PART', name: products.find(p => p.id === i.itemId)!.name, quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.quantity * i.unitPrice - i.discount, discountAmount: i.discount })) },
+          items: { create: input.items.map(i => {
+            const product = products.find(p => p.id === i.itemId)!;
+            const hasBreakdown = product.avgBaseCost != null && product.avgShippingCost != null && product.avgOtherCost != null;
+            return {
+              inventoryItemId: i.itemId,
+              itemType: 'SPARE_PART',
+              name: product.name,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              totalPrice: i.quantity * i.unitPrice - i.discount,
+              discountAmount: i.discount,
+              // Bán nhanh ghi nhận cùng snapshot với lần xuất kho bên dưới.
+              unitCostVnd: hasBreakdown ? product.avgBaseCost : null,
+              shippingFee: hasBreakdown ? Number(product.avgShippingCost) * i.quantity : null,
+              customsFee: hasBreakdown ? Number(product.avgOtherCost) * i.quantity : null,
+            };
+          }) },
         } });
         const cost = (id: number) => { const p = products.find(p => p.id === id)!; return Number(p.avgCost ?? p.costPrice ?? 0); };
         await tx.inventoryTransaction.create({ data: {

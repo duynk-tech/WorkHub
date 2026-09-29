@@ -424,8 +424,9 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
         return item ? [{ product, item }] : [];
       });
       const subtotalVnd = poLines.reduce((sum, { product }) => sum + product.cost * product.qty, 0);
-      // Cấu hình cước áp dụng một suất 3.500.000 ₫ cho mỗi dòng mặt hàng PO.
-      const shippingFee = estimateImportFreight(poLines.length, pricingConfig);
+      // Cấu hình cước theo mỗi món; tổng cước của lô theo tổng số lượng PO.
+      const totalPoQuantity = poLines.reduce((sum, { product }) => sum + product.qty, 0);
+      const shippingFee = estimateImportFreight(totalPoQuantity, pricingConfig);
       const customsFee = 0;
       const landedCostMetrics = calculateLandedCostAllocation(
         poLines.map(({ product, item }) => ({
@@ -482,6 +483,8 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
             unitPriceVnd: pp.cost,
             discountVnd: 0,
             finalPriceVnd: pp.cost * pp.qty,
+            shippingFee: Math.round((pricingConfig.defaultShippingFee || 0) * pp.qty),
+            customsFee: 0,
           }] : []),
           skipDuplicates: true,
         });

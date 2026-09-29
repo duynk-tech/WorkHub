@@ -28,8 +28,8 @@ const DEFAULT_CONFIG: SparePartPricingConfig = {
   defaultMarginPercent: 30,
   pricingMethod: 'MARGIN',
   defaultShippingFee: 3500000,
-  defaultCustomsFee: 1000000,
-  defaultExtraShippingRate: 0.25,
+  defaultCustomsFee: 0,
+  defaultExtraShippingRate: 0,
   defaultVatRate: 8,
   volumeDiscountTiers: [
     { min: 1, max: 1, rate: 0.00 },
