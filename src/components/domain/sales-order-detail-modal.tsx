@@ -329,9 +329,12 @@ export function SalesOrderDetailModal({
                   <tbody>
                     {order.items.map((it: any) => (
                       <tr key={it.id}>
-                        <td>
-                          {it.name}
-                          {it.notes && <div className="hint">{it.notes}</div>}
+                        <td
+                          title={it.notes ? `${it.name}\n${it.notes}` : it.name}
+                          style={{ maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        >
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</div>
+                          {it.notes && <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.notes}</div>}
                         </td>
                         <td>{ITEM_TYPES[it.itemType] ?? it.itemType}</td>
                         <td className="num">{it.quantity}</td>
