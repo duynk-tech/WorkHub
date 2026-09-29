@@ -149,6 +149,7 @@ export function CustomerQuotationModal({
     stockMachines,
     spareParts,
     pricingConfig,
+    useConfiguredFeesWhenCostBreakdownIsZero: true,
     exchangeRate,
   });
 

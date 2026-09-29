@@ -201,6 +201,7 @@ export function useLineItems({
   spareParts = [],
   pricingConfig,
   strictSellingPrice = false,
+  useConfiguredFeesWhenCostBreakdownIsZero = false,
   exchangeRate = 27800,
   onWarning,
 }: {
@@ -212,6 +213,8 @@ export function useLineItems({
   pricingConfig?: Partial<SparePartPricingConfig>;
   /** Khi bật: chỉ lấy giá bán niêm yết/tính sẵn trong danh mục, không tính lại động từ giá vốn */
   strictSellingPrice?: boolean;
+  /** Use current fee defaults as an estimate in a new quotation when inventory has no fee breakdown. */
+  useConfiguredFeesWhenCostBreakdownIsZero?: boolean;
   exchangeRate?: number;
   /** Callback phát cảnh báo khi chọn sản phẩm chưa có giá bán */
   onWarning?: (msg: string) => void;
@@ -382,6 +385,8 @@ export function useLineItems({
           p.avgBaseCost != null && p.avgShippingCost != null && p.avgOtherCost != null;
         const costVnd = hasCostBreakdown ? Number(p.avgBaseCost) : undefined;
         const unitEur = eur > 0 ? eur : rateNum > 0 && Number(costVnd) > 0 ? Number((Number(costVnd) / rateNum).toFixed(2)) : 0;
+        const hasRecordedFees = hasCostBreakdown && (Number(p.avgShippingCost) > 0 || Number(p.avgOtherCost) > 0);
+        const useConfiguredFees = useConfiguredFeesWhenCostBreakdownIsZero && !hasRecordedFees;
 
         updated[index] = {
           ...updated[index],
@@ -393,8 +398,20 @@ export function useLineItems({
           priceSource: source,
           unitPriceEur: unitEur,
           unitCostVnd: costVnd,
-          shippingFee: hasCostBreakdown ? Number(p.avgShippingCost) * currentQty : undefined,
-          customsFee: hasCostBreakdown ? Number(p.avgOtherCost) * currentQty : undefined,
+          shippingFee: hasRecordedFees
+            ? Number(p.avgShippingCost) * currentQty
+            : useConfiguredFees
+              ? Math.max(0, Number(pricingConfig?.defaultShippingFee ?? 3500000)) * currentQty
+              : hasCostBreakdown
+                ? 0
+                : undefined,
+          customsFee: hasRecordedFees
+            ? Number(p.avgOtherCost) * currentQty
+            : useConfiguredFees
+              ? Math.max(0, Number(pricingConfig?.defaultCustomsFee ?? 0)) * currentQty
+              : hasCostBreakdown
+                ? 0
+                : undefined,
         };
       }
     }
