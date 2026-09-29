@@ -78,6 +78,85 @@ export async function GET(req: NextRequest) {
     });
   };
 
+  // First sheet is the transaction ledger users reconcile day to day.
+  // Summary and dimension worksheets remain available after the detail.
+  const ledger = workbook.addWorksheet('Sổ doanh thu');
+  ledger.columns = [
+    { header: 'Loại', key: 'kind', width: 14 },
+    { header: 'Mã đơn', key: 'orderCode', width: 20 },
+    { header: 'Ngày', key: 'orderDate', width: 14 },
+    { header: 'Khách hàng', key: 'customerName', width: 34 },
+    { header: 'Mã hàng', key: 'itemCode', width: 22 },
+    { header: 'Tên hàng', key: 'name', width: 42 },
+    { header: 'SL', key: 'quantity', width: 11 },
+    { header: 'ĐVT', key: 'unit', width: 10 },
+    { header: 'Đơn giá bán', key: 'unitPrice', width: 18 },
+    { header: 'Chiết khấu', key: 'discount', width: 18 },
+    { header: 'Doanh thu thuần', key: 'revenue', width: 20 },
+    { header: 'Tiền hàng vốn', key: 'baseCost', width: 18 },
+    { header: 'Cước mua', key: 'shippingCost', width: 18 },
+    { header: 'Phí mua khác', key: 'otherCost', width: 18 },
+    { header: 'Tổng giá vốn', key: 'cogs', width: 18 },
+    { header: 'Lợi nhuận gộp', key: 'grossProfit', width: 20 },
+    { header: 'Tình trạng giá vốn', key: 'costStatus', width: 22 },
+  ];
+  addReportHeader(ledger, ledger.columns.length);
+  ledger.addRow([]);
+  ledger.addRow(ledger.columns.map((column) => column.header));
+  styleTableHeader(ledger.getRow(7));
+  const ledgerRows = [
+    ...report.salesDetails.map((d) => ({
+      kind: 'Phụ tùng', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
+      itemCode: d.itemCode, name: d.name, quantity: d.quantity, unit: d.unit,
+      unitPrice: d.unitPrice, discount: d.discount, revenue: d.revenue,
+      baseCost: d.breakdownComplete ? d.baseCost : null,
+      shippingCost: d.breakdownComplete ? d.shippingCost : null,
+      otherCost: d.breakdownComplete ? d.otherCost : null,
+      cogs: d.cogs, grossProfit: d.grossProfit,
+      costStatus: d.breakdownComplete ? 'Đủ chi tiết' : 'Thiếu tách phí cũ',
+    })),
+    ...(report.machineSalesDetails || []).map((d) => ({
+      kind: 'Thiết bị', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
+      itemCode: d.key, name: d.name, quantity: d.quantity, unit: 'cái',
+      unitPrice: d.unitPrice, discount: d.discount, revenue: d.revenue,
+      baseCost: null, shippingCost: null, otherCost: null,
+      cogs: d.costKnown ? d.cogs : null, grossProfit: d.costKnown ? d.grossProfit : null,
+      costStatus: d.costKnown ? 'Đã ghi nhận' : 'Chưa có giá vốn',
+    })),
+  ].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || a.orderCode.localeCompare(b.orderCode) || a.name.localeCompare(b.name));
+  ledgerRows.forEach((data) => {
+    const row = ledger.addRow(data);
+    row.eachCell((cell, col) => {
+      cell.border = { bottom: border };
+      if (col === 7) cell.numFmt = numberFormat;
+      if (col >= 9 && col <= 16) cell.numFmt = moneyFormat;
+      if (col >= 7 && col <= 16) cell.alignment = { horizontal: 'right' };
+    });
+    if (row.number % 2 === 0) row.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }; });
+  });
+  if (ledgerRows.length) {
+    const partLedgerRows = ledgerRows.filter((row) => row.kind === 'Phụ tùng');
+    const total = ledger.addRow([
+      'TỔNG CỘNG', '', '', '', '', `${ledgerRows.length} dòng`,
+      ledgerRows.reduce((sum, row) => sum + row.quantity, 0), '', '',
+      ledgerRows.reduce((sum, row) => sum + row.discount, 0),
+      ledgerRows.reduce((sum, row) => sum + row.revenue, 0),
+      partLedgerRows.length && partLedgerRows.every((row) => row.baseCost != null) ? partLedgerRows.reduce((sum, row) => sum + (row.baseCost || 0), 0) : null,
+      partLedgerRows.length && partLedgerRows.every((row) => row.shippingCost != null) ? partLedgerRows.reduce((sum, row) => sum + (row.shippingCost || 0), 0) : null,
+      partLedgerRows.length && partLedgerRows.every((row) => row.otherCost != null) ? partLedgerRows.reduce((sum, row) => sum + (row.otherCost || 0), 0) : null,
+      ledgerRows.every((row) => row.cogs != null) ? ledgerRows.reduce((sum, row) => sum + (row.cogs || 0), 0) : null,
+      ledgerRows.every((row) => row.grossProfit != null) ? ledgerRows.reduce((sum, row) => sum + (row.grossProfit || 0), 0) : null,
+      ledgerRows.some((row) => row.costStatus !== 'Đủ chi tiết' && row.costStatus !== 'Đã ghi nhận') ? 'Có dòng thiếu dữ liệu' : 'Đầy đủ',
+    ]);
+    total.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: navy } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+      cell.border = { top: border, bottom: border };
+    });
+  }
+  ledger.views = [{ state: 'frozen', xSplit: 6, ySplit: 7 }];
+  ledger.autoFilter = { from: 'A7', to: 'Q7' };
+
   const summary = workbook.addWorksheet('Tổng quan');
   summary.columns = [{ width: 38 }, { width: 24 }, { width: 24 }];
   addReportHeader(summary, 3);

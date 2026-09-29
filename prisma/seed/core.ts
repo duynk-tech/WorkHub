@@ -111,6 +111,17 @@ export async function seedSystemSettings(prisma: PrismaClient) {
     { key: 'company.shortName', value: 'WorkHub', group: 'general' },
     { key: 'company.address', value: '', group: 'general' },
     { key: 'company.taxCode', value: '', group: 'general' },
+    {
+      key: 'spare_parts_pricing_config',
+      value: {
+        defaultMarginPercent: 35,
+        pricingMethod: 'MARGIN',
+        defaultShippingFee: 3500000,
+        defaultCustomsFee: 0,
+        defaultExtraShippingRate: 0,
+      },
+      group: 'spare_parts',
+    },
     { key: 'leave.annualDefaultDays', value: 12, group: 'leave' },
     { key: 'leave.allowNegativeBalance', value: false, group: 'leave' },
     { key: 'leave.carryOverExpireMonth', value: 3, group: 'leave' },

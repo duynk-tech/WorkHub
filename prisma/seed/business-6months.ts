@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import {
   calculateLandedCostAllocation,
+  calculateSellingPriceFromMargin,
   estimateImportFreight,
   SparePartPricingConfigSchema,
 } from '../../src/server/modules/spare-parts/types';
@@ -67,7 +68,7 @@ async function backfillSeededSalesOrderCostSnapshots(prisma: PrismaClient, order
  * - 1-2 đơn nhập hàng nhà cung cấp (SparePartOrder + Items + SupplierPayment)
  * - Chứng từ xuất/nhập kho (InventoryTransaction)
  *
- * Margin bán hàng: ~35% (giá bán ≈ giá vốn × 1.54)
+ * Giá bán phụ tùng theo margin và phương pháp trong cấu hình giá hiện hành.
  * Cước và phí nhập kho lấy theo cấu hình phụ tùng, phân bổ theo số lượng.
  * VAT: 8%
  */
@@ -111,8 +112,17 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
     return 0;
   }
   const pricingSetting = await prisma.systemSetting.findUnique({ where: { key: 'spare_parts_pricing_config' } });
-  const parsedPricingConfig = SparePartPricingConfigSchema.safeParse(pricingSetting?.valueJson ?? {});
-  const pricingConfig = parsedPricingConfig.success ? parsedPricingConfig.data : SparePartPricingConfigSchema.parse({});
+  const savedPricingConfig = pricingSetting?.valueJson && typeof pricingSetting.valueJson === 'object'
+    ? pricingSetting.valueJson as Record<string, unknown>
+    : {};
+  const pricingConfig = SparePartPricingConfigSchema.parse({
+    defaultMarginPercent: 35,
+    pricingMethod: 'MARGIN',
+    defaultShippingFee: 3500000,
+    defaultCustomsFee: 0,
+    defaultExtraShippingRate: 0,
+    ...savedPricingConfig,
+  });
   const stockRows = await prisma.inventoryStock.groupBy({
     by: ['itemId'],
     where: { itemId: { in: invItems.map((item) => item.id) } },
@@ -226,12 +236,20 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
         const qty = item ? Math.min(requestedQty, Math.max(0, availableQty)) : requestedQty;
         if (qty <= 0) continue;
         if (item) reservedQtyByItem.set(item.id, alreadyReserved + qty);
+        const currentCost = item ? costState.get(item.id) : null;
+        const sellPrice = currentCost
+          ? calculateSellingPriceFromMargin(
+              currentCost.base + currentCost.shipping + currentCost.other,
+              pricingConfig.defaultMarginPercent,
+              pricingConfig.pricingMethod,
+            )
+          : prod.sell;
         // Có dòng không CK, có dòng CK 2–5% để báo cáo kiểm tra được phép
         // cộng doanh thu/chiết khấu theo lịch sử từng đơn, không lấy giá hiện tại.
         const discountPercent = (month + i + j) % 5 === 0
           ? 5
           : (month + i + j) % 3 === 0 ? 2 : 0;
-        orderProducts.push({ ...prod, qty, discountPercent });
+        orderProducts.push({ ...prod, sell: sellPrice, qty, discountPercent });
       }
 
       if (orderProducts.length === 0) {
@@ -406,8 +424,8 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
         return item ? [{ product, item }] : [];
       });
       const subtotalVnd = poLines.reduce((sum, { product }) => sum + product.cost * product.qty, 0);
-      // Cước là tổng phí cho một lô PO, không nhân 3.500.000 ₫ theo từng dòng hàng.
-      const shippingFee = estimateImportFreight(1, pricingConfig);
+      // Cấu hình cước áp dụng một suất 3.500.000 ₫ cho mỗi dòng mặt hàng PO.
+      const shippingFee = estimateImportFreight(poLines.length, pricingConfig);
       const customsFee = 0;
       const landedCostMetrics = calculateLandedCostAllocation(
         poLines.map(({ product, item }) => ({
@@ -545,6 +563,25 @@ export async function seedBusiness6Months(prisma: PrismaClient, technicianId?: n
               current.other = (previousQty * current.other + incoming.quantity * incoming.allocatedOtherFee) / totalQty;
               current.quantity = totalQty;
             }
+            const landedAverage = current.base + current.shipping + current.other;
+            const autoPrice = calculateSellingPriceFromMargin(
+              landedAverage,
+              pricingConfig.defaultMarginPercent,
+              pricingConfig.pricingMethod,
+            );
+            await prisma.inventoryItem.update({
+              where: { id: item.id },
+              data: {
+                avgBaseCost: current.base,
+                avgShippingCost: current.shipping,
+                avgOtherCost: current.other,
+                avgCost: landedAverage,
+                sellingPrice: autoPrice,
+                autoPrice,
+                autoPriceAt: new Date(),
+                autoPriceBasis: landedAverage,
+              },
+            });
           }
         }
       }

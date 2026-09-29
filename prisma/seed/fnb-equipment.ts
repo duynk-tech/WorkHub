@@ -1,6 +1,12 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { nextSequentialCode } from '../../src/lib/code-sequence';
+import {
+  calculateLandedCostAllocation,
+  calculateSellingPriceFromMargin,
+  estimateImportFreight,
+  SparePartPricingConfigSchema,
+} from '../../src/server/modules/spare-parts/types';
 import selmiOrderParts from './selmi-order-parts.json';
 import { assertDemoSeedSchema } from './schema-guard';
 
@@ -20,10 +26,45 @@ async function nextCustomerCode(prisma: PrismaClient): Promise<string> {
   return nextSequentialCode(prefix, rows.map((r) => r.code));
 }
 
+async function upsertSeedPurchaseItem(
+  prisma: PrismaClient,
+  input: { orderId: number; itemId: number; quantity: number; unitPriceEur: number; unitPriceVnd: number },
+) {
+  const data = {
+    quantity: input.quantity,
+    unitPriceEur: input.unitPriceEur,
+    unitPriceVnd: input.unitPriceVnd,
+    discountVnd: 0,
+    finalPriceVnd: input.quantity * input.unitPriceVnd,
+  };
+  const existing = await prisma.sparePartOrderItem.findFirst({
+    where: { orderId: input.orderId, itemId: input.itemId },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.sparePartOrderItem.update({ where: { id: existing.id }, data });
+  } else {
+    await prisma.sparePartOrderItem.create({ data: { ...input, ...data } });
+  }
+}
+
 export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: number) {
   await assertDemoSeedSchema(prisma);
 
   console.log('--- Bắt đầu khởi tạo dữ liệu mẫu Thiết bị & Máy móc F&B ---');
+
+  const pricingSetting = await prisma.systemSetting.findUnique({ where: { key: 'spare_parts_pricing_config' } });
+  const savedPricing = pricingSetting?.valueJson && typeof pricingSetting.valueJson === 'object'
+    ? pricingSetting.valueJson as Record<string, unknown>
+    : {};
+  const pricingConfig = SparePartPricingConfigSchema.parse({
+    defaultMarginPercent: 35,
+    pricingMethod: 'MARGIN',
+    defaultShippingFee: 3500000,
+    defaultCustomsFee: 0,
+    defaultExtraShippingRate: 0,
+    ...savedPricing,
+  });
 
   // 1. Khách hàng chuỗi F&B
   const customersData = [
@@ -645,14 +686,60 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
     ...selmiOrderParts,
   ];
 
+  // Treat seeded opening stock as a received PO: default freight is charged
+  // once for each SKU line, then distributed by quantity just like receiving stock.
+  const stockedOpeningParts = spareParts.filter((part) => part.hnQty + part.hcmQty > 0);
+  const openingCostAllocation = calculateLandedCostAllocation(
+    stockedOpeningParts.map((part, index) => ({
+      itemId: index + 1,
+      quantity: part.hnQty + part.hcmQty,
+      baseUnitPrice: part.costPrice,
+    })),
+    estimateImportFreight(stockedOpeningParts.length, pricingConfig),
+    0,
+    'QUANTITY',
+  );
+  const openingCostByCode = new Map(openingCostAllocation.items.map((cost, index) => [stockedOpeningParts[index].itemCode, cost]));
+
   const partItemMap = new Map<string, number>();
 
   for (const part of spareParts) {
     const { hnQty, hcmQty, ...itemData } = part;
+    // Hàng tồn đầu kỳ cũng cần cost components để phiếu xuất bán seed giữ được
+    // đúng tiền hàng, cước phân bổ và phí khác như hàng nhập bằng quy trình thật.
+    const openingCost = openingCostByCode.get(part.itemCode);
+    const openingShippingPerUnit = openingCost?.allocatedShipping ?? 0;
+    const openingOtherPerUnit = openingCost?.allocatedOtherFee ?? 0;
+    const openingLandedCost = openingCost?.landedCost ?? itemData.costPrice;
+    const marginBasedSellingPrice = calculateSellingPriceFromMargin(
+      openingLandedCost,
+      pricingConfig.defaultMarginPercent,
+      pricingConfig.pricingMethod,
+    );
     const item = await prisma.inventoryItem.upsert({
       where: { itemCode: itemData.itemCode },
-      update: itemData,
-      create: itemData,
+      update: {
+        ...itemData,
+        sellingPrice: marginBasedSellingPrice,
+        avgCost: openingLandedCost,
+        avgBaseCost: itemData.costPrice,
+        avgShippingCost: openingShippingPerUnit,
+        avgOtherCost: openingOtherPerUnit,
+        autoPrice: marginBasedSellingPrice,
+        autoPriceAt: new Date(),
+        autoPriceBasis: openingLandedCost,
+      },
+      create: {
+        ...itemData,
+        sellingPrice: marginBasedSellingPrice,
+        avgCost: openingLandedCost,
+        avgBaseCost: itemData.costPrice,
+        avgShippingCost: openingShippingPerUnit,
+        avgOtherCost: openingOtherPerUnit,
+        autoPrice: marginBasedSellingPrice,
+        autoPriceAt: new Date(),
+        autoPriceBasis: openingLandedCost,
+      },
     });
     partItemMap.set(part.itemCode, item.id);
 
@@ -682,12 +769,12 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         status: 'SHIPPING_INTL',
         currency: 'USD',
         exchangeRate: 25400,
-        shippingFee: 3500000,
+        shippingFee: estimateImportFreight(2, pricingConfig),
         customsFee: 0,
         totalItemsQty: 20,
-        subtotalVnd: 56000000,
-        totalVnd: 59500000,
-        paidAmount: 29750000, // Đặt cọc 50% tổng lô
+        subtotalVnd: 93000000,
+        totalVnd: 100000000,
+        paidAmount: 50000000, // Đặt cọc 50% tổng lô
         trackingNumber: 'DHL-EXPRESS-992817261',
         etaDate: new Date(Date.now() + 5 * 86400000),
         targetWarehouseId: whHcm.id,
@@ -714,10 +801,10 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
             orderId: po1.id,
             itemId: airPumpId,
             quantity: 10,
-            unitPriceEur: 255,
-            unitPriceVnd: 2800000,
+            unitPriceEur: 255.91,
+            unitPriceVnd: 6500000,
             discountVnd: 0,
-            finalPriceVnd: 28000000,
+            finalPriceVnd: 65000000,
           },
         ],
         skipDuplicates: true,
@@ -725,8 +812,25 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
     }
   }
 
+  if (po1) {
+    const shippingFee = estimateImportFreight(2, pricingConfig);
+    const subtotalVnd = 2800000 * 10 + 6500000 * 10;
+    const totalVnd = subtotalVnd + shippingFee;
+    await prisma.sparePartOrder.update({
+      where: { id: po1.id },
+      data: { shippingFee, customsFee: 0, extraShippingRate: 0, subtotalVnd, totalVnd, paidAmount: Math.round(totalVnd * 0.5) },
+    });
+    const tylBladeId = partItemMap.get('PART-TYL-BLADE');
+    const airPumpId = partItemMap.get('PART-AIR-PUMP');
+    if (tylBladeId) await upsertSeedPurchaseItem(prisma, { orderId: po1.id, itemId: tylBladeId, quantity: 10, unitPriceEur: 110, unitPriceVnd: 2800000 });
+    if (airPumpId) await upsertSeedPurchaseItem(prisma, { orderId: po1.id, itemId: airPumpId, quantity: 10, unitPriceEur: 255, unitPriceVnd: 6500000 });
+  }
+
   const po2Code = 'PO-2026-0002';
   let po2 = await prisma.sparePartOrder.findUnique({ where: { orderCode: po2Code } });
+  const powerBoardUnitCost = Number(spareParts.find((part) => part.itemCode === 'COMMSESPMIC____000001')?.costPrice || 0);
+  const pt100UnitCost = Number(spareParts.find((part) => part.itemCode === 'PART-TEMP-PT100')?.costPrice || 0);
+  const po2Subtotal = pt100UnitCost * 6 + powerBoardUnitCost * 4;
   if (!po2) {
     po2 = await prisma.sparePartOrder.create({
       data: {
@@ -735,12 +839,12 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
         status: 'CUSTOMS_CLEARING',
         currency: 'EUR',
         exchangeRate: 27800,
-        shippingFee: 3500000,
+        shippingFee: estimateImportFreight(2, pricingConfig),
         customsFee: 0,
         totalItemsQty: 10,
-        subtotalVnd: 38000000,
-        totalVnd: 41500000,
-        paidAmount: 41500000, // Đã thanh toán 100%
+        subtotalVnd: po2Subtotal,
+        totalVnd: po2Subtotal + estimateImportFreight(2, pricingConfig),
+        paidAmount: po2Subtotal + estimateImportFreight(2, pricingConfig), // Đã thanh toán 100%
         trackingNumber: 'FEDEX-IT-882711029',
         etaDate: new Date(Date.now() + 2 * 86400000),
         targetWarehouseId: whHn.id,
@@ -758,24 +862,38 @@ export async function seedDemoFnbEquipment(prisma: PrismaClient, technicianId?: 
             orderId: po2.id,
             itemId: pt100Id,
             quantity: 6,
-            unitPriceEur: 70,
-            unitPriceVnd: 1950000,
+            unitPriceEur: Math.round(pt100UnitCost / 27800 * 100) / 100,
+            unitPriceVnd: pt100UnitCost,
             discountVnd: 0,
-            finalPriceVnd: 11700000,
+            finalPriceVnd: pt100UnitCost * 6,
           },
           {
             orderId: po2.id,
             itemId: powerBoardId,
             quantity: 4,
-            unitPriceEur: 487.5,
-            unitPriceVnd: 6575000,
+            unitPriceEur: Math.round(powerBoardUnitCost / 27800 * 100) / 100,
+            unitPriceVnd: powerBoardUnitCost,
             discountVnd: 0,
-            finalPriceVnd: 26300000,
+            finalPriceVnd: powerBoardUnitCost * 4,
           },
         ],
         skipDuplicates: true,
       });
     }
+  }
+
+  if (po2) {
+    const shippingFee = estimateImportFreight(2, pricingConfig);
+    const subtotalVnd = po2Subtotal;
+    const totalVnd = subtotalVnd + shippingFee;
+    await prisma.sparePartOrder.update({
+      where: { id: po2.id },
+      data: { shippingFee, customsFee: 0, extraShippingRate: 0, subtotalVnd, totalVnd, paidAmount: totalVnd },
+    });
+    const pt100Id = partItemMap.get('PART-TEMP-PT100');
+    const powerBoardId = partItemMap.get('COMMSESPMIC____000001');
+    if (pt100Id) await upsertSeedPurchaseItem(prisma, { orderId: po2.id, itemId: pt100Id, quantity: 6, unitPriceEur: Math.round(pt100UnitCost / 27800 * 100) / 100, unitPriceVnd: pt100UnitCost });
+    if (powerBoardId) await upsertSeedPurchaseItem(prisma, { orderId: po2.id, itemId: powerBoardId, quantity: 4, unitPriceEur: Math.round(powerBoardUnitCost / 27800 * 100) / 100, unitPriceVnd: powerBoardUnitCost });
   }
 
   // 6. Báo Giá & Đơn Bán Hàng Khách Hàng (Quotations, Orders & Payments)
