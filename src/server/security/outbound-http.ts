@@ -53,7 +53,13 @@ async function pinnedRequest(raw: string, method: string, headers: Record<string
   return new Promise<Response>((resolve, reject) => {
     const req = request(url, {
       method, headers,
-      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+      // Node can request all DNS candidates when autoSelectFamily is enabled.
+      // Return the matching callback shape or https.request may receive an
+      // undefined IP instead of the pinned address.
+      lookup: (_hostname, options, callback) => {
+        if (options.all) callback(null, [address]);
+        else callback(null, address.address, address.family);
+      },
     }, (res) => {
       let size = 0;
       const chunks: Buffer[] = [];
