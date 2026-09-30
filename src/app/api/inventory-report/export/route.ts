@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
   ledger.addRow(ledger.columns.map((column) => column.header));
   styleTableHeader(ledger.getRow(7));
   const ledgerRows = [
-    ...report.salesDetails.map((d) => ({
+    ...(report.salesDetails || []).map((d) => ({
       kind: d.isReturn ? 'Trả hàng · Phụ tùng' : 'Phụ tùng', orderCode: d.orderCode, orderDate: d.orderDate, customerName: d.customerName,
       itemCode: d.itemCode, name: d.name, quantity: d.quantity, unit: d.unit,
       unitPrice: d.unitPrice, discount: d.discount, revenue: d.revenue,
@@ -170,15 +170,16 @@ export async function GET(req: NextRequest) {
     ['Doanh thu trước chiết khấu', report.summary.revenue + (report.summary.machineRevenue || 0) + report.summary.discount + (report.summary.machineDiscount || 0), ''],
     ['Tổng doanh thu thuần', report.summary.revenue + (report.summary.machineRevenue || 0), 'Chưa VAT'],
     ['Chiết khấu', report.summary.discount + (report.summary.machineDiscount || 0), ''],
-    ['Cước giao hàng thu khách', report.summary.customerShippingFee, 'Hiển thị riêng, chưa cộng vào doanh thu mặt hàng/lợi nhuận'],
+    ['Cước giao hàng thu khách', report.summary.customerShippingFee || 0, 'Hiển thị riêng, chưa cộng vào doanh thu mặt hàng/lợi nhuận'],
     ['VAT thu hộ', report.summary.vatAmount, 'Không tính vào doanh thu/lợi nhuận'],
-    ['Tổng giá trị đơn sau điều chỉnh', report.summary.revenue + (report.summary.machineRevenue || 0) + report.summary.vatAmount + report.summary.customerShippingFee, 'Doanh thu và VAT đã trừ các phiếu trả hàng trong kỳ; không đồng nghĩa số tiền đã thu'],
+    ['Tổng giá trị đơn sau điều chỉnh', report.summary.revenue + (report.summary.machineRevenue || 0) + report.summary.vatAmount + (report.summary.customerShippingFee || 0), 'Doanh thu và VAT đã trừ các phiếu trả hàng trong kỳ; không đồng nghĩa số tiền đã thu'],
     ['Giá vốn phụ tùng', report.summary.cogs, ''],
     ['Giá vốn máy móc', report.summary.machineCogs || 0, `${report.summary.machineCostQty || 0}/${report.summary.machineQty || 0} máy có giá vốn`],
     ['Lãi gộp phụ tùng', report.summary.grossProfit, `Tỷ suất ${report.summary.marginPercent}%`],
     ['Chi phí xuất không thu tiền', report.summary.nonSaleCost, ''],
     ['Lợi nhuận đã ghi nhận', report.summary.recognizedProfit ?? report.summary.netProfit, 'Doanh thu thuần − giá vốn − chi phí xuất kho ngoài bán; chưa gồm vận hành/cước giao hàng thực tế nếu chưa hạch toán'],
     ['Hàng bán trả lại', report.summary.returnedAmount, ''],
+    ['Phiếu trả chưa đối chiếu', report.summary.unmatchedReturnAmount || 0, `${report.summary.unmatchedReturnCount || 0} phiếu; chưa trừ khỏi doanh thu/lợi nhuận theo mặt hàng`],
     ['Lợi nhuận gộp đã xác định', report.summary.grossProfit + (report.summary.machineRevenue || 0) - (report.summary.machineCogs || 0), `Trước chi phí xuất kho ngoài bán; giá vốn máy ${report.summary.machineCostQty || 0}/${report.summary.machineQty || 0} máy đã xác định`],
     ['Nguyên tắc tính', 'Doanh thu thuần − tổng giá vốn', 'Giá vốn đã gồm cước/phí mua phân bổ; VAT và cước giao hàng thu khách theo dõi riêng.'],
   ];
@@ -257,7 +258,8 @@ export async function GET(req: NextRequest) {
   sales.addRow([]);
   sales.addRow(sales.columns.map((column) => column.header));
   styleTableHeader(sales.getRow(7));
-  report.salesDetails.forEach((detail) => {
+  const salesDetails = report.salesDetails || [];
+  salesDetails.forEach((detail) => {
     const row = sales.addRow({
       ...detail,
       baseCost: detail.breakdownComplete ? detail.baseCost : null,
@@ -274,15 +276,15 @@ export async function GET(req: NextRequest) {
   });
   const partsDetailTotal = sales.addRow([
     'TỔNG CỘNG', '', '', '', '',
-    report.salesDetails.reduce((sum, row) => sum + row.quantity, 0), '',
-    report.salesDetails.reduce((sum, row) => sum + row.unitPrice * row.quantity, 0),
-    report.salesDetails.reduce((sum, row) => sum + row.discount, 0),
-    report.salesDetails.reduce((sum, row) => sum + row.revenue, 0),
-    report.salesDetails.every((row) => row.breakdownComplete) ? report.salesDetails.reduce((sum, row) => sum + (row.baseCost || 0), 0) : null,
-    report.salesDetails.every((row) => row.breakdownComplete) ? report.salesDetails.reduce((sum, row) => sum + (row.shippingCost || 0), 0) : null,
-    report.salesDetails.every((row) => row.breakdownComplete) ? report.salesDetails.reduce((sum, row) => sum + (row.otherCost || 0), 0) : null,
-    report.salesDetails.reduce((sum, row) => sum + row.cogs, 0),
-    report.salesDetails.reduce((sum, row) => sum + row.grossProfit, 0),
+    salesDetails.reduce((sum, row) => sum + row.quantity, 0), '',
+    salesDetails.reduce((sum, row) => sum + row.unitPrice * row.quantity, 0),
+    salesDetails.reduce((sum, row) => sum + row.discount, 0),
+    salesDetails.reduce((sum, row) => sum + row.revenue, 0),
+    salesDetails.every((row) => row.breakdownComplete) ? salesDetails.reduce((sum, row) => sum + (row.baseCost || 0), 0) : null,
+    salesDetails.every((row) => row.breakdownComplete) ? salesDetails.reduce((sum, row) => sum + (row.shippingCost || 0), 0) : null,
+    salesDetails.every((row) => row.breakdownComplete) ? salesDetails.reduce((sum, row) => sum + (row.otherCost || 0), 0) : null,
+    salesDetails.reduce((sum, row) => sum + row.cogs, 0),
+    salesDetails.reduce((sum, row) => sum + row.grossProfit, 0),
   ]);
   partsDetailTotal.eachCell((cell, col) => {
     cell.font = { bold: true, color: { argb: navy } };
@@ -376,6 +378,28 @@ export async function GET(req: NextRequest) {
   });
   machineOrders.views = [{ state: 'frozen', xSplit: 5, ySplit: 7 }];
   machineOrders.autoFilter = { from: 'A7', to: 'L7' };
+
+  const unmatchedReturns = workbook.addWorksheet('Phiếu trả chưa đối chiếu');
+  unmatchedReturns.columns = [
+    { header: 'Mã phiếu trả', key: 'returnCode', width: 22 },
+    { header: 'Ngày', key: 'returnedAt', width: 16 },
+    { header: 'Khách hàng', key: 'customerName', width: 38 },
+    { header: 'VAT snapshot', key: 'vatAmount', width: 20 },
+    { header: 'Tổng giá trị trả', key: 'amount', width: 22 },
+  ];
+  addReportHeader(unmatchedReturns, unmatchedReturns.columns.length);
+  unmatchedReturns.addRow([]);
+  unmatchedReturns.addRow(unmatchedReturns.columns.map((column) => column.header));
+  styleTableHeader(unmatchedReturns.getRow(7));
+  (report.unmatchedReturns || []).forEach((item) => {
+    const row = unmatchedReturns.addRow(item);
+    row.eachCell((cell, col) => {
+      cell.border = { bottom: border };
+      if (col >= 4) cell.numFmt = moneyFormat;
+    });
+  });
+  unmatchedReturns.views = [{ state: 'frozen', xSplit: 1, ySplit: 7 }];
+  unmatchedReturns.autoFilter = { from: 'A7', to: 'E7' };
 
   const buffer = await workbook.xlsx.writeBuffer();
   const fileName = `bao-cao-doanh-thu-${report.range.from}-den-${report.range.to}.xlsx`;

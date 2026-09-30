@@ -30,7 +30,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Mua hàng & Kho',
     items: [
-      { href: '/purchases', label: 'Mua hàng', icon: 'Plane', permission: 'MENU_EQUIPMENT' },
+      { href: '/purchases', label: 'Mua hàng', icon: 'ClipboardList', permission: 'MENU_EQUIPMENT' },
       { href: '/spare-parts', label: 'Hàng hóa & Kho', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
     ],
   },

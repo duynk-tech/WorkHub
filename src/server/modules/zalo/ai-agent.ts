@@ -271,6 +271,7 @@ export async function handleZaloAiQuery(
   employeeId: number,
   userPrompt: string,
   zaloUserId?: string,
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
   if (!apiKey) {
@@ -359,7 +360,10 @@ export async function handleZaloAiQuery(
   const systemPrompt = renderSystemPrompt(customTemplate, promptVars);
 
   // Tải lịch sử hội thoại gần nhất trong phiên (Session Context)
-  const history = zaloUserId ? await getRecentChatHistory(zaloUserId) : [];
+  // Web chat gửi lịch sử của đúng cuộc trò chuyện hiện tại; Zalo tiếp tục dùng lịch sử lưu theo Zalo user.
+  const history: ChatMessage[] = conversationHistory
+    ? conversationHistory.map((item) => ({ role: item.role, content: item.content }))
+    : zaloUserId ? await getRecentChatHistory(zaloUserId) : [];
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },

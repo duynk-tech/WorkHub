@@ -65,13 +65,18 @@ export function LoginForm({ googleEnabled = false, ssoError,
   const displayLogoLetter = logoText?.trim() || appName.slice(0, 1).toUpperCase() || 'W';
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' }} className="login-shell">
+    <div className="login-shell">
       <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 2 }}><ThemeToggle /></div>
 
       <div className="login-grid">
         {/* Cột thương hiệu */}
         <aside className="login-hero">
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', gap: 40 }}>
+          <div className="login-watermark" aria-hidden="true">
+            <div className="login-watermark-mark">
+              {logoUrl ? <img src={logoUrl} alt="" /> : <span>{displayLogoLetter}</span>}
+            </div>
+          </div>
+          <div className="login-hero-inner">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div
                 className={`login-logo ${logoUrl ? 'has-image' : ''}`}
@@ -102,17 +107,17 @@ export function LoginForm({ googleEnabled = false, ssoError,
               <span style={{ fontSize: 20, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{appName}</span>
             </div>
 
-            <div>
-              <h2 style={{ color: '#fff', fontSize: 28, lineHeight: 1.25, marginBottom: 14, fontWeight: 700, letterSpacing: '-0.02em' }}>
+            <div className="login-hero-copy">
+              <h2 className="login-hero-title">
                 {appDescription || 'Quản trị kinh doanh, thiết bị, kho vận và công việc'}
               </h2>
-              <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, maxWidth: 440, lineHeight: 1.55 }}>
+              <p className="login-hero-description">
                 {appName} — Nền tảng hợp nhất quản trị bán hàng, theo dõi thiết bị khách hàng, quản lý kho linh kiện và vận hành doanh nghiệp.
               </p>
 
-              <div style={{ display: 'grid', gap: 14, marginTop: 30 }}>
+              <div className="login-feature-list">
                 {HIGHLIGHTS.map(({ icon: Icon, title, desc }) => (
-                  <div key={title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <div key={title} className="login-feature">
                     <span className="login-feature-icon"><Icon size={16} /></span>
                     <div>
                       <div style={{ color: '#fff', fontSize: 13.5, fontWeight: 600 }}>{title}</div>
@@ -131,7 +136,7 @@ export function LoginForm({ googleEnabled = false, ssoError,
 
         {/* Cột biểu mẫu */}
         <main className="login-panel">
-          <div style={{ width: '100%', maxWidth: 380 }}>
+          <div className="login-form-card">
             <div className="login-logo-mobile">
               <div
                 className={`login-logo ${logoUrl ? 'has-image' : ''}`}
@@ -163,8 +168,9 @@ export function LoginForm({ googleEnabled = false, ssoError,
               <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-strong)' }}>{appName}</span>
             </div>
 
-            <h1 style={{ fontSize: 23, marginBottom: 6 }}>Đăng nhập</h1>
-            <p className="page-desc" style={{ marginBottom: 24 }}>Đăng nhập vào hệ thống {appName}</p>
+            <div className="login-eyebrow">CỔNG THÔNG TIN NỘI BỘ</div>
+            <h1 className="login-form-title">Đăng nhập</h1>
+            <p className="page-desc login-form-description">Đăng nhập vào hệ thống {appName}</p>
 
             {state.error && (
               <div className="alert alert-danger" style={{ marginBottom: 16 }}>

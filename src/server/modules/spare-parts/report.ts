@@ -113,6 +113,9 @@ export interface InventoryProfitReport {
     vatAmount: number;
     /** Hàng trả lại */
     returnedAmount: number;
+    /** Phiếu trả không gắn được với đơn bán; không phân bổ vào doanh thu mặt hàng. */
+    unmatchedReturnAmount?: number;
+    unmatchedReturnCount?: number;
     cogs: number;
     grossProfit: number;
     marginPercent: number;
@@ -123,7 +126,7 @@ export interface InventoryProfitReport {
     /** Số đơn bán hàng trong kỳ */
     orderCount: number;
     /** Cước giao hàng thu từ khách, hiển thị riêng ngoài doanh thu mặt hàng. */
-    customerShippingFee: number;
+    customerShippingFee?: number;
     machineRevenue?: number;
     machineDiscount?: number;
     machineQty?: number;
@@ -136,7 +139,7 @@ export interface InventoryProfitReport {
   costByReason: { code: string; label: string; qty: number; value: number }[];
   items: ItemReportRow[];
   /** Chi tiết bán theo từng đơn + mã hàng; giá vốn và phí lấy đúng snapshot phiếu xuất. */
-  salesDetails: {
+  salesDetails?: {
     isReturn?: boolean;
     orderCode: string;
     orderDate: string;
@@ -186,6 +189,7 @@ export interface InventoryProfitReport {
     grossProfit: number | null;
     costKnown: boolean;
   }[];
+  unmatchedReturns?: { returnCode: string; returnedAt: string; customerName: string; amount: number; vatAmount: number }[];
 }
 
 export async function getInventoryProfitReport(range: ReportRange): Promise<InventoryProfitReport> {
@@ -277,6 +281,8 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
   };
 
   for (const trans of transactions) {
+    // Phiếu này chỉ đảo lần nhập kho trả hàng bị hủy, không phải hàng xuất tiêu hao.
+    if (trans.reasonCode === 'CUSTOMER_RETURN_REVERSAL') continue;
     for (const line of trans.items) {
       if (!line.item) continue;
       if (trans.type === 'OUT' && trans.reasonCode === 'SALE') continue;
@@ -317,7 +323,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
           inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } },
         },
       },
-      soldMachines: { select: { id: true, machineCode: true, name: true, model: true, unitCost: true } },
+      soldMachines: { select: { id: true, machineCode: true, name: true, model: true, serialNumber: true, customerOrderItemId: true, unitCost: true } },
       customer: { select: { name: true } },
     },
   });
@@ -325,27 +331,38 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
   // Hàng trả được ghi nhận theo ngày lập phiếu trả, không dời ngược về ngày
   // bán. Nhờ vậy kỳ sau vẫn thể hiện được khoản giảm doanh thu của đơn cũ.
   const customerReturns = await prisma.customerReturn.findMany({
-    where: { returnedAt: { gte: range.from, lte: range.to }, orderId: { not: null } },
+    where: { returnedAt: { gte: range.from, lte: range.to } },
     include: {
       customer: { select: { name: true } },
       order: {
         include: {
           items: { include: { inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } } } },
-          soldMachines: { select: { id: true, machineCode: true, name: true, model: true, unitCost: true } },
+          soldMachines: { select: { id: true, machineCode: true, name: true, model: true, serialNumber: true, customerOrderItemId: true, unitCost: true } },
         },
       },
       items: true,
     },
   });
+  const unmatchedReturns = customerReturns.filter((customerReturn) => !customerReturn.order).map((customerReturn) => ({
+    returnCode: customerReturn.returnCode,
+    returnedAt: toLocalDateString(customerReturn.returnedAt),
+    customerName: customerReturn.customer.name,
+    amount: Number(customerReturn.totalValue) || 0,
+    vatAmount: Number(customerReturn.vatAmount) || 0,
+  }));
 
-  const equipmentIds = [...new Set(customerOrders.flatMap((order) =>
-    order.items.filter((line) => line.itemType === 'EQUIPMENT' && line.equipmentId != null)
-      .map((line) => Number(line.equipmentId)),
-  ))];
+  const equipmentIds = [...new Set([
+    ...customerOrders.flatMap((order) => order.items
+      .filter((line) => line.itemType === 'EQUIPMENT' && line.equipmentId != null)
+      .map((line) => Number(line.equipmentId))),
+    ...customerReturns.flatMap((customerReturn) => customerReturn.items
+      .map((line) => line.equipmentId == null ? null : Number(line.equipmentId))
+      .filter((id): id is number => id != null)),
+  ])];
   const linkedEquipment = equipmentIds.length
     ? await prisma.fnbEquipment.findMany({
         where: { id: { in: equipmentIds } },
-        select: { id: true, unitCost: true, machineCode: true, name: true, model: true },
+        select: { id: true, unitCost: true, machineCode: true, name: true, model: true, serialNumber: true },
       })
     : [];
   const equipmentById = new Map(linkedEquipment.map((machine) => [machine.id, machine]));
@@ -424,7 +441,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     discount: number; cogs: number; costKnown: boolean;
   }>();
   const machineSalesDetails: NonNullable<InventoryProfitReport['machineSalesDetails']> = [];
-  const salesDetails: InventoryProfitReport['salesDetails'] = [];
+  const salesDetails: NonNullable<InventoryProfitReport['salesDetails']> = [];
 
   for (const order of customerOrders) {
     const hasReportSalesLines = order.items.some((line) =>
@@ -445,59 +462,87 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       const lineDiscount = line.discountAmount == null
         ? Math.max(0, gross - lineRevenue)
         : Number(line.discountAmount);
-      const machine = (line.equipmentId == null ? undefined : equipmentById.get(line.equipmentId))
-        || order.soldMachines.find((m) => m.id === line.equipmentId);
-      if (machine && !countedEquipmentIds.has(machine.id)) {
-        countedEquipmentIds.add(machine.id);
-        if (machine.unitCost == null) machineMissingCostQty += 1;
-        else {
-          machineCogs += Number(machine.unitCost) || 0;
-          machineCostQty += 1;
-        }
-      }
-      const mapKey = machine?.machineCode || `${line.equipmentId || 'item'}-${line.name}`;
-      const key = machine?.machineCode || '—';
-      const name = machine ? `${machine.name}${machine.model ? ` (${machine.model})` : ''}` : line.name;
-      if (!machine && order.soldMachines.length === 0) machineMissingCostQty += quantity;
-      const current = machineSalesMap.get(mapKey) || {
-        key, name, quantity: 0, gross: 0, revenue: 0, discount: 0, cogs: 0, costKnown: true,
-      };
-      current.quantity += quantity;
-      current.gross += gross;
-      current.revenue += lineRevenue;
-      current.discount += lineDiscount;
       const stockCost = line.inventoryItemId
         ? saleCostByOrderItem.get(`${order.id}:${line.inventoryItemId}`)
         : undefined;
       const hasStockCost = Boolean(stockCost?.qty);
-      const lineCogs = hasStockCost
-        ? stockCost!.cost * quantity / stockCost!.qty
-        : machine?.unitCost == null ? null : Number(machine.unitCost) * quantity;
-      const breakdownComplete = hasStockCost && stockCost!.breakdownComplete;
-      const componentScale = hasStockCost ? quantity / stockCost!.qty : 0;
-      if (lineCogs == null) current.costKnown = false;
-      else current.cogs += lineCogs;
-      machineSalesMap.set(mapKey, current);
-      const machineCostKnown = lineCogs != null;
-      machineSalesDetails.push({
-        orderCode: order.orderCode,
-        orderDate: toLocalDateString(order.orderDate),
-        customerName: order.customer.name,
-        key,
-        name,
-        quantity,
-        unitPrice: Number(line.unitPrice) || 0,
-        discount: lineDiscount,
-        revenue: lineRevenue,
-        cogs: lineCogs,
-        baseCost: breakdownComplete ? stockCost!.baseCost * componentScale : null,
-        shippingCost: breakdownComplete ? stockCost!.shippingCost * componentScale : null,
-        otherCost: breakdownComplete ? stockCost!.otherCost * componentScale : null,
-        breakdownComplete,
-        grossProfit: lineCogs == null ? null : lineRevenue - lineCogs,
-        costKnown: machineCostKnown,
-      });
-      machineQty += quantity;
+      const lineMachines = order.soldMachines.filter((candidate) =>
+        candidate.customerOrderItemId === line.id || candidate.id === line.equipmentId,
+      );
+      if (lineMachines.length) {
+        const share = quantity > 0 ? 1 / quantity : 0;
+        for (const machine of lineMachines) {
+          if (countedEquipmentIds.has(machine.id)) continue;
+          countedEquipmentIds.add(machine.id);
+          const key = machine.machineCode;
+          const name = `${machine.name}${machine.model ? ` (${machine.model})` : ''}${machine.serialNumber ? ` · S/N ${machine.serialNumber}` : ''}`;
+          const mapKey = machine.machineCode;
+          const current = machineSalesMap.get(mapKey) || { key, name, quantity: 0, gross: 0, revenue: 0, discount: 0, cogs: 0, costKnown: true };
+          const unitRevenue = lineRevenue * share;
+          const unitDiscount = lineDiscount * share;
+          const unitCost = machine.unitCost != null
+            ? Number(machine.unitCost)
+            : hasStockCost ? stockCost!.cost / stockCost!.qty : null;
+          if (unitCost == null) {
+            current.costKnown = false;
+            machineMissingCostQty += 1;
+          } else {
+            current.cogs += unitCost;
+            machineCogs += unitCost;
+            machineCostQty += 1;
+          }
+          current.quantity += 1;
+          current.gross += Number(line.unitPrice) || 0;
+          current.revenue += unitRevenue;
+          current.discount += unitDiscount;
+          machineSalesMap.set(mapKey, current);
+          machineSalesDetails.push({
+            orderCode: order.orderCode, orderDate: toLocalDateString(order.orderDate), customerName: order.customer.name,
+            key, name, quantity: 1, unitPrice: Number(line.unitPrice) || 0, discount: unitDiscount, revenue: unitRevenue,
+            cogs: unitCost, baseCost: hasStockCost && stockCost!.breakdownComplete ? stockCost!.baseCost / stockCost!.qty : null,
+            shippingCost: hasStockCost && stockCost!.breakdownComplete ? stockCost!.shippingCost / stockCost!.qty : null,
+            otherCost: hasStockCost && stockCost!.breakdownComplete ? stockCost!.otherCost / stockCost!.qty : null,
+            breakdownComplete: Boolean(hasStockCost && stockCost!.breakdownComplete),
+            grossProfit: unitCost == null ? null : unitRevenue - unitCost, costKnown: unitCost != null,
+          });
+          machineQty += 1;
+        }
+        const unmappedQty = Math.max(0, quantity - lineMachines.length);
+        if (unmappedQty) {
+          machineMissingCostQty += unmappedQty;
+          machineQty += unmappedQty;
+          const unitRevenue = lineRevenue * unmappedQty / Math.max(1, quantity);
+          const unitDiscount = lineDiscount * unmappedQty / Math.max(1, quantity);
+          const mapKey = `unmapped-${line.id}`;
+          const current = machineSalesMap.get(mapKey) || { key: '—', name: line.name, quantity: 0, gross: 0, revenue: 0, discount: 0, cogs: 0, costKnown: false };
+          current.quantity += unmappedQty; current.gross += Number(line.unitPrice) * unmappedQty; current.revenue += unitRevenue; current.discount += unitDiscount;
+          machineSalesMap.set(mapKey, current);
+          machineSalesDetails.push({ orderCode: order.orderCode, orderDate: toLocalDateString(order.orderDate), customerName: order.customer.name,
+            key: '—', name: line.name, quantity: unmappedQty, unitPrice: Number(line.unitPrice) || 0, discount: unitDiscount, revenue: unitRevenue,
+            cogs: null, baseCost: null, shippingCost: null, otherCost: null, breakdownComplete: false, grossProfit: null, costKnown: false });
+        }
+      } else {
+        const machine = line.equipmentId == null ? undefined : equipmentById.get(line.equipmentId);
+        const key = machine?.machineCode || '—';
+        const mapKey = machine?.machineCode || `${line.equipmentId || 'item'}-${line.name}`;
+        const name = machine ? `${machine.name}${machine.model ? ` (${machine.model})` : ''}` : line.name;
+        const lineCogs = hasStockCost ? stockCost!.cost * quantity / stockCost!.qty : machine?.unitCost == null ? null : Number(machine.unitCost) * quantity;
+        if (lineCogs == null) machineMissingCostQty += quantity;
+        else { machineCogs += lineCogs; machineCostQty += quantity; }
+        const current = machineSalesMap.get(mapKey) || { key, name, quantity: 0, gross: 0, revenue: 0, discount: 0, cogs: 0, costKnown: true };
+        current.quantity += quantity; current.gross += gross; current.revenue += lineRevenue; current.discount += lineDiscount;
+        if (lineCogs == null) current.costKnown = false; else current.cogs += lineCogs;
+        machineSalesMap.set(mapKey, current);
+        const breakdownComplete = hasStockCost && stockCost!.breakdownComplete;
+        const componentScale = hasStockCost ? quantity / stockCost!.qty : 0;
+        machineSalesDetails.push({ orderCode: order.orderCode, orderDate: toLocalDateString(order.orderDate), customerName: order.customer.name,
+          key, name, quantity, unitPrice: Number(line.unitPrice) || 0, discount: lineDiscount, revenue: lineRevenue, cogs: lineCogs,
+          baseCost: breakdownComplete ? stockCost!.baseCost * componentScale : null,
+          shippingCost: breakdownComplete ? stockCost!.shippingCost * componentScale : null,
+          otherCost: breakdownComplete ? stockCost!.otherCost * componentScale : null, breakdownComplete,
+          grossProfit: lineCogs == null ? null : lineRevenue - lineCogs, costKnown: lineCogs != null });
+        machineQty += quantity;
+      }
       machineRevenue += lineRevenue;
       machineDiscount += lineDiscount;
       machineLineSubtotal += lineRevenue;
@@ -515,15 +560,19 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     }
 
     const orderSubtotal = Number(order.goodsAmount || 0);
+    // VAT của cước giao khách không phải VAT trên doanh thu mặt hàng trong báo cáo.
+    const orderVatForGoods = orderSubtotal > 0
+      ? Number(order.vatAmount || 0) * orderSubtotal / (orderSubtotal + (Number(order.shippingFee) || 0))
+      : 0;
     if (machineLineSubtotal > 0 && orderSubtotal > 0) {
       machineShare = Math.min(1, machineLineSubtotal / orderSubtotal);
-      totalVat += Number(order.vatAmount || 0) * machineShare;
+      totalVat += orderVatForGoods * machineShare;
     }
 
     if (!order.items.some((line) => line.inventoryItem && line.itemType !== 'EQUIPMENT')) continue;
     let inventoryLineSubtotal = 0;
     const costAppliedItemIds = new Set<number>();
-    const orderItemDetails = new Map<number, InventoryProfitReport['salesDetails'][number]>();
+      const orderItemDetails = new Map<number, NonNullable<InventoryProfitReport['salesDetails']>[number]>();
 
     for (const line of order.items) {
       if (!line.inventoryItem || line.itemType === 'EQUIPMENT') continue;
@@ -616,7 +665,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     // để không cộng VAT dịch vụ/thiết bị không thuộc báo cáo kho.
     if (inventoryLineSubtotal > 0 && orderSubtotal > 0) {
       const inventoryShare = Math.min(1 - machineShare, inventoryLineSubtotal / orderSubtotal);
-      totalVat += Number(order.vatAmount || 0) * inventoryShare;
+      totalVat += orderVatForGoods * inventoryShare;
     }
   }
 
@@ -628,6 +677,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     if (!order) continue;
     const returnDate = toLocalDateString(customerReturn.returnedAt);
     let returnGoodsAmount = 0;
+    const returnSnapshotGoodsAmount = customerReturn.items.reduce((sum, item) => sum + (Number(item.totalPrice) || 0), 0);
     const returnedByOrderLine = new Map<number, number>();
     for (const returnedLine of customerReturn.items) {
       const orderLine = returnedLine.orderItemId == null
@@ -646,9 +696,9 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       returnGoodsAmount += returnRevenue;
 
       if (orderLine.itemType === 'EQUIPMENT') {
-        const machine = orderLine.equipmentId == null
-          ? undefined
-          : order.soldMachines.find((candidate) => candidate.id === orderLine.equipmentId);
+        const machine = returnedLine.equipmentId != null
+          ? equipmentById.get(returnedLine.equipmentId) || order.soldMachines.find((candidate) => candidate.id === returnedLine.equipmentId)
+          : (orderLine.equipmentId == null ? undefined : order.soldMachines.find((candidate) => candidate.id === orderLine.equipmentId));
         const key = machine?.machineCode || '—';
         const name = machine ? `${machine.name}${machine.model ? ` (${machine.model})` : ''}` : orderLine.name;
         const machineKey = machine?.machineCode || `${orderLine.equipmentId || 'item'}-${orderLine.name}`;
@@ -662,9 +712,9 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
         const stockCost = orderLine.inventoryItemId
           ? saleCostByOrderItem.get(`${order.id}:${orderLine.inventoryItemId}`)
           : undefined;
-        const unitCost = stockCost?.qty
-          ? stockCost.cost / stockCost.qty
-          : machine?.unitCost == null ? null : Number(machine.unitCost);
+        const unitCost = machine?.unitCost != null
+          ? Number(machine.unitCost)
+          : stockCost?.qty ? stockCost.cost / stockCost.qty : null;
         const returnCogs = unitCost == null ? null : unitCost * quantity;
         if (returnCogs == null) current.costKnown = false;
         else current.cogs -= returnCogs;
@@ -676,7 +726,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
         machineSalesDetails.push({
           isReturn: true,
           orderCode: customerReturn.returnCode, orderDate: returnDate, customerName: customerReturn.customer.name,
-          key, name, quantity: -quantity, unitPrice: Number(orderLine.unitPrice) || 0,
+          key, name: machine?.serialNumber ? `${name} · S/N ${machine.serialNumber}` : name, quantity: -quantity, unitPrice: Number(orderLine.unitPrice) || 0,
           discount: -returnDiscount, revenue: -returnRevenue, cogs: returnCogs == null ? null : -returnCogs,
           baseCost: null, shippingCost: null, otherCost: null, breakdownComplete: false,
           grossProfit: returnCogs == null ? null : returnCogs - returnRevenue, costKnown: returnCogs != null,
@@ -715,10 +765,10 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
         });
       }
     }
-    const orderGoods = Number(order.goodsAmount || 0);
-    if (orderGoods > 0 && returnGoodsAmount > 0) {
-      totalVat -= Number(order.vatAmount || 0) * Math.min(1, returnGoodsAmount / orderGoods);
-    }
+    const reportableVatShare = returnSnapshotGoodsAmount > 0
+      ? returnGoodsAmount / returnSnapshotGoodsAmount
+      : 0;
+    totalVat -= (Number(customerReturn.vatAmount) || 0) * reportableVatShare;
     totalReturned += returnGoodsAmount;
   }
 
@@ -765,6 +815,8 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
       discount,
       vatAmount: totalVat,
       returnedAmount: totalReturned,
+      unmatchedReturnAmount: unmatchedReturns.reduce((sum, item) => sum + item.amount, 0),
+      unmatchedReturnCount: unmatchedReturns.length,
       cogs,
       grossProfit,
       marginPercent: revenue > 0 ? Math.round((grossProfit / revenue) * 10000) / 100 : 0,
@@ -810,6 +862,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
     machineSalesDetails: machineSalesDetails.sort((a, b) =>
       b.orderDate.localeCompare(a.orderDate) || a.orderCode.localeCompare(b.orderCode) || a.name.localeCompare(b.name),
     ),
+    unmatchedReturns,
   };
 }
 
@@ -831,14 +884,23 @@ export function reportToCsv(report: InventoryProfitReport): string {
   lines.push(`Doanh thu máy móc (đã trừ chiết khấu);${report.summary.machineRevenue || 0}`);
   lines.push(`Doanh thu trước chiết khấu;${report.summary.revenue + (report.summary.machineRevenue || 0) + report.summary.discount + (report.summary.machineDiscount || 0)}`);
   lines.push(`Tổng doanh thu thuần;${report.summary.revenue + (report.summary.machineRevenue || 0)}`);
-  lines.push(`Cước giao hàng thu khách (hiển thị riêng);${report.summary.customerShippingFee}`);
-  lines.push(`Tổng giá trị đơn sau điều chỉnh (không đồng nghĩa đã thu);${report.summary.revenue + (report.summary.machineRevenue || 0) + report.summary.vatAmount + report.summary.customerShippingFee}`);
+  lines.push(`Cước giao hàng thu khách (hiển thị riêng);${report.summary.customerShippingFee || 0}`);
+  lines.push(`Tổng giá trị đơn sau điều chỉnh (không đồng nghĩa đã thu);${report.summary.revenue + (report.summary.machineRevenue || 0) + report.summary.vatAmount + (report.summary.customerShippingFee || 0)}`);
   lines.push(`Số máy bán;${report.summary.machineQty}`);
   lines.push(`Chiết khấu;${report.summary.discount}`);
   lines.push(`Chiết khấu máy móc;${report.summary.machineDiscount || 0}`);
   lines.push(`Tổng chiết khấu;${report.summary.discount + (report.summary.machineDiscount || 0)}`);
   lines.push(`Thuế VAT;${report.summary.vatAmount}`);
   lines.push(`Hàng trả lại;${report.summary.returnedAmount}`);
+  lines.push(`Phiếu trả chưa đối chiếu;${report.summary.unmatchedReturnAmount || 0};${report.summary.unmatchedReturnCount || 0} phiếu`);
+  if (report.unmatchedReturns?.length) {
+    lines.push('');
+    lines.push('PHIẾU TRẢ CHƯA ĐỐI CHIẾU');
+    lines.push('Mã phiếu;Ngày;Khách hàng;VAT snapshot;Tổng giá trị trả');
+    for (const item of report.unmatchedReturns) {
+      lines.push([item.returnCode, item.returnedAt, item.customerName, item.vatAmount, item.amount].map(esc).join(';'));
+    }
+  }
   lines.push(`Giá vốn hàng bán (đã gồm cước VC, hải quan và phí phân bổ);${report.summary.cogs}`);
   lines.push(`Giá vốn máy móc (đã chốt trên hồ sơ máy);${report.summary.machineCogs || 0}`);
   lines.push(`Lãi gộp;${report.summary.grossProfit}`);
@@ -886,7 +948,7 @@ export function reportToCsv(report: InventoryProfitReport): string {
   lines.push('');
   lines.push('CHI TIẾT BÁN THEO TỪNG ĐƠN');
   lines.push('Mã đơn;Ngày;Khách hàng;Mã hàng;Tên hàng;SL;ĐVT;Đơn giá bán;Chiết khấu;Doanh thu thuần;Tiền hàng vốn;Phí vận chuyển phân bổ;Phí khác phân bổ;Tổng giá vốn;Lợi nhuận gộp');
-  for (const detail of report.salesDetails) {
+  for (const detail of report.salesDetails || []) {
     lines.push([
       esc(detail.orderCode), detail.orderDate, esc(detail.customerName), esc(detail.itemCode), esc(detail.name),
       detail.quantity, esc(detail.unit), detail.unitPrice, detail.discount, detail.revenue,

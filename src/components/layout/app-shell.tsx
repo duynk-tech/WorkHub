@@ -7,6 +7,7 @@ import { Topbar, type TopbarUser, type TopbarNotification } from './topbar';
 import { NavigationProgressBar } from './nav-progress-bar';
 import { CurrentUserProvider } from './current-user';
 import { PrintWatermarkProvider } from './print-watermark-context';
+import { AiChatWidget } from './ai-chat-widget';
 import type { PrintWatermarkConfig } from '@/server/modules/settings/branding';
 
 export function AppShell({
@@ -43,6 +44,7 @@ export function AppShell({
       <PrintWatermarkProvider value={printWatermark}>
         <div className="app-shell">
         <NavigationProgressBar />
+        <AiChatWidget />
         <Sidebar
           sections={sections}
           appName={appName}

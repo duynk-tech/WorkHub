@@ -1170,7 +1170,7 @@ model CustomerOrder {
   invoiceNo       String?   @db.VarChar(32) // Số hóa đơn VAT
   invoiceSerial   String?   @db.VarChar(32) // Ký hiệu hóa đơn, VD 1C26TAA
   invoiceDate     DateTime? @db.Date
-  returnedAmount  Decimal   @default(0) @db.Decimal(15, 2) // Giá trị hàng khách đã trả lại
+  returnedAmount  Decimal   @default(0) @db.Decimal(15, 2) // Giá trị trả hàng gồm VAT
   paidAmount      Decimal   @default(0) @db.Decimal(15, 2) // Đã thu (cộng dồn từ các phiếu thu)
   notes           String?   @db.Text
   quotationId     Int? // Đơn được chốt từ báo giá nào
@@ -1214,6 +1214,7 @@ model CustomerOrderItem {
 
   order           CustomerOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  machines        FnbEquipment[]
   inventoryItemId Int?
 
   @@index([orderId])
@@ -1333,7 +1334,8 @@ model CustomerReturn {
    * CREDIT = giảm trừ công nợ, REFUND = hoàn tiền mặt cho khách.
    */
   settlement  String   @default("CREDIT") @db.VarChar(32)
-  totalValue  Decimal  @default(0) @db.Decimal(15, 2)
+  totalValue  Decimal  @default(0) @db.Decimal(15, 2) // Tổng giá trị trả gồm VAT
+  vatAmount   Decimal  @default(0) @db.Decimal(15, 2)
   reason      String?  @db.VarChar(255)
   note        String?  @db.Text
   returnedAt  DateTime @default(now()) @db.Date
@@ -1353,12 +1355,14 @@ model CustomerReturnItem {
   returnId        Int
   orderItemId     Int?
   inventoryItemId Int? // Có mã kho thì nhập lại kho được
+  equipmentId     Int? // Thiết bị theo serial được trả lại
   name            String  @db.VarChar(191)
   quantity        Int     @default(1)
   unitPrice       Decimal @db.Decimal(15, 2)
   totalPrice      Decimal @db.Decimal(15, 2)
 
   return CustomerReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  equipment FnbEquipment? @relation("ReturnedEquipment", fields: [equipmentId], references: [id], onDelete: SetNull)
 
   @@index([returnId])
 }
@@ -1419,6 +1423,7 @@ model FnbEquipment {
   unitCost          Decimal?  @db.Decimal(15, 2)
   soldPrice         Decimal?  @db.Decimal(15, 2)
   customerOrderId   Int?
+  customerOrderItemId Int?
   installedDate     DateTime? @db.Date
   warrantyExpiresAt DateTime? @db.Date
   lastPmDate        DateTime? @db.Date
@@ -1432,6 +1437,8 @@ model FnbEquipment {
   location        CustomerLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   warehouse       Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   customerOrder   CustomerOrder?    @relation("OrderSoldMachines", fields: [customerOrderId], references: [id], onDelete: SetNull)
+  customerOrderItem CustomerOrderItem? @relation(fields: [customerOrderItemId], references: [id], onDelete: SetNull)
+  returns         CustomerReturnItem[] @relation("ReturnedEquipment")
   tickets         ServiceTicket[]
   sparePartOrders SparePartOrder[]
 
@@ -1441,6 +1448,7 @@ model FnbEquipment {
   @@index([locationId])
   @@index([warehouseId])
   @@index([customerOrderId])
+  @@index([customerOrderItemId])
 }
 
 model ServiceTicket {

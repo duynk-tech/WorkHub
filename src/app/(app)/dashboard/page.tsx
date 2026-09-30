@@ -3,12 +3,16 @@ import {
   ListChecks, AlertTriangle, CheckSquare, CalendarDays, Clock, Users,
   ArrowRight, CircleDot, Plane, ShoppingCart, Wallet, FileText, Truck,
   PackageSearch, ClipboardCheck, Wrench, TimerReset, Boxes, Briefcase,
-  ShieldCheck, Utensils, Warehouse, TrendingUp,
+  ShieldCheck, Utensils, Warehouse, TrendingUp, BarChart3,
 } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, can } from '@/server/auth/context';
 import { visibleEmployeeIds } from '@/server/auth/scope';
 import { customerDebtReport } from '@/server/modules/report/customer-debt';
+import { attendanceReport, taskReport, leaveReport, overviewReport } from '@/server/modules/report/service';
+import { getDisabledReportKeys } from '@/server/modules/report/config';
+import { visibleReports } from '@/server/modules/report/registry';
+import { ReportScreen } from '../reports/report-screen';
 import { getCustomerCareList, CARE_REASONS } from '@/server/modules/customer/care';
 import { ORDER_STATUSES as CUSTOMER_ORDER_STATUSES } from '@/server/modules/customer/types';
 import { ORDER_STATUSES as PO_STATUSES, TRANSACTION_TYPES } from '@/server/modules/spare-parts/types';
@@ -344,7 +348,7 @@ async function loadServiceSummary() {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; report?: string; month?: string; from?: string; to?: string; year?: string }>;
 }) {
   const ctx = await requireAuth();
   const sp = await searchParams;
@@ -367,10 +371,34 @@ export default async function DashboardPage({
       : null,
     // Việc và phép của chính mình thì ai cũng xem được
     { key: 'work', label: 'Công việc & Nhân sự', hint: 'Việc được giao, đơn chờ bạn duyệt và tình hình nghỉ phép', icon: Users },
+    can(ctx, 'MENU_REPORTS')
+      ? { key: 'reports', label: 'Báo cáo', hint: 'Báo cáo công việc, bán hàng và nhân sự', icon: BarChart3 }
+      : null,
   ].filter((t): t is NonNullable<typeof t> => t !== null);
 
   const tab = tabs.some((t) => t.key === sp.tab) ? sp.tab! : tabs[0].key;
   const active = tabs.find((t) => t.key === tab)!;
+
+  const isReportsTab = tab === 'reports';
+  const reports = isReportsTab
+    ? visibleReports(await getDisabledReportKeys(), (permission) => can(ctx, permission as never)).filter((report) => report.key !== 'sales-inventory')
+    : [];
+  const requestedReport = sp.report ?? '';
+  const reportTab = reports.some((report) => report.key === requestedReport) ? requestedReport : reports[0]?.key ?? '';
+  const reportMonth = sp.month ?? `${year}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const reportFrom = sp.from ?? `${year}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const reportTo = sp.to ?? today.toISOString().slice(0, 10);
+  const reportYear = Number(sp.year ?? year);
+
+  const [reportOverview, reportAttendance, reportTasks, reportLeaves, reportDebt] = isReportsTab
+    ? await Promise.all([
+      overviewReport(ctx),
+      reportTab === 'attendance' ? attendanceReport(ctx, reportMonth) : Promise.resolve(null),
+      reportTab === 'task' ? taskReport(ctx, reportFrom, reportTo) : Promise.resolve(null),
+      reportTab === 'leave' ? leaveReport(ctx, reportYear) : Promise.resolve(null),
+      reportTab === 'customer-debt' ? customerDebtReport() : Promise.resolve(null),
+    ])
+    : [null, null, null, null, null] as const;
 
   // Chỉ truy vấn số liệu của tab đang mở
   const [sales, stock, service] = await Promise.all([
@@ -464,7 +492,24 @@ export default async function DashboardPage({
         </div>
       )}
 
-      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>
+      {!isReportsTab && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>}
+
+      {isReportsTab && reportOverview && (
+        <ReportScreen
+          tab={reportTab}
+          reports={reports}
+          overview={reportOverview}
+          attendance={reportAttendance ? JSON.parse(JSON.stringify(reportAttendance)) : null}
+          tasks={reportTasks ? JSON.parse(JSON.stringify(reportTasks)) : null}
+          leaves={reportLeaves ? JSON.parse(JSON.stringify(reportLeaves)) : null}
+          debt={reportDebt ? JSON.parse(JSON.stringify(reportDebt)) : null}
+          filters={{ month: reportMonth, from: reportFrom, to: reportTo, year: reportYear }}
+          canExport={can(ctx, 'FEATURE_REPORT_EXPORT')}
+          routeBase="/dashboard"
+          routeParam="report"
+          fixedRouteParams={{ tab: 'reports' }}
+        />
+      )}
 
       {sales && (
         <>

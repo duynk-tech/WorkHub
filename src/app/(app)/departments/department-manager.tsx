@@ -166,7 +166,7 @@ export function DepartmentManager({ tree, employees, stats, canManage }: Props) 
   });
 
   return (
-    <div className="stack">
+    <div className="stack department-manager-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Quản lý phòng ban</h1>
@@ -184,31 +184,45 @@ export function DepartmentManager({ tree, employees, stats, canManage }: Props) 
         )}
       </div>
 
-      <div className="grid-stats">
-        <StatCard label="Tổng số đơn vị" value={stats.total} icon={<Building2 size={16} />} />
-        <StatCard label="Số cấp phân cấp" value={stats.maxLevel} icon={<Layers size={16} />} hint="Độ sâu lớn nhất của cây" />
-        <StatCard label="Nhân sự đã phân bổ" value={stats.employees} icon={<Users size={16} />} />
-        <StatCard
-          label="Đơn vị chưa có trưởng" value={stats.withoutManager} icon={<UserX size={16} />}
-          tone={stats.withoutManager > 0 ? 'var(--warning)' : undefined}
-          hint={stats.withoutManager > 0 ? 'Ảnh hưởng tới định tuyến duyệt' : 'Đã gán đủ trưởng đơn vị'}
-        />
-      </div>
+      {stats.total > 0 && (
+        <div className="grid-stats">
+          <StatCard label="Tổng số đơn vị" value={stats.total} icon={<Building2 size={16} />} />
+          <StatCard label="Số cấp phân cấp" value={stats.maxLevel} icon={<Layers size={16} />} hint="Độ sâu lớn nhất của cây" />
+          <StatCard label="Nhân sự đã phân bổ" value={stats.employees} icon={<Users size={16} />} />
+          <StatCard
+            label="Đơn vị chưa có trưởng" value={stats.withoutManager} icon={<UserX size={16} />}
+            tone={stats.withoutManager > 0 ? 'var(--warning)' : undefined}
+            hint={stats.withoutManager > 0 ? 'Ảnh hưởng tới định tuyến duyệt' : 'Đã gán đủ trưởng đơn vị'}
+          />
+        </div>
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 380px) 1fr', gap: 16, alignItems: 'start' }} className="dept-layout">
+      {tree.length === 0 ? (
         <Card>
+          <CardBody>
+            <div style={{ minHeight: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '32px 20px' }}>
+              <div style={{ width: 52, height: 52, borderRadius: 14, display: 'grid', placeItems: 'center', color: 'var(--brand)', background: 'var(--brand-soft, #eef2ff)', marginBottom: 14 }}>
+                <Network size={23} />
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 650, color: 'var(--text-strong)', marginBottom: 6 }}>Chưa có phòng ban</div>
+              <div className="hint" style={{ maxWidth: 380, marginBottom: canManage ? 18 : 0 }}>
+                Tạo phòng ban đầu tiên để bắt đầu xây dựng sơ đồ tổ chức và phân quyền theo đơn vị.
+              </div>
+              {canManage && <Button variant="primary" onClick={() => openCreate(null)}><Plus /> Tạo phòng ban đầu tiên</Button>}
+            </div>
+          </CardBody>
+        </Card>
+      ) : (
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 340px) minmax(0, 1fr)', gap: 16 }} className="dept-layout department-manager-layout">
+        <Card className="dept-tree-card">
           <CardHeader>
             <CardTitle>Sơ đồ tổ chức</CardTitle>
           </CardHeader>
           <div style={{ padding: '10px 12px' }}>
             <SearchInput placeholder="Tìm phòng ban…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <div style={{ padding: '0 10px 14px', maxHeight: 560, overflowY: 'auto' }}>
-            {tree.length === 0 ? (
-              <EmptyState icon={<Network size={20} />} title="Chưa có phòng ban" description="Tạo đơn vị đầu tiên để bắt đầu." />
-            ) : (
-              tree.map(renderNode)
-            )}
+          <div className="dept-tree-list" style={{ padding: '0 10px 14px', overflowY: 'auto' }}>
+            {tree.map(renderNode)}
           </div>
         </Card>
 
@@ -276,9 +290,10 @@ export function DepartmentManager({ tree, employees, stats, canManage }: Props) 
             </CardBody>
           </Card>
         ) : (
-          <Card><CardBody><EmptyState icon={<Building2 size={20} />} title="Chọn một phòng ban" description="Chọn đơn vị ở sơ đồ bên trái để xem chi tiết." /></CardBody></Card>
+          <Card><CardBody className="dept-detail-empty-body"><EmptyState icon={<Building2 size={20} />} title="Chọn một phòng ban" description="Chọn đơn vị ở sơ đồ bên trái để xem chi tiết." /></CardBody></Card>
         )}
       </div>
+      )}
 
       <Modal
         open={modal.open}

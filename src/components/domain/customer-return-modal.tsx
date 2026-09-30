@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui/modal';
 import { Button, Field, Input, Select, SearchableSelect } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
@@ -34,6 +34,7 @@ export function CustomerReturnModal({
 
   /** Số lượng trả của từng dòng, theo id dòng đơn hàng. */
   const [qty, setQty] = useState<Record<number, string>>({});
+  const [machineIds, setMachineIds] = useState<Record<number, boolean>>({});
   const [settlement, setSettlement] = useState(
     Number(order?.paidAmount || 0) > 0 ? 'REFUND' : 'CREDIT',
   );
@@ -42,6 +43,9 @@ export function CustomerReturnModal({
   const [returnedAt, setReturnedAt] = useState(new Date().toISOString().slice(0, 10));
 
   const lines: any[] = order?.items || [];
+  const machines: any[] = [...(order?.soldMachines || []), ...(order?.machines || []).filter((machine: any) => machine.customerOrderId === order?.id)]
+    .filter((machine: any, index: number, list: any[]) => list.findIndex((candidate) => candidate.id === machine.id) === index);
+  useEffect(() => { setQty({}); setMachineIds({}); }, [order?.id, open]);
   const returnedQuantityByLine = new Map<number, number>();
   for (const customerReturn of order?.returns || []) {
     for (const returnedLine of customerReturn.items || []) {
@@ -53,14 +57,24 @@ export function CustomerReturnModal({
     }
   }
   const remainingQuantity = (line: any) => Math.max(0, Number(line.quantity || 0) - (returnedQuantityByLine.get(line.id) || 0));
-  const picked = lines
-    .map((l) => ({ line: l, q: Number(qty[l.id] || 0) }))
-    .filter((x) => x.q > 0);
-  const totalValue = picked.reduce(
-    (sum, x) => sum + x.q * Number(x.line.unitPrice || 0),
-    0,
-  );
-  const hasStockable = picked.some((x) => x.line.inventoryItemId);
+  const picked = lines.flatMap((line) => {
+    if (line.itemType === 'EQUIPMENT') {
+      return machines.filter((machine) => machine.customerOrderItemId === line.id && machineIds[machine.id])
+        .map((machine) => ({ line, q: 1, equipmentId: machine.id }));
+    }
+    const quantity = Number(qty[line.id] || 0);
+    return quantity > 0 ? [{ line, q: quantity, equipmentId: undefined }] : [];
+  });
+  const goodsValue = picked.reduce((sum, x) => {
+    const soldQty = Number(x.line.quantity) || 0;
+    const lineNet = x.line.totalPrice == null
+      ? soldQty * Number(x.line.unitPrice || 0)
+      : Number(x.line.totalPrice);
+    return sum + (soldQty > 0 ? lineNet * x.q / soldQty : 0);
+  }, 0);
+  const returnVat = Math.round(goodsValue * (Number(order?.vatRate) || 0) / 100);
+  const totalValue = goodsValue + returnVat;
+  const hasStockable = picked.some((x) => x.line.inventoryItemId || x.equipmentId);
 
   const handleSave = async () => {
     if (picked.length === 0) {
@@ -84,6 +98,7 @@ export function CustomerReturnModal({
       items: picked.map((x) => ({
         orderItemId: x.line.id,
         inventoryItemId: x.line.inventoryItemId || undefined,
+        equipmentId: x.equipmentId,
         name: x.line.name,
         quantity: x.q,
         unitPrice: Number(x.line.unitPrice || 0),
@@ -105,7 +120,7 @@ export function CustomerReturnModal({
       open={open}
       onClose={onClose}
       title={`Khách trả hàng: ${order.orderCode}`}
-      description="Nhập lại kho phần hàng có mã danh mục và xử lý phần tiền tương ứng"
+      description="Chọn hàng hoặc đúng serial thiết bị khách trả, rồi xử lý phần tiền tương ứng"
       size="lg"
       footer={
         <>
@@ -124,8 +139,27 @@ export function CustomerReturnModal({
             Chọn hàng khách trả lại
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {lines.map((l: any) => (
-              <div
+            {lines.flatMap((l: any) => {
+              if (l.itemType === 'EQUIPMENT') {
+                const units = machines.filter((machine) => machine.customerOrderItemId === l.id);
+                const legacyReturns = (order?.returns || []).flatMap((r: any) => r.items || [])
+                  .filter((item: any) => item.orderItemId === l.id && !item.equipmentId)
+                  .reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0);
+                if (!units.length) return [<div key={`machine-untracked-${l.id}`} style={{ padding: '9px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-sunken)', color: 'var(--text-muted)', fontSize: 12.5 }}>
+                  <strong>{l.name}</strong><div>Chưa có serial gắn với dòng đơn này; không thể chọn máy để nhập lại kho.</div>
+                </div>];
+                return units.map((machine: any) => {
+                  const alreadyReturned = (order?.returns || []).some((r: any) => (r.items || []).some((item: any) => item.equipmentId === machine.id));
+                  const disabled = alreadyReturned || legacyReturns > 0 || machine.status === 'IN_STOCK';
+                  return <div key={`machine-${machine.id}`}
+                    style={{ display: 'grid', gridTemplateColumns: '28px 1fr 130px', gap: 8, alignItems: 'center', padding: '7px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-sunken)', border: '1px solid var(--border-base)', fontSize: 12.5 }}>
+                    <input type="checkbox" checked={Boolean(machineIds[machine.id])} disabled={disabled} onChange={(event) => setMachineIds({ ...machineIds, [machine.id]: event.target.checked })} />
+                    <div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: 'var(--text-strong)' }}>{l.name}</div><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Serial: {machine.serialNumber} · {machine.machineCode}</div>{legacyReturns > 0 && <div style={{ color: 'var(--warning)', fontSize: 11 }}>Phiếu trả cũ chưa lưu serial; cần đối soát thủ công trước khi trả tiếp dòng này.</div>}</div>
+                    <div style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(Number(l.totalPrice || 0) / Math.max(1, Number(l.quantity || 1)))} ₫</div>
+                  </div>;
+                });
+              }
+              return <div
                 key={l.id}
                 style={{
                   display: 'grid',
@@ -160,10 +194,12 @@ export function CustomerReturnModal({
                   style={{ textAlign: 'right' }}
                 />
                 <div style={{ textAlign: 'right', fontWeight: 600 }}>
-                  {fmt(Number(qty[l.id] || 0) * Number(l.unitPrice || 0))} ₫
+                  {fmt((Number(l.quantity) > 0
+                    ? Number(l.totalPrice ?? (Number(l.unitPrice || 0) * Number(l.quantity))) * Number(qty[l.id] || 0) / Number(l.quantity)
+                    : 0))} ₫
                 </div>
-              </div>
-            ))}
+              </div>;
+            })}
           </div>
         </div>
 
@@ -213,8 +249,8 @@ export function CustomerReturnModal({
         >
           <span>
             {settlement === 'REFUND'
-              ? 'Hoàn tiền: số đã thu của đơn giảm tương ứng'
-              : 'Giảm trừ: công nợ còn lại của đơn giảm tương ứng'}
+              ? 'Giá trị trả đã gồm VAT; tiền mặt hoàn không vượt số khách đã thanh toán'
+              : 'Giá trị trả đã gồm VAT được cấn trừ vào công nợ'}
           </span>
           <strong style={{ fontSize: 16 }}>{fmt(totalValue)} ₫</strong>
         </div>

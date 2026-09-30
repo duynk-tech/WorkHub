@@ -154,13 +154,34 @@ export function InventoryReportPanel({ companyInfo }: { companyInfo?: CompanyInf
       </>}
     </Card>
 
+    {report && report.unmatchedReturns?.length > 0 && <Card style={{ padding: 14, borderColor: '#f59e0b' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ fontWeight: 700, color: 'var(--text-strong)' }}>Phiếu trả chưa đối chiếu ({fmt(report.summary.unmatchedReturnCount || 0)} phiếu)</div>
+        <strong style={{ color: '#b45309' }}>{money(report.summary.unmatchedReturnAmount || 0)}</strong>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>Các phiếu này không gắn với đơn bán gốc nên được theo dõi riêng, chưa trừ vào doanh thu, VAT hoặc lợi nhuận theo mặt hàng.</div>
+      <div style={{ overflowX: 'auto' }}><table className="table table-compact" style={{ minWidth: 620 }}>
+        <thead><tr><th>Mã phiếu trả</th><th>Ngày</th><th>Khách hàng</th><th className="num">VAT snapshot</th><th className="num">Tổng giá trị trả</th></tr></thead>
+        <tbody>{report.unmatchedReturns.map((item: any) => <tr key={item.returnCode}>
+          <td style={{ color: 'var(--brand)', fontWeight: 700 }}>{item.returnCode}</td>
+          <td>{new Date(`${item.returnedAt}T00:00:00`).toLocaleDateString('vi-VN')}</td>
+          <td>{item.customerName}</td><td className="num">{money(item.vatAmount)}</td><td className="num" style={{ fontWeight: 650 }}>{money(item.amount)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </Card>}
+
     {report && <section className="inventory-report-print">
       <header className="inventory-report-print-header"><div><div className="inventory-report-print-company">{companyInfo?.name || 'Đơn vị lập báo cáo'}</div>{companyInfo?.address && <div>{companyInfo.address}</div>}<div>{[companyInfo?.phone && `Điện thoại: ${companyInfo.phone}`, companyInfo?.taxCode && `MST: ${companyInfo.taxCode}`].filter(Boolean).join(' · ')}</div></div>
         <div className="inventory-report-print-meta"><h1>BÁO CÁO DOANH THU</h1><div>Kỳ {report.range.label}: {report.range.from} – {report.range.to}</div><div>Ngày xuất: {new Date().toLocaleDateString('vi-VN')}</div></div></header>
       <table className="inventory-report-print-table"><thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách hàng</th><th>Loại</th><th>Mã hàng</th><th>Tên hàng</th><th>SL</th><th>Đơn giá</th><th>Chiết khấu</th><th>Doanh thu thuần</th><th>Tiền hàng vốn</th><th>Phí vận chuyển</th><th>Phí khác</th><th>Tổng giá vốn</th><th>Lợi nhuận gộp</th></tr></thead>
         <tbody>{filtered.map((line, i) => <tr key={`print-${line.orderCode}-${line.kind}-${i}`}><td>{line.orderCode}</td><td>{line.orderDate}</td><td>{line.customerName}</td><td>{line.isReturn ? 'Trả hàng' : line.kind}</td><td>{line.itemCode}</td><td>{line.name}</td><td className="numeric">{fmt(line.quantity)}</td><td className="numeric">{money(line.unitPrice)}</td><td className="numeric">{line.discount < 0 ? `+${money(Math.abs(line.discount))}` : money(line.discount)}</td><td className="numeric">{money(line.revenue)}</td><td className="numeric">{money(line.baseCost)}</td><td className="numeric">{money(line.shippingCost)}</td><td className="numeric">{money(line.otherCost)}</td><td className="numeric">{money(line.cogs)}</td><td className="numeric">{money(line.grossProfit)}</td></tr>)}</tbody>
         <tfoot><tr><td colSpan={9}>TỔNG CỘNG · {filtered.length} dòng</td><td className="numeric">{money(sum('revenue'))}</td><td colSpan={3}></td><td className="numeric">{unknownMachineCost ? 'Chưa đủ' : money(sum('cogs'))}</td><td className="numeric">{unknownMachineCost ? 'Chưa đủ' : money(sum('grossProfit'))}</td></tr></tfoot>
-      </table><p className="inventory-report-print-definition">Doanh thu thuần chưa gồm VAT. Giá vốn gồm chi phí mua được ghi nhận. Cước giao khách và VAT theo dõi riêng.</p>
+      </table>
+      {report.unmatchedReturns?.length > 0 && <><h2>Phiếu trả chưa đối chiếu</h2><p>Các phiếu này không gắn với đơn bán gốc, nên chưa được trừ vào doanh thu, VAT hoặc lợi nhuận theo mặt hàng.</p>
+        <table className="inventory-report-print-table"><thead><tr><th>Mã phiếu trả</th><th>Ngày</th><th>Khách hàng</th><th>VAT snapshot</th><th>Tổng giá trị trả</th></tr></thead><tbody>
+          {report.unmatchedReturns.map((item: any) => <tr key={`unmatched-${item.returnCode}`}><td>{item.returnCode}</td><td>{item.returnedAt}</td><td>{item.customerName}</td><td className="numeric">{money(item.vatAmount)}</td><td className="numeric">{money(item.amount)}</td></tr>)}
+        </tbody></table></>}
+      <p className="inventory-report-print-definition">Doanh thu thuần chưa gồm VAT. Giá vốn gồm chi phí mua được ghi nhận. Cước giao khách và VAT theo dõi riêng.</p>
     </section>}
   </div>;
 }

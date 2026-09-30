@@ -436,6 +436,7 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
       customer: { select: { id: true, code: true, name: true, phone: true, address: true, contactName: true } },
       location: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
       items: { orderBy: { id: 'asc' } },
+      soldMachines: { select: { id: true, customerOrderItemId: true, serialNumber: true, machineCode: true, name: true, model: true, status: true, customerOrderId: true } },
       payments: { orderBy: { paidAt: 'desc' } },
       returns: { include: { items: true }, orderBy: { returnedAt: 'desc' } },
       quotation: { select: { id: true, quoteCode: true } },
@@ -462,6 +463,10 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
     })
     .catch(() => []);
   (o as any).machines = relatedMachines;
+  (o as any).soldMachines = [...new Map([
+    ...((o as any).soldMachines || []),
+    ...relatedMachines.filter((machine: any) => machine.customerOrderId === o.id || eqIds.includes(machine.id)),
+  ].map((machine: any) => [machine.id, machine])).values()];
 
   for (const it of ((o as any).items || []) as any[]) {
     if (it.equipmentId && !it.equipment) {
@@ -574,6 +579,8 @@ export async function getCustomerById(id: number) {
         orders: {
           include: {
             items: true,
+            soldMachines: { select: { id: true, customerOrderItemId: true, serialNumber: true, machineCode: true, name: true, model: true, status: true, customerOrderId: true } },
+            returns: { include: { items: true }, orderBy: { returnedAt: 'desc' } },
             location: { select: { id: true, name: true, address: true } },
           },
           orderBy: { orderDate: 'desc' },
@@ -625,6 +632,11 @@ export async function getCustomerById(id: number) {
             );
           }
         }
+        const lineEquipmentIds = (ord.items || []).map((item: any) => item.equipmentId).filter(Boolean);
+        ord.soldMachines = [...new Map([
+          ...(ord.soldMachines || []),
+          ...allCustMachines.filter((machine: any) => machine.customerOrderId === ord.id || lineEquipmentIds.includes(machine.id)),
+        ].map((machine: any) => [machine.id, machine])).values()];
       }
     }
     return c;
@@ -1580,6 +1592,7 @@ export async function issueCustomerOrderStock(
           unitCost: line.inventoryItemId ? issuedCostByItem.get(line.inventoryItemId)?.total ?? null : null,
           soldPrice: Number(line.unitPrice || 0),
           customerOrderId: order.id,
+          customerOrderItemId: line.id,
           notes: `Sinh tự động khi giao đơn ${order.orderCode}`,
         },
         select: { machineCode: true, serialNumber: true },
@@ -1595,6 +1608,8 @@ export async function issueCustomerOrderStock(
         customerId: order.customerId,
         locationId: order.locationId,
         warehouseId: null,
+        customerOrderId: order.id,
+        customerOrderItemId: line.id,
         ownershipType,
         status: 'OPERATING',
         installedDate: new Date(),
@@ -1871,6 +1886,7 @@ export async function deleteCustomerPayment(id: number, actorId?: number) {
 export interface CustomerReturnItemInput {
   orderItemId?: number;
   inventoryItemId?: number;
+  equipmentId?: number;
   name: string;
   quantity: number;
   unitPrice: number;
@@ -1912,145 +1928,388 @@ export async function generateReturnCode(): Promise<string> {
  * lại. Công nợ sau đó = tổng đơn − giá trị trả − đã thu.
  */
 export async function createCustomerReturn(input: SaveCustomerReturnInput, userId?: number) {
-  const items = input.items.filter((i) => i.name?.trim() && Number(i.quantity) > 0);
-  if (items.length === 0) throw new Error('Chưa chọn hàng nào để trả lại');
-  if (input.orderId) {
-    const order = await prisma.customerOrder.findUnique({
-      where: { id: Number(input.orderId) },
-      include: {
-        items: { select: { id: true, quantity: true } },
-        returns: { select: { items: { select: { orderItemId: true, quantity: true } } } },
-      },
-    });
-    if (!order || order.customerId !== Number(input.customerId) || order.status === 'CANCELLED') {
-      throw new Error('Đơn không thuộc khách hàng hoặc đã hủy');
+  const items = input.items.filter((i) => i.name?.trim());
+  if (!items.length) throw new Error('Chưa chọn hàng nào để trả lại');
+  for (const item of items) {
+    if (!Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) <= 0) {
+      throw new Error('Số lượng hàng trả phải là số nguyên dương');
     }
-    if (!order.stockIssuedAt) throw new Error('Đơn chưa giao hàng; hãy hủy đơn thay vì lập phiếu trả hàng');
-    const returnedQuantityByLine = new Map<number, number>();
-    for (const customerReturn of order.returns) {
-      for (const returnedLine of customerReturn.items) {
-        if (!returnedLine.orderItemId) continue;
-        returnedQuantityByLine.set(
-          returnedLine.orderItemId,
-          (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + returnedLine.quantity,
-        );
-      }
-    }
-    const requestedQuantityByLine = new Map<number, number>();
-    for (const item of items) {
-      if (!item.orderItemId) throw new Error('Dòng hàng trả lại chưa gắn với dòng hàng của đơn');
-      requestedQuantityByLine.set(item.orderItemId, (requestedQuantityByLine.get(item.orderItemId) || 0) + Number(item.quantity));
-    }
-    for (const [orderItemId, requestedQty] of requestedQuantityByLine) {
-      const orderLine = order.items.find((line) => line.id === Number(orderItemId));
-      if (!orderLine) throw new Error('Có dòng hàng trả lại không thuộc đơn này');
-      const remainingQty = Math.max(0, orderLine.quantity - (returnedQuantityByLine.get(orderItemId) || 0));
-      if (requestedQty > remainingQty) {
-        throw new Error(`Số lượng trả vượt số còn lại của dòng hàng (còn ${remainingQty})`);
-      }
+    if (!Number.isFinite(Number(item.unitPrice)) || Number(item.unitPrice) < 0) {
+      throw new Error('Đơn giá hàng trả không hợp lệ');
     }
   }
 
-  const totalValue = items.reduce(
-    (sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
-    0,
-  );
+  const returnCode = await generateReturnCode();
+  return prisma.$transaction(async (tx) => {
+    if (input.settlement && !['CREDIT', 'REFUND'].includes(input.settlement)) {
+      throw new Error('Hình thức xử lý tiền trả hàng không hợp lệ');
+    }
+    if (!input.orderId && input.settlement === 'REFUND') {
+      throw new Error('Muốn hoàn tiền cần gắn phiếu trả với đơn bán gốc');
+    }
+    const order = input.orderId
+      ? await tx.customerOrder.findUnique({
+          where: { id: Number(input.orderId) },
+          include: {
+          items: {
+            include: { inventoryItem: { select: { id: true, name: true, avgCost: true, costPrice: true } } },
+          },
+          soldMachines: { select: { id: true, customerOrderItemId: true, customerOrderId: true, status: true, serialNumber: true } },
+            returns: { select: { items: { select: { orderItemId: true, quantity: true } } } },
+          },
+        })
+      : null;
 
-  const record = await prisma.customerReturn.create({
-    data: {
-      returnCode: await generateReturnCode(),
-      customerId: input.customerId,
-      orderId: input.orderId || null,
-      settlement: input.settlement || 'CREDIT',
-      totalValue,
-      reason: input.reason?.trim()?.slice(0, 255) || null,
-      note: input.note?.trim() || null,
-      returnedAt: input.returnedAt ? new Date(input.returnedAt) : new Date(),
-      createdById: userId || null,
-      items: {
-        create: items.map((i) => ({
-          orderItemId: i.orderItemId || null,
-          inventoryItemId: i.inventoryItemId || null,
-          name: i.name.trim(),
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          totalPrice: (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
-        })),
+    if (input.orderId && (!order || order.customerId !== Number(input.customerId) || order.status === 'CANCELLED')) {
+      throw new Error('Đơn không thuộc khách hàng hoặc đã hủy');
+    }
+    if (order && !order.stockIssuedAt) throw new Error('Đơn chưa giao hàng; hãy hủy đơn thay vì lập phiếu trả hàng');
+
+    const requestedQuantityByLine = new Map<number, number>();
+    for (const item of items) {
+      if (!order && item.orderItemId) throw new Error('Phiếu trả không gắn đơn không thể tham chiếu dòng hàng của đơn');
+      if (!item.orderItemId) {
+        if (order) throw new Error('Dòng hàng trả lại chưa gắn với dòng hàng của đơn');
+        continue;
+      }
+      const orderItemId = Number(item.orderItemId);
+      requestedQuantityByLine.set(orderItemId, (requestedQuantityByLine.get(orderItemId) || 0) + Number(item.quantity));
+    }
+
+    const returnedQuantityByLine = new Map<number, number>();
+    if (order) {
+      for (const customerReturn of order.returns) {
+        for (const returnedLine of customerReturn.items) {
+          if (!returnedLine.orderItemId) continue;
+          returnedQuantityByLine.set(returnedLine.orderItemId, (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + returnedLine.quantity);
+        }
+      }
+      for (const [orderItemId, requestedQty] of requestedQuantityByLine) {
+        const orderLine = order.items.find((line) => line.id === orderItemId);
+        if (!orderLine) throw new Error('Có dòng hàng trả lại không thuộc đơn này');
+        const remainingQty = Math.max(0, orderLine.quantity - (returnedQuantityByLine.get(orderItemId) || 0));
+        if (requestedQty > remainingQty) throw new Error(`Số lượng trả vượt số còn lại của dòng hàng (còn ${remainingQty})`);
+      }
+    }
+
+    const saleTransactions = order
+      ? await tx.inventoryTransaction.findMany({
+          where: { customerOrderId: order.id, type: 'OUT', reasonCode: 'SALE', status: 'COMPLETED' },
+          include: { items: true },
+        })
+      : [];
+    const machineIds = [...new Set(items.map((item) => Number(item.equipmentId)).filter((id) => Number.isInteger(id) && id > 0))];
+    const machinesToReturn = machineIds.length && order
+      ? await tx.fnbEquipment.findMany({ where: { id: { in: machineIds } } })
+      : [];
+    if (machineIds.length !== machinesToReturn.length) throw new Error('Không tìm thấy thiết bị theo serial đã chọn');
+    if (new Set(machineIds).size !== machineIds.length) throw new Error('Không thể trả trùng cùng một thiết bị');
+    const costByItem = new Map<number, { qty: number; cost: number; base: number; shipping: number; other: number; complete: boolean }>();
+    for (const transaction of saleTransactions) {
+      for (const line of transaction.items) {
+        const current = costByItem.get(line.itemId) || { qty: 0, cost: 0, base: 0, shipping: 0, other: 0, complete: true };
+        const qty = Number(line.quantity) || 0;
+        current.qty += qty;
+        current.cost += Number(line.unitCost || 0) * qty;
+        if (line.baseUnitCost == null || line.shippingUnitCost == null || line.otherUnitCost == null) current.complete = false;
+        else {
+          current.base += Number(line.baseUnitCost) * qty;
+          current.shipping += Number(line.shippingUnitCost) * qty;
+          current.other += Number(line.otherUnitCost) * qty;
+        }
+        costByItem.set(line.itemId, current);
+      }
+    }
+
+    // Với đơn bán, giá trị trả lấy theo snapshot dòng bán trên server, không
+    // tin đơn giá do trình duyệt gửi lên. Phần kho nhận lại dùng giá vốn của
+    // chính lần xuất nếu còn snapshot để bình quân tồn không bị đội theo giá bán.
+    const normalizedItems = items.map((item) => {
+      const orderLine = item.orderItemId && order
+        ? order.items.find((line) => line.id === Number(item.orderItemId))
+        : undefined;
+      if (order && !orderLine) throw new Error('Có dòng hàng trả lại không thuộc đơn này');
+      if (orderLine && item.inventoryItemId && Number(item.inventoryItemId) !== orderLine.inventoryItemId) {
+        throw new Error('Mặt hàng kho không khớp với dòng bán gốc');
+      }
+      if (orderLine && !item.orderItemId) throw new Error('Dòng hàng trả lại chưa gắn với dòng hàng của đơn');
+      const machine = item.equipmentId
+        ? machinesToReturn.find((candidate) => candidate.id === Number(item.equipmentId))
+        : undefined;
+      const belongsToLine = Boolean(machine && order && orderLine && (
+        (machine.customerOrderId === order.id && machine.customerOrderItemId === orderLine.id) ||
+        (machine.id === orderLine.equipmentId && (machine.customerOrderId == null || machine.customerOrderId === order.id))
+      ));
+      if (item.equipmentId && (!order || !orderLine || orderLine.itemType !== 'EQUIPMENT' || !belongsToLine || machine?.status === 'IN_STOCK')) {
+        throw new Error('Thiết bị không thuộc dòng đơn này hoặc đã được trả trước đó');
+      }
+      if (orderLine?.itemType === 'EQUIPMENT' && !machine) {
+        throw new Error('Vui lòng chọn đúng số serial thiết bị khách trả lại');
+      }
+      if (machine && Number(item.quantity) !== 1) throw new Error('Mỗi serial thiết bị phải được lập thành một dòng trả riêng');
+
+      const qty = Number(item.quantity);
+      const sourceItem = orderLine?.inventoryItem;
+      const returnedValue = orderLine
+        ? Math.round((Number(orderLine.totalPrice ?? Number(orderLine.unitPrice) * orderLine.quantity) * qty / orderLine.quantity) * 100) / 100
+        : Math.round(qty * Number(item.unitPrice) * 100) / 100;
+      const inventoryItemId = orderLine?.inventoryItemId ?? item.inventoryItemId ?? null;
+      const saleCost = inventoryItemId ? costByItem.get(inventoryItemId) : undefined;
+      const fallbackCost = Number(sourceItem?.avgCost ?? sourceItem?.costPrice ?? 0);
+      const unitCost = saleCost?.qty
+        ? saleCost.cost / saleCost.qty
+        : fallbackCost;
+      const unitBase = saleCost?.qty && saleCost.complete ? saleCost.base / saleCost.qty : unitCost;
+      const unitShipping = saleCost?.qty && saleCost.complete ? saleCost.shipping / saleCost.qty : 0;
+      const unitOther = saleCost?.qty && saleCost.complete ? saleCost.other / saleCost.qty : 0;
+      const name = orderLine?.name || item.name.trim();
+      return {
+        orderItemId: orderLine?.id ?? item.orderItemId ?? null,
+        inventoryItemId,
+        equipmentId: machine?.id ?? null,
+        name,
+        quantity: qty,
+        totalPrice: returnedValue,
+        unitPrice: qty > 0 ? returnedValue / qty : 0,
+        unitCost,
+        unitBase,
+        unitShipping,
+        unitOther,
+      };
+    });
+    const totalValue = Math.round(normalizedItems.reduce((sum, item) => sum + item.totalPrice, 0) * 100) / 100;
+    const returnVat = order
+      ? Math.round(totalValue * (Number(order.vatRate) || 0) / 100)
+      : 0;
+    const settlementValue = totalValue + returnVat;
+    if (order && (input.settlement || 'CREDIT') === 'CREDIT' && settlementValue > orderDebt(order).remaining) {
+      throw new Error('Giá trị trả vượt công nợ còn lại; hãy chọn hoàn tiền để xử lý phần khách đã thanh toán');
+    }
+    const stockableByItem = new Map<number, typeof normalizedItems[number]>();
+    for (const item of normalizedItems) {
+      if (!item.inventoryItemId) continue;
+      const current = stockableByItem.get(item.inventoryItemId);
+      if (!current) stockableByItem.set(item.inventoryItemId, { ...item });
+      else {
+        const nextQty = current.quantity + item.quantity;
+        current.unitCost = (current.unitCost * current.quantity + item.unitCost * item.quantity) / nextQty;
+        current.unitBase = (current.unitBase * current.quantity + item.unitBase * item.quantity) / nextQty;
+        current.unitShipping = (current.unitShipping * current.quantity + item.unitShipping * item.quantity) / nextQty;
+        current.unitOther = (current.unitOther * current.quantity + item.unitOther * item.quantity) / nextQty;
+        current.quantity = nextQty;
+      }
+    }
+    const stockable = [...stockableByItem.values()];
+    const equipmentReturns = normalizedItems.filter((item) => item.equipmentId != null);
+    const hasRestockable = stockable.length > 0 || equipmentReturns.length > 0;
+    if (hasRestockable && !input.warehouseId) throw new Error('Chọn kho nhận lại hàng/thiết bị');
+
+    const record = await tx.customerReturn.create({
+      data: {
+        returnCode,
+        customerId: input.customerId,
+        orderId: input.orderId || null,
+        settlement: input.settlement || 'CREDIT',
+        totalValue: settlementValue,
+        vatAmount: returnVat,
+        reason: input.reason?.trim()?.slice(0, 255) || null,
+        note: input.note?.trim() || null,
+        returnedAt: input.returnedAt ? new Date(input.returnedAt) : new Date(),
+        createdById: userId || null,
+        items: { create: normalizedItems.map(({ unitCost: _unitCost, unitBase: _unitBase, unitShipping: _unitShipping, unitOther: _unitOther, ...item }) => item) },
       },
-    },
-    include: { items: true },
-  });
+      include: { items: true },
+    });
 
-  // Nhập lại kho phần hàng có mã danh mục
-  const stockable = items.filter((i) => i.inventoryItemId);
-  if (stockable.length > 0 && input.warehouseId) {
-    await createStockTransaction(
-      {
+    if (stockable.length && input.warehouseId) {
+      await createStockTransaction({
         type: 'IN',
         reasonCode: 'CUSTOMER_RETURN',
         customerOrderId: input.orderId || null,
         targetWarehouseId: input.warehouseId,
         reason: `Khách trả hàng theo phiếu ${record.returnCode}`,
         note: input.reason?.trim() || null,
-        items: stockable.map((i) => ({
-          itemId: i.inventoryItemId!,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
+        allocationMethod: 'EXPLICIT',
+        items: stockable.map((item) => ({
+          itemId: item.inventoryItemId!,
+          quantity: item.quantity,
+          unitPrice: item.unitCost,
+          baseUnitPrice: item.unitBase,
+          allocatedShipping: item.unitShipping,
+          allocatedOtherFee: item.unitOther,
+          landedCost: item.unitCost,
         })),
-      } as any,
-      userId || 0,
-    );
-  }
+      }, userId || 0, tx);
+    }
+    for (const item of equipmentReturns) {
+      const sourceLine = order!.items.find((line) => line.id === item.orderItemId);
+      if (!sourceLine) throw new Error('Không tìm thấy dòng bán của thiết bị trả');
+      const machineOwnershipWhere = [
+        { customerOrderId: order!.id, customerOrderItemId: item.orderItemId! },
+        ...(sourceLine.equipmentId == null ? [] : [
+          { id: sourceLine.equipmentId, customerOrderId: null },
+          { id: sourceLine.equipmentId, customerOrderId: order!.id },
+        ]),
+      ];
+      const updated = await tx.fnbEquipment.updateMany({
+        where: {
+          id: item.equipmentId!, status: { not: 'IN_STOCK' },
+          OR: machineOwnershipWhere,
+        },
+        data: { status: 'IN_STOCK', ownershipType: 'COMPANY_OWNED', customerId: null, locationId: null, warehouseId: input.warehouseId, customerOrderId: order!.id, customerOrderItemId: item.orderItemId! },
+      });
+      if (updated.count !== 1) throw new Error('Thiết bị đã thay đổi trạng thái; tải lại đơn rồi thử lại');
+    }
 
-  if (input.orderId) {
-    await prisma.customerOrder.update({
-      where: { id: input.orderId },
-      data: { returnedAmount: { increment: totalValue } },
-    });
-
-    // Hoàn tiền: ghi phiếu chi âm để số "đã thu" giảm tương ứng
-    if ((input.settlement || 'CREDIT') === 'REFUND') {
-      await prisma.customerPayment.create({
+    let refundedAmount = 0;
+    if (order) {
+      refundedAmount = (input.settlement || 'CREDIT') === 'REFUND'
+        ? Math.min(settlementValue, Math.max(0, Number(order.paidAmount) || 0))
+        : 0;
+      await tx.customerOrder.update({
+        where: { id: order.id },
         data: {
-          paymentCode: await generatePaymentCode(),
-          customerId: input.customerId,
-          orderId: input.orderId,
-          amount: -totalValue,
-          method: 'CASH',
-          paidAt: new Date(),
-          note: `Hoàn tiền hàng trả lại theo phiếu ${record.returnCode}`,
-          createdById: userId || null,
+          returnedAmount: { increment: settlementValue },
+          ...(refundedAmount > 0 ? { paidAmount: { decrement: refundedAmount } } : {}),
         },
       });
-      await prisma.customerOrder.update({
-        where: { id: input.orderId },
-        data: { paidAmount: { decrement: totalValue } },
-      });
+      if (refundedAmount > 0) {
+        await tx.customerPayment.create({
+          data: {
+            paymentCode: await generatePaymentCode(),
+            customerId: input.customerId,
+            orderId: order.id,
+            amount: -refundedAmount,
+            method: 'CASH',
+            paidAt: new Date(),
+            note: `Hoàn tiền hàng trả lại theo phiếu ${record.returnCode}`,
+            createdById: userId || null,
+          },
+        });
+      }
+      const updatedOrder = await tx.customerOrder.findUniqueOrThrow({ where: { id: order.id } });
+      if (updatedOrder.stockIssuedAt) {
+        const remaining = orderDebt(updatedOrder).remaining;
+        if (remaining <= 0 && updatedOrder.status !== 'COMPLETED') {
+          await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'COMPLETED' } });
+        } else if (remaining > 0 && updatedOrder.status === 'COMPLETED') {
+          await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'DELIVERED' } });
+        }
+      }
     }
-  }
 
-  return record;
+    await tx.auditLog.create({
+      data: {
+        actorId: userId || null,
+        entityType: 'CustomerReturn',
+        entityId: String(record.id),
+        action: 'CREATE',
+        diffJson: { returnCode: record.returnCode, orderId: input.orderId || null, goodsValue: totalValue - returnVat, vatValue: returnVat, settlementValue, settlement: input.settlement || 'CREDIT', stockReceived: Boolean(hasRestockable && input.warehouseId), returnedEquipmentIds: equipmentReturns.map((item) => item.equipmentId) },
+      },
+    });
+    return { ...record, refundedAmount };
+  }, { isolationLevel: 'Serializable' });
 }
 
-export async function deleteCustomerReturn(id: number) {
-  const record = await prisma.customerReturn.findUnique({ where: { id } });
-  if (!record) throw new Error('Không tìm thấy phiếu trả hàng');
-
-  if (record.orderId) {
-    await prisma.customerOrder.update({
-      where: { id: record.orderId },
-      data: { returnedAmount: { decrement: Number(record.totalValue) } },
+export async function deleteCustomerReturn(id: number, actorId?: number) {
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.customerReturn.findUnique({ where: { id }, include: { items: true } });
+    if (!record) throw new Error('Không tìm thấy phiếu trả hàng');
+    const receipts = await tx.inventoryTransaction.findMany({
+      where: { reasonCode: 'CUSTOMER_RETURN', reason: `Khách trả hàng theo phiếu ${record.returnCode}`, status: 'COMPLETED' },
+      include: { items: true },
     });
-    if (record.settlement === 'REFUND') {
-      await prisma.customerOrder.update({
-        where: { id: record.orderId },
-        data: { paidAmount: { increment: Number(record.totalValue) } },
-      });
-      await prisma.customerPayment.deleteMany({
-        where: { orderId: record.orderId, amount: { lt: 0 }, note: { contains: record.returnCode } },
-      });
-    }
-  }
+    const alreadyReversed = await tx.inventoryTransaction.findFirst({
+      where: { reasonCode: 'CUSTOMER_RETURN_REVERSAL', reason: `Đảo phiếu trả hàng ${record.returnCode}`, status: 'COMPLETED' },
+      select: { id: true },
+    });
+    if (alreadyReversed) throw new Error('Phiếu trả hàng này đã được đảo kho');
 
-  return prisma.customerReturn.delete({ where: { id } });
+    const returnedEquipment = record.items.filter((item) => item.equipmentId != null);
+    if (returnedEquipment.length) {
+      if (!record.orderId) throw new Error('Phiếu máy trả không còn đơn gốc; cần đối soát thủ công trước khi hủy');
+      const order = await tx.customerOrder.findUnique({ where: { id: record.orderId }, include: { items: { select: { id: true, equipmentId: true } } } });
+      if (!order) throw new Error('Không tìm thấy đơn gốc của thiết bị trả');
+      for (const item of returnedEquipment) {
+        const machine = await tx.fnbEquipment.findUnique({ where: { id: item.equipmentId! } });
+        const sourceLine = order.items.find((line) => line.id === item.orderItemId);
+        const belongsToLine = Boolean(machine && sourceLine && (
+          (machine.customerOrderId === order.id && machine.customerOrderItemId === sourceLine.id) ||
+          (machine.id === sourceLine.equipmentId && machine.customerOrderId === order.id)
+        ));
+        if (!machine || machine.status !== 'IN_STOCK' || !belongsToLine) {
+          throw new Error(`Thiết bị ${machine?.serialNumber || item.name} đã thay đổi sau khi trả; không thể đảo an toàn`);
+        }
+        const laterTicket = await tx.serviceTicket.findFirst({ where: { equipmentId: machine.id, createdAt: { gt: record.createdAt } }, select: { ticketCode: true } });
+        if (laterTicket) throw new Error(`Thiết bị đã phát sinh phiếu ${laterTicket.ticketCode} sau khi trả; không thể đảo phiếu trả`);
+        await tx.fnbEquipment.update({
+          where: { id: machine.id },
+          data: {
+            status: 'OPERATING',
+            ownershipType: order.orderType === 'RENTAL' ? 'RENTAL' : order.orderType === 'CONSIGNMENT' ? 'CONSIGNMENT' : 'SOLD',
+            customerId: order.customerId,
+            locationId: order.locationId,
+            warehouseId: null,
+          },
+        });
+      }
+    }
+
+    for (const receipt of receipts) {
+      if (!receipt.targetWarehouseId) throw new Error('Phiếu nhập hàng trả thiếu kho nhận; cần đối soát thủ công trước khi hủy');
+      const receiptItemIds = receipt.items.map((item) => item.itemId);
+      const laterMovement = await tx.inventoryTransaction.findFirst({
+        where: {
+          id: { gt: receipt.id },
+          status: 'COMPLETED',
+          items: { some: { itemId: { in: receiptItemIds } } },
+        },
+        select: { transCode: true },
+      });
+      if (laterMovement) {
+        throw new Error(`Mặt hàng đã có giao dịch kho ${laterMovement.transCode} sau phiếu trả; không thể xóa an toàn. Hãy lập phiếu điều chỉnh để giữ đúng giá vốn.`);
+      }
+      await createStockTransaction({
+        type: 'OUT',
+        reasonCode: 'CUSTOMER_RETURN_REVERSAL',
+        customerOrderId: record.orderId,
+        sourceWarehouseId: receipt.targetWarehouseId,
+        reason: `Đảo phiếu trả hàng ${record.returnCode}`,
+        note: `Đảo giao dịch kho ${receipt.transCode}`,
+        items: receipt.items.map((item) => ({ itemId: item.itemId, quantity: item.quantity })),
+      }, actorId || 0, tx);
+    }
+
+    if (record.orderId) {
+      await tx.customerOrder.update({
+        where: { id: record.orderId },
+        data: { returnedAmount: { decrement: Number(record.totalValue) } },
+      });
+      if (record.settlement === 'REFUND') {
+        const refundPayments = await tx.customerPayment.findMany({
+          where: { orderId: record.orderId, amount: { lt: 0 }, note: `Hoàn tiền hàng trả lại theo phiếu ${record.returnCode}` },
+        });
+        const refundAmount = refundPayments.reduce((sum, payment) => sum + Math.abs(Number(payment.amount)), 0);
+        if (refundAmount > 0) {
+          await tx.customerOrder.update({ where: { id: record.orderId }, data: { paidAmount: { increment: refundAmount } } });
+          await tx.customerPayment.deleteMany({ where: { id: { in: refundPayments.map((payment) => payment.id) } } });
+        }
+      }
+      const order = await tx.customerOrder.findUniqueOrThrow({ where: { id: record.orderId } });
+      if (order.status === 'COMPLETED' && order.stockIssuedAt && orderDebt(order).remaining > 0) {
+        await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'DELIVERED' } });
+      }
+    }
+
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId || null,
+        entityType: 'CustomerReturn',
+        entityId: String(record.id),
+        action: 'REVERSE',
+        diffJson: { returnCode: record.returnCode, orderId: record.orderId, totalValue: Number(record.totalValue), reversedReceipts: receipts.map((receipt) => receipt.transCode) },
+      },
+    });
+    return tx.customerReturn.delete({ where: { id } });
+  }, { isolationLevel: 'Serializable' });
 }

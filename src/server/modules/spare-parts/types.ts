@@ -349,6 +349,7 @@ export const REASON_CODES: Record<
   // ── Nhập kho ──
   PO_RECEIPT: { label: 'Nhập từ phiếu đặt hàng', type: 'IN', auto: true },
   CUSTOMER_RETURN: { label: 'Khách trả lại hàng', type: 'IN' },
+  CUSTOMER_RETURN_REVERSAL: { label: 'Đảo phiếu trả hàng', type: 'OUT', auto: true },
   REPAIR_RETURN: { label: 'Thu hồi từ sửa chữa', type: 'IN' },
   COUNT_SURPLUS: { label: 'Kiểm kê thừa', type: 'IN', needsApproval: true },
   OTHER_IN: { label: 'Nhập khác', type: 'IN' },
@@ -373,7 +374,7 @@ export const REASON_CODES: Record<
 /** Các mã lý do hợp lệ cho một loại phiếu, dùng đổ dropdown. */
 export function reasonCodesFor(type: 'IN' | 'OUT' | 'TRANSFER') {
   return Object.entries(REASON_CODES)
-    .filter(([code, cfg]) => cfg.type === type && code !== 'OTHER')
+    .filter(([code, cfg]) => cfg.type === type && code !== 'OTHER' && code !== 'CUSTOMER_RETURN_REVERSAL')
     .map(([code, cfg]) => ({ code, ...cfg }));
 }
 

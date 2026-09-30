@@ -627,6 +627,29 @@ export async function resetDemoDataAction(options?: { clean?: boolean }): Promis
   }
 }
 
+/** Xóa dữ liệu nghiệp vụ mà không nạp lại seed; chỉ giữ tài khoản admin đang thực hiện và dữ liệu nền cần cho đăng nhập. */
+export async function clearAllBusinessDataAction(): Promise<Result> {
+  const ctx = await requirePermission('FEATURE_SETTING_GENERAL');
+  if (!ctx.isAdmin) return { ok: false, message: 'Chỉ quản trị viên được xóa toàn bộ dữ liệu' };
+
+  try {
+    await cleanBusinessData(prisma, ctx.employeeId);
+
+    revalidatePath('/', 'layout');
+    for (const path of [
+      '/dashboard', '/tasks', '/equipment', '/spare-parts', '/sales', '/tickets',
+      '/documents', '/customers', '/employees', '/departments', '/attendance',
+      '/leaves', '/approvals', '/reports', '/settings',
+    ]) revalidatePath(path);
+
+    return { ok: true, message: 'Đã xóa dữ liệu nghiệp vụ. Tài khoản admin và dữ liệu nền đăng nhập được giữ lại; không nạp seed mới.' };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Xóa dữ liệu thất bại';
+    console.error('Lỗi khi xóa toàn bộ dữ liệu nghiệp vụ:', error);
+    return { ok: false, message: `Xóa dữ liệu thất bại: ${msg}` };
+  }
+}
+
 /** Xóa chứng từ bán/mua và giữ nguyên dữ liệu danh mục cùng số tồn kho. */
 export async function clearSalesAndPurchaseDocumentsAction(): Promise<Result> {
   const ctx = await requirePermission('FEATURE_SETTING_GENERAL');

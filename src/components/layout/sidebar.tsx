@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PanelLeftClose, PanelLeft, X, ChevronDown, Settings } from 'lucide-react';
 import type { NavSection } from '@/lib/nav';
@@ -24,6 +24,7 @@ export function Sidebar({
   sections, appName, logoUrl, logoText, badges, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
 }: Props) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const settingsItem = sections.flatMap(s => s.items).find(i => i.href === '/settings');
   const menuSections = sections.map(s => ({ ...s, items: s.items.filter(i => i.href !== '/settings') })).filter(s => s.items.length);
@@ -73,6 +74,8 @@ export function Sidebar({
 
   const isActive = (href: string) => {
     const current = pendingHref ?? pathname;
+    if (href === '/reports' && current === '/dashboard' && searchParams.get('tab') === 'reports') return true;
+    if (href === '/dashboard' && current === '/dashboard' && searchParams.get('tab') === 'reports') return false;
     return href === '/settings' ? current === '/settings' : current === href || current.startsWith(`${href}/`);
   };
 

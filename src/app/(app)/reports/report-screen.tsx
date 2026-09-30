@@ -10,7 +10,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import {
-  Button, Card, CardBody, CardHeader, CardTitle, Badge, StatCard, PageHeader, Input, Select, EmptyState,
+  Button, Card, CardBody, CardHeader, CardTitle, Badge, StatCard, Input, Select, EmptyState,
 } from '@/components/ui';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 import { formatMinutes } from '@/lib/utils';
@@ -28,15 +28,18 @@ const tooltipStyle = {
 const money = (n: number) => new Intl.NumberFormat('vi-VN').format(Math.round(n || 0));
 
 export function ReportScreen({
-  tab, reports, groups, overview, attendance, tasks, leaves, debt, filters, canExport,
+  tab, reports, overview, attendance, tasks, leaves, debt, filters, canExport,
+  routeBase = '/reports', routeParam = 'tab', fixedRouteParams,
 }: {
   tab: string;
   reports: ReportDef[];
-  groups: ReportGroupKey[];
   overview: { headcount: number; openTasks: number; overdueTasks: number; doneThisMonth: number; pendingLeaves: number; onLeaveToday: number };
   attendance: any; tasks: any; leaves: any; debt: any;
   filters: { month: string; from: string; to: string; year: number };
   canExport: boolean;
+  routeBase?: string;
+  routeParam?: string;
+  fixedRouteParams?: Record<string, string>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -44,17 +47,8 @@ export function ReportScreen({
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set(key, value);
-    router.push(`/reports?${params.toString()}`);
-  };
-
-  const current = reports.find((r) => r.key === tab);
-  const activeGroup = current?.group;
-  const groupReports = reports.filter((r) => r.group === activeGroup);
-
-  /** Chọn nhóm thì mở báo cáo đầu tiên của nhóm đó. */
-  const openGroup = (g: ReportGroupKey) => {
-    const first = reports.find((r) => r.group === g);
-    if (first) setParam('tab', first.key);
+    for (const [fixedKey, fixedValue] of Object.entries(fixedRouteParams ?? {})) params.set(fixedKey, fixedValue);
+    router.push(`${routeBase}?${params.toString()}`);
   };
 
   // Chỉ ba báo cáo nhân sự / công việc có sẵn file xuất; báo cáo bán hàng tự xuất trong panel
@@ -68,54 +62,34 @@ export function ReportScreen({
 
   return (
     <div className="stack reports-content">
-      <PageHeader
-        title="Báo cáo"
-        description={activeGroup ? REPORT_GROUPS[activeGroup].description : 'Chưa có báo cáo nào được bật'}
-        actions={canExport && exportUrl ? <a href={exportUrl} className="btn btn-primary"><Download /> Xuất Excel</a> : undefined}
-      />
-
       {reports.length === 0 ? (
         <EmptyState
           title="Chưa có báo cáo nào được bật"
           description="Vào Cấu hình hệ thống → Báo cáo để bật những báo cáo đơn vị cần dùng"
         />
       ) : (
-        <>
-          <div className="tabs">
-            {groups.map((g) => (
-              <div key={g} className="tab" data-active={activeGroup === g} onClick={() => openGroup(g)}>
-                {REPORT_GROUPS[g].label}
-              </div>
-            ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 1 }}>
+            <span className="label">Chọn báo cáo</span>
+            <Select
+              sizeSm
+              aria-label="Chọn báo cáo"
+              value={tab}
+              onChange={(event) => setParam(routeParam, event.target.value)}
+              style={{ width: 'min(100%, 340px)' }}
+            >
+              {(Object.keys(REPORT_GROUPS) as ReportGroupKey[]).map((group) => {
+                const groupReports = reports.filter((report) => report.group === group);
+                return groupReports.length ? (
+                  <optgroup key={group} label={REPORT_GROUPS[group].label}>
+                    {groupReports.map((report) => <option key={report.key} value={report.key}>{report.label}</option>)}
+                  </optgroup>
+                ) : null;
+              })}
+            </Select>
           </div>
-
-          {/* Nhóm chỉ có một báo cáo thì không cần hàng chọn thứ hai */}
-          {groupReports.length > 1 && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {groupReports.map((r) => (
-                <button
-                  key={r.key}
-                  type="button"
-                  onClick={() => setParam('tab', r.key)}
-                  title={r.description}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: 999,
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    border: '1px solid',
-                    borderColor: tab === r.key ? 'var(--brand)' : 'var(--border-base)',
-                    background: tab === r.key ? 'var(--brand-soft, #eef2ff)' : 'var(--surface-card)',
-                    color: tab === r.key ? 'var(--brand)' : 'var(--text-muted)',
-                  }}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+          {canExport && exportUrl && <a href={exportUrl} className="btn btn-primary"><Download /> Xuất Excel</a>}
+        </div>
       )}
 
       {tab === 'attendance' && attendance && (
@@ -200,18 +174,6 @@ export function ReportScreen({
 
       {tab === 'task' && tasks && (
         <div className="stack">
-          {/* Số liệu tức thời, không phụ thuộc khoảng ngày của báo cáo bên dưới */}
-          <div className="grid-stats">
-            <StatCard
-              label="Việc đang mở" value={overview.openTasks} icon={<ListChecks size={16} />}
-              hint={`${overview.doneThisMonth} việc hoàn thành trong tháng`}
-            />
-            <StatCard
-              label="Việc quá hạn" value={overview.overdueTasks} icon={<AlertTriangle size={16} />}
-              tone={overview.overdueTasks > 0 ? 'var(--danger)' : undefined}
-            />
-          </div>
-
           <Card>
             <CardBody style={{ padding: 14 }}>
               <div className="toolbar">

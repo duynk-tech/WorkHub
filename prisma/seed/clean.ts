@@ -9,7 +9,7 @@ import type { PrismaClient } from '@prisma/client';
  * - Quyền & Vai trò cốt lõi (Permission, Role, RolePermission)
  * - Chức danh & Ca làm việc & Loại phép & Ngày lễ (Position, WorkShift, LeaveType, Holiday)
  */
-export async function cleanBusinessData(prisma: PrismaClient) {
+export async function cleanBusinessData(prisma: PrismaClient, preserveEmployeeId?: number) {
   // Dùng raw query tắt foreign key checks để xóa nhanh, sạch và không bị xung đột ràng buộc khóa ngoại vòng
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
 
@@ -75,7 +75,9 @@ export async function cleanBusinessData(prisma: PrismaClient) {
     await prisma.$executeRawUnsafe('TRUNCATE TABLE `LeaveRequest`;');
 
     // Quỹ phép: xóa quỹ phép của nhân viên demo, bảo lưu admin
-    const adminEmp = await prisma.employee.findUnique({ where: { code: 'ADMIN' }, select: { id: true } });
+    const adminEmp = preserveEmployeeId
+      ? await prisma.employee.findUnique({ where: { id: preserveEmployeeId }, select: { id: true } })
+      : await prisma.employee.findUnique({ where: { code: 'ADMIN' }, select: { id: true } });
     if (adminEmp) {
       await prisma.$executeRawUnsafe(`DELETE FROM \`LeaveBalance\` WHERE \`employeeId\` != ${adminEmp.id};`);
     } else {

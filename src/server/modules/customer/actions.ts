@@ -356,10 +356,11 @@ export async function createCustomerReturnAction(input: SaveCustomerReturnInput)
     revalidatePath('/spare-parts');
     return {
       ok: true,
-      message:
-        input.settlement === 'REFUND'
-          ? `Đã lập phiếu trả hàng ${record.returnCode} và hoàn tiền cho khách`
-          : `Đã lập phiếu trả hàng ${record.returnCode}, giảm trừ công nợ`,
+      message: input.settlement === 'REFUND'
+        ? record.refundedAmount > 0
+          ? `Đã lập phiếu trả hàng ${record.returnCode}, hoàn ${new Intl.NumberFormat('vi-VN').format(record.refundedAmount)} đồng${record.refundedAmount < Number(record.totalValue) ? ' và cấn trừ phần còn lại vào công nợ' : ''}`
+          : `Đã lập phiếu trả hàng ${record.returnCode}; đơn chưa có khoản đã thu để hoàn tiền`
+        : `Đã lập phiếu trả hàng ${record.returnCode}, giảm trừ công nợ`,
       record: JSON.parse(JSON.stringify(record)),
     };
   } catch (error: any) {
@@ -376,9 +377,10 @@ export async function deleteCustomerReturnAction(id: number, customerId: number)
 
   try {
     const { deleteCustomerReturn } = await import('./service');
-    await deleteCustomerReturn(id);
+    await deleteCustomerReturn(id, ctx.userId);
     revalidatePath(`/customers/${customerId}`);
     revalidatePath('/sales');
+    revalidatePath('/spare-parts');
     return { ok: true, message: 'Đã xóa phiếu trả hàng và hoàn lại công nợ' };
   } catch (error: any) {
     console.error('[deleteCustomerReturnAction error]:', error);

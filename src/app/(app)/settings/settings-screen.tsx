@@ -19,7 +19,7 @@ import {
   saveSettingsAction, testZaloBotAction, flushOutboxAction,
   saveHolidayAction, deleteHolidayAction, saveWorkShiftAction, saveLeaveTypeAction,
   registerZaloWebhookAction, getZaloWebhookInfoAction, deleteZaloWebhookAction,
-  resetDemoDataAction, deployPendingMigrationsAction, clearSalesAndPurchaseDocumentsAction,
+  resetDemoDataAction, deployPendingMigrationsAction, clearSalesAndPurchaseDocumentsAction, clearAllBusinessDataAction,
 } from '@/server/modules/settings/actions';
 import { SsoPanel } from './sso-panel';
 import { ScrollTabs } from '@/components/ui/scroll-tabs';
@@ -231,10 +231,12 @@ export function SettingsScreen({
   const [leaveTypeModal, setLeaveTypeModal] = useState<any | null>(null);
   const [confirmResetModal, setConfirmResetModal] = useState<{ open: boolean; clean: boolean } | null>(null);
   const [confirmClearSalesOpen, setConfirmClearSalesOpen] = useState(false);
+  const [confirmClearAllDataOpen, setConfirmClearAllDataOpen] = useState(false);
   const [pricingModalOpen, setPricingModalOpen] = useState(false);
   const [resettingData, setResettingData] = useState(false);
   const [confirmMigrationOpen, setConfirmMigrationOpen] = useState(false);
   const [migratingSchema, setMigratingSchema] = useState(false);
+  const [clearingAllData, setClearingAllData] = useState(false);
 
   const [webhookInputUrl, setWebhookInputUrl] = useState(webhookUrl);
   const [webhookInfo, setWebhookInfo] = useState<any | null>(null);
@@ -920,14 +922,24 @@ export function SettingsScreen({
 
                   <div style={{ display: 'flex', gap: 10 }}>
                     {permissions.isAdmin && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={resettingData || migratingSchema || pending}
-                        onClick={() => setConfirmMigrationOpen(true)}
-                      >
-                        <Database size={14} /> Triển khai migration
-                      </Button>
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={resettingData || migratingSchema || clearingAllData || pending}
+                          onClick={() => setConfirmMigrationOpen(true)}
+                        >
+                          <Database size={14} /> Triển khai migration
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          disabled={resettingData || migratingSchema || clearingAllData || pending}
+                          onClick={() => setConfirmClearAllDataOpen(true)}
+                        >
+                          <Trash2 size={14} /> Xóa toàn bộ dữ liệu
+                        </Button>
+                      </>
                     )}
                     <Button
                       type="button"
@@ -1794,6 +1806,48 @@ export function SettingsScreen({
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
               Sau khi chạy thành công, hãy khởi động lại server để nạp Prisma Client mới rồi mới tiếp tục nạp seed. Chỉ quản trị viên mới thấy và chạy được thao tác này.
+            </div>
+          </div>
+        )}
+      />
+
+      <ConfirmDialog
+        open={confirmClearAllDataOpen}
+        onClose={() => setConfirmClearAllDataOpen(false)}
+        onConfirm={() => {
+          setClearingAllData(true);
+          startTransition(async () => {
+            try {
+              const res = await clearAllBusinessDataAction();
+              if (res.ok) {
+                toast.success(res.message);
+                setConfirmClearAllDataOpen(false);
+                router.refresh();
+              } else {
+                toast.error(res.message);
+              }
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : 'Không thể xóa dữ liệu');
+            } finally {
+              setClearingAllData(false);
+            }
+          });
+        }}
+        loading={clearingAllData || pending}
+        danger
+        title="Xóa toàn bộ dữ liệu nghiệp vụ"
+        confirmText="Xóa toàn bộ dữ liệu"
+        cancelText="Hủy"
+        message={(
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: 'var(--danger)', fontWeight: 600 }}>
+              Thao tác này xóa dữ liệu nghiệp vụ hiện có và không nạp seed demo.
+            </div>
+            <div>
+              Khách hàng, máy móc, phụ tùng, tồn kho, đơn hàng, báo giá, PO, thanh toán, công việc, chấm công và tài khoản nhân viên khác sẽ bị xóa.
+            </div>
+            <div>
+              Tài khoản admin đang đăng nhập được giữ lại cùng quyền và cấu hình hệ thống cần thiết. Không thể hoàn tác.
             </div>
           </div>
         )}

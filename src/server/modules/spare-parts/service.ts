@@ -1,5 +1,6 @@
 import { allocatePayment } from '@/lib/payment-allocation';
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { nextSequentialCode } from '@/lib/code-sequence';
 import { getSetting, setSetting } from '@/server/modules/settings/service';
 import { isEquipmentCategory } from './types';
@@ -256,7 +257,11 @@ export async function saveWarehouse(id: number | null, input: SaveWarehouseInput
 }
 
 /** Thực hiện Giao dịch Kho: Nhập kho (IN) / Xuất kho (OUT) / Điều chuyển (TRANSFER) */
-export async function createStockTransaction(input: SaveStockTransactionInput, userId: number) {
+export async function createStockTransaction(
+  input: SaveStockTransactionInput,
+  userId: number,
+  transaction?: Prisma.TransactionClient,
+) {
   if (!input.items.length || input.items.some((item) => !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
     throw new Error('Số lượng hàng phải là số nguyên dương');
   }
@@ -269,7 +274,7 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
   // mới được trừ tồn — tạo ra ở trạng thái chờ duyệt, tồn kho giữ nguyên.
   const pendingApproval = reasonNeedsApproval(input.reasonCode);
 
-  return prisma.$transaction(async (tx) => {
+  const execute = async (tx: Prisma.TransactionClient) => {
     // 1. Kiểm tra tính hợp lệ của kho nguồn/đích
     if (input.type === 'IN' && !input.targetWarehouseId) {
       throw new Error('Vui lòng chọn Kho đích để nhập hàng');
@@ -571,7 +576,9 @@ export async function createStockTransaction(input: SaveStockTransactionInput, u
         items: { include: { item: true } },
       },
     });
-  });
+  };
+
+  return transaction ? execute(transaction) : prisma.$transaction(execute);
 }
 
 export interface StockTransactionFilter {
