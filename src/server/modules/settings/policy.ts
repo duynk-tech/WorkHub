@@ -33,6 +33,7 @@ export const SETTINGS_POLICIES = {
     'attendance.requireGeofence': flag, 'attendance.allowZaloCheckin': flag, 'attendance.autoAbsentAfterHours': number(0, 48),
   }).partial().strict() },
   reports: { permission: 'FEATURE_SETTING_GENERAL', schema: z.object({ 'reports.disabled': z.array(short).max(100) }).partial().strict() },
+  menus: { permission: 'FEATURE_SETTING_GENERAL', schema: z.object({ 'menus.disabled': z.array(short).max(100) }).partial().strict() },
   mcp: { permission: 'FEATURE_MCP_MANAGE', schema: z.object({ 'mcp.disabledModules': z.array(short).max(100) }).partial().strict() },
 } as const;
 export const SECRET_SETTING_KEYS = new Set(['sso.google.clientSecret', 'zalo.botToken', 'zalo.webhookSecret', 'ai.geminiApiKey']);

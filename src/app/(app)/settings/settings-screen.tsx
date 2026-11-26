@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Save, MessageCircle, Send, Building2, CalendarDays, Clock, Plus, Trash2, Copy,
-  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle, SlidersHorizontal,
+  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle, SlidersHorizontal, LayoutGrid,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
@@ -14,6 +14,7 @@ import { Modal, ConfirmDialog } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { fmtDate, workDaysToLabels, WORKDAY_LABELS } from '@/lib/date';
 import { REPORTS, REPORT_GROUPS, DISABLED_REPORTS_KEY } from '@/server/modules/report/registry';
+import { DISABLED_MENUS_KEY, TOGGLEABLE_MENU_GROUPS } from '@/lib/menu-config';
 import { generateWebhookSecret } from '@/lib/utils';
 import {
   saveSettingsAction, testZaloBotAction, flushOutboxAction,
@@ -28,7 +29,7 @@ import { SparePartPricingModal } from '@/components/domain/spare-part-pricing-mo
 import type { SparePartPricingConfig } from '@/server/modules/spare-parts/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type Tab = 'branding' | 'documents' | 'sales' | 'data' | 'pricing' | 'sso' | 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports';
+type Tab = 'branding' | 'documents' | 'sales' | 'data' | 'pricing' | 'sso' | 'general' | 'zalo' | 'leave' | 'attendance' | 'holidays' | 'reports' | 'menus';
 
 function ImageUploadInput({
   value,
@@ -187,7 +188,7 @@ export function SettingsScreen({
   const toast = useToast();
   const [pending, startTransition] = useTransition();
 
-  const validTabs = (['general', 'branding', 'documents', 'sales', 'pricing', 'data', 'sso', 'zalo', 'leave', 'attendance', 'holidays', 'reports'] as Tab[]).filter((key) => ({ branding: permissions.general, documents: permissions.general, sales: permissions.general, pricing: permissions.pricing, data: permissions.general, sso: permissions.sso, general: permissions.general, zalo: permissions.zalo, leave: permissions.leaveType || permissions.general, attendance: permissions.shift || permissions.general, holidays: permissions.holiday, reports: permissions.general })[key]);
+  const validTabs = (['general', 'menus', 'branding', 'documents', 'sales', 'pricing', 'data', 'sso', 'zalo', 'leave', 'attendance', 'holidays', 'reports'] as Tab[]).filter((key) => ({ menus: permissions.general, branding: permissions.general, documents: permissions.general, sales: permissions.general, pricing: permissions.pricing, data: permissions.general, sso: permissions.sso, general: permissions.general, zalo: permissions.zalo, leave: permissions.leaveType || permissions.general, attendance: permissions.shift || permissions.general, holidays: permissions.holiday, reports: permissions.general })[key]);
   const initialValidTab: Tab = validTabs.includes(initialTab as Tab) ? (initialTab as Tab) : (validTabs[0] ?? 'general');
   const [tab, setTab] = useState<Tab>(initialValidTab);
 
@@ -325,6 +326,7 @@ export function SettingsScreen({
     { key: 'attendance', label: 'Ca làm việc', icon: Clock, visible: permissions.shift || permissions.general },
     { key: 'holidays', label: 'Ngày lễ', icon: CalendarDays, visible: permissions.holiday },
     { key: 'reports', label: 'Báo cáo', icon: BarChart3, visible: permissions.general },
+    { key: 'menus', label: 'Tính năng & Menu', icon: LayoutGrid, visible: permissions.general },
   ];
 
   return (
@@ -1498,6 +1500,140 @@ export function SettingsScreen({
           </CardBody>
         </Card>
       )}
+
+      {tab === 'menus' && validTabs.includes('menus') && (() => {
+        const disabledMenus: string[] = Array.isArray(values[DISABLED_MENUS_KEY])
+          ? values[DISABLED_MENUS_KEY]
+          : [];
+        const disabledSet = new Set(disabledMenus);
+
+        return (
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Bật / Tắt tính năng & Menu hiển thị</CardTitle>
+                <div className="card-subtitle">
+                  Ẩn các phân hệ hoặc menu chưa sử dụng khỏi thanh điều hướng của toàn hệ thống.
+                  Các mục lõi (Tổng quan, Cấu hình, Phân quyền, Tài khoản) luôn được giữ hiển thị để tránh tự khóa quyền quản trị.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {disabledMenus.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => set(DISABLED_MENUS_KEY, [])}
+                  >
+                    Bật tất cả
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={pending}
+                  onClick={() => save('menus', [DISABLED_MENUS_KEY])}
+                >
+                  <Save size={14} style={{ marginRight: 6 }} /> Lưu
+                </Button>
+              </div>
+            </CardHeader>
+            <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {TOGGLEABLE_MENU_GROUPS.map((group) => {
+                const groupHrefs = group.items.map((item) => item.href);
+                const enabledCount = groupHrefs.filter((href) => !disabledSet.has(href)).length;
+                const allGroupOn = enabledCount === groupHrefs.length;
+
+                const toggleGroup = () => {
+                  if (allGroupOn) {
+                    const next = Array.from(new Set([...disabledMenus, ...groupHrefs]));
+                    set(DISABLED_MENUS_KEY, next);
+                  } else {
+                    const groupSet = new Set(groupHrefs);
+                    set(DISABLED_MENUS_KEY, disabledMenus.filter((h) => !groupSet.has(h)));
+                  }
+                };
+
+                return (
+                  <div key={group.title}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)' }}>
+                          {group.title}
+                        </span>
+                        <Badge tone={enabledCount === 0 ? 'neutral' : 'info'}>
+                          {enabledCount}/{groupHrefs.length} đang bật
+                        </Badge>
+                      </div>
+                      <Button type="button" variant="secondary" size="sm" onClick={toggleGroup}>
+                        {allGroupOn ? 'Tắt cả nhóm' : 'Bật cả nhóm'}
+                      </Button>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                        gap: 8,
+                      }}
+                    >
+                      {group.items.map((item) => {
+                        const on = !disabledSet.has(item.href);
+                        return (
+                          <label
+                            key={item.href}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 12,
+                              padding: '10px 12px',
+                              borderRadius: 'var(--radius-md)',
+                              border: '1px solid var(--border-subtle)',
+                              background: on ? 'var(--surface-card)' : 'var(--surface-sunken)',
+                              opacity: on ? 1 : 0.72,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-strong)' }}>
+                                {item.label}
+                              </span>
+                              <span className="hint" style={{ fontSize: 11.5, fontFamily: 'monospace' }}>
+                                {item.href}
+                              </span>
+                            </span>
+                            <Switch
+                              checked={on}
+                              onChange={(e) =>
+                                set(
+                                  DISABLED_MENUS_KEY,
+                                  e.target.checked
+                                    ? disabledMenus.filter((h) => h !== item.href)
+                                    : Array.from(new Set([...disabledMenus, item.href])),
+                                )
+                              }
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </CardBody>
+          </Card>
+        );
+      })()}
 
       {/* Modal ngày lễ */}
       <Modal

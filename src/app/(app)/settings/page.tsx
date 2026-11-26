@@ -29,7 +29,7 @@ export default async function SettingsPage({
   const year = new Date().getFullYear();
 
   const [settings, holidays, shifts, leaveTypes, sparePartPricing] = await Promise.all([
-    Promise.all([...(allowed.general ? ['general', 'leave', 'attendance', 'reports'] : []), ...(allowed.zalo ? ['zalo', 'ai'] : []), ...(ctx.isAdmin ? ['sso'] : [])].map((group) => getSettings(group))).then((groups) => Object.assign({}, ...groups)),
+    Promise.all([...(allowed.general ? ['general', 'leave', 'attendance', 'reports', 'menus'] : []), ...(allowed.zalo ? ['zalo', 'ai'] : []), ...(ctx.isAdmin ? ['sso'] : [])].map((group) => getSettings(group))).then((groups) => Object.assign({}, ...groups)),
     prisma.holiday.findMany({ where: { year: { gte: year - 1 } }, orderBy: { date: 'asc' } }),
     prisma.workShift.findMany({ orderBy: { code: 'asc' } }),
     prisma.leaveType.findMany({ orderBy: { sortOrder: 'asc' } }),
