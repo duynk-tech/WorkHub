@@ -217,7 +217,9 @@ export function DashboardBoardBar({
                     </Badge>
                   )}
                   {b.isShared && b.isOwn && (
-                    <Share2 size={11} style={{ color: 'var(--brand)' }} title="Đang chia sẻ" />
+                    <span title="Đang chia sẻ" style={{ display: 'inline-flex', color: 'var(--brand)' }}>
+                      <Share2 size={11} />
+                    </span>
                   )}
                 </Link>
               );
