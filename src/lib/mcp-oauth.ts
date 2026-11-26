@@ -23,7 +23,14 @@ export interface AuthCodeData {
   expiresAt: number;
 }
 
-const OAUTH_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'workhub-mcp-oauth-secret-key-2026';
+function getOAuthSecret(): string {
+  const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+  if (secret && secret.length >= 16) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET chưa được cấu hình (tối thiểu 16 ký tự) cho MCP OAuth');
+  }
+  return 'dev-only-mcp-oauth-secret-do-not-use-in-production';
+}
 
 export function getAppUrl(req?: Request): string {
   if (req) {
@@ -35,7 +42,9 @@ export function getAppUrl(req?: Request): string {
       return `${proto}://${cleanHost}`;
     }
   }
-  return process.env.APP_URL || 'https://work-hub.sunny-tech.io.vn';
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, '').replace(/\/+$/, '')}`;
+  return 'http://localhost:3000';
 }
 
 function base64url(buf: Buffer): string {
@@ -129,16 +138,22 @@ export function verifyPkce(codeVerifier: string, codeChallenge: string, method =
 }
 
 /** Phát hành Access Token có chữ ký HMAC-SHA256 (30 ngày) */
-export function issueOAuthToken(userId: number, clientId: string, scope = 'mcp'): string {
-  const payload = {
+export function issueOAuthToken(
+  userId: number,
+  clientId: string,
+  scope = 'mcp',
+  credentialVersion?: string,
+): string {
+  const payload: Record<string, unknown> = {
     uid: userId,
     cid: clientId,
     scp: scope,
     exp: Math.floor(Date.now() / 1000) + 30 * 86400, // 30 ngày
   };
+  if (credentialVersion) payload.cv = credentialVersion;
 
   const payloadB64 = base64url(Buffer.from(JSON.stringify(payload)));
-  const hmac = crypto.createHmac('sha256', OAUTH_SECRET);
+  const hmac = crypto.createHmac('sha256', getOAuthSecret());
   hmac.update(payloadB64);
   const sig = base64url(hmac.digest());
 
@@ -146,18 +161,24 @@ export function issueOAuthToken(userId: number, clientId: string, scope = 'mcp')
 }
 
 /** Xác minh Access Token */
-export function verifyOAuthToken(token: string): { userId: number; clientId: string; scope: string } | null {
+export function verifyOAuthToken(
+  token: string,
+): { userId: number; clientId: string; scope: string; credentialVersion?: string } | null {
   if (!token.startsWith('mcp_tok_')) return null;
   const raw = token.slice('mcp_tok_'.length);
   const parts = raw.split('.');
   if (parts.length !== 2) return null;
 
   const [payloadB64, sig] = parts;
-  const hmac = crypto.createHmac('sha256', OAUTH_SECRET);
+  const hmac = crypto.createHmac('sha256', getOAuthSecret());
   hmac.update(payloadB64);
   const expectedSig = base64url(hmac.digest());
 
-  if (sig !== expectedSig) return null;
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    return null;
+  }
 
   try {
     const payload = JSON.parse(base64urlDecode(payloadB64));
@@ -168,6 +189,7 @@ export function verifyOAuthToken(token: string): { userId: number; clientId: str
       userId: Number(payload.uid),
       clientId: String(payload.cid || 'chatgpt'),
       scope: String(payload.scp || 'mcp'),
+      ...(typeof payload.cv === 'string' ? { credentialVersion: payload.cv } : {}),
     };
   } catch {
     return null;

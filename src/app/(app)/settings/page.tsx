@@ -39,6 +39,7 @@ export default async function SettingsPage({
   return (
     <SettingsScreen
       initialTab={initialTab}
+      isVercel={Boolean(process.env.VERCEL)}
       googleCallbackUrl={googleCallbackUrl()}
       settings={settings}
       holidays={JSON.parse(JSON.stringify(holidays))}

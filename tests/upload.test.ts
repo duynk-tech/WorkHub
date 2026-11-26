@@ -71,11 +71,11 @@ describe('File Upload & Static Serving API', () => {
       expect(json.error).toContain('Định dạng tệp không được hỗ trợ');
     });
 
-    it('từ chối tệp vượt quá giới hạn 5MB', async () => {
+    it('từ chối tệp vượt quá giới hạn 4MB', async () => {
       vi.mocked(authContext.requireAuth).mockResolvedValue({ user: { id: 1 } } as any);
       vi.mocked(authContext.can).mockReturnValue(true);
 
-      const largeContent = new Uint8Array(5.5 * 1024 * 1024);
+      const largeContent = new Uint8Array(4.5 * 1024 * 1024);
       const formData = new FormData();
       const file = new File([largeContent], 'big.png', { type: 'image/png' });
       formData.append('file', file);
@@ -88,7 +88,7 @@ describe('File Upload & Static Serving API', () => {
       const res = await POST(req);
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toContain('5MB');
+      expect(json.error).toContain('4MB');
     });
 
     it('tải lên thành công ảnh PNG và trả về URL bắt đầu bằng /uploads/', async () => {

@@ -170,8 +170,10 @@ function ImageUploadInput({
 export function SettingsScreen({
   settings, holidays, shifts, leaveTypes, sparePartPricing, webhookUrl, permissions, googleCallbackUrl,
   initialTab = 'general',
+  isVercel = false,
 }: {
   initialTab?: string;
+  isVercel?: boolean;
   googleCallbackUrl: string;
   settings: Record<string, any>;
   holidays: any[];
@@ -923,14 +925,16 @@ export function SettingsScreen({
                   <div style={{ display: 'flex', gap: 10 }}>
                     {permissions.isAdmin && (
                       <>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={resettingData || migratingSchema || clearingAllData || pending}
-                          onClick={() => setConfirmMigrationOpen(true)}
-                        >
-                          <Database size={14} /> Triển khai migration
-                        </Button>
+                        {!isVercel && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={resettingData || migratingSchema || clearingAllData || pending}
+                            onClick={() => setConfirmMigrationOpen(true)}
+                          >
+                            <Database size={14} /> Triển khai migration
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           variant="danger"

@@ -1,0 +1,36 @@
+name: Supabase Nightly Backup
+
+on:
+  schedule:
+    # 19:00 UTC = 02:00 sáng giờ Việt Nam (UTC+7) mỗi ngày
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump Supabase PostgreSQL database
+        env:
+          DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "Thiếu secret SUPABASE_DIRECT_URL trong GitHub Actions Secrets."
+            exit 1
+          fi
+          mkdir -p backups
+          STAMP=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
+          pg_dump "$DIRECT_URL" --no-owner --no-acl | gzip -9 > "backups/workhub-${STAMP}.sql.gz"
+          ls -lh "backups/workhub-${STAMP}.sql.gz"
+
+      - name: Upload backup artifact (14 days retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ github.run_id }}
+          path: backups/*.sql.gz
+          retention-days: 14

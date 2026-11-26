@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { sha256 } from '@/lib/crypto';
 import { consumeAuthCode, verifyPkce, issueOAuthToken } from '@/lib/mcp-oauth';
 
 export const dynamic = 'force-dynamic';
@@ -95,8 +97,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Phát hành Access Token (30 ngày)
-    const accessToken = issueOAuthToken(authData.userId, authData.clientId, authData.scope);
+    const user = await prisma.user.findUnique({
+      where: { id: authData.userId },
+      select: { isActive: true, passwordHash: true, lockedUntil: true, employee: { select: { status: true } } },
+    });
+    if (!user || !user.isActive || user.employee.status === 'RESIGNED' || (user.lockedUntil && user.lockedUntil > new Date())) {
+      return NextResponse.json(
+        { error: 'invalid_grant', error_description: 'Tài khoản người dùng đã bị khóa hoặc vô hiệu hóa' },
+        { status: 400 },
+      );
+    }
+
+    // Phát hành Access Token (30 ngày) gắn phiên bản mật khẩu để tự thu hồi khi đổi/reset mật khẩu
+    const credentialVersion = sha256(user.passwordHash).slice(0, 16);
+    const accessToken = issueOAuthToken(authData.userId, authData.clientId, authData.scope, credentialVersion);
 
     return NextResponse.json(
       {

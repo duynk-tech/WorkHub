@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { uploadFile } from '@/lib/storage';
 import { requireAuth } from '@/server/auth/context';
 
-const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_AVATAR_SIZE = 4 * 1024 * 1024; // 4MB (dưới trần 4.5MB của Vercel Serverless)
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'image/png': '.png',
@@ -56,7 +56,7 @@ export async function uploadAvatarAction(formData: FormData): Promise<ProfileAct
     }
 
     if (file.size > MAX_AVATAR_SIZE) {
-      return { ok: false, message: 'Dung lượng ảnh vượt quá 5MB. Vui lòng chọn ảnh nhỏ hơn.' };
+      return { ok: false, message: 'Dung lượng ảnh vượt quá 4MB. Vui lòng chọn ảnh nhỏ hơn.' };
     }
 
     const mimeType = (file.type || '').toLowerCase();

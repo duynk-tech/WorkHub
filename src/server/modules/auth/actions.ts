@@ -38,9 +38,9 @@ export async function loginAction(_prev: ActionState, formData: FormData): Promi
   const user = await prisma.user.findFirst({
     where: {
       OR: [
-        { username: input.toLowerCase() },
-        { employee: { code: input.toUpperCase() } },
-        { employee: { email: input.toLowerCase() } },
+        { username: { equals: input, mode: 'insensitive' } },
+        { employee: { code: { equals: input, mode: 'insensitive' } } },
+        { employee: { email: { equals: input, mode: 'insensitive' } } },
       ],
     },
     include: { employee: { select: { fullName: true, status: true } } },

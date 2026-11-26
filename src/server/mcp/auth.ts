@@ -42,6 +42,9 @@ export async function authenticateMcp(authHeader: string | null, ip?: string | n
     if (!user || !user.isActive || user.employee.status === 'RESIGNED' || (user.lockedUntil && user.lockedUntil > new Date())) {
       return { ok: false, error: 'Tài khoản người dùng đã bị vô hiệu hóa' };
     }
+    if (tokenData.credentialVersion && tokenData.credentialVersion !== sha256(user.passwordHash).slice(0, 16)) {
+      return { ok: false, error: 'Access token OAuth đã bị thu hồi do mật khẩu thay đổi' };
+    }
 
     const permissions = new Set<string>();
     const customDeptIds = new Set<number>();

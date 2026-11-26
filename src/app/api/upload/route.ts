@@ -5,7 +5,7 @@ import { uploadFile } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB (dưới trần 4.5MB của Vercel Serverless)
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'image/png': '.png',
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'Kích thước tệp vượt quá giới hạn cho phép (tối đa 5MB)' }, { status: 400 });
+      return NextResponse.json({ error: 'Kích thước tệp vượt quá giới hạn cho phép (tối đa 4MB)' }, { status: 400 });
     }
 
     const mimeType = (file.type || '').toLowerCase();

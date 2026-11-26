@@ -265,9 +265,9 @@ export function MediaScreen() {
             <FolderOpen className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Thư mục lưu trữ an toàn</div>
+            <div className="text-xs text-slate-500 font-medium">Kho lưu trữ tệp</div>
             <div className="text-sm font-semibold font-mono text-slate-700 dark:text-slate-300 mt-0.5 truncate">
-              /public/uploads
+              Supabase Storage / uploads
             </div>
           </div>
         </Card>
