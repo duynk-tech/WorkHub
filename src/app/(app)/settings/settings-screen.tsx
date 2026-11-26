@@ -968,7 +968,7 @@ export function SettingsScreen({
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                     {permissions.isAdmin && (
                       <>
                         {!isVercel && (
