@@ -199,6 +199,37 @@ export async function jobProcessOutbox(): Promise<JobResult> {
   };
 }
 
+/** Ghi dấu heartbeat vào bảng SystemSetting để giữ Supabase Free luôn hoạt động (không bị pause). */
+export async function jobKeepAlive(): Promise<JobResult> {
+  const now = new Date();
+  const key = 'system.keepalive';
+  const prev = await prisma.systemSetting.findUnique({ where: { key }, select: { valueJson: true } });
+  const prevCount =
+    prev?.valueJson && typeof prev.valueJson === 'object' && !Array.isArray(prev.valueJson)
+      ? Number((prev.valueJson as Record<string, unknown>).count ?? 0)
+      : 0;
+  const count = Number.isFinite(prevCount) ? prevCount + 1 : 1;
+
+  await prisma.systemSetting.upsert({
+    where: { key },
+    create: {
+      key,
+      groupName: 'system',
+      isSecret: false,
+      valueJson: { lastPingAt: now.toISOString(), count },
+    },
+    update: {
+      valueJson: { lastPingAt: now.toISOString(), count },
+    },
+  });
+
+  return {
+    job: 'keepalive',
+    message: `Đã cập nhật heartbeat lúc ${now.toISOString()} (lần #${count})`,
+    count,
+  };
+}
+
 export const JOBS = {
   'task-reminders': jobTaskReminders,
   'overdue-tasks': jobOverdueTasks,
@@ -206,6 +237,7 @@ export const JOBS = {
   'daily-digest': jobDailyDigest,
   'attendance-rollup': jobAttendanceRollup,
   outbox: jobProcessOutbox,
+  keepalive: jobKeepAlive,
 } as const;
 
 export type JobName = keyof typeof JOBS;

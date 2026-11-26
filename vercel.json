@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npx prisma generate && npx prisma db push --skip-generate && next build",
-  "regions": ["sin1"]
+  "regions": ["sin1"],
+  "crons": [
+    {
+      "path": "/api/cron/keepalive",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }
