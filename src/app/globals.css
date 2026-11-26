@@ -916,8 +916,7 @@ body:has(.login-shell) { width: 100%; height: 100%; overflow: hidden; }
 .sidebar-brand-text { font-size: 13.5px; font-weight: 700; color: var(--text-strong); letter-spacing: -0.015em; line-height: 1.2; }
 .sidebar-brand-sub { font-size: 10.5px; font-weight: 400; color: var(--text-muted); line-height: 1.2; }
 .sidebar-user-row {
-  display: flex; align-items: center; gap: 8px; padding: 6px 6px 2px;
-  border-top: 1px solid var(--border-subtle); margin-top: 4px;
+  display: flex; align-items: center; gap: 8px; padding: 2px 4px;
 }
 .sidebar-user-link {
   display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
@@ -1616,6 +1615,8 @@ a.list-row:hover { background: var(--surface-hover); }
 
 /* FMP Worker 3-level sidebar navigation (Category -> Collapsible Group -> Submenu tree) */
 .sidebar .nav-category-block { margin-bottom: 16px; display: flex; flex-direction: column; gap: 2px; }
+.sidebar-collapsed .nav-category-block { margin-bottom: 4px; gap: 2px; }
+.sidebar-collapsed .nav-section-divider { margin: 4px 12px 6px; }
 .sidebar .nav-category {
   padding: 2px 10px 6px;
   font-size: 11px;

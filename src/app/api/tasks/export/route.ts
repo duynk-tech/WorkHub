@@ -130,16 +130,35 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Tô từng ô có tên cột, không tô cả dòng: đặt fill lên row sẽ loang sang các
-  // cột trống bên phải, nhìn như bảng còn cột mà thực ra không có dữ liệu
+  // Tô từng ô có tên cột theo đúng màu xanh thương hiệu web (#2563EB)
   const header = sheet.getRow(1);
   for (let col = 1; col <= sheet.columns.length; col += 1) {
     const cell = header.getCell(col);
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2447EB' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+      bottom: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+      left: { style: 'thin', color: { argb: 'FF3B82F6' } },
+      right: { style: 'thin', color: { argb: 'FF3B82F6' } },
+    };
   }
-  header.height = 22;
+  header.height = 26;
+  for (let r = 2; r <= rows.length + 1; r += 1) {
+    const dataRow = sheet.getRow(r);
+    const isEven = r % 2 === 1;
+    for (let col = 1; col <= sheet.columns.length; col += 1) {
+      const cell = dataRow.getCell(col);
+      if (isEven) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+      }
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+      };
+    }
+  }
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   sheet.autoFilter = { from: 'A1', to: { row: 1, column: sheet.columns.length } };
 

@@ -14,7 +14,7 @@ import { getCustomerCareList, CARE_REASONS } from '@/server/modules/customer/car
 import { ORDER_STATUSES as CUSTOMER_ORDER_STATUSES } from '@/server/modules/customer/types';
 import { ORDER_STATUSES as PO_STATUSES, TRANSACTION_TYPES } from '@/server/modules/spare-parts/types';
 import { TICKET_STATUSES, TICKET_PRIORITIES } from '@/server/modules/equipment/types';
-import { MonthlyBars, type ChartSeries } from '@/components/domain/dashboard-charts';
+import { MonthlyBars, MonthlyAreaChart, StatusDonutChart, type ChartSeries, type DonutSlice } from '@/components/domain/dashboard-charts';
 import { Card, CardHeader, CardTitle, CardBody, StatCard, Badge, Avatar, EmptyState, Progress, PageHeader } from '@/components/ui';
 import { fmtDate } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
@@ -100,13 +100,14 @@ const monthKey = (d: Date | string | null) => {
  * nghĩa — thà nói thẳng là chưa có dữ liệu.
  */
 function MonthlyChartCard({
-  title, subtitle, data, series, asMoney, emptyText = 'Chưa có dữ liệu trong kỳ',
+  title, subtitle, data, series, asMoney, variant = 'bar', emptyText = 'Chưa có dữ liệu trong kỳ',
 }: {
   title: string;
   subtitle?: string;
   data: Record<string, number | string>[];
   series: ChartSeries[];
   asMoney?: boolean;
+  variant?: 'bar' | 'area';
   emptyText?: string;
 }) {
   const hasData = data.some((row) => series.some((s) => Number(row[s.key] || 0) !== 0));
@@ -120,8 +121,37 @@ function MonthlyChartCard({
       </CardHeader>
       <CardBody>
         {hasData
-          ? <MonthlyBars data={data} series={series} asMoney={asMoney} />
+          ? (variant === 'area'
+              ? <MonthlyAreaChart data={data} series={series} asMoney={asMoney} />
+              : <MonthlyBars data={data} series={series} asMoney={asMoney} />)
           : <EmptyState icon={<TrendingUp size={20} />} title={emptyText} />}
+      </CardBody>
+    </Card>
+  );
+}
+
+function DonutChartCard({
+  title, subtitle, data, centerLabel = 'Tổng', emptyText = 'Chưa có dữ liệu',
+}: {
+  title: string;
+  subtitle?: string;
+  data: DonutSlice[];
+  centerLabel?: string;
+  emptyText?: string;
+}) {
+  const hasData = data.some((d) => d.value > 0);
+  return (
+    <Card>
+      <CardHeader>
+        <div style={{ minWidth: 0 }}>
+          <CardTitle>{title}</CardTitle>
+          {subtitle && <div className="card-subtitle">{subtitle}</div>}
+        </div>
+      </CardHeader>
+      <CardBody>
+        {hasData
+          ? <StatusDonutChart data={data} centerLabel={centerLabel} />
+          : <EmptyState icon={<CircleDot size={20} />} title={emptyText} />}
       </CardBody>
     </Card>
   );
@@ -143,7 +173,7 @@ async function loadSalesSummary() {
   const months = lastMonths(6);
 
   const [
-    openOrders, awaitingStock, quotations, debt, care, openOrderList, quotationList, monthlyOrders,
+    openOrders, awaitingStock, quotations, debt, care, openOrderList, quotationList, monthlyOrders, orderStatusGroups,
   ] = await Promise.all([
     prisma.customerOrder.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
     prisma.customerOrder.count({ where: { status: { in: ['AWAITING_STOCK', 'READY_TO_DELIVER'] } } }),
@@ -174,6 +204,10 @@ async function loadSalesSummary() {
       where: { status: { not: 'CANCELLED' }, orderDate: { gte: months[0].from } },
       select: { orderDate: true, totalAmount: true, goodsAmount: true, paidAmount: true },
     }),
+    prisma.customerOrder.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    }),
   ]);
 
   // Gom theo tháng tại chỗ: dữ liệu một đơn vị trong 6 tháng là vài trăm dòng,
@@ -200,6 +234,11 @@ async function loadSalesSummary() {
     openOrderList,
     quotationList,
     revenueByMonth,
+    orderStatusPie: orderStatusGroups.map((g) => ({
+      name: CUSTOMER_ORDER_STATUSES[g.status]?.label ?? g.status,
+      value: g._count._all,
+      color: CUSTOMER_ORDER_STATUSES[g.status]?.color ?? '#64748b',
+    })),
     // Nợ nhiều nhất lên đầu, chỉ lấy khách còn dư nợ thật
     debtList: debt.rows.slice(0, 5),
   };
@@ -303,7 +342,7 @@ async function loadServiceSummary() {
   const months = lastMonths(6, now);
 
   const [
-    open, inProgress, resolvedThisMonth, openList, resolvedList, monthlyTickets,
+    open, inProgress, resolvedThisMonth, openList, resolvedList, monthlyTickets, ticketStatusGroups,
   ] = await Promise.all([
     prisma.serviceTicket.count({ where: { status: { in: ['OPEN', 'ASSIGNED'] } } }),
     prisma.serviceTicket.count({ where: { status: 'IN_PROGRESS' } }),
@@ -328,6 +367,10 @@ async function loadServiceSummary() {
       },
       select: { createdAt: true, resolvedAt: true },
     }),
+    prisma.serviceTicket.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    }),
   ]);
 
   // Một phiếu có thể rơi vào hai tháng khác nhau: mở tháng này, xong tháng sau.
@@ -342,6 +385,11 @@ async function loadServiceSummary() {
 
   return {
     open, inProgress, resolvedThisMonth, openList, resolvedList, ticketsByMonth,
+    ticketStatusPie: ticketStatusGroups.map((g) => ({
+      name: TICKET_STATUSES[g.status]?.label ?? g.status,
+      value: g._count._all,
+      color: TICKET_STATUSES[g.status]?.color ?? '#64748b',
+    })),
   };
 }
 
@@ -566,6 +614,32 @@ export default async function DashboardPage({
             ]}
             asMoney
           />
+          )}
+
+          {(showWidget('sales_trend_area', 'sales') || showWidget('sales_status_pie', 'sales')) && (
+          <div className={showWidget('sales_trend_area', 'sales') && showWidget('sales_status_pie', 'sales') ? 'grid-2' : 'stack'}>
+            {showWidget('sales_trend_area', 'sales') && (
+            <MonthlyChartCard
+              title="Xu hướng Doanh thu & Thực thu"
+              subtitle="Biểu đồ miền 6 tháng gần nhất"
+              data={sales.revenueByMonth}
+              series={[
+                { key: 'billed', name: 'Giá trị đơn', color: '#2563eb' },
+                { key: 'collected', name: 'Đã thu', color: '#16a34a' },
+              ]}
+              asMoney
+              variant="area"
+            />
+            )}
+            {showWidget('sales_status_pie', 'sales') && (
+            <DonutChartCard
+              title="Cơ cấu đơn hàng theo trạng thái"
+              subtitle="Phân bổ toàn bộ đơn bán hàng"
+              data={sales.orderStatusPie}
+              centerLabel="Đơn hàng"
+            />
+            )}
+          </div>
           )}
 
           {(showWidget('sales_orders', 'sales') || showWidget('sales_care', 'sales') || showWidget('sales_quotations', 'sales')) && (
@@ -874,16 +948,28 @@ export default async function DashboardPage({
           </div>
           )}
 
-          {showWidget('service_chart', 'service') && (
-          <MonthlyChartCard
-            title="Sự cố 6 tháng gần nhất"
-            subtitle="Số phiếu tiếp nhận so với số phiếu xử lý xong trong cùng tháng"
-            data={service.ticketsByMonth}
-            series={[
-              { key: 'opened', name: 'Tiếp nhận', color: '#2563eb' },
-              { key: 'resolved', name: 'Xử lý xong', color: '#166534' },
-            ]}
-          />
+          {(showWidget('service_chart', 'service') || showWidget('service_status_pie', 'service')) && (
+          <div className={showWidget('service_chart', 'service') && showWidget('service_status_pie', 'service') ? 'grid-2' : 'stack'}>
+            {showWidget('service_chart', 'service') && (
+            <MonthlyChartCard
+              title="Sự cố 6 tháng gần nhất"
+              subtitle="Số phiếu tiếp nhận so với số phiếu xử lý xong trong cùng tháng"
+              data={service.ticketsByMonth}
+              series={[
+                { key: 'opened', name: 'Tiếp nhận', color: '#2563eb' },
+                { key: 'resolved', name: 'Xử lý xong', color: '#166534' },
+              ]}
+            />
+            )}
+            {showWidget('service_status_pie', 'service') && (
+            <DonutChartCard
+              title="Cơ cấu phiếu sự cố"
+              subtitle="Phân bổ phiếu bảo trì theo trạng thái"
+              data={service.ticketStatusPie}
+              centerLabel="Phiếu"
+            />
+            )}
+          </div>
           )}
 
           {showWidget('service_tickets', 'service') && (
@@ -975,6 +1061,21 @@ export default async function DashboardPage({
           hint={balance ? `Đã dùng ${formatDays(balance.usedDays)} · Chờ duyệt ${formatDays(balance.pendingDays)}` : 'Chưa thiết lập quỹ phép'}
         />
       </div>
+      )}
+
+      {showWork && showWidget('work_status_pie', 'work') && (
+        <DonutChartCard
+          title={`Cơ cấu công việc ${ctx.dataScope === 'SELF' ? 'của tôi' : 'trong phạm vi'}`}
+          subtitle={`Tổng ${totalTeamTasks} công việc theo trạng thái`}
+          centerLabel="Công việc"
+          data={[
+            { name: 'Chờ làm', value: statusCount('TODO'), color: '#94a3b8' },
+            { name: 'Đang làm', value: statusCount('IN_PROGRESS'), color: '#2563eb' },
+            { name: 'Chờ nghiệm thu', value: statusCount('REVIEW'), color: '#d97706' },
+            { name: 'Hoàn thành', value: statusCount('DONE'), color: '#16a34a' },
+            { name: 'Bị chặn', value: statusCount('BLOCKED'), color: '#dc2626' },
+          ]}
+        />
       )}
 
       {showWork && (showWidget('work_tasks', 'work') || showWidget('work_team', 'work') || showWidget('hr_leaves', 'work')) && (

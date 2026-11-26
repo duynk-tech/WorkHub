@@ -22,6 +22,7 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
   'Công việc': ListChecks,
   'Nhân sự': Users,
   'Báo cáo': BarChart3,
+  'Báo cáo & Chứng từ': BarChart3,
   'Tiện ích': Laptop,
   'Quản trị': ShieldCheck,
 };
@@ -33,6 +34,7 @@ const SECTION_CATEGORY: Record<string, 'WORKSPACE' | 'VẬN HÀNH' | 'HỆ THỐ
   'Công việc': 'VẬN HÀNH',
   'Nhân sự': 'VẬN HÀNH',
   'Báo cáo': 'HỆ THỐNG',
+  'Báo cáo & Chứng từ': 'HỆ THỐNG',
   'Tiện ích': 'HỆ THỐNG',
   'Quản trị': 'HỆ THỐNG',
 };
@@ -181,7 +183,7 @@ export function Sidebar({
         <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
           {(['WORKSPACE', 'VẬN HÀNH', 'HỆ THỐNG'] as const).map((cat) => {
             const catSections = menuSections.filter((s) =>
-              cat === 'WORKSPACE' ? !s.title : (SECTION_CATEGORY[s.title || ''] ?? 'HỆ THỐNG') === cat,
+              cat === 'WORKSPACE' ? !s.title : Boolean(s.title) && (SECTION_CATEGORY[s.title] ?? 'HỆ THỐNG') === cat,
             );
             if (catSections.length === 0) return null;
 

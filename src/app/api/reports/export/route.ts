@@ -32,10 +32,30 @@ export async function GET(req: NextRequest) {
     for (let col = 1; col <= sheet.columns.length; col += 1) {
       const cell = header.getCell(col);
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2447EB' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+        bottom: { style: 'thin', color: { argb: 'FF1D4ED8' } },
+        left: { style: 'thin', color: { argb: 'FF3B82F6' } },
+        right: { style: 'thin', color: { argb: 'FF3B82F6' } },
+      };
     }
-    header.height = 22;
+    header.height = 26;
+    for (let r = 2; r <= sheet.rowCount; r += 1) {
+      const dataRow = sheet.getRow(r);
+      const isEven = r % 2 === 1;
+      for (let col = 1; col <= sheet.columns.length; col += 1) {
+        const cell = dataRow.getCell(col);
+        if (isEven) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        }
+        cell.border = {
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+        };
+      }
+    }
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
   };
 

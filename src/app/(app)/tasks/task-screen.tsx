@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus, ListChecks, LayoutGrid, List as ListIcon, Filter, MessageSquare, CheckSquare,
-  Paperclip, ChevronLeft, ChevronRight, Clock, AlertTriangle, GitBranch, Download,
+  Paperclip, ChevronLeft, ChevronRight, Clock, AlertTriangle, GitBranch, Download, SlidersHorizontal,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, Badge, Avatar, EmptyState, SearchInput, Select, SearchableSelect, Input, Progress, PageHeader,
@@ -113,71 +113,111 @@ export function TaskScreen({
 
   const overdue = (t: TaskRow) => t.dueDate && new Date(t.dueDate) < new Date() && !['DONE', 'CANCELLED'].includes(t.status);
 
+  const advancedFilterCount =
+    (filter.pickedStatus.length ? 1 : 0) +
+    (filter.priority.length ? 1 : 0) +
+    (filter.assigneeId ? 1 : 0) +
+    (filter.departmentId ? 1 : 0) +
+    (dateLabel ? 1 : 0);
+  const [showFilters, setShowFilters] = useState(advancedFilterCount > 0);
+  const hasAnyFilter = Boolean(
+    filter.search || advancedFilterCount > 0 || filter.onlyMine || filter.overdue,
+  );
+
   const filterBar = (
     <Card>
-      <CardBody style={{ padding: 14 }}>
-        <div className="toolbar">
-          <form style={{ flex: 1, minWidth: 200, maxWidth: 320 }} onSubmit={(e) => { e.preventDefault(); setParam('q', search); }}>
+      <CardBody style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Hàng 1 gọn 1 dòng: Tìm kiếm + Lọc nhanh + Nút Bộ lọc nâng cao + Chuyển chế độ xem */}
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <form style={{ flex: '1 1 220px', maxWidth: 340 }} onSubmit={(e) => { e.preventDefault(); setParam('q', search); }}>
             <SearchInput placeholder="Tìm mã hoặc tiêu đề công việc…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </form>
 
-          <Select
-            sizeSm style={{ width: 'auto', minWidth: 150 }}
-            value={filter.pickedStatus[0] ?? ''}
-            onChange={(e) => setParam('status', e.target.value)}
+          <Button size="sm" variant={filter.onlyMine ? 'soft' : 'secondary'} onClick={() => setParam('mine', filter.onlyMine ? '' : '1')}>
+            Của tôi
+          </Button>
+          <Button size="sm" variant={filter.overdue ? 'danger-soft' : 'secondary'} onClick={() => setParam('overdue', filter.overdue ? '' : '1')}>
+            <AlertTriangle /> Quá hạn
+          </Button>
+
+          <Button
+            size="sm"
+            variant={showFilters || advancedFilterCount > 0 ? 'soft' : 'secondary'}
+            onClick={() => setShowFilters((v) => !v)}
           >
-            <option value="">Mọi trạng thái</option>
-            {Object.entries(TASK_STATUS)
-              .filter(([k]) => filter.scope === 'all' || filter.status.length === 0 || filter.status.includes(k) || filter.pickedStatus.includes(k))
-              .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </Select>
+            <SlidersHorizontal size={13} />
+            <span>Bộ lọc{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}</span>
+          </Button>
 
-          <Select
-            sizeSm style={{ width: 'auto', minWidth: 130 }}
-            value={filter.priority[0] ?? ''}
-            onChange={(e) => setParam('priority', e.target.value)}
-          >
-            <option value="">Mọi ưu tiên</option>
-            {Object.entries(TASK_PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </Select>
+          {hasAnyFilter && (
+            <Button size="sm" variant="ghost" onClick={() => router.push(`/tasks?view=${view}`)}>
+              <Filter /> Xóa lọc
+            </Button>
+          )}
 
-          <SearchableSelect
-            sizeSm style={{ width: 'auto', minWidth: 170 }}
-            value={filter.assigneeId ? String(filter.assigneeId) : ''}
-            onChange={(val) => setParam('assignee', val)}
-            options={[
-              { value: '', label: 'Mọi người thực hiện' },
-              ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
-            ]}
-            placeholder="Mọi người thực hiện"
-            searchPlaceholder="Tìm nhân sự…"
-          />
+          <div className="row" style={{ marginLeft: 'auto', gap: 4 }}>
+            <Button size="sm" variant={view === 'list' ? 'soft' : 'ghost'} iconOnly onClick={() => setParam('view', 'list')} aria-label="Dạng danh sách"><ListIcon /></Button>
+            <Button size="sm" variant={view === 'board' ? 'soft' : 'ghost'} iconOnly onClick={() => setParam('view', 'board')} aria-label="Dạng bảng"><LayoutGrid /></Button>
+          </div>
+        </div>
 
-          <SearchableSelect
-            sizeSm style={{ width: 'auto', minWidth: 180 }}
-            value={filter.departmentId ? String(filter.departmentId) : ''}
-            onChange={(val) => setParam('dept', val)}
-            options={[
-              { value: '', label: 'Mọi phòng ban' },
-              ...departments.map((d) => ({ value: String(d.id), label: `${'　'.repeat(d.level - 1)}${d.name}` })),
-            ]}
-            placeholder="Mọi phòng ban"
-            searchPlaceholder="Tìm phòng ban…"
-          />
-
+        {/* Hàng 2 (ẩn gọn mặc định, mở khi bấm Bộ lọc): lưới tự co giãn theo màn hình */}
+        {showFilters && (
           <div
-            className="row"
             style={{
-              gap: 0,
-              border: '1px solid var(--border-base)',
-              borderRadius: 'var(--radius-sm)',
-              overflow: 'hidden',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))',
+              gap: 8,
+              paddingTop: 10,
+              borderTop: '1px solid var(--border-subtle)',
             }}
-            title="Chọn trường ngày rồi chọn khoảng thời gian"
           >
             <Select
               sizeSm
-              style={{ width: 'auto', minWidth: 130, border: 'none', borderRadius: 0, background: 'var(--surface-sunken)' }}
+              value={filter.pickedStatus[0] ?? ''}
+              onChange={(e) => setParam('status', e.target.value)}
+            >
+              <option value="">Mọi trạng thái</option>
+              {Object.entries(TASK_STATUS)
+                .filter(([k]) => filter.scope === 'all' || filter.status.length === 0 || filter.status.includes(k) || filter.pickedStatus.includes(k))
+                .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </Select>
+
+            <Select
+              sizeSm
+              value={filter.priority[0] ?? ''}
+              onChange={(e) => setParam('priority', e.target.value)}
+            >
+              <option value="">Mọi ưu tiên</option>
+              {Object.entries(TASK_PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </Select>
+
+            <SearchableSelect
+              sizeSm
+              value={filter.assigneeId ? String(filter.assigneeId) : ''}
+              onChange={(val) => setParam('assignee', val)}
+              options={[
+                { value: '', label: 'Mọi người thực hiện' },
+                ...employees.map((e) => ({ value: String(e.id), label: e.fullName, subLabel: e.code })),
+              ]}
+              placeholder="Mọi người thực hiện"
+              searchPlaceholder="Tìm nhân sự…"
+            />
+
+            <SearchableSelect
+              sizeSm
+              value={filter.departmentId ? String(filter.departmentId) : ''}
+              onChange={(val) => setParam('dept', val)}
+              options={[
+                { value: '', label: 'Mọi phòng ban' },
+                ...departments.map((d) => ({ value: String(d.id), label: `${'　'.repeat(d.level - 1)}${d.name}` })),
+              ]}
+              placeholder="Mọi phòng ban"
+              searchPlaceholder="Tìm phòng ban…"
+            />
+
+            <Select
+              sizeSm
               value={filter.dateField}
               onChange={(e) => setParams({ dfield: e.target.value })}
             >
@@ -185,12 +225,11 @@ export function TaskScreen({
                 <option key={k} value={k}>{label}</option>
               ))}
             </Select>
+
             <Select
               sizeSm
-              style={{ width: 'auto', minWidth: 140, border: 'none', borderRadius: 0 }}
               value={filter.datePreset}
               onChange={(e) =>
-                // Rời khỏi "khoảng cụ thể" thì bỏ luôn hai ngày đã nhập cho khỏi treo lơ lửng
                 setParams(
                   e.target.value === 'CUSTOM'
                     ? { drange: 'CUSTOM' }
@@ -202,40 +241,24 @@ export function TaskScreen({
                 <option key={k} value={k}>{label}</option>
               ))}
             </Select>
+
+            {filter.datePreset === 'CUSTOM' && (
+              <div className="row" style={{ gap: 6, gridColumn: 'span 2' }}>
+                <Input
+                  type="date" sizeSm
+                  value={filter.customFrom}
+                  onChange={(e) => setParams({ dfrom: e.target.value })}
+                />
+                <span className="hint">→</span>
+                <Input
+                  type="date" sizeSm
+                  value={filter.customTo}
+                  onChange={(e) => setParams({ dto: e.target.value })}
+                />
+              </div>
+            )}
           </div>
-
-          {filter.datePreset === 'CUSTOM' && (
-            <div className="row" style={{ gap: 6 }}>
-              <Input
-                type="date" sizeSm style={{ width: 150 }}
-                value={filter.customFrom}
-                onChange={(e) => setParams({ dfrom: e.target.value })}
-              />
-              <span className="hint">→</span>
-              <Input
-                type="date" sizeSm style={{ width: 150 }}
-                value={filter.customTo}
-                onChange={(e) => setParams({ dto: e.target.value })}
-              />
-            </div>
-          )}
-
-          <Button size="sm" variant={filter.onlyMine ? 'soft' : 'secondary'} onClick={() => setParam('mine', filter.onlyMine ? '' : '1')}>
-            Của tôi
-          </Button>
-          <Button size="sm" variant={filter.overdue ? 'danger-soft' : 'secondary'} onClick={() => setParam('overdue', filter.overdue ? '' : '1')}>
-            <AlertTriangle /> Quá hạn
-          </Button>
-
-          {(filter.search || filter.pickedStatus.length || filter.priority.length || filter.assigneeId || filter.departmentId || filter.onlyMine || filter.overdue || dateLabel) && (
-            <Button size="sm" variant="ghost" onClick={() => router.push(`/tasks?view=${view}`)}><Filter /> Xóa lọc</Button>
-          )}
-
-          <div className="row" style={{ marginLeft: 'auto', gap: 4 }}>
-            <Button size="sm" variant={view === 'list' ? 'soft' : 'ghost'} iconOnly onClick={() => setParam('view', 'list')} aria-label="Dạng danh sách"><ListIcon /></Button>
-            <Button size="sm" variant={view === 'board' ? 'soft' : 'ghost'} iconOnly onClick={() => setParam('view', 'board')} aria-label="Dạng bảng"><LayoutGrid /></Button>
-          </div>
-        </div>
+        )}
       </CardBody>
     </Card>
   );

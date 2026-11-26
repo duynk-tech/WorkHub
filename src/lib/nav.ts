@@ -16,6 +16,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { href: '/dashboard', label: 'Tổng quan', icon: 'LayoutDashboard', permission: 'MENU_DASHBOARD' },
+      { href: '/approvals', label: 'Chờ duyệt', icon: 'CheckSquare', permission: 'MENU_APPROVALS', badgeKey: 'pendingApprovals' },
     ],
   },
   {
@@ -24,7 +25,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
       { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: 'MENU_CUSTOMERS' },
       { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },
-      { href: '/inventory-report', label: 'Báo cáo doanh thu', icon: 'BarChart3', permission: 'FEATURE_REPORT_INVENTORY' },
     ],
   },
   {
@@ -43,8 +43,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Công việc',
     items: [
-      { href: '/tasks', label: 'Công việc', icon: 'ListChecks', permission: 'MENU_TASKS', badgeKey: 'myTasks' },
-      { href: '/approvals', label: 'Chờ duyệt', icon: 'CheckSquare', permission: 'MENU_APPROVALS', badgeKey: 'pendingApprovals' },
+      { href: '/tasks', label: 'Danh sách công việc', icon: 'ListChecks', permission: 'MENU_TASKS', badgeKey: 'myTasks' },
     ],
   },
   {
@@ -57,9 +56,10 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: 'Báo cáo',
+    title: 'Báo cáo & Chứng từ',
     items: [
-      { href: '/reports', label: 'Báo cáo', icon: 'BarChart3', permission: 'MENU_REPORTS' },
+      { href: '/reports', label: 'Báo cáo tổng hợp', icon: 'BarChart3', permission: 'MENU_REPORTS' },
+      { href: '/inventory-report', label: 'Doanh thu & Kho', icon: 'BarChart3', permission: 'FEATURE_REPORT_INVENTORY' },
       { href: '/documents', label: 'Sổ chứng từ', icon: 'ScrollText', permission: 'MENU_REPORTS' },
     ],
   },
