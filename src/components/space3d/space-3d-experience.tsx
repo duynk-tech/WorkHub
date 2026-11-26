@@ -83,14 +83,13 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null);
   const [inspectPlacementId, setInspectPlacementId] = useState<string | null>(null);
   const [teleportTarget, setTeleportTarget] = useState<TeleportTarget | null>(null);
+  const playerPosRef = useRef({ x: 0, z: 11, rotY: 0 });
   const [nearby, setNearby] = useState<{
     zoneName: string;
     nearPlacementId: string | null;
-    playerPos: { x: number; z: number; rotY: number };
   }>({
-    zoneName: data.activeScene.kind === 'WAREHOUSE' ? 'Khu vực Kho hàng' : 'Sảnh chính Công ty',
+    zoneName: data.activeScene.kind === 'WAREHOUSE' ? 'Khu vực Kho hàng' : 'Sảnh Triển Lãm Trung Tâm',
     nearPlacementId: null,
-    playerPos: { x: 0, z: 10, rotY: 0 },
   });
 
   // Editable Scene State
@@ -190,8 +189,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
 
   const handleAddPlacementFromCatalog = (item: SpaceCatalogItem) => {
     const newId = `new-${Date.now()}`;
-    const px = Number((nearby.playerPos.x + Math.sin(nearby.playerPos.rotY) * 2.2).toFixed(2));
-    const pz = Number((nearby.playerPos.z + Math.cos(nearby.playerPos.rotY) * 2.2).toFixed(2));
+    const pos = playerPosRef.current;
+    const px = Number((pos.x + Math.sin(pos.rotY) * 2.2).toFixed(2));
+    const pz = Number((pos.z + Math.cos(pos.rotY) * 2.2).toFixed(2));
     const py = data.activeScene.kind === 'SHOWROOM' ? 0.92 : 0.15;
 
     const placed: SpacePlacementView = {
@@ -224,6 +224,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
 
   const handleAddStructure = (kind: 'RACK' | 'BOOTH') => {
     const idx = structures.length + 1;
+    const pos = playerPosRef.current;
     const st: SpaceStructure =
       kind === 'RACK'
         ? {
@@ -231,8 +232,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             kind: 'RACK',
             label: `DÃY MỚI · KỆ 0${idx}`,
             aisleCode: `K${idx}`,
-            posX: Number(nearby.playerPos.x.toFixed(1)),
-            posZ: Number((nearby.playerPos.z - 3).toFixed(1)),
+            posX: Number(pos.x.toFixed(1)),
+            posZ: Number((pos.z - 3).toFixed(1)),
             rotY: 0,
             widthM: 6,
             depthM: 1.4,
@@ -245,8 +246,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             kind: 'BOOTH',
             label: `QUẦY TRƯNG BÀY 0${idx}`,
             subLabel: `SHOWROOM 0${idx}`,
-            posX: Number(nearby.playerPos.x.toFixed(1)),
-            posZ: Number((nearby.playerPos.z - 4).toFixed(1)),
+            posX: Number(pos.x.toFixed(1)),
+            posZ: Number((pos.z - 4).toFixed(1)),
             rotY: 0,
             widthM: 5.2,
             depthM: 3.4,
@@ -285,13 +286,14 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const handleToggleDuty = () => {
     if (!data.currentUser) return;
     const nextActive = !data.currentUser.isOnDuty;
+    const pos = playerPosRef.current;
     startTransition(async () => {
       const res = await toggleStaffDutyAction(
         data.activeScene.code,
         nearby.zoneName || data.currentUser?.departmentName || 'Quầy tư vấn',
-        Number(nearby.playerPos.x.toFixed(2)),
-        Number(nearby.playerPos.z.toFixed(2)),
-        Number(nearby.playerPos.rotY.toFixed(2)),
+        Number(pos.x.toFixed(2)),
+        Number(pos.z.toFixed(2)),
+        Number(pos.rotY.toFixed(2)),
         nextActive,
       );
       showToast(res.ok, res.message);
@@ -434,8 +436,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         structures={structures}
         placements={placements}
         presences={data.presences}
+        currentEmployeeId={data.currentUser?.employeeId ?? null}
+        isSelfOnDuty={Boolean(data.currentUser?.isOnDuty)}
         playerName={playerName}
         playerAvatar={avatarConfig}
+        playerPosRef={playerPosRef}
         nightMode={nightMode}
         povMode={povMode}
         editMode={editMode}
@@ -531,9 +536,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#cbd5e1' }}>Trang phục:</span>
-                <div style={{ display: 'flex', gap: 5 }}>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {([
                     { key: 'suit', label: 'Vest' },
+                    { key: 'dress', label: 'Đầm' },
                     { key: 'shirt', label: 'Sơ mi' },
                     { key: 'polo', label: 'Polo' },
                   ] as const).map((o) => (
@@ -833,9 +839,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Kiểu trang phục</span>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {([
                 { key: 'suit', label: 'Vest công sở' },
+                { key: 'dress', label: 'Đầm công sở' },
                 { key: 'shirt', label: 'Sơ mi' },
                 { key: 'polo', label: 'Áo Polo' },
               ] as const).map((o) => (
@@ -1395,7 +1402,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 {placements.map((p) => (
                   <circle key={p.id} cx={p.posX} cy={p.posZ} r={0.45} fill="#38bdf8" />
                 ))}
-                {data.presences.map((pr) => (
+                {data.presences
+                  .filter((pr) => !data.currentUser || pr.employeeId !== data.currentUser.employeeId)
+                  .map((pr) => (
                   <g key={pr.employeeId}>
                     <circle cx={pr.posX} cy={pr.posZ} r={0.65} fill="#10b981" stroke="#ffffff" strokeWidth={0.2} />
                     <text
@@ -1411,7 +1420,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                   </g>
                 ))}
                 {/* Vị trí người chơi */}
-                <circle cx={nearby.playerPos.x} cy={nearby.playerPos.z} r={0.75} fill="#2563eb" stroke="#ffffff" strokeWidth={0.25} />
+                <circle cx={playerPosRef.current.x} cy={playerPosRef.current.z} r={0.75} fill={data.currentUser?.isOnDuty ? '#10b981' : '#2563eb'} stroke="#ffffff" strokeWidth={0.25} />
               </svg>
               <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: '#94a3b8' }}>
                 <span>● Xanh đậm: Vị trí của bạn</span>

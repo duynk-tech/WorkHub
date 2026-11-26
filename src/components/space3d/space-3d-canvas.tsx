@@ -31,8 +31,11 @@ interface Props {
   structures: SpaceStructure[];
   placements: SpacePlacementView[];
   presences: SpacePresenceView[];
+  currentEmployeeId?: number | null;
+  isSelfOnDuty?: boolean;
   playerName: string;
   playerAvatar: Avatar3DConfig;
+  playerPosRef?: React.MutableRefObject<{ x: number; z: number; rotY: number }>;
   nightMode: boolean;
   povMode: 'THIRD' | 'FIRST';
   editMode: boolean;
@@ -42,7 +45,7 @@ interface Props {
   onSelectPlacement: (id: string | null) => void;
   onSelectBooth?: (boothId: string) => void;
   onMovePlacement: (id: string, pos: { posX: number; posY: number; posZ: number; rotY: number }) => void;
-  onNearbyChange: (info: { zoneName: string; nearPlacementId: string | null; playerPos: { x: number; z: number; rotY: number } }) => void;
+  onNearbyChange: (info: { zoneName: string; nearPlacementId: string | null }) => void;
 }
 
 interface AnimatedAvatar {
@@ -152,16 +155,16 @@ function createPoliteFaceTexture(skinColor = '#fce2c4'): THREE.CanvasTexture {
   return tex;
 }
 
-/** Tạo nhãn tên nổi sắc nét trên đầu nhân vật / sản phẩm. */
+/** Tạo nhãn tên nổi sắc nét trên đầu nhân vật / sản phẩm (đủ rộng để không bị cắt tên tiếng Việt). */
 function createBadgeSprite(text: string, bgColor = '#0f172a', textColor = '#ffffff'): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 360;
+  canvas.width = 480;
   canvas.height = 76;
   const ctx = canvas.getContext('2d')!;
 
   ctx.fillStyle = bgColor;
   ctx.beginPath();
-  ctx.roundRect(12, 10, 336, 56, 28);
+  ctx.roundRect(10, 10, 460, 56, 28);
   ctx.fill();
 
   ctx.strokeStyle = 'rgba(255,255,255,0.28)';
@@ -169,16 +172,16 @@ function createBadgeSprite(text: string, bgColor = '#0f172a', textColor = '#ffff
   ctx.stroke();
 
   ctx.fillStyle = textColor;
-  ctx.font = 'bold 24px Inter, system-ui, sans-serif';
+  ctx.font = 'bold 22px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text.slice(0, 24), 180, 38);
+  ctx.fillText(text.slice(0, 34), 240, 38);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(2.15, 0.46, 1);
+  sprite.scale.set(2.55, 0.42, 1);
   return sprite;
 }
 
@@ -196,23 +199,24 @@ function createChibiAvatar(opts: {
   const pantsColor = config.pantsColor || '#1e293b';
   const hairColor = config.hairColor || '#1c1917';
 
-  // Khớp chân trái / phải với giày tây / sneaker lịch sự
+  // Khớp chân trái / phải với giày tây / giày công sở
   const makeLeg = (offsetX: number) => {
     const pivot = new THREE.Group();
     pivot.position.set(offsetX, 0.44, 0);
 
+    const legColor = config.outfitStyle === 'dress' ? skinColor : pantsColor;
     const pant = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.082, 0.072, 0.36, 14),
-      new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.6 }),
+      new THREE.CylinderGeometry(0.075, 0.065, 0.36, 12),
+      new THREE.MeshStandardMaterial({ color: legColor, roughness: 0.58 }),
     );
     pant.position.y = -0.18;
     pant.castShadow = true;
     pivot.add(pant);
 
-    const shoeColor = config.outfitStyle === 'suit' ? '#1e293b' : '#ffffff';
+    const shoeColor = config.outfitStyle === 'suit' || config.outfitStyle === 'dress' ? '#1e293b' : '#ffffff';
     const shoe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.15, 0.095, 0.24),
-      new THREE.MeshStandardMaterial({ color: shoeColor, roughness: config.outfitStyle === 'suit' ? 0.3 : 0.45 }),
+      new THREE.BoxGeometry(0.145, 0.09, 0.23),
+      new THREE.MeshStandardMaterial({ color: shoeColor, roughness: 0.35 }),
     );
     shoe.position.set(0, -0.39, 0.04);
     shoe.castShadow = true;
@@ -221,18 +225,46 @@ function createChibiAvatar(opts: {
     return pivot;
   };
 
-  const leftLeg = makeLeg(-0.11);
-  const rightLeg = makeLeg(0.11);
+  const leftLeg = makeLeg(-0.105);
+  const rightLeg = makeLeg(0.105);
   group.add(leftLeg, rightLeg);
 
-  // Thân trang phục (Vest / Sơ mi / Polo)
-  const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.185, 0.22, 0.52, 18),
-    new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
-  );
-  torso.position.y = 0.7;
-  torso.castShadow = true;
-  group.add(torso);
+  // Thân trang phục (Vest / Đầm công sở / Sơ mi / Polo)
+  if (config.outfitStyle === 'dress') {
+    // Thân trên đầm công sở thanh lịch
+    const bodice = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.165, 0.185, 0.34, 16),
+      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.45 }),
+    );
+    bodice.position.y = 0.79;
+    bodice.castShadow = true;
+    group.add(bodice);
+
+    // Chân váy chữ A thanh lịch
+    const skirt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.185, 0.28, 0.34, 18),
+      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
+    );
+    skirt.position.y = 0.46;
+    skirt.castShadow = true;
+    group.add(skirt);
+
+    // Đai thắt lưng tinh tế
+    const belt = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.19, 0.19, 0.045, 16),
+      new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.35 }),
+    );
+    belt.position.y = 0.62;
+    group.add(belt);
+  } else {
+    const torso = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.185, 0.22, 0.52, 16),
+      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
+    );
+    torso.position.y = 0.7;
+    torso.castShadow = true;
+    group.add(torso);
+  }
 
   // Cổ áo sơ mi / polo trắng lịch sự
   const collar = new THREE.Mesh(
@@ -421,7 +453,7 @@ function createChibiAvatar(opts: {
 
   // Nhãn tên nổi
   const badgeLabel = isOnDuty ? `● Đang trực · ${name}` : name;
-  const badgeBg = isSelf ? '#2563eb' : isOnDuty ? '#059669' : '#0f172a';
+  const badgeBg = isOnDuty ? '#059669' : isSelf ? '#2563eb' : '#0f172a';
   const badge = createBadgeSprite(badgeLabel, badgeBg);
   badge.position.y = 1.84;
   group.add(badge);
@@ -1088,8 +1120,11 @@ export function Space3DCanvas({
   structures,
   placements,
   presences,
+  currentEmployeeId,
+  isSelfOnDuty = false,
   playerName,
   playerAvatar,
+  playerPosRef,
   nightMode,
   povMode,
   editMode,
@@ -1129,6 +1164,7 @@ export function Space3DCanvas({
 
   const sceneObjRef = useRef<{
     scene: THREE.Scene;
+    renderer: THREE.WebGLRenderer;
     camera: THREE.PerspectiveCamera;
     orbit: OrbitControls;
     transform: TransformControls;
@@ -1145,6 +1181,8 @@ export function Space3DCanvas({
     sunLight: THREE.DirectionalLight;
     hemiLight: THREE.HemisphereLight;
     floorMesh: THREE.Mesh;
+    dayFloorTex: THREE.CanvasTexture;
+    nightFloorTex: THREE.CanvasTexture;
   } | null>(null);
 
   useEffect(() => {
@@ -1165,9 +1203,11 @@ export function Space3DCanvas({
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     container.appendChild(renderer.domElement);
@@ -1179,13 +1219,13 @@ export function Space3DCanvas({
     const sunLight = new THREE.DirectionalLight('#fffaf0', 1.15);
     sunLight.position.set(18, 28, 16);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.mapSize.set(1024, 1024);
     sunLight.shadow.camera.near = 2;
     sunLight.shadow.camera.far = 85;
-    sunLight.shadow.camera.left = -30;
-    sunLight.shadow.camera.right = 30;
-    sunLight.shadow.camera.top = 30;
-    sunLight.shadow.camera.bottom = -30;
+    sunLight.shadow.camera.left = -28;
+    sunLight.shadow.camera.right = 28;
+    sunLight.shadow.camera.top = 28;
+    sunLight.shadow.camera.bottom = -28;
     sunLight.shadow.bias = -0.0005;
     scene.add(sunLight);
 
@@ -1193,10 +1233,12 @@ export function Space3DCanvas({
     fillLight.position.set(-16, 14, -12);
     scene.add(fillLight);
 
-    // Sàn Epoxy nhà triển lãm
+    // Sàn Epoxy nhà triển lãm (cache sẵn 2 texture ngày/đêm để đổi tức thì không giật)
+    const dayFloorTex = createEpoxyFloorTexture(false, sceneKind === 'WAREHOUSE');
+    const nightFloorTex = createEpoxyFloorTexture(true, sceneKind === 'WAREHOUSE');
     const floorMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(widthM + 4, depthM + 6),
-      new THREE.MeshStandardMaterial({ map: createEpoxyFloorTexture(false, sceneKind === 'WAREHOUSE'), roughness: 0.65, metalness: 0.08 }),
+      new THREE.MeshStandardMaterial({ map: dayFloorTex, roughness: 0.65, metalness: 0.08 }),
     );
     floorMesh.rotation.x = -Math.PI / 2;
     floorMesh.receiveShadow = true;
@@ -1235,6 +1277,7 @@ export function Space3DCanvas({
       name: playerName || 'Bạn',
       config: playerAvatar,
       isSelf: true,
+      isOnDuty: isSelfOnDuty,
     });
     player.group.position.set(0, 0, 11);
     scene.add(player.group);
@@ -1253,6 +1296,7 @@ export function Space3DCanvas({
     transform.addEventListener('dragging-changed', (ev) => {
       orbit.enabled = !ev.value;
       if (!ev.value && transform.object) {
+        renderer.shadowMap.needsUpdate = true;
         const pid = transform.object.userData?.placementId as string | undefined;
         if (pid) {
           const p = transform.object.position;
@@ -1274,6 +1318,7 @@ export function Space3DCanvas({
 
     sceneObjRef.current = {
       scene,
+      renderer,
       camera,
       orbit,
       transform,
@@ -1290,6 +1335,8 @@ export function Space3DCanvas({
       sunLight,
       hemiLight,
       floorMesh,
+      dayFloorTex,
+      nightFloorTex,
     };
 
     const keys = new Set<string>();
@@ -1383,6 +1430,8 @@ export function Space3DCanvas({
     let walkTime = 0;
     let totalTime = 0;
     let frameCount = 0;
+    let lastZone = '';
+    let lastNearId: string | null = null;
     let rafId = 0;
 
     const animate = () => {
@@ -1487,8 +1536,15 @@ export function Space3DCanvas({
 
       orbit.update();
 
+      // Cập nhật tọa độ nhân vật qua ref (KHÔNG gây React re-render 60fps!)
+      if (playerPosRef) {
+        playerPosRef.current.x = currentPlayer.group.position.x;
+        playerPosRef.current.z = currentPlayer.group.position.z;
+        playerPosRef.current.rotY = currentPlayer.group.rotation.y;
+      }
+
       frameCount += 1;
-      if (frameCount % 12 === 0) {
+      if (frameCount % 15 === 0) {
         let nearId: string | null = null;
         let bestDist = 4.2;
         let nearObj: THREE.Group | null = null;
@@ -1516,11 +1572,12 @@ export function Space3DCanvas({
             zoneName = st.label;
           }
         }
-        stateRef.current.onNearbyChange({
-          zoneName,
-          nearPlacementId: nearId,
-          playerPos: { x: currentPlayer.group.position.x, z: currentPlayer.group.position.z, rotY: currentPlayer.group.rotation.y },
-        });
+        // Chỉ gọi setState React khi zone hoặc sản phẩm gần nhất THỰC SỰ thay đổi (chống lag tuyệt đối!)
+        if (zoneName !== lastZone || nearId !== lastNearId) {
+          lastZone = zoneName;
+          lastNearId = nearId;
+          stateRef.current.onNearbyChange({ zoneName, nearPlacementId: nearId });
+        }
       }
 
       renderer.render(scene, camera);
@@ -1544,8 +1601,8 @@ export function Space3DCanvas({
     };
   }, [sceneKind, widthM, depthM, branding.companyName, branding.logoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cập nhật nóng diện mạo nhân vật Chibi ngay tại chỗ (không reload scene hay nhảy camera)
-  const avatarSig = `${playerName}|${playerAvatar.outfitStyle}|${playerAvatar.outfitColor}|${playerAvatar.pantsColor}|${playerAvatar.hairStyle}|${playerAvatar.hairColor}|${playerAvatar.skinTone}|${playerAvatar.hasGlasses}`;
+  // Cập nhật nóng diện mạo & trạng thái trực của chính nhân vật (không reload scene)
+  const avatarSig = `${playerName}|${isSelfOnDuty}|${playerAvatar.outfitStyle}|${playerAvatar.outfitColor}|${playerAvatar.pantsColor}|${playerAvatar.hairStyle}|${playerAvatar.hairColor}|${playerAvatar.skinTone}|${playerAvatar.hasGlasses}`;
   useEffect(() => {
     const obj = sceneObjRef.current;
     if (!obj) return;
@@ -1556,6 +1613,7 @@ export function Space3DCanvas({
       name: playerName || 'Bạn',
       config: playerAvatar,
       isSelf: true,
+      isOnDuty: isSelfOnDuty,
     });
     nextPlayer.group.position.copy(oldPos);
     nextPlayer.group.rotation.y = oldRotY;
@@ -1569,12 +1627,13 @@ export function Space3DCanvas({
     const bg = nightMode ? '#0f172a' : '#dbeafe';
     obj.scene.background = new THREE.Color(bg);
     obj.scene.fog = new THREE.Fog(nightMode ? '#0f172a' : '#e6effa', 36, 95);
-    obj.sunLight.intensity = nightMode ? 0.38 : 1.15;
-    obj.hemiLight.intensity = nightMode ? 0.55 : 1.25;
+    obj.sunLight.intensity = nightMode ? 0.42 : 1.15;
+    obj.hemiLight.intensity = nightMode ? 0.62 : 1.25;
     const floorMat = obj.floorMesh.material as THREE.MeshStandardMaterial;
-    floorMat.map = createEpoxyFloorTexture(nightMode, sceneKind === 'WAREHOUSE');
+    floorMat.map = nightMode ? obj.nightFloorTex : obj.dayFloorTex;
     floorMat.needsUpdate = true;
-  }, [nightMode, sceneKind]);
+    obj.renderer.shadowMap.needsUpdate = true;
+  }, [nightMode]);
 
   useEffect(() => {
     const obj = sceneObjRef.current;
@@ -1601,6 +1660,7 @@ export function Space3DCanvas({
       const target = obj.placementMeshes.get(selectedPlacementId);
       if (target) obj.transform.attach(target);
     }
+    obj.renderer.shadowMap.needsUpdate = true;
   }, [structures, placements]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1608,18 +1668,22 @@ export function Space3DCanvas({
     if (!obj) return;
     obj.presenceGroup.clear();
     obj.staffAvatars.length = 0;
-    presences.forEach((pr) => {
-      const av = createChibiAvatar({
-        name: pr.employeeName,
-        config: pr.avatar,
-        isOnDuty: pr.status === 'ON_DUTY',
+    // Lọc bỏ chính mình khỏi danh sách presences để KHÔNG bao giờ hiện 2 bản sao trùng nhau!
+    presences
+      .filter((pr) => !currentEmployeeId || pr.employeeId !== currentEmployeeId)
+      .forEach((pr) => {
+        const av = createChibiAvatar({
+          name: pr.employeeName,
+          config: pr.avatar,
+          isOnDuty: pr.status === 'ON_DUTY',
+        });
+        av.group.position.set(pr.posX, 0, pr.posZ);
+        av.group.rotation.y = pr.rotY;
+        obj.presenceGroup.add(av.group);
+        obj.staffAvatars.push(av);
       });
-      av.group.position.set(pr.posX, 0, pr.posZ);
-      av.group.rotation.y = pr.rotY;
-      obj.presenceGroup.add(av.group);
-      obj.staffAvatars.push(av);
-    });
-  }, [presences]);
+    obj.renderer.shadowMap.needsUpdate = true;
+  }, [presences, currentEmployeeId]);
 
   useEffect(() => {
     const obj = sceneObjRef.current;

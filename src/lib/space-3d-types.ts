@@ -1,6 +1,6 @@
 export type SpaceKind = 'SHOWROOM' | 'WAREHOUSE';
 export type Product3DType = 'BOX_PRESET' | 'PROCEDURAL_JSON' | 'GLB';
-export type AvatarOutfitStyle = 'suit' | 'shirt' | 'polo';
+export type AvatarOutfitStyle = 'suit' | 'dress' | 'shirt' | 'polo';
 export type AvatarHairStyle = 'slick' | 'short' | 'bob' | 'ponytail';
 
 export interface Avatar3DConfig {
@@ -27,7 +27,7 @@ export function normalizeAvatar3DConfig(raw: unknown): Avatar3DConfig {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_AVATAR_3D_CONFIG };
   const r = raw as Record<string, unknown>;
   const outfitStyle: AvatarOutfitStyle =
-    r.outfitStyle === 'suit' || r.outfitStyle === 'shirt' || r.outfitStyle === 'polo'
+    r.outfitStyle === 'suit' || r.outfitStyle === 'dress' || r.outfitStyle === 'shirt' || r.outfitStyle === 'polo'
       ? r.outfitStyle
       : DEFAULT_AVATAR_3D_CONFIG.outfitStyle;
   const hairStyle: AvatarHairStyle =
