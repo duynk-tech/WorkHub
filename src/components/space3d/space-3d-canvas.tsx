@@ -898,15 +898,33 @@ export function Space3DCanvas({
     let blockedTime = 0;
     const tmpLabelPos = new THREE.Vector3();
 
+    // Tiết kiệm tài nguyên: tối đa 60 FPS (kể cả màn 120Hz); khi cảnh đứng yên > 3s hạ còn 20 FPS
+    let lastFrameAt = 0;
+    let lastActivityAt = performance.now();
+    const markActive = () => {
+      lastActivityAt = performance.now();
+    };
+    const activityEvents = ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const;
+    activityEvents.forEach((ev) => window.addEventListener(ev, markActive, { passive: true }));
+    orbit.addEventListener('change', markActive);
+
     const animate = () => {
       rafId = requestAnimationFrame(animate);
+      const frameNow = performance.now();
+      const idle = frameNow - lastActivityAt > 3000;
+      const minInterval = idle ? 1000 / 20 : 1000 / 60;
+      if (frameNow - lastFrameAt < minInterval - 1.5) return;
+      lastFrameAt = frameNow;
       renderer.info.reset();
       const rawDt = clock.getDelta();
       const dt = Math.min(rawDt, 0.05);
       totalTime += dt;
       windUniform.value = totalTime;
-      governor.tick(rawDt);
+      // Chỉ đo FPS khi đang hoạt động (lúc rảnh đã chủ động hạ còn 20 FPS)
+      if (!idle) governor.tick(rawDt);
+      else governor.reset();
       if (rig.update(Math.min(rawDt, 0.25))) {
+        markActive();
         // Ánh sáng đổi hướng khi chuyển ngày/đêm → bake lại bóng theo nhịp thưa
         if (frameCount % 10 === 0) renderer.shadowMap.needsUpdate = true;
       }
@@ -998,6 +1016,7 @@ export function Space3DCanvas({
         }
       }
 
+      if (isMoving || introLock || drag || fp.looking) markActive();
       if (isMoving) {
         camera.position.x += actualDx;
         camera.position.z += actualDz;
@@ -1068,6 +1087,7 @@ export function Space3DCanvas({
             const dr = Math.atan2(Math.sin(wantR - g.rotation.y), Math.cos(wantR - g.rotation.y));
             g.rotation.y += dr * rotK;
             walking = (st.moving && nowMs - st.ts < 600) || d > 0.06;
+            if (walking) markActive();
           }
           // Hai nhân vật đứng trùng chỗ → tách nhẹ (chỉ phần hiển thị, không đổi vị trí thật của họ)
           for (const [oid, other] of objNow.remoteAvatars) {
@@ -1246,6 +1266,8 @@ export function Space3DCanvas({
       window.removeEventListener('pointermove', onFpMove);
       window.removeEventListener('pointerup', onFpUp);
       window.removeEventListener('pointerup', endDrag);
+      activityEvents.forEach((ev) => window.removeEventListener(ev, markActive));
+      orbit.removeEventListener('change', markActive);
       container.removeEventListener('dragover', onDragOver);
       container.removeEventListener('dragleave', onDragLeave);
       container.removeEventListener('drop', onDrop);
