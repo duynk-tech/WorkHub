@@ -7,7 +7,8 @@ export interface LlmModelItem {
 
 export const PRESET_LLM_MODELS: LlmModelItem[] = [
   { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash (Thế hệ mới 2025/2026 — Siêu tốc, tối ưu chi phí & Tool call)', source: 'preset' },
-  { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite (Siêu nhanh, chi phí thấp — mặc định cho chat Showroom 3D)', source: 'preset' },
+  { id: 'gemini-flash-lite-latest', name: 'gemini-flash-lite-latest (Luôn là bản Flash-Lite mới nhất — mặc định cho chat Showroom 3D)', source: 'preset' },
+  { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite (Siêu nhanh, chi phí thấp)', source: 'preset' },
   { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro (Thế hệ mới 2025/2026 — Lập luận đa phương thức phức tạp)', source: 'preset' },
   { id: 'gemini-2.0-flash', name: 'gemini-2.0-flash (Thế hệ 2.0 — Function calling vượt trội, rất ổn định)', source: 'preset' },
   { id: 'gemini-2.0-flash-lite', name: 'gemini-2.0-flash-lite (Thế hệ 2.0 — Siêu nhẹ, độ trễ tối thiểu)', source: 'preset' },

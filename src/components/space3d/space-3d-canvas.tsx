@@ -33,7 +33,7 @@ import {
   type BubbleSlot,
 } from './three/avatars';
 import { createExhibitionHallEnvironment } from './three/hall';
-import { createCafeEnvironment, createOfficeEnvironment } from './three/environments';
+import { createCafeEnvironment, createOfficeEnvironment, createWarehouseEnvironment } from './three/environments';
 import { carpetTileTex, plankTex } from './three/props/textures';
 import { buildSpaceObject, objectSignature, applyTransform } from './three/props/registry';
 import type { ShelfSlot } from './three/props/kit';
@@ -341,7 +341,8 @@ export function Space3DCanvas({
     );
     // Đặt camera thấp hơn xà giàn mái gần lối vào để không bị che khi vừa vào
     // Điểm xuất phát gần lối vào (mặt trước +Z), co theo không gian nhỏ (quán cà phê / văn phòng)
-    const spawnZ = Math.min(11, depthM / 2 - 2.5);
+    // Kho có tường mặt tiền kín (cửa cuốn) → xuất phát sâu hơn để camera nằm trong nhà
+    const spawnZ = sceneKind === 'WAREHOUSE' ? depthM / 2 - 6.5 : Math.min(11, depthM / 2 - 2.5);
     // Camera thấp & gần hơn: luồn dưới xà cổng chào (đáy xà ~4.3m), không bị cổng che
     camera.position.set(0, 2.9, spawnZ + 5.4);
 
@@ -411,6 +412,7 @@ export function Space3DCanvas({
     const floorTex = createEpoxyTextures(sceneKind === 'WAREHOUSE', Math.round((widthM + 4) / 2));
     const isCafe = sceneKind === 'CAFE';
     const isOffice = sceneKind === 'OFFICE';
+    const isWarehouse = sceneKind === 'WAREHOUSE';
     let floorMapOverride: THREE.Texture | null = null;
     if (isCafe || isOffice) {
       // Quán cà phê: sàn gỗ ván dài; Văn phòng: thảm tấm
@@ -427,7 +429,7 @@ export function Space3DCanvas({
       clearcoatRoughness: isCafe ? 0.3 : 0.14,
     });
     const floorMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(widthM + (isCafe || isOffice ? 0.2 : 4), depthM + (isCafe || isOffice ? 0.2 : 6)),
+      new THREE.PlaneGeometry(widthM + (isCafe || isOffice || isWarehouse ? 0.2 : 4), depthM + (isCafe || isOffice || isWarehouse ? 0.2 : 6)),
       floorMat,
     );
     floorMesh.rotation.x = -Math.PI / 2;
@@ -437,8 +439,13 @@ export function Space3DCanvas({
 
     // Kiến trúc Nhà triển lãm + Cây cối bên ngoài + Logo TIM Corp
     // Gộp geometry tĩnh theo vật liệu → giảm mạnh draw call
-    const interior =
-      isCafe ? createCafeEnvironment(widthM, depthM, branding.companyName) : isOffice ? createOfficeEnvironment(widthM, depthM, branding.companyName) : null;
+    const interior = isCafe
+      ? createCafeEnvironment(widthM, depthM, branding.companyName)
+      : isOffice
+        ? createOfficeEnvironment(widthM, depthM, branding.companyName)
+        : isWarehouse
+          ? createWarehouseEnvironment(widthM, depthM, branding.companyName)
+          : null;
     const hallEnv = mergeStaticGroup(
       interior ? interior.group : createExhibitionHallEnvironment(widthM, depthM, sceneKind, branding.companyName, branding.logoUrl),
     );
@@ -1386,13 +1393,21 @@ export function Space3DCanvas({
     const halfD = depthM * 0.5 + 2;
     obj.camRig.playIntro(
       { target: new THREE.Vector3(p.x, 1.35, p.z), position: new THREE.Vector3(p.x, 2.9, p.z + 5.4) },
-      [
-        new THREE.Vector3(-34, 26, halfD + 46),
-        new THREE.Vector3(-10, 12, halfD + 22),
-        // Hạ thấp trước cổng rồi luồn dưới xà cổng chào vào sảnh
-        new THREE.Vector3(0, 3.1, halfD + 6),
-        new THREE.Vector3(0, 2.9, halfD - 1.4),
-      ],
+      sceneKind === 'WAREHOUSE'
+        ? [
+            // Nhà kho: bay qua sân, luồn vào cửa cuốn bên trái đang mở hé (cao ~2.7m)
+            new THREE.Vector3(-34, 22, halfD + 40),
+            new THREE.Vector3(-widthM * 0.225, 6, halfD + 16),
+            new THREE.Vector3(-widthM * 0.225, 1.9, halfD + 4),
+            new THREE.Vector3(-widthM * 0.225, 1.9, halfD - 3),
+          ]
+        : [
+            new THREE.Vector3(-34, 26, halfD + 46),
+            new THREE.Vector3(-10, 12, halfD + 22),
+            // Hạ thấp trước cổng rồi luồn dưới xà cổng chào vào sảnh
+            new THREE.Vector3(0, 3.1, halfD + 6),
+            new THREE.Vector3(0, 2.9, halfD - 1.4),
+          ],
     );
   }, [playIntro, sceneKind, widthM, depthM]);
 
@@ -1420,7 +1435,8 @@ export function Space3DCanvas({
       }
       const built = buildSpaceObject(o, ctx);
       if (built.shelves.length && merchItems.length) {
-        built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind)));
+        const manualPick = o.merch?.mode === 'MANUAL' && o.merch.itemIds.length > 0;
+        built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind), manualPick));
       }
       obj.objectsGroup.add(built.root);
       obj.objectMap.set(o.id, { sig, root: built.root, shelves: built.shelves });

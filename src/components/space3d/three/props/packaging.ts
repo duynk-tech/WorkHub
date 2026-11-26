@@ -4,6 +4,7 @@ import { choosePackKind, packSize, type PackKind } from '@/lib/space-3d-merch';
 import type { ShelfSlot } from './kit';
 import { buildEspresso } from './cafe';
 import { normalizeSpaceObject } from '@/lib/space-3d-types';
+import { DEMO_PRODUCTS } from '@/lib/space-3d-demo-products';
 import { hashId, seeded } from './kit';
 
 /**
@@ -188,7 +189,7 @@ function packMaterial(item: SpaceMerchItem, kind: PackKind): THREE.Material {
  * Xếp hàng lên các tầng kệ: mỗi SP chiếm 1 đoạn facing liền nhau (2 hàng sâu, chồng 2 tầng nếu thấp),
  * xoay lệch nhẹ ngẫu nhiên cho tự nhiên. Trả về group chứa các InstancedMesh.
  */
-export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: SpaceMerchItem[]): THREE.Group {
+export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: SpaceMerchItem[], manual = false): THREE.Group {
   const g = new THREE.Group();
   g.userData.noMerge = true;
   if (!items.length || !shelves.length) return g;
@@ -204,19 +205,21 @@ export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: 
   for (const shelf of shelves) {
     // Máy thật (có mô hình 3D) trên tầng đủ cao / bục: dựng đúng hình dáng, thu nhỏ vừa tầng kệ nếu cần
     const machineFit = (item: SpaceMerchItem) => item.isMachine && item.model3D && (shelf.single || shelf.clearance >= 0.28);
-    if (shelf.single || shelf.demoMachines || items.some(machineFit)) {
+    if (shelf.single || (shelf.demoMachines && !manual) || items.some(machineFit)) {
       const machines = items.filter(machineFit);
-      if (!machines.length && shelf.demoMachines) {
+      if (!machines.length && shelf.demoMachines && !manual) {
         // Kho chưa có máy nguyên chiếc → bày máy pha espresso mẫu để quầy giống showroom thật
         const n = shelf.single ? 1 : Math.max(1, Math.min(3, Math.floor(shelf.width / 0.95)));
         for (let i = 0; i < n; i++) {
+          const product = DEMO_PRODUCTS[(hashId(objectId) + i) % 3]; // 3 máy pha espresso mẫu
           const demo = buildDemoMachine(objectId, i);
+          demo.traverse((c) => (c.userData.merchItemId = product.id));
           const lx = -shelf.width / 2 + (shelf.width / n) * (i + 0.5) - (shelf.single ? 0 : 0.08);
-          const cos = Math.cos(shelf.facing);
-          const sin = Math.sin(shelf.facing);
-          demo.position.set(shelf.x + lx * cos, shelf.y, shelf.z - lx * sin);
-          demo.rotation.y = shelf.facing;
+          placeOnShelf(demo, shelf, lx, -0.06);
           models.push(demo);
+          const card = buildTentCard(product, product.model);
+          placeOnShelf(card, shelf, lx + (shelf.single ? 0 : 0.08), shelf.depth / 2 - 0.07);
+          models.push(card);
         }
         continue;
       }
@@ -228,16 +231,17 @@ export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: 
           const k = Math.min(1, (shelf.clearance - 0.03) / m3.heightM, (shelf.width / n - 0.04) / m3.widthM, (shelf.depth - 0.02) / m3.depthM);
           const model = buildMachineModel(item, k);
           const lx = -shelf.width / 2 + (shelf.width / n) * (i + 0.5);
-          const cos = Math.cos(shelf.facing);
-          const sin = Math.sin(shelf.facing);
-          model.position.set(shelf.x + lx * cos, shelf.y, shelf.z - lx * sin);
-          model.rotation.y = shelf.facing;
+          placeOnShelf(model, shelf, lx, -0.06);
           models.push(model);
+          // Biển mica tên / model / giá trước máy — bấm để xem chi tiết
+          const card = buildTentCard(item, item.itemCode ?? null);
+          placeOnShelf(card, shelf, lx, shelf.depth / 2 - 0.07);
+          models.push(card);
         }
         cursor += n;
         continue;
       }
-      if (shelf.single) continue;
+      if (shelf.single && !manual) continue;
     }
     let x = -shelf.width / 2;
     while (x < shelf.width / 2 - 0.05) {
@@ -287,6 +291,75 @@ export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: 
     mesh.userData = { merchItemId: item.id, noMerge: true, shared: true };
     g.add(mesh);
   }
+  return g;
+}
+
+/** Đặt vật thể lên mặt kệ theo toạ độ cục bộ (lx dọc kệ, lz hướng mặt trước) */
+function placeOnShelf(obj: THREE.Object3D, shelf: ShelfSlot, lx: number, lz: number) {
+  const cos = Math.cos(shelf.facing);
+  const sin = Math.sin(shelf.facing);
+  obj.position.set(shelf.x + lx * cos + lz * sin, shelf.y, shelf.z - lx * sin + lz * cos);
+  obj.rotation.y = shelf.facing;
+}
+
+const cardTexCache = new Map<string, THREE.CanvasTexture>();
+/** Biển mica để bàn: tên sản phẩm, model, giá niêm yết, gợi ý "Bấm để xem chi tiết" */
+function buildTentCard(item: SpaceMerchItem, model: string | null): THREE.Group {
+  const key = `${item.id}:${model ?? ''}:${item.sellingPrice ?? ''}`;
+  let tex = cardTexCache.get(key);
+  if (!tex) {
+    const W = 640;
+    const H = 380;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#1d3f91';
+    ctx.fillRect(0, 0, W, 16);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#64748b';
+    ctx.font = '700 26px Inter, "Segoe UI", system-ui, sans-serif';
+    ctx.fillText((item.manufacturer || 'TIM CORP').toUpperCase().slice(0, 28), 30, 34);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '800 44px Inter, "Segoe UI", system-ui, sans-serif';
+    wrap(ctx, item.name, W - 60, 2).forEach((l, i) => ctx.fillText(l, 30, 78 + i * 52));
+    if (model) {
+      ctx.fillStyle = '#2563eb';
+      ctx.font = '700 30px Inter, "Segoe UI", system-ui, sans-serif';
+      ctx.fillText(`Model: ${model}`.slice(0, 32), 30, 194);
+    }
+    ctx.fillStyle = '#b91c1c';
+    ctx.font = '800 46px Inter, "Segoe UI", system-ui, sans-serif';
+    ctx.fillText(item.sellingPrice ? money(item.sellingPrice) : 'Liên hệ báo giá', 30, 246);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 24px Inter, "Segoe UI", system-ui, sans-serif';
+    ctx.fillText('Bấm để xem chi tiết ›', 30, 322);
+    tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 16;
+    cardTexCache.set(key, tex);
+  }
+  const g = new THREE.Group();
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.1425), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+  face.position.set(0, 0.075, 0);
+  face.rotation.x = -0.32;
+  // Mica trong + đế
+  const acrylic = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 0.155, 0.004),
+    new THREE.MeshPhysicalMaterial({ color: '#ffffff', transparent: true, opacity: 0.18, roughness: 0.05, clearcoat: 1 }),
+  );
+  acrylic.position.set(0, 0.075, -0.003);
+  acrylic.rotation.x = -0.32;
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.012, 0.06), new THREE.MeshStandardMaterial({ color: '#e5e7eb', roughness: 0.3 }));
+  base.position.set(0, 0.006, -0.02);
+  g.add(face, acrylic, base);
+  g.traverse((c) => {
+    c.userData.merchItemId = item.id;
+  });
+  g.userData.noMerge = true;
   return g;
 }
 

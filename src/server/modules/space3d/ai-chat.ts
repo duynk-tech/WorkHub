@@ -12,7 +12,8 @@ import { outboundProviderFetch } from '@/server/security/outbound-http';
  */
 
 /** Model mặc định cho trợ lý AI trong Không gian 3D */
-export const SPACE_AI_DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+/** Alias của Google luôn trỏ tới bản Flash-Lite mới nhất */
+export const SPACE_AI_DEFAULT_MODEL = 'gemini-flash-lite-latest';
 
 export async function getSpaceAiModel() {
   const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
@@ -146,6 +147,7 @@ export async function buildSpaceAiSystemPrompt(opts: {
   department: string | null;
   products: AiProductContext[];
   askerIsStaff: boolean;
+  focusNote?: string | null;
 }): Promise<string> {
   const branding = await getAppBranding();
   const company = branding.name || 'công ty';
@@ -174,6 +176,7 @@ export async function buildSpaceAiSystemPrompt(opts: {
       ? 'Khách đang đứng tại quầy: ưu tiên tư vấn các sản phẩm đánh dấu [ĐANG BÀY TẠI QUẦY]; nếu khách hỏi "cái này", "sản phẩm này" thì hiểu là sản phẩm tại quầy (nếu chỉ có 1).'
       : '',
     '',
+    opts.focusNote ? `MÁY MẪU KHÁCH ĐANG XEM TẠI QUẦY (chưa có trong kho, giá liên hệ): ${opts.focusNote}` : '',
     'SẢN PHẨM LIÊN QUAN TRONG KHO:',
     productLines,
   ].join('\n');

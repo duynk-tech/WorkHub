@@ -21,6 +21,8 @@ export interface VisitorChatTarget {
   focusLabel?: string | null;
   /** Câu hỏi gửi ngay khi mở (ví dụ khách bấm "Hỏi về sản phẩm này") */
   initialQuestion?: string;
+  /** Mô tả máy mẫu (không có trong kho) để AI vẫn tư vấn được */
+  focusNote?: string;
 }
 
 interface Props {
@@ -207,6 +209,7 @@ export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, gla
         body: JSON.stringify({
           staffEmployeeId: target.employeeId || null,
           focusProductIds: target.focusProductIds ?? [],
+          focusNote: target.focusNote,
           guestKey: askerIsStaff ? undefined : getGuestKey(),
           messages: history.slice(-12).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
         }),

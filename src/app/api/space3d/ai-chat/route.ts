@@ -22,6 +22,8 @@ const bodySchema = z.object({
   guestKey: z.string().max(64).optional(),
   /** Sản phẩm đang trưng bày tại quầy của nhân viên / sản phẩm khách vừa bấm xem */
   focusProductIds: z.array(z.number().int().positive()).max(20).optional(),
+  /** Mô tả máy mẫu đang trưng bày (chưa có trong kho) */
+  focusNote: z.string().max(800).optional(),
 });
 
 /**
@@ -31,7 +33,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Yêu cầu không hợp lệ' }, { status: 400 });
-  const { messages, staffEmployeeId, guestKey, focusProductIds = [] } = parsed.data;
+  const { messages, staffEmployeeId, guestKey, focusProductIds = [], focusNote } = parsed.data;
   if (messages[messages.length - 1].role !== 'user') return NextResponse.json({ error: 'Thiếu câu hỏi' }, { status: 400 });
 
   const ctx = await getAuthContext();
@@ -59,6 +61,7 @@ export async function POST(req: Request) {
     department: staff?.department?.name ?? null,
     products,
     askerIsStaff: Boolean(ctx),
+    focusNote: focusNote ?? null,
   });
 
   const result = streamText({

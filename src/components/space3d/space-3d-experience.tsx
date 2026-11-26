@@ -45,6 +45,7 @@ const InspectorPanel = dynamic(() => import('./editor/space-editor-panels').then
 import { normalizeSceneKind } from '@/lib/space-3d-catalog';
 import { templateFor } from '@/lib/space-3d-templates';
 import { resolveMerchItems } from '@/lib/space-3d-merch';
+import { DEMO_PRODUCT_MAP } from '@/lib/space-3d-demo-products';
 import {
   ROTATE_STEP,
   clampInside,
@@ -548,7 +549,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         label = o.label;
       }
       if (['GONDOLA', 'WALL_SHELF', 'DISPLAY_CABINET', 'PODIUM', 'RACK', 'PASTRY_CASE'].includes(o.kind)) {
-        resolveMerchItems(o.merch, data.merchItems, o.kind)
+        resolveMerchItems(o.merch, merchPool, o.kind)
           .slice(0, 6)
           .forEach((m) => ids.push(m.id));
       }
@@ -576,6 +577,27 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       document.removeEventListener('visibilitychange', beat);
     };
   }, [onDutyNow]);
+
+  // Kho hàng để xếp lên kệ: hàng công khai + danh mục của người thiết kế (SP vừa chọn tay hiện ngay, không cần tải lại)
+  const merchPool = useMemo(() => {
+    const seen = new Set(data.merchItems.map((m) => m.id));
+    const extra = data.catalog
+      .filter((c) => !seen.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        itemCode: c.itemCode,
+        name: c.name,
+        category: c.category,
+        manufacturer: c.manufacturer,
+        imageUrl: c.imageUrl,
+        sellingPrice: c.sellingPrice,
+        description: c.description,
+        isMachine: c.category === 'MACHINE' || c.category === 'EQUIPMENT',
+        stockQty: c.stockQty ?? null,
+        model3D: c.category === 'MACHINE' || c.category === 'EQUIPMENT' ? c.model3D : null,
+      }));
+    return extra.length ? [...data.merchItems, ...extra] : data.merchItems;
+  }, [data.merchItems, data.catalog]);
 
   // ───── Chuyển không gian (Showroom / Café / Văn phòng / Kho) có màn hình chờ ─────
   const [switching, setSwitching] = useState<{ code: string; name: string } | null>(null);
@@ -884,7 +906,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         onQualityChange={setQualityActive}
         playIntro={entered && introOnEnter}
         debug={debug3D}
-        merchItems={data.merchItems}
+        merchItems={merchPool}
         faceEmployeeId={visitorTarget?.employeeId ?? (chatOpen ? chatPeer?.employeeId ?? null : null)}
         onSelectMerchItem={(id) => {
           if (!editMode) setMerchInfoId(id);
@@ -2214,7 +2236,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       {/* Modal Xem chi tiết Thiết bị */}
       {/* Thông tin sản phẩm trên kệ / máy trưng bày */}
       {merchInfoId !== null && (() => {
-        const item = data.merchItems.find((m) => m.id === merchInfoId);
+        const item = merchPool.find((m) => m.id === merchInfoId) ?? DEMO_PRODUCT_MAP.get(merchInfoId);
         if (!item) return null;
         return (
           <div
@@ -2228,8 +2250,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 600 }}>
-                    {item.itemCode}
+                    {'model' in item ? `Model ${(item as { model: string }).model}` : item.itemCode}
                     {item.isMachine ? ' · Máy / thiết bị' : ''}
+                    {item.id < 0 ? ' · Mẫu trưng bày' : ''}
                   </div>
                   <h2 style={{ fontSize: 17, fontWeight: 700, marginTop: 2, color: '#fff', lineHeight: 1.3 }}>{item.name}</h2>
                   {item.manufacturer && <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 2 }}>Hãng: {item.manufacturer}</div>}
@@ -2273,7 +2296,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                     department: nearest?.department ?? null,
                     chatMode: 'AI',
                     online: Boolean(nearest),
-                    focusProductIds: [item.id],
+                    focusProductIds: item.id > 0 ? [item.id] : [],
+                    focusNote: item.id < 0 ? `${item.name} (${'model' in item ? (item as { model: string }).model : ''}): ${item.description ?? ''}` : undefined,
                     focusLabel: null,
                     initialQuestion: `Giới thiệu giúp mình về ${item.name}`,
                   });
