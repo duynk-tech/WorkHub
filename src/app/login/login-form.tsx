@@ -77,34 +77,24 @@ export function LoginForm({ googleEnabled = false, ssoError,
             </div>
           </div>
           <div className="login-hero-inner">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                className={`login-logo ${logoUrl ? 'has-image' : ''}`}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                  ...(logoUrl
-                    ? {
-                        background: '#ffffff',
-                        padding: 6,
-                        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.25)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }
-                    : {}),
-                }}
-              >
-                {logoUrl ? (
-                  <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                ) : (
-                  displayLogoLetter
-                )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              {logoUrl ? (
+                <div className="login-hero-logo-box">
+                  <img src={logoUrl} alt={appName} />
+                </div>
+              ) : (
+                <div className="login-logo" style={{ width: 42, height: 42, borderRadius: 10, flexShrink: 0 }}>
+                  {displayLogoLetter}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 19, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                  {appName}
+                </span>
+                <span style={{ fontSize: 12, color: 'rgba(226, 232, 240, 0.65)' }}>
+                  Operations console
+                </span>
               </div>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{appName}</span>
             </div>
 
             <div className="login-hero-copy">
@@ -137,35 +127,22 @@ export function LoginForm({ googleEnabled = false, ssoError,
         {/* Cột biểu mẫu */}
         <main className="login-panel">
           <div className="login-form-card">
-            <div className="login-logo-mobile">
-              <div
-                className={`login-logo ${logoUrl ? 'has-image' : ''}`}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                  ...(logoUrl
-                    ? {
-                        background: 'var(--surface-card, #ffffff)',
-                        padding: 6,
-                        border: '1px solid var(--border-base)',
-                        boxShadow: 'var(--shadow-sm)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }
-                    : {}),
-                }}
-              >
-                {logoUrl ? (
-                  <img src={logoUrl} alt={appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                ) : (
-                  displayLogoLetter
-                )}
-              </div>
-              <span style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-strong)' }}>{appName}</span>
+            <div className="login-card-brand">
+              {logoUrl ? (
+                <div className="login-card-logo-box">
+                  <img src={logoUrl} alt={appName} />
+                </div>
+              ) : (
+                <div className="login-logo" style={{ width: 38, height: 38, borderRadius: 9, flexShrink: 0 }}>
+                  {displayLogoLetter}
+                </div>
+              )}
+              {!logoUrl && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-strong)', lineHeight: 1.2 }}>{appName}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Operations console</span>
+                </div>
+              )}
             </div>
 
             <div className="login-eyebrow">CỔNG THÔNG TIN NỘI BỘ</div>

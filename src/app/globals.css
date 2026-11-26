@@ -777,12 +777,35 @@ body:has(.login-shell) { width: 100%; height: 100%; overflow: hidden; }
 .login-hero { display: none; }
 .login-panel {
   display: flex; align-items: center; justify-content: center; padding: 72px 24px 40px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(36, 71, 235, 0.055), transparent 52%), var(--surface-app);
+  background: var(--surface-sunken);
 }
 .login-form-card {
-  width: 100%; max-width: 440px; padding: 38px 40px 32px;
-  border: 1px solid var(--border-subtle); border-radius: 22px;
-  background: var(--surface-card); box-shadow: 0 24px 70px rgba(21, 32, 72, 0.09), 0 2px 8px rgba(21, 32, 72, 0.04);
+  width: 100%; max-width: 420px; padding: 34px 36px 30px;
+  border: 1px solid var(--border-base); border-radius: 12px;
+  background: var(--surface-card); box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+}
+.login-card-brand {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 22px; padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.login-card-logo-box {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 44px; max-width: 210px; padding: 6px 12px;
+  border-radius: 9px; background: #ffffff;
+  border: 1px solid var(--border-base);
+}
+.login-card-logo-box img {
+  max-height: 32px; max-width: 186px; width: auto; height: auto; object-fit: contain; display: block;
+}
+.login-hero-logo-box {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 52px; max-width: 240px; padding: 8px 16px;
+  border-radius: 12px; background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+.login-hero-logo-box img {
+  max-height: 36px; max-width: 208px; width: auto; height: auto; object-fit: contain; display: block;
 }
 .login-eyebrow { margin-bottom: 9px; color: var(--brand); font-size: 10px; font-weight: 750; letter-spacing: .13em; }
 .login-form-title { margin: 0 0 6px; color: var(--text-strong); font-size: 27px; line-height: 1.2; letter-spacing: -.035em; }
@@ -828,7 +851,7 @@ body:has(.login-shell) { width: 100%; height: 100%; overflow: hidden; }
   .login-logo-mobile { display: none; }
   .login-hero {
     display: block; position: relative; isolation: isolate; padding: clamp(36px, 5vw, 76px); overflow: hidden;
-    background: linear-gradient(145deg, #172858 0%, #101b3b 46%, #0b1227 100%);
+    background: linear-gradient(155deg, #0f172a 0%, #091022 52%, #020617 100%);
   }
   .login-hero::after {
     content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
@@ -1591,24 +1614,81 @@ a.list-row:hover { background: var(--surface-hover); }
 
 .pointer-none { pointer-events: none; opacity: 0.5; }
 
-/* Navigation groups keep the workspace compact while preserving every route. */
-.sidebar .nav-group-toggle {
-  display: flex; align-items: center; justify-content: space-between;
-  width: 100%; padding: 12px 12px 6px; margin-top: 6px;
-  border: 0; background: transparent; color: var(--text-muted);
-  font-size: 11px; font-weight: 650; letter-spacing: .045em;
-  text-transform: uppercase; cursor: pointer; text-align: left;
+/* FMP Worker 3-level sidebar navigation (Category -> Collapsible Group -> Submenu tree) */
+.sidebar .nav-category-block { margin-bottom: 10px; }
+.sidebar .nav-category {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
-.sidebar .nav-group-toggle:hover { color: var(--text-strong); }
-.sidebar .nav-group-toggle svg { transition: transform .15s ease; }
+.sidebar .nav-group { display: flex; flex-direction: column; }
+.sidebar .nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-base);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.sidebar .nav-group-toggle:hover { background: var(--surface-hover); color: var(--text-strong); }
+.sidebar .nav-group-toggle[data-has-active="true"] { color: var(--text-strong); font-weight: 600; }
+.sidebar .nav-group-icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-muted); }
+.sidebar .nav-group-toggle:hover .nav-group-icon,
+.sidebar .nav-group-toggle[data-has-active="true"] .nav-group-icon { color: var(--text-strong); }
+.sidebar .nav-group-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .nav-group-chevron {
+  width: 14px; height: 14px; flex-shrink: 0; color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+.sidebar .nav-group-toggle[data-open="true"] .nav-group-chevron { transform: rotate(90deg); }
+.sidebar .nav-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 4px 17px;
+  padding-left: 11px;
+  border-left: 1px solid var(--border-base);
+}
+.sidebar .nav-subitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: background-color 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.sidebar .nav-subitem:hover { background: var(--surface-hover); color: var(--text-strong); }
+.sidebar .nav-subitem[data-active="true"] {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 500;
+}
 .sidebar .nav-group-toggle:focus-visible,
-.sidebar .nav-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
-.sidebar .nav-item { min-height: 40px; padding: 9px 12px; font-size: 13px; border-radius: 9px; }
-.sidebar .nav-item svg { width: 18px; height: 18px; }
-.sidebar .nav-item[data-active="true"] { background: var(--brand-soft); }
+.sidebar .nav-item:focus-visible,
+.sidebar .nav-subitem:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.sidebar .nav-item { min-height: 32px; padding: 6px 10px; font-size: 13px; border-radius: var(--radius-sm); }
+.sidebar .nav-item svg { width: 16px; height: 16px; }
+.sidebar .nav-item[data-active="true"] { background: var(--brand-soft); color: var(--brand); }
 .sidebar-footer { flex-shrink: 0; }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar .nav-group-toggle svg { transition: none; }
+  .sidebar .nav-group-chevron { transition: none; }
 }
 
 /* Shared customer purchase tables and stable single-row navigation. */

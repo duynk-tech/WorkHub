@@ -3,13 +3,39 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { PanelLeft, X, ChevronDown, Settings, LogOut } from 'lucide-react';
+import {
+  PanelLeft, X, ChevronRight, Settings, LogOut,
+  ShoppingCart, Boxes, Wrench, ListChecks, Users, BarChart3, Laptop, ShieldCheck, Folder,
+  type LucideIcon,
+} from 'lucide-react';
 import type { NavSection } from '@/lib/nav';
 import { Avatar } from '@/components/ui';
 import { logoutAction } from '@/server/modules/auth/actions';
 import type { TopbarUser } from './topbar';
 import { NAV_ICONS } from './icons';
 import { cn } from '@/lib/utils';
+
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  'Kinh doanh': ShoppingCart,
+  'Mua hàng & Kho': Boxes,
+  'Dịch vụ': Wrench,
+  'Công việc': ListChecks,
+  'Nhân sự': Users,
+  'Báo cáo': BarChart3,
+  'Tiện ích': Laptop,
+  'Quản trị': ShieldCheck,
+};
+
+const SECTION_CATEGORY: Record<string, 'WORKSPACE' | 'VẬN HÀNH' | 'HỆ THỐNG'> = {
+  'Kinh doanh': 'VẬN HÀNH',
+  'Mua hàng & Kho': 'VẬN HÀNH',
+  'Dịch vụ': 'VẬN HÀNH',
+  'Công việc': 'VẬN HÀNH',
+  'Nhân sự': 'VẬN HÀNH',
+  'Báo cáo': 'HỆ THỐNG',
+  'Tiện ích': 'HỆ THỐNG',
+  'Quản trị': 'HỆ THỐNG',
+};
 
 interface Props {
   sections: NavSection[];
@@ -148,46 +174,144 @@ export function Sidebar({
         </div>
 
         <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
-          {menuSections.map((section, i) => (
-            <div key={i} style={{ marginBottom: 2 }}>
-              {section.title && !isEffectiveCollapsed && <button type="button" className="nav-group-toggle" aria-expanded={expanded[section.title] ?? false} aria-controls={`nav-group-${i}`} onClick={() => setExpanded(previous => ({ ...previous, [section.title!]: !previous[section.title!] }))}>
-                <span>{section.title}</span><ChevronDown size={14} style={{ transform: expanded[section.title] ? 'rotate(0)' : 'rotate(-90deg)' }} />
-              </button>}
-              {section.title && isEffectiveCollapsed && <div className="nav-section-divider" />}
-              <div id={`nav-group-${i}`} hidden={!!section.title && !isEffectiveCollapsed && !expanded[section.title]}>
-              {section.items.map((item) => {
-                const Icon = NAV_ICONS[item.icon];
-                const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
-                const labelWithCount = `${item.label}${count > 0 ? ` (${count})` : ''}`;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    prefetch={false}
-                    className="nav-item"
-                    data-active={isActive(item.href)}
-                    aria-current={isActive(item.href) ? "page" : undefined}
-                    onClick={() => {
-                      if (pathname !== item.href) {
-                        setPendingHref(item.href);
-                      }
-                    }}
-                    onMouseEnter={(e) => showTooltip(e, labelWithCount)}
-                    onMouseLeave={hideTooltip}
-                    onFocus={(e) => showTooltip(e, labelWithCount)}
-                    onBlur={hideTooltip}
-                    aria-label={labelWithCount}
-                  >
-                    {Icon && <Icon />}
-                    {!isEffectiveCollapsed && <span style={{ flex: 1 }}>{item.label}</span>}
-                    {!isEffectiveCollapsed && count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
-                    {isEffectiveCollapsed && count > 0 && <span className="nav-badge-dot" />}
-                  </Link>
-                );
-              })}
+          {(['WORKSPACE', 'VẬN HÀNH', 'HỆ THỐNG'] as const).map((cat) => {
+            const catSections = menuSections.filter((s) =>
+              cat === 'WORKSPACE' ? !s.title : (SECTION_CATEGORY[s.title || ''] ?? 'HỆ THỐNG') === cat,
+            );
+            if (catSections.length === 0) return null;
+
+            return (
+              <div key={cat} className="nav-category-block">
+                {!isEffectiveCollapsed ? (
+                  <div className="nav-category">{cat}</div>
+                ) : (
+                  cat !== 'WORKSPACE' && <div className="nav-section-divider" />
+                )}
+
+                {catSections.map((section, idx) => {
+                  // Mục trực tiếp (không có tiêu đề nhóm, VD: Tổng quan)
+                  if (!section.title) {
+                    return section.items.map((item) => {
+                      const Icon = NAV_ICONS[item.icon];
+                      const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
+                      const labelWithCount = `${item.label}${count > 0 ? ` (${count})` : ''}`;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          prefetch={false}
+                          className="nav-item"
+                          data-active={isActive(item.href)}
+                          aria-current={isActive(item.href) ? 'page' : undefined}
+                          onClick={() => {
+                            if (pathname !== item.href) setPendingHref(item.href);
+                          }}
+                          onMouseEnter={(e) => showTooltip(e, labelWithCount)}
+                          onMouseLeave={hideTooltip}
+                          onFocus={(e) => showTooltip(e, labelWithCount)}
+                          onBlur={hideTooltip}
+                          aria-label={labelWithCount}
+                        >
+                          {Icon && <Icon />}
+                          {!isEffectiveCollapsed && <span style={{ flex: 1 }}>{item.label}</span>}
+                          {!isEffectiveCollapsed && count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
+                          {isEffectiveCollapsed && count > 0 && <span className="nav-badge-dot" />}
+                        </Link>
+                      );
+                    });
+                  }
+
+                  // Khi sidebar thu gọn icon-only: hiển thị từng icon mục con
+                  if (isEffectiveCollapsed) {
+                    return section.items.map((item) => {
+                      const Icon = NAV_ICONS[item.icon];
+                      const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
+                      const labelWithCount = `${item.label}${count > 0 ? ` (${count})` : ''}`;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          prefetch={false}
+                          className="nav-item"
+                          data-active={isActive(item.href)}
+                          aria-current={isActive(item.href) ? 'page' : undefined}
+                          onClick={() => {
+                            if (pathname !== item.href) setPendingHref(item.href);
+                          }}
+                          onMouseEnter={(e) => showTooltip(e, labelWithCount)}
+                          onMouseLeave={hideTooltip}
+                          onFocus={(e) => showTooltip(e, labelWithCount)}
+                          onBlur={hideTooltip}
+                          aria-label={labelWithCount}
+                        >
+                          {Icon && <Icon />}
+                          {count > 0 && <span className="nav-badge-dot" />}
+                        </Link>
+                      );
+                    });
+                  }
+
+                  // Nhóm có thể mở rộng kiểu FMP Worker: Icon + Tên nhóm + Chevron > / v -> Submenu thụt vào có đường kẻ dọc
+                  const GroupIcon = GROUP_ICONS[section.title] ?? Folder;
+                  const isOpen = expanded[section.title] ?? false;
+                  const hasActiveChild = section.items.some((item) => isActive(item.href));
+                  const groupBadgeCount = section.items.reduce(
+                    (sum, item) => sum + (item.badgeKey ? badges[item.badgeKey] ?? 0 : 0),
+                    0,
+                  );
+
+                  return (
+                    <div key={`${cat}-${section.title}-${idx}`} className="nav-group">
+                      <button
+                        type="button"
+                        className="nav-group-toggle"
+                        data-open={isOpen}
+                        data-has-active={hasActiveChild}
+                        aria-expanded={isOpen}
+                        aria-controls={`nav-group-${cat}-${idx}`}
+                        onClick={() =>
+                          setExpanded((previous) => ({ ...previous, [section.title!]: !previous[section.title!] }))
+                        }
+                      >
+                        <GroupIcon className="nav-group-icon" />
+                        <span className="nav-group-label">{section.title}</span>
+                        {!isOpen && groupBadgeCount > 0 && (
+                          <span className="nav-badge">{groupBadgeCount > 99 ? '99+' : groupBadgeCount}</span>
+                        )}
+                        <ChevronRight className="nav-group-chevron" />
+                      </button>
+
+                      {isOpen && (
+                        <div id={`nav-group-${cat}-${idx}`} className="nav-submenu">
+                          {section.items.map((item) => {
+                            const count = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0;
+                            const labelWithCount = `${item.label}${count > 0 ? ` (${count})` : ''}`;
+                            return (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                prefetch={false}
+                                className="nav-subitem"
+                                data-active={isActive(item.href)}
+                                aria-current={isActive(item.href) ? 'page' : undefined}
+                                onClick={() => {
+                                  if (pathname !== item.href) setPendingHref(item.href);
+                                }}
+                                aria-label={labelWithCount}
+                              >
+                                <span style={{ flex: 1 }}>{item.label}</span>
+                                {count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         <div className="sidebar-footer">
