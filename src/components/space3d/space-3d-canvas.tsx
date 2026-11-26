@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type {
+  Avatar3DConfig,
   Procedural3DPart,
   Product3DModelView,
   SpaceKind,
@@ -22,8 +23,6 @@ export interface TeleportTarget {
   nonce: number;
 }
 
-export type ChibiHairStyle = 'short' | 'bob' | 'spiky';
-
 interface Props {
   sceneKind: SpaceKind;
   widthM: number;
@@ -33,8 +32,7 @@ interface Props {
   placements: SpacePlacementView[];
   presences: SpacePresenceView[];
   playerName: string;
-  playerShirtColor: string;
-  playerHairStyle: ChibiHairStyle;
+  playerAvatar: Avatar3DConfig;
   nightMode: boolean;
   povMode: 'THIRD' | 'FIRST';
   editMode: boolean;
@@ -56,8 +54,8 @@ interface AnimatedAvatar {
   headGroup: THREE.Group;
 }
 
-/** Vẽ khuôn mặt Chibi sắc nét độ phân giải cao (mắt to có điểm sáng, lông mày, mũi, má hồng, miệng cười). */
-function createChibiFaceTexture(skinColor = '#ffe4c4'): THREE.CanvasTexture {
+/** Vẽ khuôn mặt Chibi lịch sự, thanh tú, thân thiện (tỷ lệ hài hòa, mắt trong có điểm sáng, lông mày gọn, mũi thanh, cười nhẹ). */
+function createPoliteFaceTexture(skinColor = '#fce2c4'): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
@@ -66,56 +64,87 @@ function createChibiFaceTexture(skinColor = '#ffe4c4'): THREE.CanvasTexture {
   ctx.fillStyle = skinColor;
   ctx.fillRect(0, 0, 512, 512);
 
-  // Khuôn mặt nằm ở trung tâm UV phía trước (x ~ 256, y ~ 260)
-  const drawEye = (cx: number) => {
-    // Lông mày cong mềm
-    ctx.strokeStyle = '#332218';
-    ctx.lineWidth = 7;
+  const drawEye = (cx: number, isLeft: boolean) => {
+    // Lông mày thanh lịch, gọn gàng
+    ctx.strokeStyle = '#3b2b20';
+    ctx.lineWidth = 5.5;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.arc(cx, 224, 24, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.moveTo(cx - 18, 224);
+    ctx.quadraticCurveTo(cx, 215, cx + 18, 223);
     ctx.stroke();
 
-    // Tròng mắt đen bóng hình oval
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.ellipse(cx, 256, 17, 22, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Đốm sáng trắng chính + phụ (tạo hồn Chibi)
+    // Lòng trắng mắt nhẹ giúp ánh nhìn chân thực hơn
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(cx - 6, 248, 6.5, 0, Math.PI * 2);
+    ctx.ellipse(cx, 254, 17, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tròng mắt nâu trầm ấm áp
+    ctx.fillStyle = '#1e293b';
+    ctx.beginPath();
+    ctx.ellipse(cx, 255, 11.5, 13.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Đốm sáng trắng tinh tế (catchlight)
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx - 4, 249, 4.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx + 5, 264, 3.2, 0, Math.PI * 2);
+    ctx.arc(cx + 4, 260, 2, 0, Math.PI * 2);
     ctx.fill();
+
+    // Đường mi trên sắc nét lịch sự
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 4.2;
+    ctx.beginPath();
+    ctx.arc(cx, 256, 17.5, Math.PI * 1.12, Math.PI * 1.88);
+    ctx.stroke();
+
+    // Nét đuôi mắt nhẹ
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    const outerX = isLeft ? cx - 16 : cx + 16;
+    const tipX = isLeft ? cx - 21 : cx + 21;
+    ctx.moveTo(outerX, 249);
+    ctx.lineTo(tipX, 246);
+    ctx.stroke();
   };
 
-  drawEye(212);
-  drawEye(300);
+  drawEye(212, true);
+  drawEye(300, false);
 
-  // Má hồng phấn mềm mại
-  ctx.fillStyle = 'rgba(244, 114, 182, 0.36)';
-  ctx.beginPath();
-  ctx.ellipse(184, 286, 22, 12, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(328, 286, 22, 12, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // Sắc ửng má rất nhẹ tạo nét tự nhiên
+  const blushGrad = (cx: number) => {
+    const g = ctx.createRadialGradient(cx, 282, 2, cx, 282, 20);
+    g.addColorStop(0, 'rgba(244, 114, 182, 0.22)');
+    g.addColorStop(1, 'rgba(244, 114, 182, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, 282, 20, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  blushGrad(186);
+  blushGrad(326);
 
-  // Mũi nhỏ dễ thương
-  ctx.fillStyle = '#e5b293';
-  ctx.beginPath();
-  ctx.arc(256, 276, 4.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Miệng cười thân thiện
-  ctx.strokeStyle = '#9a3412';
-  ctx.lineWidth = 5.5;
+  // Sống mũi thanh tú
+  ctx.strokeStyle = 'rgba(180, 120, 90, 0.45)';
+  ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(256, 288, 16, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.moveTo(256, 264);
+  ctx.lineTo(254, 276);
+  ctx.lineTo(259, 278);
+  ctx.stroke();
+
+  // Nụ cười lịch sự thân thiện
+  ctx.strokeStyle = '#b45340';
+  ctx.lineWidth = 4.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(240, 294);
+  ctx.quadraticCurveTo(256, 304, 272, 294);
   ctx.stroke();
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -153,186 +182,246 @@ function createBadgeSprite(text: string, bgColor = '#0f172a', textColor = '#ffff
   return sprite;
 }
 
-/** Dựng nhân vật Chibi 3D cao cấp (có mắt-mũi-má hồng-miệng, tóc nhiều lớp, áo có cổ, thẻ nhân viên, giày sneaker, có khớp đi bộ). */
+/** Dựng nhân vật 3D phong cách lịch sự, chuyên nghiệp (Vest / Sơ mi / Polo, 4 kiểu tóc, kính gọng mảnh, giày chỉn chu, khớp đi bộ). */
 function createChibiAvatar(opts: {
   name: string;
-  shirtColor: string;
-  hairStyle?: ChibiHairStyle;
-  hairColor?: string;
+  config: Avatar3DConfig;
   isSelf?: boolean;
-  isStaffRep?: boolean;
   isOnDuty?: boolean;
 }): AnimatedAvatar {
-  const { name, shirtColor, hairStyle = 'short', hairColor = '#1e1b18', isSelf = false, isStaffRep = false, isOnDuty = false } = opts;
+  const { name, config, isSelf = false, isOnDuty = false } = opts;
   const group = new THREE.Group();
-  const skinColor = '#ffe4c4';
+  const skinColor = config.skinTone || '#fce2c4';
+  const outfitColor = config.outfitColor || '#1e3a8a';
+  const pantsColor = config.pantsColor || '#1e293b';
+  const hairColor = config.hairColor || '#1c1917';
 
-  // Khớp chân trái / phải kèm giày sneaker trắng
+  // Khớp chân trái / phải với giày tây / sneaker lịch sự
   const makeLeg = (offsetX: number) => {
     const pivot = new THREE.Group();
-    pivot.position.set(offsetX, 0.42, 0);
+    pivot.position.set(offsetX, 0.44, 0);
 
     const pant = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.085, 0.075, 0.34, 12),
-      new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.65 }),
+      new THREE.CylinderGeometry(0.082, 0.072, 0.36, 14),
+      new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.6 }),
     );
-    pant.position.y = -0.17;
+    pant.position.y = -0.18;
     pant.castShadow = true;
     pivot.add(pant);
 
+    const shoeColor = config.outfitStyle === 'suit' ? '#1e293b' : '#ffffff';
     const shoe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.1, 0.24),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 }),
+      new THREE.BoxGeometry(0.15, 0.095, 0.24),
+      new THREE.MeshStandardMaterial({ color: shoeColor, roughness: config.outfitStyle === 'suit' ? 0.3 : 0.45 }),
     );
-    shoe.position.set(0, -0.37, 0.04);
+    shoe.position.set(0, -0.39, 0.04);
     shoe.castShadow = true;
     pivot.add(shoe);
-
-    const sole = new THREE.Mesh(
-      new THREE.BoxGeometry(0.165, 0.03, 0.245),
-      new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.7 }),
-    );
-    sole.position.set(0, -0.41, 0.04);
-    pivot.add(sole);
 
     return pivot;
   };
 
-  const leftLeg = makeLeg(-0.115);
-  const rightLeg = makeLeg(0.115);
+  const leftLeg = makeLeg(-0.11);
+  const rightLeg = makeLeg(0.11);
   group.add(leftLeg, rightLeg);
 
-  // Thân áo đồng phục có cổ bẻ trắng
+  // Thân trang phục (Vest / Sơ mi / Polo)
   const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.19, 0.23, 0.5, 16),
-    new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.5 }),
+    new THREE.CylinderGeometry(0.185, 0.22, 0.52, 18),
+    new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
   );
-  torso.position.y = 0.68;
+  torso.position.y = 0.7;
   torso.castShadow = true;
   group.add(torso);
 
-  // Cổ áo polo trắng
+  // Cổ áo sơ mi / polo trắng lịch sự
   const collar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.13, 0.16, 0.07, 14),
-    new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.45 }),
+    new THREE.CylinderGeometry(0.125, 0.155, 0.075, 14),
+    new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 }),
   );
-  collar.position.y = 0.94;
+  collar.position.y = 0.96;
   group.add(collar);
 
-  // Dây đeo thẻ nhân viên cho nhân viên đứng quầy
-  if (isStaffRep || isOnDuty) {
-    const lanyard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.14, 0.02),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 }),
+  if (config.outfitStyle === 'suit') {
+    // Áo sơ mi trắng lồng bên trong vest + cà vạt lịch lãm
+    const innerShirt = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.34, 0.04),
+      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.45 }),
     );
-    lanyard.position.set(0, 0.72, 0.21);
-    const badgeStripe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.082, 0.035, 0.022),
-      new THREE.MeshStandardMaterial({ color: '#2563eb' }),
+    innerShirt.position.set(0, 0.78, 0.185);
+    group.add(innerShirt);
+
+    const tie = new THREE.Mesh(
+      new THREE.BoxGeometry(0.048, 0.28, 0.025),
+      new THREE.MeshStandardMaterial({ color: outfitColor === '#1e3a8a' ? '#dc2626' : '#2563eb', roughness: 0.35 }),
     );
-    badgeStripe.position.set(0, 0.76, 0.212);
-    group.add(lanyard, badgeStripe);
+    tie.position.set(0, 0.76, 0.21);
+    group.add(tie);
+  } else if (config.outfitStyle === 'shirt') {
+    // Hàng nút áo sơ mi tinh tế
+    const placket = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.36, 0.02),
+      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.5 }),
+    );
+    placket.position.set(0, 0.74, 0.205);
+    group.add(placket);
   }
 
-  // Khớp tay trái / phải (có ống tay áo + bàn tay tròn)
+  // Thẻ tên công ty trên ngực khi đang trực
+  if (isOnDuty) {
+    const badgeCard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.075, 0.11, 0.02),
+      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 }),
+    );
+    badgeCard.position.set(0.09, 0.74, 0.205);
+    const badgeTop = new THREE.Mesh(
+      new THREE.BoxGeometry(0.077, 0.03, 0.022),
+      new THREE.MeshStandardMaterial({ color: '#2563eb' }),
+    );
+    badgeTop.position.set(0.09, 0.78, 0.207);
+    group.add(badgeCard, badgeTop);
+  }
+
+  // Khớp tay trái / phải
   const makeArm = (offsetX: number) => {
     const pivot = new THREE.Group();
-    pivot.position.set(offsetX, 0.86, 0);
+    pivot.position.set(offsetX, 0.88, 0);
 
+    const isLongSleeve = config.outfitStyle === 'suit' || config.outfitStyle === 'shirt';
     const sleeve = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.072, 0.068, 0.18, 12),
-      new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.5 }),
+      new THREE.CylinderGeometry(0.068, 0.06, isLongSleeve ? 0.33 : 0.18, 12),
+      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
     );
-    sleeve.position.y = -0.09;
+    sleeve.position.y = isLongSleeve ? -0.165 : -0.09;
     sleeve.castShadow = true;
     pivot.add(sleeve);
 
-    const forearm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.056, 0.052, 0.2, 12),
-      new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.55 }),
-    );
-    forearm.position.y = -0.25;
-    forearm.castShadow = true;
-    pivot.add(forearm);
+    if (!isLongSleeve) {
+      const forearm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.052, 0.048, 0.18, 12),
+        new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.52 }),
+      );
+      forearm.position.y = -0.26;
+      forearm.castShadow = true;
+      pivot.add(forearm);
+    } else {
+      const cuff = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.062, 0.062, 0.035, 12),
+        new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 }),
+      );
+      cuff.position.y = -0.33;
+      pivot.add(cuff);
+    }
 
     const hand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06, 10, 10),
-      new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.55 }),
+      new THREE.SphereGeometry(0.055, 12, 12),
+      new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.52 }),
     );
-    hand.position.y = -0.36;
+    hand.position.y = -0.37;
     pivot.add(hand);
 
     return pivot;
   };
 
-  const leftArm = makeArm(-0.25);
-  const rightArm = makeArm(0.25);
+  const leftArm = makeArm(-0.245);
+  const rightArm = makeArm(0.245);
   group.add(leftArm, rightArm);
 
-  // Đầu Chibi tỷ lệ dễ thương + Khuôn mặt vẽ sắc nét + Tai + Tóc nhiều lớp
+  // Đầu Chibi thanh lịch + Khuôn mặt vẽ nét + Tóc nhiều lớp + Kính mắt (tùy chọn)
   const headGroup = new THREE.Group();
-  headGroup.position.y = 1.24;
+  headGroup.position.y = 1.25;
 
-  const faceTex = createChibiFaceTexture(skinColor);
+  const faceTex = createPoliteFaceTexture(skinColor);
   const headMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.29, 24, 20),
-    new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.52 }),
+    new THREE.SphereGeometry(0.275, 28, 22),
+    new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.48 }),
   );
-  headMesh.scale.set(1.06, 0.98, 0.96);
-  // Xoay UV để tâm khuôn mặt hướng đúng về +Z
+  headMesh.scale.set(1.03, 1.0, 0.96);
   headMesh.rotation.y = -Math.PI / 2;
   headMesh.castShadow = true;
   headGroup.add(headMesh);
 
-  // Tai 2 bên
-  const earMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.55 });
-  const earGeo = new THREE.SphereGeometry(0.06, 10, 10);
+  // Tai 2 bên gọn gàng
+  const earMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.52 });
+  const earGeo = new THREE.SphereGeometry(0.052, 10, 10);
   const leftEar = new THREE.Mesh(earGeo, earMat);
-  leftEar.position.set(-0.29, -0.02, 0);
+  leftEar.position.set(-0.275, -0.02, 0);
   const rightEar = leftEar.clone();
-  rightEar.position.x = 0.29;
+  rightEar.position.x = 0.275;
   headGroup.add(leftEar, rightEar);
 
-  // Tóc 3D nhiều lớp
-  const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.62 });
+  // Tóc 3D nhiều lớp theo 4 phong cách
+  const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.58 });
   const hairCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.305, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.56),
+    new THREE.SphereGeometry(0.292, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.56),
     hairMat,
   );
-  hairCap.scale.set(1.07, 1.0, 0.99);
+  hairCap.scale.set(1.04, 1.01, 0.99);
   hairCap.position.y = 0.025;
   hairCap.castShadow = true;
   headGroup.add(hairCap);
 
-  // Mái trước tạo dáng Chibi
-  const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.11, 0.14), hairMat);
-  bangs.position.set(0, 0.17, 0.21);
-  bangs.rotation.x = 0.28;
-  headGroup.add(bangs);
-
-  if (hairStyle === 'bob') {
-    for (const sx of [-0.26, 0.26]) {
-      const sideLock = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.34, 10), hairMat);
+  if (config.hairStyle === 'slick') {
+    // Rẽ ngôi lệch lịch lãm
+    const wave = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.095, 0.14), hairMat);
+    wave.position.set(0.04, 0.19, 0.19);
+    wave.rotation.set(0.2, 0, -0.14);
+    headGroup.add(wave);
+  } else if (config.hairStyle === 'bob') {
+    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.13), hairMat);
+    bangs.position.set(0, 0.17, 0.2);
+    bangs.rotation.x = 0.25;
+    headGroup.add(bangs);
+    for (const sx of [-0.245, 0.245]) {
+      const sideLock = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.082, 0.34, 12), hairMat);
       sideLock.position.set(sx, -0.05, -0.02);
       headGroup.add(sideLock);
     }
-    const backHair = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.34, 0.18), hairMat);
-    backHair.position.set(0, -0.05, -0.22);
+    const backHair = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.34, 0.17), hairMat);
+    backHair.position.set(0, -0.05, -0.21);
     headGroup.add(backHair);
-  } else if (hairStyle === 'spiky') {
-    for (let i = -1; i <= 1; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 6), hairMat);
-      spike.position.set(i * 0.1, 0.34, 0.04);
-      spike.rotation.z = -i * 0.22;
-      headGroup.add(spike);
+  } else if (config.hairStyle === 'ponytail') {
+    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.12), hairMat);
+    bangs.position.set(0, 0.175, 0.2);
+    bangs.rotation.x = 0.22;
+    const tieBand = new THREE.Mesh(
+      new THREE.TorusGeometry(0.055, 0.016, 8, 16),
+      new THREE.MeshStandardMaterial({ color: '#2563eb' }),
+    );
+    tieBand.position.set(0, 0.06, -0.29);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.34, 10), hairMat);
+    tail.position.set(0, -0.08, -0.34);
+    tail.rotation.x = -0.35;
+    headGroup.add(bangs, tieBand, tail);
+  } else {
+    // short tự nhiên
+    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.13), hairMat);
+    bangs.position.set(0, 0.175, 0.2);
+    bangs.rotation.x = 0.24;
+    headGroup.add(bangs);
+  }
+
+  // Kính mắt gọng mảnh lịch sự (nếu bật)
+  if (config.hasGlasses) {
+    const frameMat = new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.75, roughness: 0.2 });
+    const lensMat = new THREE.MeshStandardMaterial({ color: '#e0f2fe', transparent: true, opacity: 0.28, roughness: 0.08 });
+    for (const gx of [-0.088, 0.088]) {
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.056, 0.008, 8, 20), frameMat);
+      rim.position.set(gx, 0.015, 0.268);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.052, 16), lensMat);
+      lens.position.set(gx, 0.015, 0.267);
+      headGroup.add(rim, lens);
     }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.01, 0.01), frameMat);
+    bridge.position.set(0, 0.02, 0.27);
+    headGroup.add(bridge);
   }
 
   group.add(headGroup);
 
-  // Nhãn tên nổi phía trên đầu
-  const badgeLabel = isOnDuty ? `● Đang trực · ${name}` : isStaffRep ? `Tư vấn · ${name}` : name;
-  const badgeBg = isSelf ? '#2563eb' : isOnDuty ? '#059669' : isStaffRep ? '#0f172a' : '#334155';
+  // Nhãn tên nổi
+  const badgeLabel = isOnDuty ? `● Đang trực · ${name}` : name;
+  const badgeBg = isSelf ? '#2563eb' : isOnDuty ? '#059669' : '#0f172a';
   const badge = createBadgeSprite(badgeLabel, badgeBg);
   badge.position.y = 1.84;
   group.add(badge);
@@ -679,27 +768,85 @@ function createExhibitionHallEnvironment(
     }
   }
 
-  // 3. Hệ cột thép kiến trúc & giàn mái Truss công nghiệp + Đèn High-Bay LED
-  const steelMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', metalness: 0.55, roughness: 0.35 });
+  // 3. Hệ cột thép kiến trúc & MÁI XÉO TRUNG TÂM HỘI NGHỊ (Pitched Gable Roof + Skylight + Steel Trusses)
+  const steelMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.58, roughness: 0.34 });
+  const roofMetalMat = new THREE.MeshStandardMaterial({ color: '#334155', metalness: 0.45, roughness: 0.42 });
+  const ceilingSoffitMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.75 });
+  const skylightMat = new THREE.MeshStandardMaterial({
+    color: '#e0f2fe',
+    emissive: '#bae6fd',
+    emissiveIntensity: 0.45,
+    transparent: true,
+    opacity: 0.72,
+    roughness: 0.1,
+  });
   const ledLightMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-  const zPositions = [-halfD + 2, -halfD * 0.45, 0, halfD * 0.45, halfD - 2];
 
+  const eaveH = 6.4;
+  const ridgeH = 9.8;
+  const roofOverhang = 1.8;
+  const slopeSpanX = halfW + roofOverhang;
+  const slopeRiseY = ridgeH - eaveH;
+  const slopeLen = Math.hypot(slopeSpanX, slopeRiseY);
+  const pitchAngle = Math.atan2(slopeRiseY, slopeSpanX);
+  const hallLen = halfD * 2 + 2.4;
+
+  // Hai tấm mái xéo kiến trúc đối xứng (mặt ngoài tôn seam xám đậm + trần nội thất sáng mịn + khe giếng trời ở đỉnh mái)
+  for (const side of [-1, 1] as const) {
+    const roofGroup = new THREE.Group();
+    const outerSheet = new THREE.Mesh(new THREE.BoxGeometry(slopeLen - 0.9, 0.14, hallLen), roofMetalMat);
+    outerSheet.position.y = 0.08;
+    outerSheet.castShadow = true;
+    const innerCeiling = new THREE.Mesh(new THREE.BoxGeometry(slopeLen - 0.95, 0.06, hallLen - 0.2), ceilingSoffitMat);
+    innerCeiling.position.y = -0.02;
+    // Viền nhôm diềm mái sắc nét
+    const fascia = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.34, hallLen + 0.1), steelMat);
+    fascia.position.set(side * (slopeLen * 0.5 - 0.45), -0.02, 0);
+
+    roofGroup.add(outerSheet, innerCeiling, fascia);
+    roofGroup.position.set(
+      side * (slopeSpanX * 0.5 + 0.4),
+      eaveH + slopeRiseY * 0.5 - 0.05,
+      0,
+    );
+    roofGroup.rotation.z = -side * pitchAngle;
+    env.add(roofGroup);
+  }
+
+  // Giếng trời kính dọc đỉnh mái xéo (Skylight Ridge)
+  const skylight = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.12, hallLen - 0.6), skylightMat);
+  skylight.position.set(0, ridgeH + 0.04, 0);
+  env.add(skylight);
+
+  // Hệ cột thép + vì kèo giàn mái xéo (Gable Steel Trusses) dọc theo chiều dài hội trường
+  const zPositions = [-halfD + 2, -halfD * 0.45, 0, halfD * 0.45, halfD - 2];
   for (const pz of zPositions) {
     for (const px of [-halfW, halfW]) {
-      const col = new THREE.Mesh(new THREE.BoxGeometry(0.42, hallH, 0.42), steelMat);
-      col.position.set(px, hallH * 0.5, pz);
+      const col = new THREE.Mesh(new THREE.BoxGeometry(0.42, eaveH, 0.42), steelMat);
+      col.position.set(px, eaveH * 0.5, pz);
       col.castShadow = true;
       env.add(col);
     }
-    // Thanh giàn thép bắc ngang mái
-    const truss = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 + 0.5, 0.32, 0.24), steelMat);
-    truss.position.set(0, hallH, pz);
-    env.add(truss);
+    // Thanh giằng ngang dưới (Bottom Chord)
+    const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2, 0.22, 0.18), steelMat);
+    tieBeam.position.set(0, eaveH - 0.1, pz);
+    env.add(tieBeam);
 
-    // Dàn đèn High-Bay LED trên giàn mái
-    for (const lx of [-8, 0, 8]) {
-      const fixture = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.36), ledLightMat);
-      fixture.position.set(lx, hallH - 0.2, pz);
+    // 2 thanh kèo mái xéo trái/phải + thanh chống đứng trung tâm (King Post)
+    for (const side of [-1, 1] as const) {
+      const rafter = new THREE.Mesh(new THREE.BoxGeometry(slopeLen - 1.2, 0.2, 0.18), steelMat);
+      rafter.position.set(side * (halfW * 0.5), eaveH + slopeRiseY * 0.46, pz);
+      rafter.rotation.z = -side * pitchAngle;
+      env.add(rafter);
+    }
+    const kingPost = new THREE.Mesh(new THREE.BoxGeometry(0.18, slopeRiseY - 0.3, 0.18), steelMat);
+    kingPost.position.set(0, eaveH + slopeRiseY * 0.5, pz);
+    env.add(kingPost);
+
+    // Dàn đèn High-Bay LED treo dưới giàn mái
+    for (const lx of [-8.5, 0, 8.5]) {
+      const fixture = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 0.36), ledLightMat);
+      fixture.position.set(lx, eaveH - 0.26, pz);
       env.add(fixture);
     }
   }
@@ -942,8 +1089,7 @@ export function Space3DCanvas({
   placements,
   presences,
   playerName,
-  playerShirtColor,
-  playerHairStyle,
+  playerAvatar,
   nightMode,
   povMode,
   editMode,
@@ -1087,8 +1233,7 @@ export function Space3DCanvas({
     // Nhân vật Chibi của người dùng
     const player = createChibiAvatar({
       name: playerName || 'Bạn',
-      shirtColor: playerShirtColor || '#2563eb',
-      hairStyle: playerHairStyle,
+      config: playerAvatar,
       isSelf: true,
     });
     player.group.position.set(0, 0, 11);
@@ -1256,6 +1401,7 @@ export function Space3DCanvas({
       if (keys.has('KeyA') || keys.has('ArrowLeft')) move.x -= 1;
       if (keys.has('KeyD') || keys.has('ArrowRight')) move.x += 1;
 
+      const currentPlayer = sceneObjRef.current?.player ?? player;
       if (move.lengthSq() > 0) {
         move.normalize();
         camera.getWorldDirection(forward);
@@ -1266,19 +1412,19 @@ export function Space3DCanvas({
         const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 9.5 : 5.4;
         const dx = (forward.x * move.z + right.x * move.x) * speed * dt;
         const dz = (forward.z * move.z + right.z * move.x) * speed * dt;
-        const nextX = THREE.MathUtils.clamp(player.group.position.x + dx, -widthM * 0.5, widthM * 0.5);
-        const nextZ = THREE.MathUtils.clamp(player.group.position.z + dz, -depthM * 0.5, depthM * 0.5);
-        actualDx = nextX - player.group.position.x;
-        actualDz = nextZ - player.group.position.z;
-        player.group.position.x = nextX;
-        player.group.position.z = nextZ;
-        player.group.rotation.y = Math.atan2(actualDx, actualDz);
+        const nextX = THREE.MathUtils.clamp(currentPlayer.group.position.x + dx, -widthM * 0.5, widthM * 0.5);
+        const nextZ = THREE.MathUtils.clamp(currentPlayer.group.position.z + dz, -depthM * 0.5, depthM * 0.5);
+        actualDx = nextX - currentPlayer.group.position.x;
+        actualDz = nextZ - currentPlayer.group.position.z;
+        currentPlayer.group.position.x = nextX;
+        currentPlayer.group.position.z = nextZ;
+        currentPlayer.group.rotation.y = Math.atan2(actualDx, actualDz);
         isMoving = true;
       } else if (sceneObjRef.current?.walkTarget) {
         // B. Tự động đi bộ tới điểm Click-to-Walk / Gian hàng
         const target = sceneObjRef.current.walkTarget;
-        const diffX = target.x - player.group.position.x;
-        const diffZ = target.z - player.group.position.z;
+        const diffX = target.x - currentPlayer.group.position.x;
+        const diffZ = target.z - currentPlayer.group.position.z;
         const dist = Math.hypot(diffX, diffZ);
         if (dist < 0.25) {
           sceneObjRef.current.walkTarget = null;
@@ -1287,9 +1433,9 @@ export function Space3DCanvas({
           const step = Math.min(dist, 6.2 * dt);
           actualDx = (diffX / dist) * step;
           actualDz = (diffZ / dist) * step;
-          player.group.position.x += actualDx;
-          player.group.position.z += actualDz;
-          player.group.rotation.y = Math.atan2(actualDx, actualDz);
+          currentPlayer.group.position.x += actualDx;
+          currentPlayer.group.position.z += actualDz;
+          currentPlayer.group.rotation.y = Math.atan2(actualDx, actualDz);
           isMoving = true;
         }
       }
@@ -1300,47 +1446,43 @@ export function Space3DCanvas({
         orbit.target.x += actualDx;
         orbit.target.z += actualDz;
 
-        // Hoạt ảnh bước chân & đánh tay Chibi mượt mà
         walkTime += dt * 11;
         const swing = Math.sin(walkTime) * 0.58;
-        player.leftLeg.rotation.x = swing;
-        player.rightLeg.rotation.x = -swing;
-        player.leftArm.rotation.x = -swing * 0.8;
-        player.rightArm.rotation.x = swing * 0.8;
-        player.group.position.y = Math.abs(Math.sin(walkTime)) * 0.06;
+        currentPlayer.leftLeg.rotation.x = swing;
+        currentPlayer.rightLeg.rotation.x = -swing;
+        currentPlayer.leftArm.rotation.x = -swing * 0.8;
+        currentPlayer.rightArm.rotation.x = swing * 0.8;
+        currentPlayer.group.position.y = Math.abs(Math.sin(walkTime)) * 0.055;
       } else {
-        // Đứng yên: trả tay chân về tự nhiên + nhịp thở nhẹ
-        player.leftLeg.rotation.x *= 0.82;
-        player.rightLeg.rotation.x *= 0.82;
-        player.leftArm.rotation.x *= 0.82;
-        player.rightArm.rotation.x *= 0.82;
-        player.group.position.y = 0;
-        player.headGroup.position.y = 1.24 + Math.sin(totalTime * 2.2) * 0.012;
+        currentPlayer.leftLeg.rotation.x *= 0.82;
+        currentPlayer.rightLeg.rotation.x *= 0.82;
+        currentPlayer.leftArm.rotation.x *= 0.82;
+        currentPlayer.rightArm.rotation.x *= 0.82;
+        currentPlayer.group.position.y = 0;
+        currentPlayer.headGroup.position.y = 1.25 + Math.sin(totalTime * 2.2) * 0.01;
       }
 
-      // Hiệu ứng vòng đích Click-to-Walk nhấp nháy nhẹ
       if (walkRing.visible) {
         const pulse = 1 + Math.sin(totalTime * 6) * 0.14;
         walkRing.scale.set(pulse, pulse, 1);
       }
 
-      // Hoạt ảnh nhẹ cho các nhân viên đứng quầy (gật đầu / vẫy tay chào thân thiện)
       for (let i = 0; i < (sceneObjRef.current?.staffAvatars.length ?? 0); i++) {
         const stAv = sceneObjRef.current!.staffAvatars[i];
-        stAv.headGroup.position.y = 1.24 + Math.sin(totalTime * 2 + i) * 0.012;
-        stAv.rightArm.rotation.z = -0.15 - Math.max(0, Math.sin(totalTime * 1.4 + i * 2.3) - 0.65) * 1.8;
+        stAv.headGroup.position.y = 1.25 + Math.sin(totalTime * 2 + i) * 0.01;
+        stAv.rightArm.rotation.z = -0.15 - Math.max(0, Math.sin(totalTime * 1.4 + i * 2.3) - 0.65) * 1.6;
       }
 
       if (stateRef.current.povMode === 'FIRST') {
-        player.group.visible = false;
-        camera.position.lerp(new THREE.Vector3(player.group.position.x, 1.55, player.group.position.z), 0.25);
+        currentPlayer.group.visible = false;
+        camera.position.lerp(new THREE.Vector3(currentPlayer.group.position.x, 1.55, currentPlayer.group.position.z), 0.25);
         orbit.target.set(
-          player.group.position.x + Math.sin(player.group.rotation.y) * 2.5,
+          currentPlayer.group.position.x + Math.sin(currentPlayer.group.rotation.y) * 2.5,
           1.45,
-          player.group.position.z + Math.cos(player.group.rotation.y) * 2.5,
+          currentPlayer.group.position.z + Math.cos(currentPlayer.group.rotation.y) * 2.5,
         );
       } else {
-        player.group.visible = true;
+        currentPlayer.group.visible = true;
       }
 
       orbit.update();
@@ -1351,7 +1493,7 @@ export function Space3DCanvas({
         let bestDist = 4.2;
         let nearObj: THREE.Group | null = null;
         for (const [id, mesh] of placementMeshes.entries()) {
-          const dist = Math.hypot(mesh.position.x - player.group.position.x, mesh.position.z - player.group.position.z);
+          const dist = Math.hypot(mesh.position.x - currentPlayer.group.position.x, mesh.position.z - currentPlayer.group.position.z);
           if (dist < bestDist) {
             bestDist = dist;
             nearId = id;
@@ -1368,7 +1510,7 @@ export function Space3DCanvas({
         let zoneName = sceneKind === 'WAREHOUSE' ? 'Khu vực Kho hàng' : 'Sảnh Triển Lãm Trung Tâm';
         let bestZoneDist = 7.5;
         for (const st of stateRef.current.structures) {
-          const dist = Math.hypot(st.posX - player.group.position.x, st.posZ - player.group.position.z);
+          const dist = Math.hypot(st.posX - currentPlayer.group.position.x, st.posZ - currentPlayer.group.position.z);
           if (dist < bestZoneDist) {
             bestZoneDist = dist;
             zoneName = st.label;
@@ -1377,7 +1519,7 @@ export function Space3DCanvas({
         stateRef.current.onNearbyChange({
           zoneName,
           nearPlacementId: nearId,
-          playerPos: { x: player.group.position.x, z: player.group.position.z, rotY: player.group.rotation.y },
+          playerPos: { x: currentPlayer.group.position.x, z: currentPlayer.group.position.z, rotY: currentPlayer.group.rotation.y },
         });
       }
 
@@ -1400,7 +1542,26 @@ export function Space3DCanvas({
       }
       sceneObjRef.current = null;
     };
-  }, [sceneKind, widthM, depthM, branding.companyName, branding.logoUrl, playerName, playerShirtColor, playerHairStyle]);
+  }, [sceneKind, widthM, depthM, branding.companyName, branding.logoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cập nhật nóng diện mạo nhân vật Chibi ngay tại chỗ (không reload scene hay nhảy camera)
+  const avatarSig = `${playerName}|${playerAvatar.outfitStyle}|${playerAvatar.outfitColor}|${playerAvatar.pantsColor}|${playerAvatar.hairStyle}|${playerAvatar.hairColor}|${playerAvatar.skinTone}|${playerAvatar.hasGlasses}`;
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj) return;
+    const oldPos = obj.player.group.position.clone();
+    const oldRotY = obj.player.group.rotation.y;
+    obj.scene.remove(obj.player.group);
+    const nextPlayer = createChibiAvatar({
+      name: playerName || 'Bạn',
+      config: playerAvatar,
+      isSelf: true,
+    });
+    nextPlayer.group.position.copy(oldPos);
+    nextPlayer.group.rotation.y = oldRotY;
+    obj.scene.add(nextPlayer.group);
+    obj.player = nextPlayer;
+  }, [avatarSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const obj = sceneObjRef.current;
@@ -1447,15 +1608,10 @@ export function Space3DCanvas({
     if (!obj) return;
     obj.presenceGroup.clear();
     obj.staffAvatars.length = 0;
-    const hairStyles: ChibiHairStyle[] = ['short', 'bob', 'spiky'];
-    const hairColors = ['#1e1b18', '#451a03', '#27272a', '#713f12'];
-    presences.forEach((pr, idx) => {
+    presences.forEach((pr) => {
       const av = createChibiAvatar({
         name: pr.employeeName,
-        shirtColor: pr.status === 'ON_DUTY' ? '#059669' : '#1d4ed8',
-        hairStyle: hairStyles[idx % hairStyles.length],
-        hairColor: hairColors[idx % hairColors.length],
-        isStaffRep: true,
+        config: pr.avatar,
         isOnDuty: pr.status === 'ON_DUTY',
       });
       av.group.position.set(pr.posX, 0, pr.posZ);

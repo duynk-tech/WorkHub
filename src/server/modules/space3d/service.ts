@@ -5,6 +5,7 @@ import { getAppBranding } from '@/server/modules/settings/branding';
 import { getSettingsByKeys } from '@/server/modules/settings/service';
 import {
   defaultModel3D,
+  normalizeAvatar3DConfig,
   type Procedural3DPart,
   type Product3DModelView,
   type Product3DType,
@@ -260,7 +261,7 @@ export async function loadSpace3DData(
     allScenes[0];
 
   const activeSince = new Date(Date.now() - 8 * 60 * 60 * 1000);
-  const [placementRows, presenceRows, catalogRows] = await Promise.all([
+  const [placementRows, presenceRows, catalogRows, myAvatarRow] = await Promise.all([
     prisma.spacePlacement.findMany({
       where: {
         sceneId: activeSceneRow.id,
@@ -307,6 +308,9 @@ export async function loadSpace3DData(
           },
         })
       : Promise.resolve([]),
+    ctx
+      ? prisma.spaceAvatarConfig.findUnique({ where: { employeeId: ctx.employeeId } })
+      : Promise.resolve(null),
   ]);
 
   const parsedStructures = parseStructures(activeSceneRow.structuresJson);
@@ -322,6 +326,7 @@ export async function loadSpace3DData(
     posZ: p.posZ,
     rotY: p.rotY,
     status: p.status,
+    avatar: normalizeAvatar3DConfig(p.avatarJson),
   }));
 
   const placements: SpacePlacementView[] = placementRows.map((p) => {
@@ -385,6 +390,7 @@ export async function loadSpace3DData(
           departmentName: ctx.departmentName,
           isOnDuty: Boolean(myPresence),
           dutyStation: myPresence?.stationLabel ?? null,
+          avatar: normalizeAvatar3DConfig(myAvatarRow?.configJson),
         }
       : null,
     branding: {

@@ -6,24 +6,27 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Eye, Sun, Moon, Map as MapIcon, Package, Building2, Wrench, Sparkles, Upload,
-  Save, RotateCw, Move, Trash2, Plus, X, ArrowLeft, UserCheck, LogIn, Search, Compass,
+  Save, RotateCw, Move, Trash2, Plus, X, ArrowLeft, UserCheck, LogIn, Search, Compass, Shirt,
 } from 'lucide-react';
-import type {
-  Procedural3DPart,
-  Product3DModelView,
-  SpaceCatalogItem,
-  SpacePayload,
-  SpacePlacementView,
-  SpaceStructure,
+import {
+  DEFAULT_AVATAR_3D_CONFIG,
+  synthesizeProcedural3D,
+  type Avatar3DConfig,
+  type Procedural3DPart,
+  type Product3DModelView,
+  type SpaceCatalogItem,
+  type SpacePayload,
+  type SpacePlacementView,
+  type SpaceStructure,
 } from '@/lib/space-3d-types';
-import { synthesizeProcedural3D } from '@/lib/space-3d-types';
 import {
   generateProduct3DAction,
+  saveMyAvatar3DAction,
   saveProduct3DModelAction,
   saveSpaceSceneLayoutAction,
   toggleStaffDutyAction,
 } from '@/server/modules/space3d/actions';
-import type { ChibiHairStyle, TeleportTarget } from './space-3d-canvas';
+import type { TeleportTarget } from './space-3d-canvas';
 
 const Space3DCanvas = dynamic(
   () => import('./space-3d-canvas').then((m) => m.Space3DCanvas),
@@ -45,13 +48,31 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  // Guest entry overlay + Chibi avatar customizer
+  // Guest entry overlay + Persistent Staff Avatar customizer
   const [entered, setEntered] = useState(data.isStaff);
   const [guestName, setGuestName] = useState('Khách tham quan');
-  const [shirtColor, setShirtColor] = useState('#2563eb');
-  const [hairStyle, setHairStyle] = useState<ChibiHairStyle>('short');
+  const [avatarConfig, setAvatarConfig] = useState<Avatar3DConfig>(
+    data.currentUser?.avatar ?? { ...DEFAULT_AVATAR_3D_CONFIG },
+  );
+  const [avatarPanelOpen, setAvatarPanelOpen] = useState(false);
   const [activeBoothId, setActiveBoothId] = useState<string | null>(null);
   const playerName = data.currentUser?.fullName || guestName.trim() || 'Khách tham quan';
+
+  const handleSaveMyAvatar = () => {
+    if (!data.isStaff) {
+      setAvatarPanelOpen(false);
+      showToast(true, 'Đã áp dụng phong cách nhân vật');
+      return;
+    }
+    startTransition(async () => {
+      const res = await saveMyAvatar3DAction(avatarConfig);
+      showToast(res.ok, res.message);
+      if (res.ok) {
+        setAvatarPanelOpen(false);
+        router.refresh();
+      }
+    });
+  };
 
   // HUD & Camera state
   const [nightMode, setNightMode] = useState(false);
@@ -414,8 +435,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         placements={placements}
         presences={data.presences}
         playerName={playerName}
-        playerShirtColor={shirtColor}
-        playerHairStyle={hairStyle}
+        playerAvatar={avatarConfig}
         nightMode={nightMode}
         povMode={povMode}
         editMode={editMode}
@@ -510,16 +530,40 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ fontSize: 12, color: '#cbd5e1' }}>Màu áo Chibi:</span>
+                <span style={{ fontSize: 12, color: '#cbd5e1' }}>Trang phục:</span>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  {([
+                    { key: 'suit', label: 'Vest' },
+                    { key: 'shirt', label: 'Sơ mi' },
+                    { key: 'polo', label: 'Polo' },
+                  ] as const).map((o) => (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => setAvatarConfig((a) => ({ ...a, outfitStyle: o.key }))}
+                      style={{
+                        padding: '4px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        background: avatarConfig.outfitStyle === o.key ? '#2563eb' : 'rgba(255,255,255,0.08)',
+                        color: '#ffffff',
+                      }}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#cbd5e1' }}>Màu áo:</span>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {['#2563eb', '#0891b2', '#059669', '#ea580c', '#db2777', '#7c3aed'].map((c) => (
+                  {['#1e3a8a', '#2563eb', '#0f766e', '#334155', '#991b1b', '#7c3aed'].map((c) => (
                     <button
                       key={c}
                       type="button"
-                      onClick={() => setShirtColor(c)}
+                      onClick={() => setAvatarConfig((a) => ({ ...a, outfitColor: c }))}
                       style={{
                         width: 24, height: 24, borderRadius: 99, background: c, cursor: 'pointer',
-                        border: shirtColor === c ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.25)',
+                        border: avatarConfig.outfitColor === c ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.25)',
                       }}
                       aria-label={`Chọn màu áo ${c}`}
                     />
@@ -528,20 +572,21 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#cbd5e1' }}>Kiểu tóc:</span>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 5 }}>
                   {([
+                    { key: 'slick', label: 'Rẽ ngôi' },
                     { key: 'short', label: 'Ngắn' },
-                    { key: 'bob', label: 'Tóc Bob' },
-                    { key: 'spiky', label: 'Cá tính' },
+                    { key: 'bob', label: 'Bob' },
+                    { key: 'ponytail', label: 'Đuôi ngựa' },
                   ] as const).map((h) => (
                     <button
                       key={h.key}
                       type="button"
-                      onClick={() => setHairStyle(h.key)}
+                      onClick={() => setAvatarConfig((a) => ({ ...a, hairStyle: h.key }))}
                       style={{
-                        padding: '4px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                        padding: '4px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer',
                         border: '1px solid rgba(255,255,255,0.2)',
-                        background: hairStyle === h.key ? '#2563eb' : 'rgba(255,255,255,0.08)',
+                        background: avatarConfig.hairStyle === h.key ? '#2563eb' : 'rgba(255,255,255,0.08)',
                         color: '#ffffff',
                       }}
                     >
@@ -652,6 +697,24 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, pointerEvents: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setAvatarPanelOpen((v) => !v)}
+            style={{
+              ...glassStyle,
+              padding: '7px 12px',
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: avatarPanelOpen ? '#2563eb' : glassStyle.background,
+            }}
+          >
+            <Shirt size={14} /> Diện mạo
+          </button>
           {data.isStaff && (
             <button
               type="button"
@@ -738,6 +801,179 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           Click sàn / gian hàng để tự đi tới · WASD · Kéo xoay góc nhìn
         </div>
       </div>
+
+      {/* Bảng Tùy chỉnh Diện mạo & Phong cách nhân vật (xem trực tiếp 3D + Lưu DB cho nhân viên) */}
+      {avatarPanelOpen && (
+        <div
+          style={{
+            ...glassStyle,
+            position: 'fixed',
+            top: 64,
+            right: 14,
+            zIndex: 35,
+            width: 310,
+            maxHeight: '76vh',
+            overflowY: 'auto',
+            borderRadius: 16,
+            padding: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 10.5, color: '#60a5fa', fontWeight: 700 }}>PHONG CÁCH CÁ NHÂN</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>Tùy chỉnh diện mạo 3D</div>
+            </div>
+            <button type="button" onClick={() => setAvatarPanelOpen(false)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Kiểu trang phục</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+              {([
+                { key: 'suit', label: 'Vest công sở' },
+                { key: 'shirt', label: 'Sơ mi' },
+                { key: 'polo', label: 'Áo Polo' },
+              ] as const).map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => setAvatarConfig((a) => ({ ...a, outfitStyle: o.key }))}
+                  style={{
+                    padding: '6px 6px', borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: avatarConfig.outfitStyle === o.key ? '#2563eb' : 'rgba(255,255,255,0.07)',
+                    color: '#ffffff',
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Màu trang phục</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {['#1e3a8a', '#2563eb', '#0f766e', '#059669', '#334155', '#991b1b', '#7c3aed', '#f8fafc'].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setAvatarConfig((a) => ({ ...a, outfitColor: c }))}
+                  style={{
+                    width: 26, height: 26, borderRadius: 99, background: c, cursor: 'pointer',
+                    border: avatarConfig.outfitColor === c ? '2.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.3)',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Màu quần</span>
+            <div style={{ display: 'flex', gap: 7 }}>
+              {['#0f172a', '#334155', '#1e3a8a', '#d6ccc2'].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setAvatarConfig((a) => ({ ...a, pantsColor: c }))}
+                  style={{
+                    width: 26, height: 26, borderRadius: 99, background: c, cursor: 'pointer',
+                    border: avatarConfig.pantsColor === c ? '2.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.3)',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Kiểu tóc</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {([
+                { key: 'slick', label: 'Rẽ ngôi lịch sự' },
+                { key: 'short', label: 'Ngắn hiện đại' },
+                { key: 'bob', label: 'Tóc Bob' },
+                { key: 'ponytail', label: 'Đuôi ngựa' },
+              ] as const).map((h) => (
+                <button
+                  key={h.key}
+                  type="button"
+                  onClick={() => setAvatarConfig((a) => ({ ...a, hairStyle: h.key }))}
+                  style={{
+                    padding: '6px 8px', borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: avatarConfig.hairStyle === h.key ? '#2563eb' : 'rgba(255,255,255,0.07)',
+                    color: '#ffffff',
+                  }}
+                >
+                  {h.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Màu tóc</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['#1c1917', '#451a03', '#713f12', '#475569'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setAvatarConfig((a) => ({ ...a, hairColor: c }))}
+                    style={{
+                      width: 24, height: 24, borderRadius: 99, background: c, cursor: 'pointer',
+                      border: avatarConfig.hairColor === c ? '2.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.3)',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Tông da</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['#fde6cd', '#fce2c4', '#ecc39b'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setAvatarConfig((a) => ({ ...a, skinTone: c }))}
+                    style={{
+                      width: 24, height: 24, borderRadius: 99, background: c, cursor: 'pointer',
+                      border: avatarConfig.skinTone === c ? '2.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.3)',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: '#e2e8f0', cursor: 'pointer', padding: '6px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)' }}>
+            <span>Đeo kính mắt gọng mảnh</span>
+            <input
+              type="checkbox"
+              checked={avatarConfig.hasGlasses}
+              onChange={(e) => setAvatarConfig((a) => ({ ...a, hasGlasses: e.target.checked }))}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={handleSaveMyAvatar}
+            disabled={pending}
+            style={{
+              width: '100%', padding: '9px 14px', borderRadius: 10, border: 0, cursor: 'pointer',
+              background: '#16a34a', color: '#ffffff', fontSize: 13, fontWeight: 700,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            <Save size={14} /> {pending ? 'Đang lưu…' : data.isStaff ? 'Lưu phong cách của tôi' : 'Áp dụng diện mạo'}
+          </button>
+        </div>
+      )}
 
       {/* Thẻ thông tin nhanh khi click vào Gian hàng / Phòng ban */}
       {activeBoothId && (() => {

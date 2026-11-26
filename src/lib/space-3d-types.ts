@@ -1,5 +1,49 @@
 export type SpaceKind = 'SHOWROOM' | 'WAREHOUSE';
 export type Product3DType = 'BOX_PRESET' | 'PROCEDURAL_JSON' | 'GLB';
+export type AvatarOutfitStyle = 'suit' | 'shirt' | 'polo';
+export type AvatarHairStyle = 'slick' | 'short' | 'bob' | 'ponytail';
+
+export interface Avatar3DConfig {
+  outfitStyle: AvatarOutfitStyle;
+  outfitColor: string;
+  pantsColor: string;
+  hairStyle: AvatarHairStyle;
+  hairColor: string;
+  skinTone: string;
+  hasGlasses: boolean;
+}
+
+export const DEFAULT_AVATAR_3D_CONFIG: Avatar3DConfig = {
+  outfitStyle: 'suit',
+  outfitColor: '#1e3a8a',
+  pantsColor: '#1e293b',
+  hairStyle: 'slick',
+  hairColor: '#1c1917',
+  skinTone: '#fce2c4',
+  hasGlasses: false,
+};
+
+export function normalizeAvatar3DConfig(raw: unknown): Avatar3DConfig {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_AVATAR_3D_CONFIG };
+  const r = raw as Record<string, unknown>;
+  const outfitStyle: AvatarOutfitStyle =
+    r.outfitStyle === 'suit' || r.outfitStyle === 'shirt' || r.outfitStyle === 'polo'
+      ? r.outfitStyle
+      : DEFAULT_AVATAR_3D_CONFIG.outfitStyle;
+  const hairStyle: AvatarHairStyle =
+    r.hairStyle === 'slick' || r.hairStyle === 'short' || r.hairStyle === 'bob' || r.hairStyle === 'ponytail'
+      ? r.hairStyle
+      : DEFAULT_AVATAR_3D_CONFIG.hairStyle;
+  return {
+    outfitStyle,
+    outfitColor: typeof r.outfitColor === 'string' && r.outfitColor.startsWith('#') ? r.outfitColor : DEFAULT_AVATAR_3D_CONFIG.outfitColor,
+    pantsColor: typeof r.pantsColor === 'string' && r.pantsColor.startsWith('#') ? r.pantsColor : DEFAULT_AVATAR_3D_CONFIG.pantsColor,
+    hairStyle,
+    hairColor: typeof r.hairColor === 'string' && r.hairColor.startsWith('#') ? r.hairColor : DEFAULT_AVATAR_3D_CONFIG.hairColor,
+    skinTone: typeof r.skinTone === 'string' && r.skinTone.startsWith('#') ? r.skinTone : DEFAULT_AVATAR_3D_CONFIG.skinTone,
+    hasGlasses: Boolean(r.hasGlasses),
+  };
+}
 
 export interface Procedural3DPart {
   shape: 'box' | 'cylinder' | 'sphere';
@@ -74,6 +118,7 @@ export interface SpacePresenceView {
   posZ: number;
   rotY: number;
   status: string;
+  avatar: Avatar3DConfig;
 }
 
 export interface SpaceDepartmentInfo {
@@ -114,6 +159,7 @@ export interface SpacePayload {
     departmentName: string | null;
     isOnDuty: boolean;
     dutyStation: string | null;
+    avatar: Avatar3DConfig;
   } | null;
   branding: {
     appName: string;

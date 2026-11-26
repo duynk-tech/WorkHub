@@ -1892,7 +1892,16 @@ model SpacePresence {
   posZ         Float    @default(0)
   rotY         Float    @default(0)
   status       String   @default("ON_DUTY") @db.VarChar(32) // ON_DUTY | ONLINE
+  avatarJson   Json?
   lastSeenAt   DateTime @default(now())
 
   @@index([sceneCode, lastSeenAt])
+}
+
+model SpaceAvatarConfig {
+  id         Int      @id @default(autoincrement())
+  employeeId Int      @unique
+  configJson Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

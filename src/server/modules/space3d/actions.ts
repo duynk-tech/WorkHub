@@ -5,7 +5,9 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { can, requireAuth } from '@/server/auth/context';
 import {
+  normalizeAvatar3DConfig,
   synthesizeProcedural3D,
+  type Avatar3DConfig,
   type Procedural3DPart,
   type SpaceStructure,
 } from '@/lib/space-3d-types';
@@ -226,6 +228,10 @@ export async function toggleStaffDutyAction(
       return { ok: true, message: 'Đã rời vị trí trực quầy' };
     }
 
+    const savedAvatar = await prisma.spaceAvatarConfig.findUnique({
+      where: { employeeId: ctx.employeeId },
+    });
+
     await prisma.spacePresence.upsert({
       where: { employeeId: ctx.employeeId },
       create: {
@@ -238,6 +244,7 @@ export async function toggleStaffDutyAction(
         posZ,
         rotY,
         status: 'ON_DUTY',
+        avatarJson: savedAvatar?.configJson ? (savedAvatar.configJson as never) : undefined,
         lastSeenAt: new Date(),
       },
       update: {
@@ -249,6 +256,7 @@ export async function toggleStaffDutyAction(
         posZ,
         rotY,
         status: 'ON_DUTY',
+        avatarJson: savedAvatar?.configJson ? (savedAvatar.configJson as never) : undefined,
         lastSeenAt: new Date(),
       },
     });
@@ -257,5 +265,29 @@ export async function toggleStaffDutyAction(
     return { ok: true, message: `Đang trực tại ${stationLabel || ctx.departmentName || 'quầy'}` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Cập nhật trạng thái trực thất bại' };
+  }
+}
+
+export async function saveMyAvatar3DAction(raw: Avatar3DConfig): Promise<SpaceActionResult> {
+  try {
+    const ctx = await requireAuth();
+    const config = normalizeAvatar3DConfig(raw);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.spaceAvatarConfig.upsert({
+        where: { employeeId: ctx.employeeId },
+        create: { employeeId: ctx.employeeId, configJson: config as never },
+        update: { configJson: config as never },
+      });
+      await tx.spacePresence.updateMany({
+        where: { employeeId: ctx.employeeId },
+        data: { avatarJson: config as never },
+      });
+    });
+
+    revalidatePath('/3d');
+    return { ok: true, message: 'Đã lưu diện mạo & phong cách nhân vật của bạn' };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Lưu diện mạo nhân vật thất bại' };
   }
 }
