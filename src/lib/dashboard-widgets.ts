@@ -229,20 +229,61 @@ export function canSeeDashboardWidget(
   return def.requiredPermissions.some((code) => permissions.has(code));
 }
 
+export type DashboardWidgetColSpan = 4 | 6 | 8 | 12;
+
+export interface DashboardWidgetLayoutItem {
+  key: string;
+  colSpan: DashboardWidgetColSpan;
+}
+
+export function defaultColSpanForWidget(key: string): DashboardWidgetColSpan {
+  if (key.endsWith('_stats')) return 12;
+  if (key === 'purchase_chart') return 12;
+  return 6;
+}
+
+export function clampColSpan(val: unknown, key: string): DashboardWidgetColSpan {
+  const n = Number(val);
+  if (n === 4 || n === 6 || n === 8 || n === 12) return n;
+  return defaultColSpanForWidget(key);
+}
+
+/** Chuẩn hóa widgetsJson (tương thích cả mảng string cũ và mảng object { key, colSpan } mới). */
+export function normalizeWidgetLayout(raw: unknown): DashboardWidgetLayoutItem[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: DashboardWidgetLayoutItem[] = [];
+  for (const item of raw) {
+    let key = '';
+    let colSpan: DashboardWidgetColSpan = 6;
+    if (typeof item === 'string') {
+      key = item;
+      colSpan = defaultColSpanForWidget(key);
+    } else if (item && typeof item === 'object' && typeof (item as { key?: unknown }).key === 'string') {
+      key = (item as { key: string }).key;
+      colSpan = clampColSpan((item as { colSpan?: unknown }).colSpan, key);
+    }
+    if (!key || seen.has(key) || !WIDGET_BY_KEY.has(key)) continue;
+    seen.add(key);
+    out.push({ key, colSpan });
+  }
+  return out;
+}
+
+export function filterPermittedWidgetLayout(
+  raw: unknown,
+  permissions: ReadonlySet<string>,
+  isAdmin: boolean,
+): DashboardWidgetLayoutItem[] {
+  return normalizeWidgetLayout(raw).filter((item) =>
+    canSeeDashboardWidget(permissions, isAdmin, item.key),
+  );
+}
+
 export function filterPermittedWidgetKeys(
   keys: unknown,
   permissions: ReadonlySet<string>,
   isAdmin: boolean,
 ): string[] {
-  if (!Array.isArray(keys)) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const k of keys) {
-    if (typeof k !== 'string' || seen.has(k)) continue;
-    if (canSeeDashboardWidget(permissions, isAdmin, k)) {
-      seen.add(k);
-      out.push(k);
-    }
-  }
-  return out;
+  return filterPermittedWidgetLayout(keys, permissions, isAdmin).map((item) => item.key);
 }

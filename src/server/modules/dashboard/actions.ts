@@ -4,7 +4,13 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/server/auth/context';
-import { filterPermittedWidgetKeys, WIDGET_BY_KEY } from '@/lib/dashboard-widgets';
+import {
+  clampColSpan,
+  defaultColSpanForWidget,
+  filterPermittedWidgetKeys,
+  normalizeWidgetLayout,
+  WIDGET_BY_KEY,
+} from '@/lib/dashboard-widgets';
 
 const saveBoardSchema = z.object({
   id: z.number().int().positive().nullable().optional(),
@@ -54,6 +60,14 @@ export async function saveDashboardBoardAction(input: z.infer<typeof saveBoardSc
         return { ok: false, message: 'Bạn không có quyền chỉnh sửa bảng này' };
       }
 
+      const existingSpanMap = new Map(
+        normalizeWidgetLayout(existing.widgetsJson).map((item) => [item.key, item.colSpan]),
+      );
+      const nextLayout = validWidgets.map((key) => ({
+        key,
+        colSpan: existingSpanMap.get(key) ?? defaultColSpanForWidget(key),
+      }));
+
       const updated = await prisma.$transaction(async (tx) => {
         if (data.isDefault && existing.ownerId === ctx.userId) {
           await tx.dashboardBoard.updateMany({
@@ -66,7 +80,7 @@ export async function saveDashboardBoardAction(input: z.infer<typeof saveBoardSc
           data: {
             name: data.name,
             description: data.description || null,
-            widgetsJson: validWidgets as never,
+            widgetsJson: nextLayout as never,
             ...(existing.ownerId === ctx.userId ? { isDefault: data.isDefault } : {}),
             ...(canShare
               ? {
@@ -101,7 +115,10 @@ export async function saveDashboardBoardAction(input: z.infer<typeof saveBoardSc
           shareScope,
           sharedRoleCodes: sharedRoleCodes as never,
           sharedUserIds: sharedUserIds as never,
-          widgetsJson: validWidgets as never,
+          widgetsJson: validWidgets.map((key) => ({
+            key,
+            colSpan: defaultColSpanForWidget(key),
+          })) as never,
         },
       });
     });
@@ -140,4 +157,66 @@ export async function setDefaultDashboardBoardAction(boardId: number): Promise<B
 
   revalidatePath('/dashboard');
   return { ok: true, message: `Đã đặt "${existing.name}" làm Dashboard mặc định` };
+}
+
+const saveLayoutSchema = z.object({
+  boardId: z.number().int().positive(),
+  layout: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        colSpan: z.number().int(),
+      }),
+    )
+    .min(1, 'Bảng cần ít nhất 1 khối hiển thị'),
+});
+
+export async function saveDashboardLayoutAction(
+  boardId: number,
+  layout: { key: string; colSpan: number }[],
+): Promise<BoardActionResult> {
+  const ctx = await requireAuth();
+  const parsed = saveLayoutSchema.safeParse({ boardId, layout });
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dữ liệu layout không hợp lệ' };
+  }
+
+  const existing = await prisma.dashboardBoard.findUnique({ where: { id: boardId } });
+  if (!existing) return { ok: false, message: 'Không tìm thấy bảng Dashboard' };
+  if (existing.ownerId !== ctx.userId && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn không có quyền thiết kế layout cho bảng này' };
+  }
+
+  const allowedKeys = new Set(
+    ctx.isAdmin
+      ? parsed.data.layout.map((i) => i.key).filter((k) => WIDGET_BY_KEY.has(k))
+      : filterPermittedWidgetKeys(
+          parsed.data.layout.map((i) => i.key),
+          ctx.permissions,
+          ctx.isAdmin,
+        ),
+  );
+
+  const seen = new Set<string>();
+  const sanitized = [];
+  for (const item of parsed.data.layout) {
+    if (!allowedKeys.has(item.key) || seen.has(item.key)) continue;
+    seen.add(item.key);
+    sanitized.push({
+      key: item.key,
+      colSpan: clampColSpan(item.colSpan, item.key),
+    });
+  }
+
+  if (sanitized.length === 0) {
+    return { ok: false, message: 'Không có khối hiển thị hợp lệ để lưu' };
+  }
+
+  await prisma.dashboardBoard.update({
+    where: { id: boardId },
+    data: { widgetsJson: sanitized as never },
+  });
+
+  revalidatePath('/dashboard');
+  return { ok: true, message: 'Đã lưu bố cục Dashboard', boardId };
 }

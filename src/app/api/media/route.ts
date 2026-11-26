@@ -11,12 +11,21 @@ export async function GET(_req: NextRequest) {
 
     const files = await listUploadedFiles();
     const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+    const maxBytesEnv = Number(process.env.STORAGE_MAX_BYTES);
+    const maxMbEnv = Number(process.env.STORAGE_MAX_MB);
+    const maxSize =
+      Number.isFinite(maxBytesEnv) && maxBytesEnv > 0
+        ? maxBytesEnv
+        : Number.isFinite(maxMbEnv) && maxMbEnv > 0
+          ? maxMbEnv * 1024 * 1024
+          : 1024 * 1024 * 1024; // Mặc định 1 GB
 
     return NextResponse.json({
       ok: true,
       files,
       totalFiles: files.length,
       totalSize,
+      maxSize,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Không thể đọc danh sách media';

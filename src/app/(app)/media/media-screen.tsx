@@ -43,11 +43,13 @@ function formatBytes(bytes: number): string {
   if (!bytes || bytes === 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export function MediaScreen() {
   const [files, setFiles] = useState<MediaItem[]>([]);
+  const [maxBytes, setMaxBytes] = useState<number>(1024 * 1024 * 1024);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState('');
@@ -68,6 +70,9 @@ export function MediaScreen() {
       const data = await res.json();
       if (res.ok && data.ok) {
         setFiles(data.files || []);
+        if (typeof data.maxSize === 'number' && data.maxSize > 0) {
+          setMaxBytes(data.maxSize);
+        }
       } else {
         toast.error(data.error || 'Không thể tải danh sách media');
       }
@@ -89,8 +94,8 @@ export function MediaScreen() {
     let successCount = 0;
     try {
       for (const file of Array.from(selectedFiles)) {
-        if (file.size > 5 * 1024 * 1024) {
-          toast.error(`Tệp "${file.name}" quá lớn (tối đa 5MB)`);
+        if (file.size > 4 * 1024 * 1024) {
+          toast.error(`Tệp "${file.name}" quá lớn (tối đa 4MB)`);
           continue;
         }
 
@@ -252,10 +257,30 @@ export function MediaScreen() {
           <div className="w-11 h-11 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
             <HardDrive className="w-6 h-6" />
           </div>
-          <div>
-            <div className="text-xs text-slate-500 font-medium">Dung lượng ổ đĩa sử dụng</div>
-            <div className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
-              {formatBytes(totalBytes)}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-medium">
+              <span>Dung lượng sử dụng</span>
+              <span className="font-mono">
+                {maxBytes > 0 ? `${Math.min(100, (totalBytes / maxBytes) * 100).toFixed(1)}%` : '0%'}
+              </span>
+            </div>
+            <div className="text-lg font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+              {formatBytes(totalBytes)}{' '}
+              <span className="text-xs font-normal text-slate-400">/ {formatBytes(maxBytes)}</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 mt-1.5 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${maxBytes > 0 ? Math.min(100, (totalBytes / maxBytes) * 100) : 0}%`,
+                  background:
+                    totalBytes / maxBytes > 0.9
+                      ? '#dc2626'
+                      : totalBytes / maxBytes > 0.7
+                        ? '#d97706'
+                        : '#2563eb',
+                }}
+              />
             </div>
           </div>
         </Card>
@@ -267,7 +292,7 @@ export function MediaScreen() {
           <div>
             <div className="text-xs text-slate-500 font-medium">Kho lưu trữ tệp</div>
             <div className="text-sm font-semibold font-mono text-slate-700 dark:text-slate-300 mt-0.5 truncate">
-              Supabase Storage / uploads
+              Storage / uploads
             </div>
           </div>
         </Card>
@@ -297,7 +322,7 @@ export function MediaScreen() {
             {uploading ? 'Đang tải tệp lên máy chủ...' : 'Kéo thả tệp vào đây hoặc bấm để chọn tệp'}
           </div>
           <p className="text-xs text-slate-500">
-            Hỗ trợ PNG, JPG, WebP, SVG, GIF (Tối đa 5MB/tệp). Có thể chọn nhiều tệp cùng lúc.
+            Hỗ trợ PNG, JPG, WebP, SVG, GIF (Tối đa 4MB/tệp). Có thể chọn nhiều tệp cùng lúc.
           </p>
         </div>
       </Card>

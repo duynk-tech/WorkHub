@@ -1,7 +1,11 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
 import type { AuthContext } from '@/server/auth/context';
-import { filterPermittedWidgetKeys } from '@/lib/dashboard-widgets';
+import {
+  filterPermittedWidgetLayout,
+  normalizeWidgetLayout,
+  type DashboardWidgetLayoutItem,
+} from '@/lib/dashboard-widgets';
 
 export interface DashboardBoardView {
   id: number;
@@ -19,6 +23,9 @@ export interface DashboardBoardView {
   rawWidgets: string[];
   /** Các widget người dùng hiện tại ĐƯỢC PHÉP thấy theo phân quyền. */
   visibleWidgets: string[];
+  /** Layout chi tiết (key + colSpan 12 cột) đã lọc theo phân quyền. */
+  rawLayout: DashboardWidgetLayoutItem[];
+  visibleLayout: DashboardWidgetLayoutItem[];
 }
 
 function asStringArray(val: unknown): string[] {
@@ -75,8 +82,10 @@ export async function getAccessibleDashboardBoards(
       }
     }
 
-    const rawWidgets = asStringArray(row.widgetsJson);
-    const visibleWidgets = filterPermittedWidgetKeys(rawWidgets, ctx.permissions, ctx.isAdmin);
+    const rawLayout = normalizeWidgetLayout(row.widgetsJson);
+    const visibleLayout = filterPermittedWidgetLayout(rawLayout, ctx.permissions, ctx.isAdmin);
+    const rawWidgets = rawLayout.map((item) => item.key);
+    const visibleWidgets = visibleLayout.map((item) => item.key);
 
     // Với bảng được chia sẻ, nếu người xem không có quyền xem bất kỳ widget nào thì ẩn bảng
     if (!isOwn && !ctx.isAdmin && visibleWidgets.length === 0) {
@@ -97,6 +106,8 @@ export async function getAccessibleDashboardBoards(
       sharedUserIds,
       rawWidgets,
       visibleWidgets,
+      rawLayout,
+      visibleLayout,
     });
   }
 

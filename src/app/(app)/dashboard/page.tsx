@@ -20,6 +20,7 @@ import { fmtDate } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
 import { DashboardBoardBar } from '@/components/domain/dashboard-board-bar';
+import { DashboardLayoutGrid, type DashboardGridItemData } from '@/components/domain/dashboard-layout-grid';
 import { getAccessibleDashboardBoards } from '@/server/modules/dashboard/service';
 import { DASHBOARD_WIDGETS, WIDGET_BY_KEY, canSeeDashboardWidget } from '@/lib/dashboard-widgets';
 
@@ -538,6 +539,428 @@ export default async function DashboardPage({
   const showWidget = (key: string, defaultTab: string) =>
     useCustomBoard ? widgetSet.has(key) : tab === defaultTab;
 
+  // Khi đang dùng bảng tùy chỉnh: gom từng widget vào bản đồ để DashboardLayoutGrid render đúng thứ tự & độ rộng cột đã thiết kế
+  const customWidgets: Record<string, React.ReactNode> = {};
+  if (useCustomBoard) {
+    if (sales) {
+      customWidgets.sales_stats = (
+        <div className="grid-stats">
+          <StatCard
+            href="/customers" label="Đơn hàng chưa hoàn tất" value={sales.openOrders} icon={<ShoppingCart size={16} />}
+            hint={sales.awaitingStock > 0 ? `${sales.awaitingStock} đơn đang chờ hàng hoặc chờ giao` : 'Không có đơn nào tồn đọng'}
+          />
+          <StatCard
+            href="/customers" label="Báo giá chờ khách chốt" value={sales.quotations} icon={<FileText size={16} />}
+            hint={sales.quotations > 0 ? 'Nên gọi lại để chốt' : 'Đã xử lý hết'}
+          />
+          <StatCard
+            href="/reports" label="Còn phải thu" value={money(sales.outstanding)} icon={<Wallet size={16} />}
+            hint={sales.debtors > 0 ? `${sales.debtors} khách còn nợ` : 'Không có công nợ'}
+          />
+          <StatCard
+            href="/reports" label="Nợ đã quá hạn" value={money(sales.overdue)} icon={<AlertTriangle size={16} />}
+            tone={sales.overdue > 0 ? 'var(--danger)' : undefined}
+            hint={sales.overdue > 0 ? 'Cần nhắc khách thanh toán' : 'Không có khoản nào trễ hạn'}
+          />
+        </div>
+      );
+      customWidgets.sales_chart = (
+        <MonthlyChartCard
+          title="Doanh thu 6 tháng gần nhất"
+          subtitle="Giá trị đơn đã ghi nhận so với tiền thực thu, không tính đơn đã hủy"
+          data={sales.revenueByMonth}
+          series={[
+            { key: 'billed', name: 'Giá trị đơn', color: '#2563eb' },
+            { key: 'collected', name: 'Đã thu', color: '#166534' },
+          ]}
+          asMoney
+        />
+      );
+      customWidgets.sales_trend_area = (
+        <MonthlyChartCard
+          title="Xu hướng Doanh thu & Thực thu"
+          subtitle="Biểu đồ miền 6 tháng gần nhất"
+          data={sales.revenueByMonth}
+          series={[
+            { key: 'billed', name: 'Giá trị đơn', color: '#2563eb' },
+            { key: 'collected', name: 'Đã thu', color: '#16a34a' },
+          ]}
+          asMoney
+          variant="area"
+        />
+      );
+      customWidgets.sales_status_pie = (
+        <DonutChartCard
+          title="Cơ cấu đơn hàng theo trạng thái"
+          subtitle="Phân bổ toàn bộ đơn bán hàng"
+          data={sales.orderStatusPie}
+          centerLabel="Đơn hàng"
+        />
+      );
+      customWidgets.sales_orders = (
+        <ListCard
+          title="Đơn hàng"
+          subtitle={`${sales.openOrders} đơn chưa hoàn tất`}
+          href="/customers"
+          empty={<EmptyState icon={<ShoppingCart size={20} />} title="Không có đơn nào đang chạy" description="Mọi đơn hàng đã hoàn tất hoặc đã hủy." />}
+          count={sales.openOrderList.length}
+        >
+          {sales.openOrderList.map((o) => {
+            const total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
+            const left = Math.max(0, total - Number(o.paidAmount || 0));
+            return (
+              <Link key={o.id} href={`/customers/${o.customer.id}`} className="list-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="row" style={{ gap: 7, marginBottom: 3 }}>
+                    <span className="mono-code">{o.orderCode}</span>
+                    <StatusChip cfg={CUSTOMER_ORDER_STATUSES[o.status]} fallback={o.status} />
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
+                    {o.customer.name}
+                  </div>
+                  <div className="hint" style={{ marginTop: 4 }}>
+                    {fmtDate(o.orderDate)}
+                    {left > 0 ? ` · còn thu ${money(left)}` : ' · đã thu đủ'}
+                  </div>
+                </div>
+                <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>
+                  {money(total)}
+                </div>
+              </Link>
+            );
+          })}
+        </ListCard>
+      );
+      customWidgets.sales_care = (
+        <ListCard
+          title="Khách hàng tới hạn bảo hành"
+          subtitle={sales.careCustomers > 0 ? `${sales.careCustomers} khách · ${sales.careMachines} máy tới hạn trong 30 ngày` : 'Cửa sổ 30 ngày'}
+          href="/customers?within=30"
+          count={sales.careList.length}
+          empty={<EmptyState icon={<ShieldCheck size={20} />} title="Không có khách nào tới hạn" description="Trong 30 ngày tới không có máy nào hết bảo hành hay đến kỳ bảo dưỡng." />}
+        >
+          {sales.careList.map((c) => {
+            const late = c.soonestDays < 0;
+            const reasons = [...new Set(c.machines.flatMap((m) => m.reasons))];
+            return (
+              <Link key={c.customerId} href={`/customers/${c.customerId}`} className="list-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="row" style={{ gap: 7, marginBottom: 3 }}>
+                    {c.code && <span className="mono-code">{c.code}</span>}
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.phone || '—'}</span>
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{c.name}</div>
+                  <div className="row" style={{ gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                    {reasons.map((r) => <StatusChip key={r} cfg={CARE_REASONS[r]} />)}
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.machines.length} máy</span>
+                  </div>
+                </div>
+                <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', color: late ? 'var(--danger)' : 'var(--warning)' }}>
+                    {late ? `Trễ ${Math.abs(c.soonestDays)} ngày` : `Còn ${c.soonestDays} ngày`}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </ListCard>
+      );
+      customWidgets.sales_quotations = (
+        <ListCard
+          title="Công nợ phải thu"
+          subtitle={sales.debtors > 0 ? `${sales.debtors} khách · ${money(sales.outstanding)}` : 'Không có công nợ'}
+          href="/reports"
+          count={sales.debtList.length}
+          empty={<EmptyState icon={<Wallet size={20} />} title="Không có công nợ" description="Khách đã thanh toán hết các đơn đã giao." />}
+        >
+          {sales.debtList.map((d) => (
+            <Link key={d.customerId} href={`/customers/${d.customerId}`} className="list-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{d.name}</div>
+                <div className="hint" style={{ marginTop: 3 }}>
+                  {d.orderCount} đơn{d.maxOverdueDays > 0 ? ` · trễ nhất ${d.maxOverdueDays} ngày` : ' · trong hạn'}
+                </div>
+              </div>
+              <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>{money(d.outstanding)}</div>
+                {d.overdue > 0 && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3, whiteSpace: 'nowrap' }}>quá hạn {money(d.overdue)}</div>}
+              </div>
+            </Link>
+          ))}
+        </ListCard>
+      );
+    }
+
+    if (stock) {
+      customWidgets.stock_stats = (
+        <div className="grid-stats">
+          <StatCard href="/spare-parts" label="Giá trị tồn kho" value={money(stock.stockValue)} icon={<Warehouse size={16} />} hint={`${stock.skuCount} mã đang hoạt động`} />
+          <StatCard href="/spare-parts" label="Mã dưới mức an toàn" value={stock.lowStock} icon={<PackageSearch size={16} />} tone={stock.lowStock > 0 ? 'var(--warning)' : undefined} hint={stock.lowStock > 0 ? 'Cân nhắc đặt bổ sung' : 'Tồn kho đang đủ'} />
+          <StatCard href="/spare-parts?tab=machines" label="Thiết bị tại khách" value={stock.machines} icon={<Utensils size={16} />} hint="Hồ sơ thiết bị theo dõi bảo hành" />
+        </div>
+      );
+      customWidgets.purchase_stats = (
+        <div className="grid-stats">
+          <StatCard href="/purchases" label="Đơn hàng đang về" value={stock.incoming} icon={<Truck size={16} />} hint={stock.incoming > 0 ? 'Theo dõi tiến trình nhập kho' : 'Không có lô hàng đang về'} />
+          <StatCard href="/spare-parts?tab=transactions" label="Phiếu kho chờ duyệt" value={stock.pendingApproval} icon={<ClipboardCheck size={16} />} tone={stock.pendingApproval > 0 ? 'var(--warning)' : undefined} hint="Cần phê duyệt nhập/xuất kho" />
+        </div>
+      );
+      customWidgets.purchase_chart = (
+        <MonthlyChartCard
+          title="Nhập – Xuất kho 6 tháng gần nhất"
+          subtitle="Giá trị hàng theo giá vốn, chỉ tính phiếu đã hoàn tất"
+          data={stock.flowByMonth}
+          series={[
+            { key: 'in', name: 'Nhập kho', color: '#166534' },
+            { key: 'out', name: 'Xuất kho', color: '#d97706' },
+          ]}
+          asMoney
+        />
+      );
+      customWidgets.purchase_orders = (
+        <ListCard
+          title="Đơn hàng đang về"
+          subtitle={stock.incoming > 0 ? `${stock.incoming} phiếu chưa nhập kho` : 'Không có lô hàng đang về'}
+          href="/purchases"
+          count={stock.incomingList.length}
+          empty={<EmptyState icon={<Truck size={20} />} title="Không có lô hàng đang về" />}
+        >
+          {stock.incomingList.map((o) => {
+            const cfg = PO_STATUSES[o.status];
+            return (
+              <Link key={o.id} href="/purchases" className="list-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="row" style={{ gap: 7, marginBottom: 3 }}>
+                    <span className="mono-code">{o.orderCode}</span>
+                    <StatusChip cfg={cfg} fallback={o.status} />
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }}>{o.supplier}</div>
+                </div>
+                <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{money(Number(o.totalVnd || 0))}</div>
+              </Link>
+            );
+          })}
+        </ListCard>
+      );
+      customWidgets.stock_low = (
+        <ListCard
+          title="Vật tư dưới mức an toàn"
+          subtitle={stock.lowStock > 0 ? `${stock.lowStock} mã cần đặt bổ sung` : 'Tồn kho đang đủ'}
+          href="/spare-parts"
+          count={stock.lowStockList.length}
+          empty={<EmptyState icon={<PackageSearch size={20} />} title="Không có mã thiếu hàng" />}
+        >
+          {stock.lowStockList.map((i) => (
+            <Link key={i.id} href="/spare-parts" className="list-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span className="mono-code">{i.itemCode}</span>
+                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{i.name}</div>
+              </div>
+              <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>
+                {i.onHand} / {i.min} {i.unit}
+              </div>
+            </Link>
+          ))}
+        </ListCard>
+      );
+      customWidgets.stock_transactions = (
+        <ListCard
+          title="Phiếu kho gần đây"
+          subtitle={stock.pendingApproval > 0 ? `${stock.pendingApproval} phiếu đang chờ duyệt` : 'Không có phiếu chờ duyệt'}
+          href="/spare-parts?tab=transactions"
+          count={stock.recentDocs.length}
+          empty={<EmptyState icon={<ClipboardCheck size={20} />} title="Chưa có phiếu kho nào" />}
+        >
+          {stock.recentDocs.map((d) => (
+            <Link key={d.id} href="/spare-parts?tab=transactions" className="list-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row" style={{ gap: 7, marginBottom: 3 }}>
+                  <span className="mono-code">{d.transCode}</span>
+                  <StatusChip cfg={TRANSACTION_TYPES[d.type]} fallback={d.type} />
+                </div>
+                <div className="hint">{fmtDate(d.transDate)}{d.partnerName ? ` · ${d.partnerName}` : ''}</div>
+              </div>
+              <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 700 }}>{money(Number(d.totalValue || 0))}</div>
+            </Link>
+          ))}
+        </ListCard>
+      );
+    }
+
+    if (service) {
+      customWidgets.service_stats = (
+        <div className="grid-stats">
+          <StatCard href="/tickets" label="Sự cố chờ tiếp nhận" value={service.open} icon={<Wrench size={16} />} hint={service.open > 0 ? 'Cần phân công kỹ thuật viên' : 'Đã tiếp nhận hết'} />
+          <StatCard href="/tickets" label="Đang xử lý" value={service.inProgress} icon={<TimerReset size={16} />} hint="Kỹ thuật đang xử lý" />
+          <StatCard href="/tickets" label="Đã xong trong tháng" value={service.resolvedThisMonth} icon={<CheckSquare size={16} />} tone="var(--success)" hint="Phiếu đã hoàn tất" />
+        </div>
+      );
+      customWidgets.service_chart = (
+        <MonthlyChartCard
+          title="Sự cố 6 tháng gần nhất"
+          subtitle="Số phiếu tiếp nhận so với xử lý xong"
+          data={service.ticketsByMonth}
+          series={[
+            { key: 'opened', name: 'Tiếp nhận', color: '#2563eb' },
+            { key: 'resolved', name: 'Xử lý xong', color: '#166534' },
+          ]}
+        />
+      );
+      customWidgets.service_status_pie = (
+        <DonutChartCard
+          title="Cơ cấu phiếu sự cố"
+          subtitle="Phân bổ phiếu bảo trì theo trạng thái"
+          data={service.ticketStatusPie}
+          centerLabel="Phiếu"
+        />
+      );
+      customWidgets.service_tickets = (
+        <ListCard
+          title="Sự cố đang mở"
+          subtitle={`${service.open + service.inProgress} phiếu đang theo dõi`}
+          href="/tickets"
+          count={service.openList.length}
+          empty={<EmptyState icon={<Wrench size={20} />} title="Không có sự cố nào đang mở" />}
+        >
+          {service.openList.map((t) => (
+            <Link key={t.id} href={`/tickets/${t.id}`} className="list-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row" style={{ gap: 7, marginBottom: 3 }}>
+                  <span className="mono-code">{t.ticketCode}</span>
+                  <StatusChip cfg={TICKET_PRIORITIES[t.priority]} fallback={t.priority} />
+                </div>
+                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
+                <div className="hint" style={{ marginTop: 3 }}>{t.customer?.name || t.equipment?.name}</div>
+              </div>
+              {t.assignedTo && <Avatar name={t.assignedTo.fullName} src={t.assignedTo.avatarUrl} size="sm" />}
+            </Link>
+          ))}
+        </ListCard>
+      );
+    }
+
+    if (showWork) {
+      customWidgets.work_stats = (
+        <div className="grid-stats">
+          <StatCard href="/tasks" label="Việc đang mở của tôi" value={myOpenTasks} icon={<ListChecks size={16} />} hint={myOpenTasks === 0 ? 'Không còn việc tồn đọng' : 'Đang chờ bạn xử lý'} />
+          <StatCard href="/tasks" label="Việc quá hạn" value={myOverdue} icon={<AlertTriangle size={16} />} tone={myOverdue > 0 ? 'var(--danger)' : undefined} hint={myOverdue > 0 ? 'Cần xử lý ngay' : 'Không có việc trễ hạn'} />
+          <StatCard href="/approvals" label="Đơn chờ bạn duyệt" value={pendingApprovals} icon={<CheckSquare size={16} />} tone={pendingApprovals > 0 ? 'var(--warning)' : undefined} hint={pendingApprovals > 0 ? 'Có đơn chờ quyết định' : 'Đã xử lý hết'} />
+          <StatCard href="/leaves" label={`Phép còn lại ${year}`} value={formatDays(remaining)} icon={<CalendarDays size={16} />} tone="var(--success)" hint={balance ? `Đã dùng ${formatDays(balance.usedDays)}` : 'Chưa thiết lập quỹ phép'} />
+        </div>
+      );
+      customWidgets.work_status_pie = (
+        <DonutChartCard
+          title={`Cơ cấu công việc ${ctx.dataScope === 'SELF' ? 'của tôi' : 'trong phạm vi'}`}
+          subtitle={`Tổng ${totalTeamTasks} công việc theo trạng thái`}
+          centerLabel="Công việc"
+          data={[
+            { name: 'Chờ làm', value: statusCount('TODO'), color: '#94a3b8' },
+            { name: 'Đang làm', value: statusCount('IN_PROGRESS'), color: '#2563eb' },
+            { name: 'Chờ nghiệm thu', value: statusCount('REVIEW'), color: '#d97706' },
+            { name: 'Hoàn thành', value: statusCount('DONE'), color: '#16a34a' },
+            { name: 'Bị chặn', value: statusCount('BLOCKED'), color: '#dc2626' },
+          ]}
+        />
+      );
+      customWidgets.work_tasks = (
+        <ListCard
+          title="Công việc của tôi"
+          subtitle="Sắp xếp theo hạn gần nhất"
+          href="/tasks"
+          count={myTasks.length}
+          empty={<EmptyState icon={<ListChecks size={20} />} title="Không có việc nào đang mở" />}
+        >
+          {myTasks.map((t) => (
+            <Link key={t.id} href={`/tasks/${t.id}`} className="list-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row" style={{ gap: 7, marginBottom: 3 }}>
+                  <span className="mono-code">{t.code}</span>
+                  <TaskPriorityBadge priority={t.priority} />
+                </div>
+                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
+              </div>
+              <div style={{ width: 58, flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right', marginBottom: 4 }}>{t.progress}%</div>
+                <Progress value={t.progress} />
+              </div>
+            </Link>
+          ))}
+        </ListCard>
+      );
+      customWidgets.work_team = (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Tiến độ công việc {ctx.dataScope === 'SELF' ? 'của tôi' : 'trong phạm vi'}</CardTitle>
+              <div className="card-subtitle">Tổng {totalTeamTasks} công việc</div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {totalTeamTasks === 0 ? (
+              <EmptyState icon={<CircleDot size={20} />} title="Chưa có dữ liệu công việc" />
+            ) : (
+              <div className="stack" style={{ gap: 11 }}>
+                {[
+                  { key: 'TODO', label: 'Chờ làm', color: 'var(--text-faint)' },
+                  { key: 'IN_PROGRESS', label: 'Đang làm', color: 'var(--info)' },
+                  { key: 'REVIEW', label: 'Chờ duyệt', color: 'var(--warning)' },
+                  { key: 'DONE', label: 'Hoàn thành', color: 'var(--success)' },
+                  { key: 'BLOCKED', label: 'Bị chặn', color: 'var(--danger)' },
+                ].map((s) => {
+                  const c = statusCount(s.key);
+                  const pct = totalTeamTasks ? Math.round((c / totalTeamTasks) * 100) : 0;
+                  return (
+                    <div key={s.key}>
+                      <div className="row-between" style={{ marginBottom: 5 }}>
+                        <span style={{ fontSize: 12.5, color: 'var(--text-base)' }}>{s.label}</span>
+                        <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }} className="tnum">{c} · {pct}%</span>
+                      </div>
+                      <Progress value={pct} tone={s.color} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      );
+      customWidgets.hr_leaves = (
+        <ListCard
+          title="Nghỉ phép hôm nay"
+          subtitle={`${onLeaveToday.length} nhân sự vắng mặt`}
+          href="/leaves"
+          count={onLeaveToday.length}
+          empty={<EmptyState icon={<Users size={20} />} title="Không ai nghỉ hôm nay" />}
+        >
+          {onLeaveToday.map((d) => (
+            <div key={d.id} className="list-row" style={{ cursor: 'default' }}>
+              <Avatar name={d.request.employee.fullName} src={d.request.employee.avatarUrl} size="sm" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 540, color: 'var(--text-strong)' }}>{d.request.employee.fullName}</div>
+                <div className="hint">{d.request.employee.department?.name ?? '—'}</div>
+              </div>
+              <Badge style={{ background: `${d.request.leaveType.color}1f`, color: d.request.leaveType.color }}>
+                {d.request.leaveType.name}
+              </Badge>
+            </div>
+          ))}
+        </ListCard>
+      );
+    }
+  }
+
+  const customGridItems: DashboardGridItemData[] =
+    useCustomBoard && activeBoard
+      ? activeBoard.visibleLayout
+          .filter((item) => customWidgets[item.key] !== undefined)
+          .map((item) => ({
+            key: item.key,
+            label: WIDGET_BY_KEY.get(item.key)?.label ?? item.key,
+            colSpan: item.colSpan,
+            content: customWidgets[item.key],
+          }))
+      : [];
+
   return (
     <div className="stack">
       <PageHeader
@@ -570,16 +993,23 @@ export default async function DashboardPage({
       )}
 
       {useCustomBoard && activeBoard && (
-        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>
-          {activeBoard.description || `Bảng "${activeBoard.name}"`}
-          {activeBoard.isShared && !activeBoard.isOwn && ` · Chia sẻ bởi ${activeBoard.ownerName}`}
-        </div>
+        <>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>
+            {activeBoard.description || `Bảng "${activeBoard.name}"`}
+            {activeBoard.isShared && !activeBoard.isOwn && ` · Chia sẻ bởi ${activeBoard.ownerName}`}
+          </div>
+          <DashboardLayoutGrid
+            boardId={activeBoard.id}
+            canEdit={activeBoard.isOwn || ctx.isAdmin}
+            items={customGridItems}
+          />
+        </>
       )}
       {!useCustomBoard && (
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>
       )}
 
-      {sales && (
+      {!useCustomBoard && sales && (
         <>
           {showWidget('sales_stats', 'sales') && (
           <div className="grid-stats">
@@ -771,7 +1201,7 @@ export default async function DashboardPage({
         </>
       )}
 
-      {stock && (
+      {!useCustomBoard && stock && (
         <>
           {(showWidget('stock_stats', 'stock') || showWidget('purchase_stats', 'stock')) && (
           <div className="grid-stats">
@@ -928,7 +1358,7 @@ export default async function DashboardPage({
         </>
       )}
 
-      {service && (
+      {!useCustomBoard && service && (
         <>
           {showWidget('service_stats', 'service') && (
           <div className="grid-stats">
@@ -1039,7 +1469,7 @@ export default async function DashboardPage({
       )}
 
 
-      {showWork && showWidget('work_stats', 'work') && (
+      {!useCustomBoard && showWork && showWidget('work_stats', 'work') && (
       <div className="grid-stats">
         <StatCard
           href="/tasks" label="Việc đang mở của tôi" value={myOpenTasks} icon={<ListChecks size={16} />}
@@ -1063,7 +1493,7 @@ export default async function DashboardPage({
       </div>
       )}
 
-      {showWork && showWidget('work_status_pie', 'work') && (
+      {!useCustomBoard && showWork && showWidget('work_status_pie', 'work') && (
         <DonutChartCard
           title={`Cơ cấu công việc ${ctx.dataScope === 'SELF' ? 'của tôi' : 'trong phạm vi'}`}
           subtitle={`Tổng ${totalTeamTasks} công việc theo trạng thái`}
@@ -1078,7 +1508,7 @@ export default async function DashboardPage({
         />
       )}
 
-      {showWork && (showWidget('work_tasks', 'work') || showWidget('work_team', 'work') || showWidget('hr_leaves', 'work')) && (
+      {!useCustomBoard && showWork && (showWidget('work_tasks', 'work') || showWidget('work_team', 'work') || showWidget('hr_leaves', 'work')) && (
       <div className="grid-2">
         {showWidget('work_tasks', 'work') && (
         <div className="stack">
