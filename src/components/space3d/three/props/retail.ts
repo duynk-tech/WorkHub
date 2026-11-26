@@ -14,6 +14,43 @@ export function buildBooth(o: SpaceObject): THREE.Group {
   return g;
 }
 
+/**
+ * Quầy trưng bày sản phẩm như showroom thật: thân quầy bóng có ốp, mặt đá thạch anh, dải LED chân & mép,
+ * vách bảng tên phát sáng phía sau (đổi tên trong bảng thuộc tính). Mặt quầy bày máy thật / máy mẫu.
+ */
+export function buildDisplayCounter(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const { widthM: w, depthM: d, heightM: h } = o;
+  const accent = o.accentColor ?? '#1d4ed8';
+  const bodyMat = o.variant === 'dark' ? M.paint('#1f2329', 0.6) : M.gloss('#f8fafc');
+  const facing = o.variant === 'wood' ? M.woodGloss('#a47148') : o.variant === 'dark' ? M.metal('#2b2f36', 0.4) : M.gloss('#eef2f7');
+  // Thân quầy lùi chân 6cm + ốp mặt trước + mặt đá
+  g.add(box(w - 0.08, 0.08, d - 0.1, M.paint('#111111', 0.7), 0, 0.04, 0));
+  g.add(box(w, h - 0.12, d, bodyMat, 0, 0.08 + (h - 0.12) / 2, 0, 0.02));
+  g.add(box(w - 0.12, h - 0.3, 0.02, facing, 0, 0.12 + (h - 0.3) / 2, d / 2 + 0.006, 0.006));
+  g.add(box(w + 0.05, 0.045, d + 0.05, M.marble(), 0, h - 0.02, 0, 0.012));
+  g.add(box(w - 0.1, 0.012, 0.012, M.glow(accent, 1.2, 2.8), 0, 0.09, d / 2 + 0.012));
+  g.add(box(w - 0.06, 0.01, 0.01, M.glow('#fff4d6', 0.6, 1.8), 0, h - 0.05, d / 2 + 0.03));
+  // Vách bảng tên phía sau quầy (tên đổi được)
+  const signH = 0.42;
+  const postH = 1.95;
+  g.add(box(w * 0.92, postH, 0.06, o.variant === 'dark' ? M.paint('#15181d', 0.5) : M.gloss('#ffffff'), 0, postH / 2, -d / 2 - 0.08, 0.01));
+  const tex = labelTex(
+    [
+      { text: (o.label || 'Quầy trưng bày').toUpperCase().slice(0, 30), size: 92, color: '#ffffff', weight: 800, y: 150 },
+      ...(o.subLabel ? [{ text: o.subLabel.slice(0, 40), size: 44, color: '#dbeafe', weight: 600, y: 245 }] : []),
+    ],
+    accent,
+    1600,
+    o.subLabel ? 300 : 280,
+  );
+  g.add(plane(w * 0.88, signH, lightboxMat(tex), 0, postH + signH / 2 + 0.02, -d / 2 - 0.045));
+  g.add(box(w * 0.9, signH + 0.04, 0.05, M.paint('#111827', 0.5), 0, postH + signH / 2 + 0.02, -d / 2 - 0.075));
+  // Mặt quầy là chỗ bày sản phẩm (2–3 máy tuỳ chiều dài)
+  g.userData.shelves = [{ x: 0, y: h, z: 0.02, width: w - 0.2, depth: d - 0.12, clearance: 1.05, facing: 0, demoMachines: true }];
+  return g;
+}
+
 /** Kệ gondola 2 mặt: chân đế, vách đục lỗ ở giữa, các tầng kệ thép nghiêng nhẹ, nẹp giá phía trước. */
 export function buildGondola(o: SpaceObject): THREE.Group {
   const g = new THREE.Group();

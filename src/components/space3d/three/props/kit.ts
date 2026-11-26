@@ -23,6 +23,8 @@ export interface ShelfSlot {
   facing: number;
   /** Chỉ trưng bày 1 sản phẩm ở giữa (bục) */
   single?: boolean;
+  /** Khi kho chưa có máy: bày máy mẫu (máy pha espresso, máy xay) để quầy không trống */
+  demoMachines?: boolean;
 }
 
 export const M = {

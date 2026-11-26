@@ -11,6 +11,9 @@ import { outboundProviderFetch } from '@/server/security/outbound-http';
  * (ai.baseUrl / ai.model / ai.geminiApiKey) — giống trợ lý Zalo hiện có.
  */
 
+/** Model mặc định cho trợ lý AI trong Không gian 3D */
+export const SPACE_AI_DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+
 export async function getSpaceAiModel() {
   const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
   if (!apiKey) return null;
@@ -21,7 +24,9 @@ export async function getSpaceAiModel() {
   )
     .replace(/\/+$/, '')
     .replace(/\/chat\/completions$/, '');
-  const modelId = (await getSetting<string>('ai.model', '')) || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  // Chat showroom 3D cần trả lời nhanh & rẻ → mặc định Gemini Flash-Lite (đổi bằng setting ai.spaceModel / env SPACE_AI_MODEL)
+  const modelId =
+    (await getSetting<string>('ai.spaceModel', '')) || process.env.SPACE_AI_MODEL || SPACE_AI_DEFAULT_MODEL;
   const provider = createOpenAICompatible({
     name: 'workhub-ai',
     baseURL,

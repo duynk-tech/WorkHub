@@ -19,7 +19,7 @@ import {
   buildTableRound,
 } from './furniture';
 import { buildPlant, buildPlanterBox } from './plants';
-import { buildBooth, buildBrandWall, buildCheckout, buildDisplayCabinet, buildGondola, buildPodium, buildReception, buildWallShelf } from './retail';
+import { buildBooth, buildBrandWall, buildDisplayCounter, buildCheckout, buildDisplayCabinet, buildGondola, buildPodium, buildReception, buildWallShelf } from './retail';
 import { buildBarCounter, buildEspresso, buildMenuBoard, buildPastryCase, buildPendant } from './cafe';
 import { buildCartonStack, buildForklift, buildPalletStack, buildRack } from './warehouse';
 import { buildDoor, buildFloorLamp, buildGlassWall, buildWall, buildWallArt } from './structure';
@@ -28,6 +28,7 @@ type Builder = (o: SpaceObject, ctx: BuildContext) => THREE.Group;
 
 const BUILDERS: Record<string, Builder> = {
   BOOTH: buildBooth,
+  DISPLAY_COUNTER: buildDisplayCounter,
   GONDOLA: buildGondola,
   WALL_SHELF: buildWallShelf,
   DISPLAY_CABINET: buildDisplayCabinet,

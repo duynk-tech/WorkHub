@@ -182,20 +182,8 @@ export function createExpoBoothMesh(s: SpaceStructure): THREE.Group {
     g.add(plinthLed);
   }
 
-  // Bàn tư vấn tròn + 2 ghế hiện đại góc trong gian hàng
-  const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.05, 24), M.wood());
-  tableTop.position.set(-w * 0.32, 0.82, -0.35);
-  tableTop.castShadow = true;
-  const tableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.74, 10), aluMat);
-  tableLeg.position.set(-w * 0.32, 0.45, -0.35);
-  g.add(tableTop, tableLeg);
-
-  // Chậu cây trang trí góc gian hàng
-  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.2, 0.42, 16), M.whiteGloss());
-  pot.position.set(w * 0.44, 0.3, -0.6);
-  const leaf = new THREE.Mesh(new THREE.DodecahedronGeometry(0.36, 1), M.leaf());
-  leaf.position.set(w * 0.44, 0.78, -0.6);
-  g.add(pot, leaf);
+  // Mặt 2 bục là chỗ trưng bày máy thật (không còn bàn / chậu cây trang trí)
+  g.userData.shelves = [-1.1, 1.1].map((bx) => ({ x: bx, y: 0.9, z: d * 0.5 - 0.72, width: 1.55, depth: 0.95, clearance: 1.4, facing: 0, single: true, demoMachines: true }));
 
   g.position.set(s.posX, 0, s.posZ);
   g.rotation.y = s.rotY;

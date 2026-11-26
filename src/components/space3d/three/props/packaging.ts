@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { SpaceMerchItem } from '@/lib/space-3d-types';
 import { choosePackKind, packSize, type PackKind } from '@/lib/space-3d-merch';
 import type { ShelfSlot } from './kit';
+import { buildEspresso } from './cafe';
+import { normalizeSpaceObject } from '@/lib/space-3d-types';
 import { hashId, seeded } from './kit';
 
 /**
@@ -202,8 +204,22 @@ export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: 
   for (const shelf of shelves) {
     // Máy thật (có mô hình 3D) trên tầng đủ cao / bục: dựng đúng hình dáng, thu nhỏ vừa tầng kệ nếu cần
     const machineFit = (item: SpaceMerchItem) => item.isMachine && item.model3D && (shelf.single || shelf.clearance >= 0.28);
-    if (shelf.single || items.some(machineFit)) {
+    if (shelf.single || shelf.demoMachines || items.some(machineFit)) {
       const machines = items.filter(machineFit);
+      if (!machines.length && shelf.demoMachines) {
+        // Kho chưa có máy nguyên chiếc → bày máy pha espresso mẫu để quầy giống showroom thật
+        const n = shelf.single ? 1 : Math.max(1, Math.min(3, Math.floor(shelf.width / 0.95)));
+        for (let i = 0; i < n; i++) {
+          const demo = buildDemoMachine(objectId, i);
+          const lx = -shelf.width / 2 + (shelf.width / n) * (i + 0.5) - (shelf.single ? 0 : 0.08);
+          const cos = Math.cos(shelf.facing);
+          const sin = Math.sin(shelf.facing);
+          demo.position.set(shelf.x + lx * cos, shelf.y, shelf.z - lx * sin);
+          demo.rotation.y = shelf.facing;
+          models.push(demo);
+        }
+        continue;
+      }
       if (machines.length) {
         const n = shelf.single ? 1 : Math.max(1, Math.min(3, Math.floor(shelf.width / 0.55)));
         for (let i = 0; i < n; i++) {
@@ -271,6 +287,17 @@ export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: 
     mesh.userData = { merchItemId: item.id, noMerge: true, shared: true };
     g.add(mesh);
   }
+  return g;
+}
+
+const DEMO_COLORS = ['#d1d5db', '#111827', '#b91c1c', '#e7e5e4'];
+
+/** Máy pha espresso mẫu (kèm máy xay) — dùng khi kho chưa có máy thật */
+function buildDemoMachine(objectId: string, idx: number): THREE.Group {
+  const color = DEMO_COLORS[(hashId(objectId) + idx) % DEMO_COLORS.length];
+  const o = normalizeSpaceObject({ id: `demo-${objectId}-${idx}`, kind: 'ESPRESSO_MACHINE', color, widthM: 0.7, depthM: 0.52, heightM: 0.5 });
+  const g = o ? buildEspresso(o) : new THREE.Group();
+  g.userData.noMerge = true;
   return g;
 }
 

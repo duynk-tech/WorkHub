@@ -5,7 +5,7 @@ const secret = z.string().max(4096);
 const flag = z.boolean();
 const number = (min: number, max: number) => z.union([z.number(), z.string().regex(/^\d+(\.\d+)?$/)]).pipe(z.coerce.number().min(min).max(max));
 const ai = {
-  'ai.geminiApiKey': secret, 'ai.baseUrl': short, 'ai.model': short,
+  'ai.geminiApiKey': secret, 'ai.baseUrl': short, 'ai.model': short, 'ai.spaceModel': short,
   'ai.systemPrompt': text, 'ai.temperature': number(0, 1), 'ai.maxIterations': number(1, 10),
 };
 export const SETTINGS_POLICIES = {

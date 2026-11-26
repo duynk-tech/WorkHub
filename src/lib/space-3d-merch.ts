@@ -41,7 +41,7 @@ export function packSize(kind: PackKind, clearance: number): [number, number, nu
 
 /** Danh sách SP cho 1 kệ theo cấu hình merch (AUTO: toàn bộ danh sách công khai; MANUAL: theo id đã chọn). */
 /** Loại kệ trưng bày máy móc (tủ kính, bục, kệ pallet) — ưu tiên máy/thiết bị nguyên chiếc */
-const MACHINE_DISPLAYS = new Set(['DISPLAY_CABINET', 'PODIUM', 'RACK']);
+const MACHINE_DISPLAYS = new Set(['DISPLAY_COUNTER', 'DISPLAY_CABINET', 'PODIUM', 'RACK']);
 
 export function resolveMerchItems(
   merch: { mode: 'AUTO' | 'MANUAL'; itemIds: number[] } | undefined,

@@ -159,6 +159,17 @@ describe('bố cục mẫu', () => {
     expect(lobbyClear(objs)).toBe(true);
   });
 
+  it('showroom như cửa hàng thật: không gian hàng, có quầy trưng bày đặt tên, không chồng lấn', () => {
+    for (const [w, d] of [[36, 28], [36, 32]] as const) {
+      const objs = showroomTemplate({ widthM: w, depthM: d });
+      expect(objs.some((o) => o.kind === 'BOOTH')).toBe(false);
+      const counters = objs.filter((o) => o.kind === 'DISPLAY_COUNTER');
+      expect(counters.length).toBeGreaterThanOrEqual(4);
+      expect(counters.every((c) => c.label && c.label !== 'Quầy trưng bày sản phẩm')).toBe(true);
+      for (const o of objs) if (o.kind !== 'RUG') expect(findCollisions(objs, o.id), `${w}x${d} ${o.id}`).toEqual([]);
+    }
+  });
+
   it('mọi mẫu: id duy nhất, nằm trong mặt bằng', () => {
     for (const [fn, w, d] of [[showroomTemplate, 36, 28], [cafeTemplate, 16, 14], [officeTemplate, 26, 20], [warehouseTemplate, 36, 28]] as const) {
       const objs = fn({ widthM: w, depthM: d });
