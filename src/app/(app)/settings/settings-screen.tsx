@@ -312,7 +312,7 @@ export function SettingsScreen({
     });
   };
 
-  const TAB_GROUPS: {
+  const RAW_TAB_GROUPS: {
     title: string;
     items: { key: Tab; label: string; icon: any; visible: boolean }[];
   }[] = [
@@ -349,7 +349,9 @@ export function SettingsScreen({
         { key: 'data', label: 'Dữ liệu & Demo', icon: Database, visible: permissions.general },
       ],
     },
-  ]
+  ];
+
+  const TAB_GROUPS = RAW_TAB_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((t) => t.visible) }))
     .filter((g) => g.items.length > 0);
 
