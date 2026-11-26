@@ -1,14 +1,14 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
-import { Be_Vietnam_Pro } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import { ToastProvider } from '@/components/ui/toast';
 import { themeScript } from '@/components/ui/theme-toggle';
 import { getAppBranding } from '@/server/modules/settings/branding';
 import './globals.css';
 
-const appFont = Be_Vietnam_Pro({
+const appFont = Inter({
   subsets: ['vietnamese', 'latin'],
-  weight: ['300', '400', '500', '600', '700'],
+  weight: ['400', '500', '600', '700'],
   variable: '--font-app-sans',
   display: 'swap',
 });
@@ -32,8 +32,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f5f6fa' },
-    { media: '(prefers-color-scheme: dark)', color: '#0b0d14' },
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#020617' },
   ],
 };
 
