@@ -137,12 +137,10 @@ export function LoginForm({ googleEnabled = false, ssoError,
                   {displayLogoLetter}
                 </div>
               )}
-              {!logoUrl && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-strong)', lineHeight: 1.2 }}>{appName}</span>
-                  <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Operations console</span>
-                </div>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-strong)', lineHeight: 1.2 }}>{appName}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Operations console</span>
+              </div>
             </div>
 
             <div className="login-eyebrow">CỔNG THÔNG TIN NỘI BỘ</div>
