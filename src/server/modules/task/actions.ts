@@ -6,7 +6,7 @@ import { transitionTask, assertCompletion, assertChecklistEditable, syncChecklis
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
-import { generateTaskCode, logActivity, notifyTaskAssigned, taskScopeWhere } from './service';
+import { generateTaskCode, logActivity, notifyTaskAssigned, notifyTaskComment, taskScopeWhere } from './service';
 import { TASK_STATUS } from '@/lib/enums';
 import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
 
@@ -55,6 +55,23 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
   if ((start && !Number.isFinite(start.getTime())) || (due && !Number.isFinite(due.getTime())) || (start && due && due < start)) return { ok: false, message: 'Khoảng ngày công việc không hợp lệ' };
   if (id && d.parentTaskId === id) return { ok: false, message: 'Công việc không thể là cha của chính nó' };
 
+  // Chống vòng lặp công việc cha – con nhiều cấp (A → B → C → A)
+  if (id && d.parentTaskId) {
+    let cursor: number | null = d.parentTaskId;
+    const visited = new Set<number>([id]);
+    for (let depth = 0; depth < 20 && cursor; depth++) {
+      if (visited.has(cursor)) {
+        return { ok: false, message: 'Không thể tạo vòng lặp công việc cha – con' };
+      }
+      visited.add(cursor);
+      const ancestor: { parentTaskId: number | null } | null = await prisma.task.findUnique({
+        where: { id: cursor },
+        select: { parentTaskId: true },
+      });
+      cursor = ancestor?.parentTaskId ?? null;
+    }
+  }
+
   if (d.assigneeId && d.assigneeId !== ctx.employeeId && !can(ctx, 'FEATURE_TASK_ASSIGN')) {
     return { ok: false, message: 'Bạn chỉ được tạo công việc cho chính mình' };
   }
@@ -86,6 +103,12 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
         const task = await tx.task.update({ where: { id }, data: { ...data, ...taskState(d.status, d.progress, before) } });
         await tx.taskWatcher.deleteMany({ where: { taskId: id } });
         if (d.watcherIds.length) await tx.taskWatcher.createMany({ data: d.watcherIds.map((employeeId) => ({ taskId: id, employeeId })), skipDuplicates: true });
+        if (d.reminderOffsetMinutes !== undefined) {
+          await tx.taskReminder.deleteMany({ where: { taskId: id, sentAt: null } });
+          if (d.reminderOffsetMinutes && d.reminderOffsetMinutes > 0) {
+            await tx.taskReminder.create({ data: { taskId: id, offsetMinutesBeforeDue: d.reminderOffsetMinutes } });
+          }
+        }
         return task;
       }, { isolationLevel: 'Serializable' });
 
@@ -108,24 +131,36 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
     }
 
     if (d.status === 'DONE' && (d.checklist.some(Boolean) || (d.reviewerId && d.reviewerId !== ctx.employeeId))) throw new Error('Tạo công việc trước khi kiểm tra và hoàn thành');
-    const code = await generateTaskCode();
-    const task = await prisma.task.create({
-      data: {
-        ...data,
-        ...taskState(d.status, d.progress, { status: 'TODO', progress: 0 }),
-        code,
-        creatorId: ctx.employeeId,
-        departmentId: d.departmentId ?? ctx.departmentId,
-        source: 'WEB',
-        watchers: d.watcherIds.length ? { create: d.watcherIds.map((employeeId) => ({ employeeId })) } : undefined,
-        checklist: d.checklist.length
-          ? { create: d.checklist.filter(Boolean).map((content, i) => ({ content, sortOrder: i })) }
-          : undefined,
-        reminders: d.reminderOffsetMinutes
-          ? { create: { offsetMinutesBeforeDue: d.reminderOffsetMinutes } }
-          : undefined,
-      },
-    });
+    let code = '';
+    let task: Awaited<ReturnType<typeof prisma.task.create>> | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      code = await generateTaskCode(attempt);
+      try {
+        task = await prisma.task.create({
+          data: {
+            ...data,
+            ...taskState(d.status, d.progress, { status: 'TODO', progress: 0 }),
+            code,
+            creatorId: ctx.employeeId,
+            departmentId: d.departmentId ?? ctx.departmentId,
+            source: 'WEB',
+            watchers: d.watcherIds.length ? { create: d.watcherIds.map((employeeId) => ({ employeeId })) } : undefined,
+            checklist: d.checklist.length
+              ? { create: d.checklist.filter(Boolean).map((content, i) => ({ content, sortOrder: i })) }
+              : undefined,
+            reminders: d.reminderOffsetMinutes
+              ? { create: { offsetMinutesBeforeDue: d.reminderOffsetMinutes } }
+              : undefined,
+          },
+        });
+        break;
+      } catch (err: unknown) {
+        const prismaErr = err as { code?: string };
+        if (prismaErr?.code === 'P2002' && attempt < 4) continue;
+        throw err;
+      }
+    }
+    if (!task) throw new Error('Không thể sinh mã công việc duy nhất, vui lòng thử lại');
 
     await logActivity(task.id, ctx.employeeId, 'CREATE');
     if (task.assigneeId && task.assigneeId !== ctx.employeeId) await notifyTaskAssigned(task.id, ctx.fullName);
@@ -143,6 +178,7 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
     }).catch((err) => console.error('[Webhook task.created Error]:', err));
 
     revalidatePath('/tasks');
+    if (d.parentTaskId) revalidatePath(`/tasks/${d.parentTaskId}`);
     return { ok: true, message: `Đã tạo công việc ${code}`, id: task.id };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Lưu công việc thất bại' };
@@ -202,9 +238,39 @@ export async function addCommentAction(taskId: number, content: string): Promise
 
   await prisma.taskComment.create({ data: { taskId, authorId: ctx.employeeId, content: content.trim() } });
   await logActivity(taskId, ctx.employeeId, 'COMMENT');
+  await notifyTaskComment(taskId, ctx.employeeId, ctx.fullName, content.trim()).catch(() => {});
 
   revalidatePath(`/tasks/${taskId}`);
   return { ok: true, message: 'Đã gửi bình luận' };
+}
+
+export async function updateCommentAction(commentId: number, content: string): Promise<Result> {
+  const ctx = await requireAuth();
+  const trimmed = content.trim();
+  if (!trimmed) return { ok: false, message: 'Nội dung bình luận trống' };
+
+  const comment = await prisma.taskComment.findUnique({ where: { id: commentId } });
+  if (!comment) return { ok: false, message: 'Không tìm thấy bình luận' };
+  if (comment.authorId !== ctx.employeeId && !ctx.isAdmin) {
+    return { ok: false, message: 'Bạn chỉ có thể sửa bình luận của mình' };
+  }
+
+  await prisma.taskComment.update({ where: { id: commentId }, data: { content: trimmed } });
+  revalidatePath(`/tasks/${comment.taskId}`);
+  return { ok: true, message: 'Đã cập nhật bình luận' };
+}
+
+export async function deleteCommentAction(commentId: number): Promise<Result> {
+  const ctx = await requireAuth();
+  const comment = await prisma.taskComment.findUnique({ where: { id: commentId } });
+  if (!comment) return { ok: false, message: 'Không tìm thấy bình luận' };
+  if (comment.authorId !== ctx.employeeId && !ctx.isAdmin && !can(ctx, 'FEATURE_TASK_EDIT')) {
+    return { ok: false, message: 'Bạn không có quyền xóa bình luận này' };
+  }
+
+  await prisma.taskComment.delete({ where: { id: commentId } });
+  revalidatePath(`/tasks/${comment.taskId}`);
+  return { ok: true, message: 'Đã xóa bình luận' };
 }
 
 export async function toggleChecklistAction(itemId: number, isDone: boolean): Promise<Result> {
@@ -279,5 +345,78 @@ export async function logTimeAction(taskId: number, hours: number, workDate: str
     return { ok: true, message: `Đã ghi nhận ${hours} giờ làm việc` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Ghi nhận thời gian thất bại' };
+  }
+}
+
+export async function deleteTimeLogAction(timeLogId: number): Promise<Result> {
+  try {
+    const ctx = await requireAuth();
+    const log = await prisma.taskTimeLog.findUnique({ where: { id: timeLogId } });
+    if (!log) return { ok: false, message: 'Không tìm thấy bản ghi chấm giờ' };
+
+    const task = await prisma.task.findFirst({ where: { AND: [{ id: log.taskId }, await taskScopeWhere(ctx)] } });
+    if (!task) return { ok: false, message: 'Công việc ngoài phạm vi dữ liệu của bạn' };
+    if (log.employeeId !== ctx.employeeId && !can(ctx, 'FEATURE_TASK_EDIT')) {
+      return { ok: false, message: 'Bạn không có quyền xóa bản ghi chấm giờ này' };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.taskTimeLog.delete({ where: { id: timeLogId } });
+      const agg = await tx.taskTimeLog.aggregate({ where: { taskId: log.taskId }, _sum: { hours: true } });
+      await tx.task.update({ where: { id: log.taskId }, data: { actualHours: agg._sum.hours ?? 0 } });
+    }, { isolationLevel: 'Serializable' });
+
+    revalidatePath(`/tasks/${log.taskId}`);
+    return { ok: true, message: 'Đã xóa bản ghi chấm giờ' };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Xóa chấm giờ thất bại' };
+  }
+}
+
+export async function deleteTaskAttachmentAction(attachmentId: number): Promise<Result> {
+  try {
+    const att = await prisma.taskAttachment.findUnique({ where: { id: attachmentId } });
+    if (!att) return { ok: false, message: 'Không tìm thấy tệp đính kèm' };
+    const { ctx } = await assertCanEdit(att.taskId);
+
+    await prisma.taskAttachment.delete({ where: { id: attachmentId } });
+    await logActivity(att.taskId, ctx.employeeId, 'ATTACHMENT', att.fileName, null, 'đã xóa');
+
+    revalidatePath(`/tasks/${att.taskId}`);
+    revalidatePath('/tasks');
+    return { ok: true, message: 'Đã xóa tệp đính kèm' };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Xóa tệp đính kèm thất bại' };
+  }
+}
+
+export async function toggleWatchTaskAction(taskId: number): Promise<Result> {
+  try {
+    const ctx = await requireAuth();
+    const task = await prisma.task.findFirst({
+      where: { AND: [{ id: taskId }, await taskScopeWhere(ctx)] },
+      select: { id: true },
+    });
+    if (!task) return { ok: false, message: 'Không tìm thấy công việc' };
+
+    const existing = await prisma.taskWatcher.findUnique({
+      where: { taskId_employeeId: { taskId, employeeId: ctx.employeeId } },
+    });
+
+    if (existing) {
+      await prisma.taskWatcher.delete({
+        where: { taskId_employeeId: { taskId, employeeId: ctx.employeeId } },
+      });
+      revalidatePath(`/tasks/${taskId}`);
+      return { ok: true, message: 'Đã bỏ theo dõi công việc' };
+    }
+
+    await prisma.taskWatcher.create({
+      data: { taskId, employeeId: ctx.employeeId },
+    });
+    revalidatePath(`/tasks/${taskId}`);
+    return { ok: true, message: 'Đã theo dõi công việc' };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Cập nhật theo dõi thất bại' };
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -10,10 +10,12 @@ import {
 import {
   Button, Card, CardBody, Badge, Avatar, EmptyState, SearchInput, Select, SearchableSelect, Input, Progress, PageHeader,
 } from '@/components/ui';
+import { useToast } from '@/components/ui/toast';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
 import { TaskFormModal, type TaskFormValue } from './task-form-modal';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 import { fmtDate } from '@/lib/date';
+import { updateTaskStatusAction } from '@/server/modules/task/actions';
 import {
   TASK_DATE_FIELDS, TASK_DATE_PRESETS, describeDateFilter,
   type TaskDateField, type TaskDatePreset,
@@ -36,6 +38,7 @@ interface Props {
   employees: { id: number; fullName: string; code: string; avatarUrl: string | null }[];
   filter: {
     search: string; status: string[]; pickedStatus: string[]; scope: string;
+    priority: string[];
     assigneeId: number | null; departmentId: number | null;
     onlyMine: boolean; overdue: boolean; sort: string; page: number;
     dateField: TaskDateField; datePreset: TaskDatePreset;
@@ -56,9 +59,29 @@ export function TaskScreen({
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
+  const [, startTransition] = useTransition();
   const [search, setSearch] = useState(filter.search);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<TaskFormValue | null>(null);
+  const [draggingTask, setDraggingTask] = useState<{ id: number; status: string } | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+
+  const handleKanbanDrop = (targetStatus: string) => {
+    setDragOverStatus(null);
+    if (!draggingTask || draggingTask.status === targetStatus) {
+      setDraggingTask(null);
+      return;
+    }
+    const { id } = draggingTask;
+    setDraggingTask(null);
+    startTransition(async () => {
+      const res = await updateTaskStatusAction(id, targetStatus);
+      if (res.ok) toast.success(res.message);
+      else toast.error(res.message);
+      router.refresh();
+    });
+  };
 
   const setParam = (key: string, value: string) => setParams({ [key]: value });
 
@@ -107,6 +130,15 @@ export function TaskScreen({
             {Object.entries(TASK_STATUS)
               .filter(([k]) => filter.scope === 'all' || filter.status.length === 0 || filter.status.includes(k) || filter.pickedStatus.includes(k))
               .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </Select>
+
+          <Select
+            sizeSm style={{ width: 'auto', minWidth: 130 }}
+            value={filter.priority[0] ?? ''}
+            onChange={(e) => setParam('priority', e.target.value)}
+          >
+            <option value="">Mọi ưu tiên</option>
+            {Object.entries(TASK_PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </Select>
 
           <SearchableSelect
@@ -195,7 +227,7 @@ export function TaskScreen({
             <AlertTriangle /> Quá hạn
           </Button>
 
-          {(filter.search || filter.pickedStatus.length || filter.assigneeId || filter.departmentId || filter.onlyMine || filter.overdue || dateLabel) && (
+          {(filter.search || filter.pickedStatus.length || filter.priority.length || filter.assigneeId || filter.departmentId || filter.onlyMine || filter.overdue || dateLabel) && (
             <Button size="sm" variant="ghost" onClick={() => router.push(`/tasks?view=${view}`)}><Filter /> Xóa lọc</Button>
           )}
 
@@ -369,11 +401,30 @@ export function TaskScreen({
         <div className="kanban">
           {board.map((col) => {
             const meta = TASK_STATUS[col.status];
+            const isDropTarget = dragOverStatus === col.status && draggingTask?.status !== col.status;
             return (
               <div
                 key={col.status}
                 className="kanban-col"
-                style={{ '--col': meta?.color ?? 'var(--text-muted)' } as React.CSSProperties}
+                style={{
+                  '--col': meta?.color ?? 'var(--text-muted)',
+                  outline: isDropTarget ? '2px dashed var(--brand)' : undefined,
+                  background: isDropTarget ? 'var(--brand-soft)' : undefined,
+                  transition: 'outline 120ms ease, background 120ms ease',
+                } as React.CSSProperties}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragOverStatus !== col.status) setDragOverStatus(col.status);
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                    setDragOverStatus((prev) => (prev === col.status ? null : prev));
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleKanbanDrop(col.status);
+                }}
               >
                 <div className="kanban-head">
                   <span style={{ fontWeight: 620, fontSize: 13, color: 'var(--text-strong)' }}>
@@ -382,14 +433,22 @@ export function TaskScreen({
                   <span className="kanban-count">{col.total}</span>
                 </div>
                 <div className="kanban-body scrollbar-none">
-                  {col.tasks.length === 0 && <div className="hint" style={{ padding: '16px 8px', textAlign: 'center' }}>Trống</div>}
+                  {col.tasks.length === 0 && (
+                    <div className="hint" style={{ padding: '16px 8px', textAlign: 'center' }}>
+                      {isDropTarget ? 'Thả vào đây để chuyển trạng thái' : 'Trống'}
+                    </div>
+                  )}
                   {col.tasks.map((t) => (
                     <Link
                       key={t.id}
                       href={`/tasks/${t.id}`}
+                      draggable
+                      onDragStart={() => setDraggingTask({ id: t.id, status: col.status })}
+                      onDragEnd={() => { setDraggingTask(null); setDragOverStatus(null); }}
                       className="kanban-card"
                       data-overdue={Boolean(overdue(t))}
                       data-muted={['DONE', 'CANCELLED'].includes(t.status)}
+                      style={{ opacity: draggingTask?.id === t.id ? 0.5 : 1, cursor: 'grab' }}
                     >
                       <div className="row-between" style={{ marginBottom: 6 }}>
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>{t.code}</span>
@@ -410,6 +469,8 @@ export function TaskScreen({
                         <div className="row" style={{ gap: 7, color: 'var(--text-faint)', fontSize: 11 }}>
                           {t._count.comments > 0 && <span className="row" style={{ gap: 2 }}><MessageSquare size={11} />{t._count.comments}</span>}
                           {t._count.checklist > 0 && <span className="row" style={{ gap: 2 }}><CheckSquare size={11} />{t._count.checklist}</span>}
+                          {t._count.subTasks > 0 && <span className="row" style={{ gap: 2 }}><GitBranch size={11} />{t._count.subTasks}</span>}
+                          {(t._count.attachments ?? 0) > 0 && <span className="row" style={{ gap: 2 }}><Paperclip size={11} />{t._count.attachments}</span>}
                         </div>
                       </div>
                     </Link>

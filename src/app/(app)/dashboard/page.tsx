@@ -1,18 +1,15 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import {
   ListChecks, AlertTriangle, CheckSquare, CalendarDays, Clock, Users,
   ArrowRight, CircleDot, Plane, ShoppingCart, Wallet, FileText, Truck,
   PackageSearch, ClipboardCheck, Wrench, TimerReset, Boxes, Briefcase,
-  ShieldCheck, Utensils, Warehouse, TrendingUp, BarChart3,
+  ShieldCheck, Utensils, Warehouse, TrendingUp,
 } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, can } from '@/server/auth/context';
 import { visibleEmployeeIds } from '@/server/auth/scope';
 import { customerDebtReport } from '@/server/modules/report/customer-debt';
-import { attendanceReport, taskReport, leaveReport, overviewReport } from '@/server/modules/report/service';
-import { getDisabledReportKeys } from '@/server/modules/report/config';
-import { visibleReports } from '@/server/modules/report/registry';
-import { ReportScreen } from '../reports/report-screen';
 import { getCustomerCareList, CARE_REASONS } from '@/server/modules/customer/care';
 import { ORDER_STATUSES as CUSTOMER_ORDER_STATUSES } from '@/server/modules/customer/types';
 import { ORDER_STATUSES as PO_STATUSES, TRANSACTION_TYPES } from '@/server/modules/spare-parts/types';
@@ -355,6 +352,15 @@ export default async function DashboardPage({
 }) {
   const ctx = await requireAuth();
   const sp = await searchParams;
+  if (sp.tab === 'reports') {
+    const params = new URLSearchParams();
+    if (sp.report) params.set('tab', sp.report);
+    for (const key of ['month', 'from', 'to', 'year'] as const) {
+      if (sp[key]) params.set(key, sp[key]!);
+    }
+    const qs = params.toString();
+    redirect(qs ? `/reports?${qs}` : '/reports');
+  }
   const scopeIds = await visibleEmployeeIds(ctx);
   const scopeWhere = scopeIds === null ? {} : { in: scopeIds };
   const today = new Date();
@@ -380,9 +386,7 @@ export default async function DashboardPage({
     canSeeDashboardWidget(ctx.permissions, ctx.isAdmin, w.key),
   ).map((w) => w.key);
 
-  const canViewReports = can(ctx, 'MENU_REPORTS');
-  const isReportsTab = sp.tab === 'reports' && canViewReports;
-  const useCustomBoard = Boolean(activeBoard) && !isReportsTab && !sp.tab;
+  const useCustomBoard = Boolean(activeBoard) && !sp.tab;
   const activeWidgetKeys = useCustomBoard && activeBoard ? activeBoard.visibleWidgets : [];
   const activeDataSources = new Set(
     activeWidgetKeys.map((k) => WIDGET_BY_KEY.get(k)?.dataSource).filter(Boolean),
@@ -400,38 +404,15 @@ export default async function DashboardPage({
       ? { key: 'service', label: 'Dịch vụ & Sửa chữa', hint: 'Phiếu sự cố đang xử lý và phần đã trễ cam kết', icon: Wrench }
       : null,
     { key: 'work', label: 'Công việc & Nhân sự', hint: 'Việc được giao, đơn chờ bạn duyệt và tình hình nghỉ phép', icon: Users },
-    canViewReports
-      ? { key: 'reports', label: 'Báo cáo', hint: 'Báo cáo công việc, bán hàng và nhân sự', icon: BarChart3 }
-      : null,
   ].filter((t): t is NonNullable<typeof t> => t !== null);
 
   const tab = tabs.some((t) => t.key === sp.tab) ? sp.tab! : tabs[0].key;
   const active = tabs.find((t) => t.key === tab)!;
 
-  const reports = isReportsTab
-    ? visibleReports(await getDisabledReportKeys(), (permission) => can(ctx, permission as never)).filter((report) => report.key !== 'sales-inventory')
-    : [];
-  const requestedReport = sp.report ?? '';
-  const reportTab = reports.some((report) => report.key === requestedReport) ? requestedReport : reports[0]?.key ?? '';
-  const reportMonth = sp.month ?? `${year}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-  const reportFrom = sp.from ?? `${year}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const reportTo = sp.to ?? today.toISOString().slice(0, 10);
-  const reportYear = Number(sp.year ?? year);
-
-  const [reportOverview, reportAttendance, reportTasks, reportLeaves, reportDebt] = isReportsTab
-    ? await Promise.all([
-      overviewReport(ctx),
-      reportTab === 'attendance' ? attendanceReport(ctx, reportMonth) : Promise.resolve(null),
-      reportTab === 'task' ? taskReport(ctx, reportFrom, reportTo) : Promise.resolve(null),
-      reportTab === 'leave' ? leaveReport(ctx, reportYear) : Promise.resolve(null),
-      reportTab === 'customer-debt' ? customerDebtReport() : Promise.resolve(null),
-    ])
-    : [null, null, null, null, null] as const;
-
-  const needSales = useCustomBoard ? activeDataSources.has('sales') : (!isReportsTab && tab === 'sales');
-  const needStock = useCustomBoard ? activeDataSources.has('stock') : (!isReportsTab && tab === 'stock');
-  const needService = useCustomBoard ? activeDataSources.has('service') : (!isReportsTab && tab === 'service');
-  const showWork = useCustomBoard ? activeDataSources.has('work') : (!isReportsTab && tab === 'work');
+  const needSales = useCustomBoard ? activeDataSources.has('sales') : tab === 'sales';
+  const needStock = useCustomBoard ? activeDataSources.has('stock') : tab === 'stock';
+  const needService = useCustomBoard ? activeDataSources.has('service') : tab === 'service';
+  const showWork = useCustomBoard ? activeDataSources.has('work') : tab === 'work';
 
   // Chỉ truy vấn số liệu của các khối thực sự hiển thị
   const [sales, stock, service] = await Promise.all([
@@ -507,7 +488,7 @@ export default async function DashboardPage({
 
   const widgetSet = new Set(activeWidgetKeys);
   const showWidget = (key: string, defaultTab: string) =>
-    useCustomBoard ? widgetSet.has(key) : (!isReportsTab && tab === defaultTab);
+    useCustomBoard ? widgetSet.has(key) : tab === defaultTab;
 
   return (
     <div className="stack">
@@ -519,8 +500,6 @@ export default async function DashboardPage({
       <DashboardBoardBar
         boards={boards}
         activeBoardId={activeBoard?.id ?? null}
-        isReportsTab={isReportsTab}
-        canViewReports={canViewReports}
         isAdmin={ctx.isAdmin}
         allowedWidgetKeys={allowedWidgetKeys}
         roles={adminRoles}
@@ -548,25 +527,8 @@ export default async function DashboardPage({
           {activeBoard.isShared && !activeBoard.isOwn && ` · Chia sẻ bởi ${activeBoard.ownerName}`}
         </div>
       )}
-      {!useCustomBoard && !isReportsTab && (
+      {!useCustomBoard && (
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>
-      )}
-
-      {isReportsTab && reportOverview && (
-        <ReportScreen
-          tab={reportTab}
-          reports={reports}
-          overview={reportOverview}
-          attendance={reportAttendance ? JSON.parse(JSON.stringify(reportAttendance)) : null}
-          tasks={reportTasks ? JSON.parse(JSON.stringify(reportTasks)) : null}
-          leaves={reportLeaves ? JSON.parse(JSON.stringify(reportLeaves)) : null}
-          debt={reportDebt ? JSON.parse(JSON.stringify(reportDebt)) : null}
-          filters={{ month: reportMonth, from: reportFrom, to: reportTo, year: reportYear }}
-          canExport={can(ctx, 'FEATURE_REPORT_EXPORT')}
-          routeBase="/dashboard"
-          routeParam="report"
-          fixedRouteParams={{ tab: 'reports' }}
-        />
       )}
 
       {sales && (

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { requireAuth, can } from '@/server/auth/context';
+import { requirePermission, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { getTaskDetail } from '@/server/modules/task/service';
 import { visibleEmployeeIds } from '@/server/auth/scope';
@@ -21,19 +21,23 @@ export default async function TaskDetailPage({
   params: Promise<{ id: string }>;
   searchParams?: Promise<Record<string, string | undefined>>;
 }) {
-  const ctx = await requireAuth();
+  const ctx = await requirePermission('MENU_TASKS');
   const [{ id }, sp] = await Promise.all([params, searchParams ? searchParams : Promise.resolve({})]);
   const task = await getTaskDetail(ctx, Number(id));
   if (!task) notFound();
 
   const scopeIds = await visibleEmployeeIds(ctx);
-  const [employees, tree] = await Promise.all([
+  const [employees, tree, currentEmp] = await Promise.all([
     prisma.employee.findMany({
       where: { status: 'ACTIVE', ...(scopeIds ? { id: { in: scopeIds } } : {}) },
       orderBy: { fullName: 'asc' },
       select: { id: true, fullName: true, code: true, avatarUrl: true },
     }),
     getDepartmentTree(),
+    prisma.employee.findUnique({
+      where: { id: ctx.employeeId },
+      select: { avatarUrl: true },
+    }),
   ]);
 
   const canEdit =
@@ -46,7 +50,13 @@ export default async function TaskDetailPage({
       employees={employees}
       departments={flattenTree(tree).map((d) => ({ id: d.id, name: d.name, level: d.level }))}
       currentEmployeeId={ctx.employeeId}
+      currentUser={{
+        fullName: ctx.fullName,
+        avatarUrl: currentEmp?.avatarUrl ?? null,
+        isAdmin: ctx.isAdmin,
+      }}
       canEdit={canEdit}
+      canCreate={can(ctx, 'FEATURE_TASK_CREATE')}
       canDelete={can(ctx, 'FEATURE_TASK_DELETE')}
       canAssign={can(ctx, 'FEATURE_TASK_ASSIGN')}
     />

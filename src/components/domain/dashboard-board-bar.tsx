@@ -5,7 +5,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus, SlidersHorizontal, Share2, Star, Trash2, ArrowUp, ArrowDown,
-  BarChart3, LayoutDashboard, Check,
+  LayoutDashboard, Check,
 } from 'lucide-react';
 import {
   Button, Badge, Field, Input, Checkbox, Switch, Divider,
@@ -28,8 +28,6 @@ import {
 interface Props {
   boards: DashboardBoardView[];
   activeBoardId: number | null;
-  isReportsTab: boolean;
-  canViewReports: boolean;
   isAdmin: boolean;
   allowedWidgetKeys: string[];
   roles: { code: string; name: string }[];
@@ -39,8 +37,6 @@ interface Props {
 export function DashboardBoardBar({
   boards,
   activeBoardId,
-  isReportsTab,
-  canViewReports,
   isAdmin,
   allowedWidgetKeys,
   roles,
@@ -199,7 +195,7 @@ export function DashboardBoardBar({
         {boards.length > 0 ? (
           <div className="tabs" style={{ borderBottom: 'none', flex: 1 }}>
             {boards.map((b) => {
-              const active = !isReportsTab && activeBoardId === b.id;
+              const active = activeBoardId === b.id;
               return (
                 <Link
                   key={b.id}
@@ -224,12 +220,6 @@ export function DashboardBoardBar({
                 </Link>
               );
             })}
-            {canViewReports && (
-              <Link href="/dashboard?tab=reports" className="tab" data-active={isReportsTab}>
-                <BarChart3 size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
-                Báo cáo
-              </Link>
-            )}
           </div>
         ) : (
           <div className="hint" style={{ fontSize: 12.5 }}>
@@ -238,7 +228,7 @@ export function DashboardBoardBar({
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: boards.length > 0 ? 6 : 0 }}>
-          {activeBoard && !isReportsTab && activeBoard.isOwn && !activeBoard.isDefault && (
+          {activeBoard && activeBoard.isOwn && !activeBoard.isDefault && (
             <Button
               type="button"
               variant="ghost"
@@ -250,7 +240,7 @@ export function DashboardBoardBar({
               <Star size={13} /> Đặt mặc định
             </Button>
           )}
-          {canEditActive && !isReportsTab && (
+          {canEditActive && (
             <>
               <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(activeBoard)}>
                 <SlidersHorizontal size={13} /> Tùy chỉnh

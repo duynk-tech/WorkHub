@@ -44,7 +44,7 @@ const REMINDER_OPTIONS = [
 ];
 
 export function TaskFormModal({
-  open, onClose, initial, departments, employees, currentEmployeeId, canAssign, onSaved,
+  open, onClose, initial, departments, employees, currentEmployeeId, canAssign, onSaved, parentTaskLabel,
 }: {
   open: boolean;
   onClose: () => void;
@@ -54,6 +54,7 @@ export function TaskFormModal({
   currentEmployeeId: number;
   canAssign: boolean;
   onSaved: (id?: number) => void;
+  parentTaskLabel?: string | null;
 }) {
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -89,7 +90,8 @@ export function TaskFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={form.id ? 'Cập nhật công việc' : 'Tạo công việc mới'}
+      title={form.id ? 'Cập nhật công việc' : parentTaskLabel ? 'Tạo công việc con' : 'Tạo công việc mới'}
+      description={parentTaskLabel ? `Thuộc công việc cha: ${parentTaskLabel}` : undefined}
       size="lg"
       footer={
         <>

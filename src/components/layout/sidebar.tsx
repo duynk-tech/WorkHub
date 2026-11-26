@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  PanelLeft, X, ChevronRight, Settings, LogOut,
+  PanelLeft, X, ChevronRight, LogOut,
   ShoppingCart, Boxes, Wrench, ListChecks, Users, BarChart3, Laptop, ShieldCheck, Folder,
   type LucideIcon,
 } from 'lucide-react';
@@ -54,15 +54,22 @@ export function Sidebar({
   sections, appName, logoUrl, logoText, badges, user, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
 }: Props) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const settingsItem = sections.flatMap(s => s.items).find(i => i.href === '/settings');
-  const menuSections = sections.map(s => ({ ...s, items: s.items.filter(i => i.href !== '/settings') })).filter(s => s.items.length);
+  const menuSections = sections.filter((s) => s.items.length > 0);
   useEffect(() => {
-    setExpanded(previous => {
+    setExpanded((previous) => {
       const next = { ...previous };
       for (const section of sections) {
-        if (section.title && section.items.some(i => pathname === i.href || pathname.startsWith(`${i.href}/`))) next[section.title] = true;
+        if (
+          section.title &&
+          section.items.some((i) =>
+            i.href === '/settings'
+              ? pathname === '/settings'
+              : pathname === i.href || pathname.startsWith(`${i.href}/`),
+          )
+        ) {
+          next[section.title] = true;
+        }
       }
       return next;
     });
@@ -104,8 +111,6 @@ export function Sidebar({
 
   const isActive = (href: string) => {
     const current = pendingHref ?? pathname;
-    if (href === '/reports' && current === '/dashboard' && searchParams.get('tab') === 'reports') return true;
-    if (href === '/dashboard' && current === '/dashboard' && searchParams.get('tab') === 'reports') return false;
     return href === '/settings' ? current === '/settings' : current === href || current.startsWith(`${href}/`);
   };
 
@@ -315,22 +320,6 @@ export function Sidebar({
         </nav>
 
         <div className="sidebar-footer">
-          {settingsItem && (
-            <Link
-              href={settingsItem.href}
-              className="nav-item"
-              data-active={pathname === '/settings'}
-              aria-current={pathname === '/settings' ? 'page' : undefined}
-              aria-label="Cài đặt hệ thống"
-              onMouseEnter={(e) => showTooltip(e, 'Cài đặt hệ thống')}
-              onMouseLeave={hideTooltip}
-              onFocus={(e) => showTooltip(e, 'Cài đặt hệ thống')}
-              onBlur={hideTooltip}
-            >
-              <Settings />
-              {!isEffectiveCollapsed && <span style={{ flex: 1 }}>Cài đặt hệ thống</span>}
-            </Link>
-          )}
           {user && (
             <div className="sidebar-user-row">
               <Link

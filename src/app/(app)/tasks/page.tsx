@@ -1,4 +1,4 @@
-import { requireAuth, can } from '@/server/auth/context';
+import { requirePermission, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import {
   listTasks, listTasksBoard, countTaskScopes,
@@ -20,7 +20,7 @@ export default async function TasksPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const ctx = await requireAuth();
+  const ctx = await requirePermission('MENU_TASKS');
   const sp = await searchParams;
   const view = sp.view === 'board' ? 'board' : 'list';
 

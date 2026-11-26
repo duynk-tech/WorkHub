@@ -6,7 +6,7 @@ import { fmtDate } from '@/lib/date';
 import { notify } from '@/server/modules/notify/service';
 import { TASK_PRIORITY } from '@/lib/enums';
 
-export async function generateTaskCode(): Promise<string> {
+export async function generateTaskCode(offset = 0): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `TSK-${year}-`;
   const last = await prisma.task.findFirst({
@@ -14,7 +14,7 @@ export async function generateTaskCode(): Promise<string> {
     orderBy: { code: 'desc' },
     select: { code: true },
   });
-  const seq = last ? Number(last.code.slice(prefix.length)) + 1 : 1;
+  const seq = (last ? Number(last.code.slice(prefix.length)) : 0) + 1 + offset;
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
@@ -192,31 +192,29 @@ export async function exportTasks(ctx: AuthContext, filter: TaskFilter) {
   return { rows, total, truncated: total > rows.length };
 }
 
-/** Dữ liệu cho bảng Kanban — lấy tối đa N việc mỗi cột. */
+/** Dữ liệu cho bảng Kanban — lấy tối đa N việc mỗi cột, đồng bộ đầy đủ bộ lọc với Danh sách. */
 export async function listTasksBoard(ctx: AuthContext, filter: TaskFilter, perColumn = 50) {
-  const base = await taskScopeWhere(ctx);
   const statuses = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED'] as const;
-
-  const extra: Prisma.TaskWhereInput[] = [];
-  if (filter.search?.trim()) extra.push({ OR: [{ title: { contains: filter.search.trim(), mode: 'insensitive' } }, { code: { contains: filter.search.trim(), mode: 'insensitive' } }] });
-  if (filter.assigneeId) extra.push({ assigneeId: filter.assigneeId });
-  if (filter.onlyMine) extra.push({ assigneeId: ctx.employeeId });
-  if (filter.departmentId) extra.push({ departmentId: filter.departmentId });
+  const baseWhere = await buildTaskWhere(ctx, { ...filter, status: [] });
+  const baseAnd = (baseWhere.AND as Prisma.TaskWhereInput[]) ?? [];
 
   const columns = await Promise.all(
-    statuses.map(async (status) => ({
-      status,
-      tasks: await prisma.task.findMany({
-        where: { AND: [base, ...extra, { status }] },
-        orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
-        take: perColumn,
-        include: {
-          assignee: { select: { id: true, fullName: true, avatarUrl: true } },
-          _count: { select: { comments: true, checklist: true, subTasks: true } },
-        },
-      }),
-      total: await prisma.task.count({ where: { AND: [base, ...extra, { status }] } }),
-    })),
+    statuses.map(async (status) => {
+      const colWhere: Prisma.TaskWhereInput = { AND: [...baseAnd, { status }] };
+      const [tasks, total] = await Promise.all([
+        prisma.task.findMany({
+          where: colWhere,
+          orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+          take: perColumn,
+          include: {
+            assignee: { select: { id: true, fullName: true, avatarUrl: true } },
+            _count: { select: { comments: true, checklist: true, subTasks: true, attachments: true } },
+          },
+        }),
+        prisma.task.count({ where: colWhere }),
+      ]);
+      return { status, tasks, total };
+    }),
   );
 
   return columns;
@@ -282,5 +280,55 @@ export async function notifyTaskAssigned(taskId: number, actorName: string) {
       dueDate: task.dueDate ? fmtDate(task.dueDate) : 'chưa đặt',
       creator: actorName,
     },
+  });
+}
+
+/** Gửi thông báo in-app khi có bình luận mới cho người thực hiện, người tạo, người nghiệm thu và người theo dõi. */
+export async function notifyTaskComment(
+  taskId: number,
+  actorEmployeeId: number,
+  actorName: string,
+  content: string,
+) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true,
+      code: true,
+      title: true,
+      assigneeId: true,
+      creatorId: true,
+      reviewerId: true,
+      watchers: { select: { employeeId: true } },
+    },
+  });
+  if (!task) return;
+
+  const recipientEmployeeIds = Array.from(
+    new Set(
+      [
+        task.assigneeId,
+        task.creatorId,
+        task.reviewerId,
+        ...task.watchers.map((w) => w.employeeId),
+      ].filter((id): id is number => Boolean(id) && id !== actorEmployeeId),
+    ),
+  );
+  if (recipientEmployeeIds.length === 0) return;
+
+  const users = await prisma.user.findMany({
+    where: { employeeId: { in: recipientEmployeeIds }, isActive: true },
+    select: { id: true },
+  });
+  if (users.length === 0) return;
+
+  const snippet = content.length > 120 ? `${content.slice(0, 120)}…` : content;
+  await prisma.inAppNotification.createMany({
+    data: users.map((u) => ({
+      userId: u.id,
+      title: `${actorName} đã bình luận ở ${task.code}`,
+      body: `${task.title}: ${snippet}`,
+      linkUrl: `/tasks/${task.id}`,
+    })),
   });
 }

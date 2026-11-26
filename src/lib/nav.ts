@@ -73,16 +73,12 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Quản trị',
     items: [
+      { href: '/settings', label: 'Cấu hình hệ thống', icon: 'Settings', permission: 'MENU_SETTINGS' },
       { href: '/settings/workflows', label: 'Quy trình duyệt', icon: 'GitBranch', permission: 'MENU_WORKFLOW' },
       { href: '/settings/roles', label: 'Phân quyền', icon: 'ShieldCheck', permission: 'MENU_ROLES' },
       { href: '/settings/accounts', label: 'Tài khoản', icon: 'UserCog', permission: 'MENU_ACCOUNTS' },
       { href: '/settings/integrations', label: 'Tích hợp & MCP', icon: 'Plug', permission: 'MENU_INTEGRATIONS' },
       { href: '/settings/audit', label: 'Nhật ký', icon: 'ScrollText', permission: 'MENU_AUDIT' },
-    ],
-  },
-  {
-    items: [
-      { href: '/settings', label: 'Cấu hình hệ thống', icon: 'Settings', permission: 'MENU_SETTINGS' },
     ],
   },
 ];
