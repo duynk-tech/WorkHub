@@ -771,15 +771,19 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 <X size={15} />
               </button>
             </div>
-            {staffAtBooth.length > 0 && (
+            {staffAtBooth.length > 0 ? (
               <div style={{ fontSize: 12, color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>Nhân viên tư vấn tại quầy:</div>
+                <div style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>● Nhân viên đang trực tại quầy:</div>
                 {staffAtBooth.map((st) => (
                   <div key={st.employeeId} style={{ padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.08)' }}>
                     <div style={{ fontWeight: 600, color: '#ffffff' }}>{st.employeeName}</div>
                     {st.department && <div style={{ fontSize: 11, color: '#94a3b8' }}>{st.department}</div>}
                   </div>
                 ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                Hiện chưa có nhân viên đứng trực tại gian hàng này.
               </div>
             )}
             {data.branding.hotline && (
@@ -1156,7 +1160,19 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                   <circle key={p.id} cx={p.posX} cy={p.posZ} r={0.45} fill="#38bdf8" />
                 ))}
                 {data.presences.map((pr) => (
-                  <circle key={pr.employeeId} cx={pr.posX} cy={pr.posZ} r={0.55} fill="#10b981" />
+                  <g key={pr.employeeId}>
+                    <circle cx={pr.posX} cy={pr.posZ} r={0.65} fill="#10b981" stroke="#ffffff" strokeWidth={0.2} />
+                    <text
+                      x={pr.posX}
+                      y={pr.posZ - 1.1}
+                      textAnchor="middle"
+                      fill="#34d399"
+                      fontSize="1.15"
+                      fontWeight="700"
+                    >
+                      {pr.employeeName}
+                    </text>
+                  </g>
                 ))}
                 {/* Vị trí người chơi */}
                 <circle cx={nearby.playerPos.x} cy={nearby.playerPos.z} r={0.75} fill="#2563eb" stroke="#ffffff" strokeWidth={0.25} />

@@ -260,7 +260,7 @@ export async function loadSpace3DData(
     allScenes[0];
 
   const activeSince = new Date(Date.now() - 8 * 60 * 60 * 1000);
-  const [placementRows, presenceRows, catalogRows, staffReps] = await Promise.all([
+  const [placementRows, presenceRows, catalogRows] = await Promise.all([
     prisma.spacePlacement.findMany({
       where: {
         sceneId: activeSceneRow.id,
@@ -307,23 +307,12 @@ export async function loadSpace3DData(
           },
         })
       : Promise.resolve([]),
-    prisma.employee.findMany({
-      where: { status: 'ACTIVE' },
-      orderBy: { id: 'asc' },
-      take: 8,
-      select: {
-        id: true,
-        fullName: true,
-        department: { select: { id: true, name: true } },
-      },
-    }),
   ]);
 
   const parsedStructures = parseStructures(activeSceneRow.structuresJson);
   const myPresence = ctx ? presenceRows.find((p) => p.employeeId === ctx.employeeId) ?? null : null;
 
-  // Ghép nhân viên đang trực thực tế + nhân viên đại diện đứng sẵn tại các gian hàng để khách luôn thấy đội ngũ tư vấn
-  const activePresenceIds = new Set(presenceRows.map((p) => p.employeeId));
+  // Chỉ hiển thị các nhân viên THỰC SỰ đang đăng nhập và vào trực tại quầy (không tự tạo nhân viên ảo)
   const combinedPresences = presenceRows.map((p) => ({
     employeeId: p.employeeId,
     employeeName: p.employeeName,
@@ -334,46 +323,6 @@ export async function loadSpace3DData(
     rotY: p.rotY,
     status: p.status,
   }));
-
-  if (activeSceneRow.kind === 'SHOWROOM') {
-    const booths = parsedStructures.filter((s) => s.kind === 'BOOTH');
-    const availableReps = staffReps.filter((e) => !activePresenceIds.has(e.id));
-
-    // Đặt 1 lễ tân ngay quầy đón khách trung tâm
-    if (availableReps.length > 0 && !combinedPresences.some((p) => Math.hypot(p.posX, p.posZ + 11.2) < 2)) {
-      const rep = availableReps.shift()!;
-      combinedPresences.push({
-        employeeId: rep.id,
-        employeeName: rep.fullName,
-        department: rep.department?.name ?? 'Lễ tân & Tư vấn',
-        stationLabel: 'Quầy Lễ tân Trung tâm',
-        posX: 0,
-        posZ: -11.3,
-        rotY: 0,
-        status: 'ON_DUTY',
-      });
-    }
-
-    // Đặt nhân viên đại diện đứng đón khách tại các gian hàng triển lãm
-    booths.forEach((booth, idx) => {
-      const rep =
-        availableReps.find((e) => booth.departmentId && e.department?.id === booth.departmentId) ??
-        availableReps[idx % Math.max(1, availableReps.length)];
-      if (!rep) return;
-      if (combinedPresences.some((p) => p.employeeId === rep.id)) return;
-      const standX = booth.posX < 0 ? booth.posX + booth.depthM * 0.5 + 0.55 : booth.posX - booth.depthM * 0.5 - 0.55;
-      combinedPresences.push({
-        employeeId: rep.id,
-        employeeName: rep.fullName,
-        department: rep.department?.name ?? booth.label,
-        stationLabel: booth.label,
-        posX: Number(standX.toFixed(2)),
-        posZ: Number((booth.posZ + 0.4).toFixed(2)),
-        rotY: booth.posX < 0 ? Math.PI / 2 : -Math.PI / 2,
-        status: 'REP',
-      });
-    });
-  }
 
   const placements: SpacePlacementView[] = placementRows.map((p) => {
     const item = p.item as (typeof p.item & { stocks?: { warehouseId: number; quantity: number }[] }) | null;
