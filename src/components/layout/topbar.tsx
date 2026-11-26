@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import {
-  Menu, Bell, LogOut, User, KeyRound, ChevronDown,
+  Menu, PanelLeft, Bell, LogOut, User, KeyRound, ChevronDown,
   Search, ListChecks, Users, CalendarDays,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui';
@@ -32,12 +32,13 @@ export interface TopbarNotification {
 }
 
 export function Topbar({
-  user, notifications, unreadCount, onOpenMobileMenu,
+  user, notifications, unreadCount, onOpenMobileMenu, onToggleSidebar,
 }: {
   user: TopbarUser;
   notifications: TopbarNotification[];
   unreadCount: number;
   onOpenMobileMenu: () => void;
+  onToggleSidebar?: () => void;
 }) {
   const router = useRouter();
   const [openMenu, setOpenMenu] = useState<'user' | 'notif' | null>(null);
@@ -85,6 +86,17 @@ export function Topbar({
       <button className="btn btn-ghost btn-sm btn-icon topbar-menu-btn" onClick={onOpenMobileMenu} aria-label="Mở menu">
         <Menu />
       </button>
+      {onToggleSidebar && (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-icon topbar-collapse-btn"
+          onClick={onToggleSidebar}
+          aria-label="Thu gọn / mở rộng menu"
+          title="Thu gọn / mở rộng menu"
+        >
+          <PanelLeft size={16} />
+        </button>
+      )}
 
       {/* Ô tìm kiếm Topbar */}
       <div ref={searchContainerRef} className="topbar-search">

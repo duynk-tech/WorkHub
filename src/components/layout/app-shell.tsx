@@ -51,6 +51,7 @@ export function AppShell({
           logoUrl={logoUrl}
           logoText={logoText}
           badges={badges}
+          user={user}
           mobileOpen={mobileOpen}
           onCloseMobile={() => setMobileOpen(false)}
           collapsed={collapsed}
@@ -62,6 +63,7 @@ export function AppShell({
             notifications={notifications}
             unreadCount={unreadCount}
             onOpenMobileMenu={() => setMobileOpen(true)}
+            onToggleSidebar={toggleCollapsed}
           />
           <main className="app-content animate-in">{children}</main>
         </div>

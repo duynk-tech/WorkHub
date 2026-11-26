@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { PanelLeftClose, PanelLeft, X, ChevronDown, Settings } from 'lucide-react';
+import { PanelLeft, X, ChevronDown, Settings, LogOut } from 'lucide-react';
 import type { NavSection } from '@/lib/nav';
+import { Avatar } from '@/components/ui';
+import { logoutAction } from '@/server/modules/auth/actions';
+import type { TopbarUser } from './topbar';
 import { NAV_ICONS } from './icons';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +17,7 @@ interface Props {
   logoUrl?: string | null;
   logoText?: string;
   badges: Record<string, number>;
+  user?: TopbarUser;
   mobileOpen: boolean;
   onCloseMobile: () => void;
   collapsed: boolean;
@@ -21,7 +25,7 @@ interface Props {
 }
 
 export function Sidebar({
-  sections, appName, logoUrl, logoText, badges, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
+  sections, appName, logoUrl, logoText, badges, user, mobileOpen, onCloseMobile, collapsed, onToggleCollapsed,
 }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -131,16 +135,11 @@ export function Sidebar({
                     displayLogoLetter
                   )}
                 </span>
-                <span className="sidebar-brand-text">{appName}</span>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span className="sidebar-brand-text">{appName}</span>
+                  <span className="sidebar-brand-sub">Operations console</span>
+                </span>
               </Link>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm btn-icon sidebar-collapse-btn"
-                onClick={onToggleCollapsed}
-                aria-label="Thu gọn menu"
-              >
-                <PanelLeftClose />
-              </button>
             </>
           )}
           <button className="btn btn-ghost btn-sm btn-icon sidebar-close-btn" onClick={onCloseMobile} aria-label="Đóng menu">
@@ -208,17 +207,36 @@ export function Sidebar({
               {!isEffectiveCollapsed && <span style={{ flex: 1 }}>Cài đặt hệ thống</span>}
             </Link>
           )}
-          <button
-            type="button"
-            className="sidebar-toggle-btn"
-            onClick={onToggleCollapsed}
-            onMouseEnter={(e) => showTooltip(e, isEffectiveCollapsed ? 'Mở rộng menu' : 'Thu gọn menu')}
-            onMouseLeave={hideTooltip}
-            aria-label={isEffectiveCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
-          >
-            {isEffectiveCollapsed ? <PanelLeft /> : <PanelLeftClose />}
-            {!isEffectiveCollapsed && <span>Thu gọn menu</span>}
-          </button>
+          {user && (
+            <div className="sidebar-user-row">
+              <Link
+                href="/profile"
+                className="sidebar-user-link"
+                onMouseEnter={(e) => showTooltip(e, `${user.fullName} (@${user.username})`)}
+                onMouseLeave={hideTooltip}
+              >
+                <Avatar name={user.fullName} src={user.avatarUrl} size="sm" />
+                {!isEffectiveCollapsed && (
+                  <span className="sidebar-user-meta">
+                    <span className="sidebar-user-name">{user.fullName}</span>
+                    <span className="sidebar-user-handle">{user.username}</span>
+                  </span>
+                )}
+              </Link>
+              <form action={logoutAction}>
+                <button
+                  type="submit"
+                  className="btn btn-ghost btn-sm btn-icon"
+                  title="Đăng xuất"
+                  aria-label="Đăng xuất"
+                  onMouseEnter={(e) => showTooltip(e, 'Đăng xuất')}
+                  onMouseLeave={hideTooltip}
+                >
+                  <LogOut size={15} />
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         {/* Tooltip nổi ngoài container cuộn, không bị che khuất và cho phép sidebar cuộn tự do */}
