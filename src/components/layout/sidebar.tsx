@@ -183,7 +183,7 @@ export function Sidebar({
         <nav className="sidebar-nav scrollbar-none" onScroll={hideTooltip}>
           {(['WORKSPACE', 'VẬN HÀNH', 'HỆ THỐNG'] as const).map((cat) => {
             const catSections = menuSections.filter((s) =>
-              cat === 'WORKSPACE' ? !s.title : Boolean(s.title) && (SECTION_CATEGORY[s.title] ?? 'HỆ THỐNG') === cat,
+              cat === 'WORKSPACE' ? !s.title : (s.title ? (SECTION_CATEGORY[s.title] ?? 'HỆ THỐNG') === cat : false),
             );
             if (catSections.length === 0) return null;
 
