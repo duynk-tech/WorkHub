@@ -22,6 +22,9 @@ import { Card, CardHeader, CardTitle, CardBody, StatCard, Badge, Avatar, EmptySt
 import { fmtDate } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
+import { DashboardBoardBar } from '@/components/domain/dashboard-board-bar';
+import { getAccessibleDashboardBoards } from '@/server/modules/dashboard/service';
+import { DASHBOARD_WIDGETS, WIDGET_BY_KEY, canSeeDashboardWidget } from '@/lib/dashboard-widgets';
 
 export const metadata = { title: 'Tổng quan' };
 export const dynamic = 'force-dynamic';
@@ -348,7 +351,7 @@ async function loadServiceSummary() {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; report?: string; month?: string; from?: string; to?: string; year?: string }>;
+  searchParams: Promise<{ board?: string; tab?: string; report?: string; month?: string; from?: string; to?: string; year?: string }>;
 }) {
   const ctx = await requireAuth();
   const sp = await searchParams;
@@ -358,7 +361,34 @@ export default async function DashboardPage({
   const todayStart = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const year = today.getFullYear();
 
-  // Mỗi đơn vị chỉ triển khai một phần tính năng, nên chỉ hiện tab của phần họ dùng
+  const requestedBoardId = sp.board ? Number(sp.board) : null;
+  const [{ boards, activeBoard }, adminRoles, adminUsers] = await Promise.all([
+    getAccessibleDashboardBoards(ctx, Number.isFinite(requestedBoardId) ? requestedBoardId : null),
+    ctx.isAdmin
+      ? prisma.role.findMany({ orderBy: { sortOrder: 'asc' }, select: { code: true, name: true } })
+      : Promise.resolve([]),
+    ctx.isAdmin
+      ? prisma.user.findMany({
+          where: { isActive: true },
+          orderBy: { username: 'asc' },
+          select: { id: true, username: true, employee: { select: { fullName: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const allowedWidgetKeys = DASHBOARD_WIDGETS.filter((w) =>
+    canSeeDashboardWidget(ctx.permissions, ctx.isAdmin, w.key),
+  ).map((w) => w.key);
+
+  const canViewReports = can(ctx, 'MENU_REPORTS');
+  const isReportsTab = sp.tab === 'reports' && canViewReports;
+  const useCustomBoard = Boolean(activeBoard) && !isReportsTab && !sp.tab;
+  const activeWidgetKeys = useCustomBoard && activeBoard ? activeBoard.visibleWidgets : [];
+  const activeDataSources = new Set(
+    activeWidgetKeys.map((k) => WIDGET_BY_KEY.get(k)?.dataSource).filter(Boolean),
+  );
+
+  // Khi chưa có bảng tùy chỉnh/chia sẻ nào, dùng các tab mặc định theo quyền
   const tabs = [
     can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin
       ? { key: 'sales', label: 'Kinh doanh', hint: 'Đơn hàng, báo giá và tiền còn phải thu của khách', icon: Briefcase }
@@ -369,9 +399,8 @@ export default async function DashboardPage({
     can(ctx, 'FEATURE_EQUIPMENT_MAINTENANCE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE') || ctx.isAdmin
       ? { key: 'service', label: 'Dịch vụ & Sửa chữa', hint: 'Phiếu sự cố đang xử lý và phần đã trễ cam kết', icon: Wrench }
       : null,
-    // Việc và phép của chính mình thì ai cũng xem được
     { key: 'work', label: 'Công việc & Nhân sự', hint: 'Việc được giao, đơn chờ bạn duyệt và tình hình nghỉ phép', icon: Users },
-    can(ctx, 'MENU_REPORTS')
+    canViewReports
       ? { key: 'reports', label: 'Báo cáo', hint: 'Báo cáo công việc, bán hàng và nhân sự', icon: BarChart3 }
       : null,
   ].filter((t): t is NonNullable<typeof t> => t !== null);
@@ -379,7 +408,6 @@ export default async function DashboardPage({
   const tab = tabs.some((t) => t.key === sp.tab) ? sp.tab! : tabs[0].key;
   const active = tabs.find((t) => t.key === tab)!;
 
-  const isReportsTab = tab === 'reports';
   const reports = isReportsTab
     ? visibleReports(await getDisabledReportKeys(), (permission) => can(ctx, permission as never)).filter((report) => report.key !== 'sales-inventory')
     : [];
@@ -400,14 +428,17 @@ export default async function DashboardPage({
     ])
     : [null, null, null, null, null] as const;
 
-  // Chỉ truy vấn số liệu của tab đang mở
-  const [sales, stock, service] = await Promise.all([
-    tab === 'sales' ? loadSalesSummary() : Promise.resolve(null),
-    tab === 'stock' ? loadStockSummary() : Promise.resolve(null),
-    tab === 'service' ? loadServiceSummary() : Promise.resolve(null),
-  ]);
+  const needSales = useCustomBoard ? activeDataSources.has('sales') : (!isReportsTab && tab === 'sales');
+  const needStock = useCustomBoard ? activeDataSources.has('stock') : (!isReportsTab && tab === 'stock');
+  const needService = useCustomBoard ? activeDataSources.has('service') : (!isReportsTab && tab === 'service');
+  const showWork = useCustomBoard ? activeDataSources.has('work') : (!isReportsTab && tab === 'work');
 
-  const showWork = tab === 'work';
+  // Chỉ truy vấn số liệu của các khối thực sự hiển thị
+  const [sales, stock, service] = await Promise.all([
+    needSales ? loadSalesSummary() : Promise.resolve(null),
+    needStock ? loadStockSummary() : Promise.resolve(null),
+    needService ? loadServiceSummary() : Promise.resolve(null),
+  ]);
 
   const [myOpenTasks, myOverdue, pendingApprovals, balance, onLeaveToday, myTasks, teamTaskStats, upcomingLeaves] =
     showWork
@@ -474,6 +505,10 @@ export default async function DashboardPage({
       ? ctx.username
       : ctx.fullName.trim().split(/\s+/).slice(-1)[0] || ctx.username;
 
+  const widgetSet = new Set(activeWidgetKeys);
+  const showWidget = (key: string, defaultTab: string) =>
+    useCustomBoard ? widgetSet.has(key) : (!isReportsTab && tab === defaultTab);
+
   return (
     <div className="stack">
       <PageHeader
@@ -481,7 +516,22 @@ export default async function DashboardPage({
         description={`Hôm nay là ${fmtDate(today, "EEEE, 'ngày' dd/MM/yyyy")}${ctx.departmentName ? ` · ${ctx.departmentName}` : ''}`}
       />
 
-      {tabs.length > 1 && (
+      <DashboardBoardBar
+        boards={boards}
+        activeBoardId={activeBoard?.id ?? null}
+        isReportsTab={isReportsTab}
+        canViewReports={canViewReports}
+        isAdmin={ctx.isAdmin}
+        allowedWidgetKeys={allowedWidgetKeys}
+        roles={adminRoles}
+        users={adminUsers.map((u) => ({
+          id: u.id,
+          username: u.username,
+          fullName: u.employee?.fullName || u.username,
+        }))}
+      />
+
+      {!useCustomBoard && boards.length === 0 && tabs.length > 1 && (
         <div className="tabs">
           {tabs.map((t) => (
             <Link key={t.key} href={`/dashboard?tab=${t.key}`} className="tab" data-active={tab === t.key}>
@@ -492,7 +542,15 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {!isReportsTab && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>}
+      {useCustomBoard && activeBoard && (
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>
+          {activeBoard.description || `Bảng "${activeBoard.name}"`}
+          {activeBoard.isShared && !activeBoard.isOwn && ` · Chia sẻ bởi ${activeBoard.ownerName}`}
+        </div>
+      )}
+      {!useCustomBoard && !isReportsTab && (
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>
+      )}
 
       {isReportsTab && reportOverview && (
         <ReportScreen
@@ -513,6 +571,7 @@ export default async function DashboardPage({
 
       {sales && (
         <>
+          {showWidget('sales_stats', 'sales') && (
           <div className="grid-stats">
             <StatCard
               href="/customers" label="Đơn hàng chưa hoàn tất" value={sales.openOrders} icon={<ShoppingCart size={16} />}
@@ -532,19 +591,24 @@ export default async function DashboardPage({
               hint={sales.overdue > 0 ? 'Cần nhắc khách thanh toán' : 'Không có khoản nào trễ hạn'}
             />
           </div>
+          )}
 
+          {showWidget('sales_chart', 'sales') && (
           <MonthlyChartCard
             title="Doanh thu 6 tháng gần nhất"
             subtitle="Giá trị đơn đã ghi nhận so với tiền thực thu, không tính đơn đã hủy"
             data={sales.revenueByMonth}
             series={[
-              { key: 'billed', name: 'Giá trị đơn', color: '#2447eb' },
-              { key: 'collected', name: 'Đã thu', color: '#0f9960' },
+              { key: 'billed', name: 'Giá trị đơn', color: '#2563eb' },
+              { key: 'collected', name: 'Đã thu', color: '#166534' },
             ]}
             asMoney
           />
+          )}
 
+          {(showWidget('sales_orders', 'sales') || showWidget('sales_care', 'sales') || showWidget('sales_quotations', 'sales')) && (
           <div className="grid-2">
+            {showWidget('sales_orders', 'sales') && (
             <ListCard
               title="Đơn hàng"
               subtitle={`${sales.openOrders} đơn chưa hoàn tất`}
@@ -577,8 +641,11 @@ export default async function DashboardPage({
                 );
               })}
             </ListCard>
+            )}
 
+            {(showWidget('sales_care', 'sales') || showWidget('sales_quotations', 'sales')) && (
             <div className="stack">
+              {showWidget('sales_care', 'sales') && (
               <ListCard
                 title="Khách hàng tới hạn bảo hành"
                 subtitle={
@@ -626,7 +693,9 @@ export default async function DashboardPage({
                   );
                 })}
               </ListCard>
+              )}
 
+              {showWidget('sales_quotations', 'sales') && (
               <ListCard
                 title="Công nợ"
                 subtitle={sales.debtors > 0 ? `${sales.debtors} khách · ${money(sales.outstanding)}` : 'Không có công nợ'}
@@ -658,19 +727,27 @@ export default async function DashboardPage({
                   </Link>
                 ))}
               </ListCard>
+              )}
             </div>
+            )}
           </div>
+          )}
         </>
       )}
 
       {stock && (
         <>
+          {(showWidget('stock_stats', 'stock') || showWidget('purchase_stats', 'stock')) && (
           <div className="grid-stats">
+            {showWidget('purchase_stats', 'stock') && (
             <StatCard
-              href="/spare-parts?tab=orders"
+              href="/purchases"
               label="Đơn hàng đang về" value={stock.incoming} icon={<Truck size={16} />}
               hint={stock.incoming > 0 ? 'Theo dõi tiến trình để nhập kho đúng hạn' : 'Không có lô hàng nào đang về'}
             />
+            )}
+            {showWidget('stock_stats', 'stock') && (
+            <>
             <StatCard
               href="/spare-parts"
               label="Giá trị tồn kho" value={money(stock.stockValue)} icon={<Warehouse size={16} />}
@@ -687,20 +764,27 @@ export default async function DashboardPage({
               label="Thiết bị tại khách" value={stock.machines} icon={<Utensils size={16} />}
               hint={stock.machines > 0 ? 'Hồ sơ thiết bị đang theo dõi bảo hành, bảo dưỡng' : 'Chưa khai thiết bị nào'}
             />
+            </>
+            )}
           </div>
+          )}
 
+          {showWidget('purchase_chart', 'stock') && (
           <MonthlyChartCard
             title="Nhập – Xuất kho 6 tháng gần nhất"
             subtitle="Giá trị hàng theo giá vốn, chỉ tính phiếu đã hoàn tất (phiếu điều chuyển không tính)"
             data={stock.flowByMonth}
             series={[
-              { key: 'in', name: 'Nhập kho', color: '#0f9960' },
-              { key: 'out', name: 'Xuất kho', color: '#c77700' },
+              { key: 'in', name: 'Nhập kho', color: '#166534' },
+              { key: 'out', name: 'Xuất kho', color: '#d97706' },
             ]}
             asMoney
           />
+          )}
 
+          {(showWidget('purchase_orders', 'stock') || showWidget('stock_low', 'stock') || showWidget('stock_transactions', 'stock')) && (
           <div className="grid-2">
+            {showWidget('purchase_orders', 'stock') && (
             <ListCard
               title="Đơn hàng đang về"
               subtitle={stock.incoming > 0 ? `${stock.incoming} phiếu chưa nhập kho` : 'Không có lô hàng nào đang về'}
@@ -738,8 +822,11 @@ export default async function DashboardPage({
                 );
               })}
             </ListCard>
+            )}
 
+            {(showWidget('stock_low', 'stock') || showWidget('stock_transactions', 'stock')) && (
             <div className="stack">
+              {showWidget('stock_low', 'stock') && (
               <ListCard
                 title="Tồn dưới mức an toàn"
                 subtitle={stock.lowStock > 0 ? `${stock.lowStock} mã cần đặt bổ sung` : 'Tồn kho đang đủ'}
@@ -766,7 +853,9 @@ export default async function DashboardPage({
                   </Link>
                 ))}
               </ListCard>
+              )}
 
+              {showWidget('stock_transactions', 'stock') && (
               <ListCard
                 title="Phiếu kho gần đây"
                 subtitle={stock.pendingApproval > 0 ? `${stock.pendingApproval} phiếu đang chờ duyệt` : 'Không có phiếu nào chờ duyệt'}
@@ -795,13 +884,17 @@ export default async function DashboardPage({
                   );
                 })}
               </ListCard>
+              )}
             </div>
+            )}
           </div>
+          )}
         </>
       )}
 
       {service && (
         <>
+          {showWidget('service_stats', 'service') && (
           <div className="grid-stats">
             <StatCard
               href="/tickets" label="Sự cố chờ tiếp nhận" value={service.open} icon={<Wrench size={16} />}
@@ -817,17 +910,21 @@ export default async function DashboardPage({
               hint="Phiếu đã hoàn tất hoặc đã đóng"
             />
           </div>
+          )}
 
+          {showWidget('service_chart', 'service') && (
           <MonthlyChartCard
             title="Sự cố 6 tháng gần nhất"
             subtitle="Số phiếu tiếp nhận so với số phiếu xử lý xong trong cùng tháng"
             data={service.ticketsByMonth}
             series={[
-              { key: 'opened', name: 'Tiếp nhận', color: '#2447eb' },
-              { key: 'resolved', name: 'Xử lý xong', color: '#0f9960' },
+              { key: 'opened', name: 'Tiếp nhận', color: '#2563eb' },
+              { key: 'resolved', name: 'Xử lý xong', color: '#166534' },
             ]}
           />
+          )}
 
+          {showWidget('service_tickets', 'service') && (
           <div className="grid-2">
             <ListCard
               title="Sự cố đang mở"
@@ -889,11 +986,12 @@ export default async function DashboardPage({
               ))}
             </ListCard>
           </div>
+          )}
         </>
       )}
 
 
-      {showWork && (
+      {showWork && showWidget('work_stats', 'work') && (
       <div className="grid-stats">
         <StatCard
           href="/tasks" label="Việc đang mở của tôi" value={myOpenTasks} icon={<ListChecks size={16} />}
@@ -917,8 +1015,9 @@ export default async function DashboardPage({
       </div>
       )}
 
-      {showWork && (
+      {showWork && (showWidget('work_tasks', 'work') || showWidget('work_team', 'work') || showWidget('hr_leaves', 'work')) && (
       <div className="grid-2">
+        {showWidget('work_tasks', 'work') && (
         <div className="stack">
           <Card>
             <CardHeader>
@@ -973,8 +1072,11 @@ export default async function DashboardPage({
             </CardBody>
           </Card>
         </div>
+        )}
 
+        {(showWidget('hr_leaves', 'work') || showWidget('work_team', 'work')) && (
         <div className="stack">
+          {showWidget('hr_leaves', 'work') && (
           <Card>
             <CardHeader>
               <div>
@@ -1003,7 +1105,9 @@ export default async function DashboardPage({
               )}
             </CardBody>
           </Card>
+          )}
 
+          {showWidget('work_team', 'work') && (
           <Card>
             <CardHeader>
               <div>
@@ -1039,7 +1143,9 @@ export default async function DashboardPage({
               )}
             </CardBody>
           </Card>
+          )}
 
+          {showWidget('hr_leaves', 'work') && (
           <Card>
             <CardHeader>
               <CardTitle>Lịch nghỉ sắp tới</CardTitle>
@@ -1061,7 +1167,9 @@ export default async function DashboardPage({
               )}
             </CardBody>
           </Card>
+          )}
         </div>
+        )}
       </div>
       )}
     </div>

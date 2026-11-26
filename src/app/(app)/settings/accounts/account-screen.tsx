@@ -9,7 +9,7 @@ import {
 } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
-import { fmtRelative } from '@/lib/date';
+import { fmtDate, fmtRelative } from '@/lib/date';
 import { updateAccountRolesAction, toggleAccountActiveAction, resetPasswordAction } from '@/server/modules/org/employee-actions';
 
 interface UserView {
@@ -253,18 +253,35 @@ export function AccountScreen({ users, roles, currentUserId, canManage, canReset
                       </div>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                         {u.roles.length === 0
                           ? <Badge tone="danger">Chưa có vai trò</Badge>
                           : u.roles.map((r) => <Badge key={r.roleId} tone="brand">{r.role.name}</Badge>)}
+                        {canManage && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ height: 22, padding: '0 6px', fontSize: 11.5 }}
+                            onClick={() => openRoleEdit(u)}
+                            title="Chỉnh sửa vai trò"
+                          >
+                            <UserCog size={12} />
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td>
-                      <div style={{ fontSize: 12.5 }}>
-                        {u.lastLoginAt ? fmtRelative(u.lastLoginAt) : <span className="text-faint">Chưa đăng nhập</span>}
+                      <div
+                        style={{ fontSize: 12.5, color: u.lastLoginAt ? 'var(--text-strong)' : 'var(--text-faint)' }}
+                        title={u.lastLoginAt ? fmtDate(u.lastLoginAt, 'dd/MM/yyyy HH:mm:ss') : undefined}
+                      >
+                        {u.lastLoginAt ? fmtRelative(u.lastLoginAt) : 'Chưa đăng nhập'}
                       </div>
-                      {u.lastLoginIp && (
-                        <div className="hint" style={{ fontFamily: 'var(--font-mono)' }}>{u.lastLoginIp}</div>
+                      {u.lastLoginAt && (
+                        <div className="hint" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                          {fmtDate(u.lastLoginAt, 'dd/MM/yyyy HH:mm')}
+                          {u.lastLoginIp ? ` · ${u.lastLoginIp}` : ''}
+                        </div>
                       )}
                     </td>
                     <td>

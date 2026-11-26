@@ -1,0 +1,216 @@
+export type DashboardWidgetGroup =
+  | 'Kinh doanh'
+  | 'Kho'
+  | 'Mua hàng'
+  | 'Dịch vụ'
+  | 'Công việc'
+  | 'Nhân sự';
+
+export interface DashboardWidgetDef {
+  key: string;
+  label: string;
+  description: string;
+  group: DashboardWidgetGroup;
+  /** Để rỗng = mọi nhân sự đã đăng nhập đều xem được (trong phạm vi dữ liệu của họ). */
+  requiredPermissions: string[];
+  /** Nguồn dữ liệu server cần nạp để render widget này. */
+  dataSource: 'sales' | 'stock' | 'service' | 'work';
+}
+
+export const DASHBOARD_WIDGET_GROUPS: DashboardWidgetGroup[] = [
+  'Kinh doanh',
+  'Kho',
+  'Mua hàng',
+  'Dịch vụ',
+  'Công việc',
+  'Nhân sự',
+];
+
+export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
+  // ── Kinh doanh ──
+  {
+    key: 'sales_stats',
+    label: 'Chỉ số Kinh doanh',
+    description: 'Đơn chưa hoàn tất, báo giá đang mở, công nợ phải thu và chăm sóc khách',
+    group: 'Kinh doanh',
+    requiredPermissions: ['FEATURE_CUSTOMER_MANAGE'],
+    dataSource: 'sales',
+  },
+  {
+    key: 'sales_chart',
+    label: 'Biểu đồ Đơn hàng & Tiền thu (6 tháng)',
+    description: 'So sánh giá trị đơn bán và tiền thực thu theo tháng',
+    group: 'Kinh doanh',
+    requiredPermissions: ['FEATURE_CUSTOMER_MANAGE'],
+    dataSource: 'sales',
+  },
+  {
+    key: 'sales_orders',
+    label: 'Đơn hàng cần xử lý',
+    description: 'Danh sách đơn bán đang mở, chờ hàng hoặc chờ giao',
+    group: 'Kinh doanh',
+    requiredPermissions: ['FEATURE_CUSTOMER_MANAGE'],
+    dataSource: 'sales',
+  },
+  {
+    key: 'sales_quotations',
+    label: 'Báo giá đang mở',
+    description: 'Báo giá nháp và đã gửi khách hàng chưa chốt',
+    group: 'Kinh doanh',
+    requiredPermissions: ['FEATURE_CUSTOMER_MANAGE'],
+    dataSource: 'sales',
+  },
+  {
+    key: 'sales_care',
+    label: 'Khách hàng cần chăm sóc',
+    description: 'Gợi ý liên hệ định kỳ, sắp hết bảo hành hoặc quá hạn công nợ',
+    group: 'Kinh doanh',
+    requiredPermissions: ['FEATURE_CUSTOMER_MANAGE'],
+    dataSource: 'sales',
+  },
+
+  // ── Kho ──
+  {
+    key: 'stock_stats',
+    label: 'Chỉ số Kho vận',
+    description: 'Mặt hàng dưới tồn tối thiểu và phiếu kho chờ duyệt',
+    group: 'Kho',
+    requiredPermissions: ['FEATURE_SPARE_PARTS_MANAGE'],
+    dataSource: 'stock',
+  },
+  {
+    key: 'stock_low',
+    label: 'Vật tư dưới mức tồn an toàn',
+    description: 'Danh sách phụ tùng / hàng hóa sắp hết cần bổ sung',
+    group: 'Kho',
+    requiredPermissions: ['FEATURE_SPARE_PARTS_MANAGE'],
+    dataSource: 'stock',
+  },
+  {
+    key: 'stock_transactions',
+    label: 'Phiếu nhập / xuất kho gần đây',
+    description: 'Phiếu kho mới phát sinh và phiếu đang chờ phê duyệt',
+    group: 'Kho',
+    requiredPermissions: ['FEATURE_SPARE_PARTS_MANAGE'],
+    dataSource: 'stock',
+  },
+
+  // ── Mua hàng ──
+  {
+    key: 'purchase_stats',
+    label: 'Chỉ số Mua hàng (PO)',
+    description: 'Đơn mua hàng đang mở, hàng đang về và công nợ nhà cung cấp',
+    group: 'Mua hàng',
+    requiredPermissions: ['FEATURE_SPARE_PARTS_MANAGE'],
+    dataSource: 'stock',
+  },
+  {
+    key: 'purchase_chart',
+    label: 'Biểu đồ Nhập / Xuất kho (6 tháng)',
+    description: 'Xu hướng giá trị nhập hàng và xuất kho theo tháng',
+    group: 'Mua hàng',
+    requiredPermissions: ['FEATURE_SPARE_PARTS_MANAGE'],
+    dataSource: 'stock',
+  },
+  {
+    key: 'purchase_orders',
+    label: 'Đơn mua hàng đang theo dõi',
+    description: 'Danh sách PO đang đặt NCC, vận chuyển hoặc chờ nhập kho',
+    group: 'Mua hàng',
+    requiredPermissions: ['FEATURE_SPARE_PARTS_MANAGE'],
+    dataSource: 'stock',
+  },
+
+  // ── Dịch vụ ──
+  {
+    key: 'service_stats',
+    label: 'Chỉ số Dịch vụ & Bảo trì',
+    description: 'Phiếu sự cố đang mở, đang xử lý và hoàn tất trong tháng',
+    group: 'Dịch vụ',
+    requiredPermissions: ['FEATURE_EQUIPMENT_MAINTENANCE', 'FEATURE_EQUIPMENT_MANAGE'],
+    dataSource: 'service',
+  },
+  {
+    key: 'service_chart',
+    label: 'Biểu đồ Phiếu sự cố (6 tháng)',
+    description: 'Số lượng phiếu tiếp nhận và phiếu xử lý xong theo tháng',
+    group: 'Dịch vụ',
+    requiredPermissions: ['FEATURE_EQUIPMENT_MAINTENANCE', 'FEATURE_EQUIPMENT_MANAGE'],
+    dataSource: 'service',
+  },
+  {
+    key: 'service_tickets',
+    label: 'Phiếu sự cố đang mở & mới hoàn tất',
+    description: 'Theo dõi phiếu sửa chữa ưu tiên và lịch sử xử lý gần nhất',
+    group: 'Dịch vụ',
+    requiredPermissions: ['FEATURE_EQUIPMENT_MAINTENANCE', 'FEATURE_EQUIPMENT_MANAGE'],
+    dataSource: 'service',
+  },
+
+  // ── Công việc ──
+  {
+    key: 'work_stats',
+    label: 'Chỉ số Công việc & Phép',
+    description: 'Việc của tôi, quá hạn, đơn chờ duyệt và ngày phép còn lại',
+    group: 'Công việc',
+    requiredPermissions: [],
+    dataSource: 'work',
+  },
+  {
+    key: 'work_tasks',
+    label: 'Công việc của tôi',
+    description: 'Danh sách việc đang làm sắp đến hạn ưu tiên cao',
+    group: 'Công việc',
+    requiredPermissions: [],
+    dataSource: 'work',
+  },
+  {
+    key: 'work_team',
+    label: 'Tiến độ công việc toàn đội',
+    description: 'Phân bổ trạng thái công việc trong phạm vi quản lý',
+    group: 'Công việc',
+    requiredPermissions: [],
+    dataSource: 'work',
+  },
+
+  // ── Nhân sự ──
+  {
+    key: 'hr_leaves',
+    label: 'Nghỉ phép hôm nay & sắp tới',
+    description: 'Ai đang nghỉ phép hôm nay và lịch nghỉ đã duyệt sắp tới',
+    group: 'Nhân sự',
+    requiredPermissions: [],
+    dataSource: 'work',
+  },
+];
+
+export const WIDGET_BY_KEY = new Map(DASHBOARD_WIDGETS.map((w) => [w.key, w]));
+
+export function canSeeDashboardWidget(
+  permissions: ReadonlySet<string>,
+  isAdmin: boolean,
+  widgetKey: string,
+): boolean {
+  const def = WIDGET_BY_KEY.get(widgetKey);
+  if (!def) return false;
+  if (isAdmin || def.requiredPermissions.length === 0) return true;
+  return def.requiredPermissions.some((code) => permissions.has(code));
+}
+
+export function filterPermittedWidgetKeys(
+  keys: unknown,
+  permissions: ReadonlySet<string>,
+  isAdmin: boolean,
+): string[] {
+  if (!Array.isArray(keys)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const k of keys) {
+    if (typeof k !== 'string' || seen.has(k)) continue;
+    if (canSeeDashboardWidget(permissions, isAdmin, k)) {
+      seen.add(k);
+      out.push(k);
+    }
+  }
+  return out;
+}

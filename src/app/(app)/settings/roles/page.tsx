@@ -1,6 +1,8 @@
+import { notFound } from 'next/navigation';
 import { requireAuth, can } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { getDepartmentTree, flattenTree } from '@/server/modules/org/department-service';
+import { getDisabledMenuHrefs } from '@/server/modules/settings/menus';
 import { PERMISSIONS } from '@/lib/permissions';
 import { RoleScreen } from './role-screen';
 
@@ -9,8 +11,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function RolesPage() {
   const ctx = await requireAuth();
+  if (!ctx.isAdmin && !can(ctx, 'MENU_ROLES')) notFound();
 
-  const [roles, tree] = await Promise.all([
+  const [roles, tree, disabledMenus, totalUsers] = await Promise.all([
     prisma.role.findMany({
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -20,6 +23,8 @@ export default async function RolesPage() {
       },
     }),
     getDepartmentTree(),
+    getDisabledMenuHrefs(),
+    prisma.user.count(),
   ]);
 
   return (
@@ -33,7 +38,10 @@ export default async function RolesPage() {
       }))}
       permissions={PERMISSIONS}
       departments={flattenTree(tree).map((d) => ({ id: d.id, name: d.name, level: d.level }))}
+      disabledMenus={disabledMenus}
+      totalUsers={totalUsers}
       canManage={can(ctx, 'FEATURE_ROLE_MANAGE')}
+      canManageMenus={ctx.isAdmin || can(ctx, 'FEATURE_SETTING_GENERAL')}
     />
   );
 }

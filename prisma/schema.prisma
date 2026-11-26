@@ -159,8 +159,30 @@ model User {
   auditLogs     AuditLog[]
   inAppNotifs   InAppNotification[]
   mcpClients    McpClient[]         @relation("McpActAsUser")
-  reportPresets ReportPreset[]
-  zaloLinkCodes ZaloLinkCode[]
+  reportPresets   ReportPreset[]
+  zaloLinkCodes   ZaloLinkCode[]
+  dashboardBoards DashboardBoard[]
+}
+
+model DashboardBoard {
+  id              Int      @id @default(autoincrement())
+  name            String   @db.VarChar(120)
+  description     String?  @db.VarChar(255)
+  ownerId         Int
+  isDefault       Boolean  @default(false)
+  isShared        Boolean  @default(false)
+  shareScope      String   @default("ALL") @db.VarChar(24)
+  sharedRoleCodes Json?
+  sharedUserIds   Json?
+  widgetsJson     Json
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([ownerId])
+  @@index([isShared])
 }
 
 /// Phạm vi dữ liệu của một vai trò

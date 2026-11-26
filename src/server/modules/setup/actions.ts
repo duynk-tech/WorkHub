@@ -1,5 +1,6 @@
 'use server';
 
+import { headers } from 'next/headers';
 import { sha256 } from '@/lib/crypto';
 
 import { prisma } from '@/lib/prisma';
@@ -89,11 +90,16 @@ export async function runInstallAction(payload: InstallPayload): Promise<Install
       create: { code: 'ADMIN', fullName: payload.adminFullName, email: payload.adminEmail || null, status: 'ACTIVE' },
     });
 
+    const hdrs = await headers();
+    const ip = hdrs.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+
     const user = await prisma.user.create({
       data: {
         employeeId: employee.id,
         username: payload.adminUsername.toLowerCase(),
         passwordHash: await hashPassword(payload.adminPassword),
+        lastLoginAt: new Date(),
+        lastLoginIp: ip,
         roles: { create: [{ roleId: adminRole.id }] },
       },
     });
