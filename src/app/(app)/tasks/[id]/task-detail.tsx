@@ -704,7 +704,7 @@ export function TaskDetail({
               <Info icon={<Bell size={13} />} label="Nhắc việc">
                 <span style={{ fontSize: 13 }}>
                   {activeReminder
-                    ? `${REMINDER_LABELS[activeReminder.offsetMinutesBeforeDue] ?? `${activeReminder.offsetMinutesBeforeDue} phút trước hạn`}${activeReminder.sentAt ? ' (đã gửi)' : ''}`
+                    ? `${REMINDER_LABELS[activeReminder.offsetMinutesBeforeDue] ?? `${activeReminder.offsetMinutesBeforeDue} phút trước hạn`}${activeReminder.lastSentAt ? ' (đã gửi)' : ''}`
                     : <span className="text-faint">Không đặt nhắc</span>}
                 </span>
               </Info>

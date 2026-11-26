@@ -104,7 +104,7 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
         await tx.taskWatcher.deleteMany({ where: { taskId: id } });
         if (d.watcherIds.length) await tx.taskWatcher.createMany({ data: d.watcherIds.map((employeeId) => ({ taskId: id, employeeId })), skipDuplicates: true });
         if (d.reminderOffsetMinutes !== undefined) {
-          await tx.taskReminder.deleteMany({ where: { taskId: id, sentAt: null } });
+          await tx.taskReminder.deleteMany({ where: { taskId: id, lastSentAt: null } });
           if (d.reminderOffsetMinutes && d.reminderOffsetMinutes > 0) {
             await tx.taskReminder.create({ data: { taskId: id, offsetMinutesBeforeDue: d.reminderOffsetMinutes } });
           }
