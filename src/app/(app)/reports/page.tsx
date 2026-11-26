@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; month?: string; from?: string; to?: string; year?: string }>;
+  searchParams: Promise<{ tab?: string; report?: string; month?: string; from?: string; to?: string; year?: string }>;
 }) {
   const sp = await searchParams;
   const params = new URLSearchParams({ tab: 'reports' });
