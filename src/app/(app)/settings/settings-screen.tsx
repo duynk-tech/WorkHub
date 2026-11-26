@@ -23,7 +23,6 @@ import {
   resetDemoDataAction, deployPendingMigrationsAction, clearSalesAndPurchaseDocumentsAction, clearAllBusinessDataAction,
 } from '@/server/modules/settings/actions';
 import { SsoPanel } from './sso-panel';
-import { ScrollTabs } from '@/components/ui/scroll-tabs';
 import { PrintWatermark } from '@/components/domain/print-watermark';
 import { SparePartPricingModal } from '@/components/domain/spare-part-pricing-modal';
 import type { SparePartPricingConfig } from '@/server/modules/spare-parts/types';
@@ -313,35 +312,78 @@ export function SettingsScreen({
     });
   };
 
-  const TABS: { key: Tab; label: string; icon: any; visible: boolean }[] = [
-    { key: 'general', label: 'Công ty', icon: Building2, visible: permissions.general },
-    { key: 'branding', label: 'Giao diện', icon: Sparkles, visible: permissions.general },
-    { key: 'documents', label: 'Chứng từ', icon: Copy, visible: permissions.general },
-    { key: 'sales', label: 'Bán hàng', icon: Building2, visible: permissions.general },
-    { key: 'pricing', label: 'Giá & Margin', icon: SlidersHorizontal, visible: Boolean(permissions.pricing) },
-    { key: 'sso', label: 'SSO', icon: Check, visible: permissions.sso },
-    { key: 'data', label: 'Dữ liệu', icon: Database, visible: permissions.general },
-    { key: 'zalo', label: 'Zalo Bot', icon: MessageCircle, visible: permissions.zalo },
-    { key: 'leave', label: 'Nghỉ phép', icon: Plane, visible: permissions.leaveType || permissions.general },
-    { key: 'attendance', label: 'Ca làm việc', icon: Clock, visible: permissions.shift || permissions.general },
-    { key: 'holidays', label: 'Ngày lễ', icon: CalendarDays, visible: permissions.holiday },
-    { key: 'reports', label: 'Báo cáo', icon: BarChart3, visible: permissions.general },
-    { key: 'menus', label: 'Tính năng & Menu', icon: LayoutGrid, visible: permissions.general },
-  ];
+  const TAB_GROUPS: {
+    title: string;
+    items: { key: Tab; label: string; icon: any; visible: boolean }[];
+  }[] = [
+    {
+      title: 'Tổ chức & Giao diện',
+      items: [
+        { key: 'general', label: 'Thông tin công ty', icon: Building2, visible: permissions.general },
+        { key: 'branding', label: 'Thương hiệu & Logo', icon: Sparkles, visible: permissions.general },
+        { key: 'documents', label: 'Chứng từ & In ấn', icon: Copy, visible: permissions.general },
+        { key: 'menus', label: 'Tính năng & Menu', icon: LayoutGrid, visible: permissions.general },
+      ],
+    },
+    {
+      title: 'Kinh doanh & Kho',
+      items: [
+        { key: 'sales', label: 'Bán hàng & Kho', icon: Building2, visible: permissions.general },
+        { key: 'pricing', label: 'Giá & Margin', icon: SlidersHorizontal, visible: Boolean(permissions.pricing) },
+        { key: 'reports', label: 'Báo cáo hiển thị', icon: BarChart3, visible: permissions.general },
+      ],
+    },
+    {
+      title: 'Nhân sự & Chấm công',
+      items: [
+        { key: 'leave', label: 'Nghỉ phép', icon: Plane, visible: permissions.leaveType || permissions.general },
+        { key: 'attendance', label: 'Ca làm việc', icon: Clock, visible: permissions.shift || permissions.general },
+        { key: 'holidays', label: 'Ngày lễ', icon: CalendarDays, visible: permissions.holiday },
+      ],
+    },
+    {
+      title: 'Tích hợp & Dữ liệu',
+      items: [
+        { key: 'sso', label: 'Google SSO', icon: Check, visible: permissions.sso },
+        { key: 'zalo', label: 'Zalo Bot', icon: MessageCircle, visible: permissions.zalo },
+        { key: 'data', label: 'Dữ liệu & Demo', icon: Database, visible: permissions.general },
+      ],
+    },
+  ]
+    .map((g) => ({ ...g, items: g.items.filter((t) => t.visible) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div className="stack">
-      <PageHeader title="Cấu hình hệ thống" description="Thông tin công ty, kênh thông báo, chính sách nghỉ phép và chấm công" />
+      <PageHeader title="Cấu hình hệ thống" description="Quản lý thông tin công ty, giao diện, bán hàng, nhân sự và tích hợp" />
 
-      {dirtyKeys.size > 0 && <p role="status" className="hint">Có thay đổi chưa lưu. Dữ liệu nhập được giữ khi chuyển tab.</p>}
-      <ScrollTabs>
-        {TABS.filter((t) => t.visible).map((t) => (
-          <button type="button" key={t.key} className="tab" data-active={tab === t.key} aria-pressed={tab === t.key} onClick={() => handleTabChange(t.key)}>
-            <t.icon size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
-            {t.label}
-          </button>
-        ))}
-      </ScrollTabs>
+      {dirtyKeys.size > 0 && <p role="status" className="hint">Có thay đổi chưa lưu. Dữ liệu nhập được giữ khi chuyển mục.</p>}
+
+      <div className="settings-layout">
+        <aside className="settings-nav" aria-label="Danh mục cấu hình">
+          {TAB_GROUPS.map((group) => (
+            <div key={group.title}>
+              <div className="settings-nav-group-title">{group.title}</div>
+              <div className="settings-nav-list">
+                {group.items.map((t) => (
+                  <button
+                    type="button"
+                    key={t.key}
+                    className="settings-nav-item"
+                    data-active={tab === t.key}
+                    aria-pressed={tab === t.key}
+                    onClick={() => handleTabChange(t.key)}
+                  >
+                    <t.icon />
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </aside>
+
+        <div className="settings-content">
 
       {tab === 'sso' && permissions.sso && <SsoPanel values={values} set={set} save={save} pending={pending} callbackUrl={googleCallbackUrl} />}
 
@@ -1634,6 +1676,8 @@ export function SettingsScreen({
           </Card>
         );
       })()}
+        </div>
+      </div>
 
       {/* Modal ngày lễ */}
       <Modal
