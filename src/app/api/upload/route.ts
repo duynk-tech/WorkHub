@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import { requireAuth, can } from '@/server/auth/context';
+import { uploadFile } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,14 +115,13 @@ export async function POST(req: NextRequest) {
       .slice(0, 30);
     const filename = `${safeBaseName || 'upload'}-${Date.now()}-${randomSuffix}${ext}`;
 
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    await fs.mkdir(uploadsDir, { recursive: true });
+    const uploaded = await uploadFile({
+      objectPath: filename,
+      buffer,
+      contentType: mimeType,
+    });
 
-    const filePath = path.join(uploadsDir, filename);
-    await fs.writeFile(filePath, buffer);
-
-    const fileUrl = `/uploads/${filename}`;
-    return NextResponse.json({ ok: true, url: fileUrl, filename });
+    return NextResponse.json({ ok: true, url: uploaded.url, filename });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Tải lên thất bại';
     return NextResponse.json({ error: message }, { status: 500 });

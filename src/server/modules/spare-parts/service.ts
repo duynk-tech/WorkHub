@@ -57,10 +57,10 @@ export async function listSpareParts(filter: SparePartFilter = {}) {
   if (filter.search?.trim()) {
     const s = filter.search.trim();
     where.OR = [
-      { name: { contains: s } },
-      { itemCode: { contains: s } },
-      { compatibleWith: { contains: s } },
-      { manufacturer: { contains: s } },
+      { name: { contains: s, mode: 'insensitive' } },
+      { itemCode: { contains: s, mode: 'insensitive' } },
+      { compatibleWith: { contains: s, mode: 'insensitive' } },
+      { manufacturer: { contains: s, mode: 'insensitive' } },
     ];
   }
 
@@ -621,11 +621,11 @@ export async function listStockTransactions(filter: StockTransactionFilter | num
     where.AND = [
       {
         OR: [
-          { transCode: { contains: q } },
-          { reason: { contains: q } },
-          { note: { contains: q } },
-          { items: { some: { item: { name: { contains: q } } } } },
-          { items: { some: { item: { itemCode: { contains: q } } } } },
+          { transCode: { contains: q, mode: 'insensitive' } },
+          { reason: { contains: q, mode: 'insensitive' } },
+          { note: { contains: q, mode: 'insensitive' } },
+          { items: { some: { item: { name: { contains: q, mode: 'insensitive' } } } } },
+          { items: { some: { item: { itemCode: { contains: q, mode: 'insensitive' } } } } },
         ],
       },
     ];

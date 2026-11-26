@@ -117,7 +117,7 @@ export async function listLeaveRequests(ctx: AuthContext, filter: LeaveFilter) {
 
   if (filter.search?.trim()) {
     const q = filter.search.trim();
-    and.push({ OR: [{ code: { contains: q } }, { reason: { contains: q } }, { employee: { fullName: { contains: q } } }] });
+    and.push({ OR: [{ code: { contains: q, mode: 'insensitive' } }, { reason: { contains: q, mode: 'insensitive' } }, { employee: { fullName: { contains: q, mode: 'insensitive' } } }] });
   }
   if (filter.status) and.push({ status: filter.status as never });
   if (filter.leaveTypeId) and.push({ leaveTypeId: filter.leaveTypeId });

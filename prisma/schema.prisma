@@ -1,14 +1,14 @@
 // WorkHub — code-first schema. Nguồn sự thật duy nhất của database.
-// Provider mysql: chạy được trên cả MySQL 8 và MariaDB 10.6+.
+// Provider postgresql: tối ưu cho Supabase PostgreSQL + Vercel Serverless.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider          = "mysql"
-  url               = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================

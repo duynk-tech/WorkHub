@@ -3,6 +3,7 @@ import { getAuthContext } from '@/server/auth/context';
 import { handleZaloAiQuery } from '@/server/modules/zalo/ai-agent';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 type ChatTurn = { role: 'user' | 'assistant'; content: string };
 

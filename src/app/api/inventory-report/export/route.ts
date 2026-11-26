@@ -5,6 +5,7 @@ import { getInventoryProfitReport, resolveRange } from '@/server/modules/spare-p
 import { getCompanyInfo } from '@/server/modules/settings/branding';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const numberFormat = '#,##0;[Red]-#,##0;–';
 const moneyFormat = '#,##0 "₫";[Red]-#,##0 "₫";–';

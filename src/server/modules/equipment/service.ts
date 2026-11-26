@@ -36,11 +36,11 @@ export async function listEquipment(filter: ListEquipmentFilter = {}) {
     if (filter.search?.trim()) {
       const s = filter.search.trim();
       where.OR = [
-        { name: { contains: s } },
-        { machineCode: { contains: s } },
-        { serialNumber: { contains: s } },
-        { brand: { contains: s } },
-        { model: { contains: s } },
+        { name: { contains: s, mode: 'insensitive' } },
+        { machineCode: { contains: s, mode: 'insensitive' } },
+        { serialNumber: { contains: s, mode: 'insensitive' } },
+        { brand: { contains: s, mode: 'insensitive' } },
+        { model: { contains: s, mode: 'insensitive' } },
       ];
     }
 

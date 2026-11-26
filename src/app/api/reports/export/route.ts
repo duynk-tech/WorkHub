@@ -5,6 +5,7 @@ import { attendanceReport, taskReport, leaveReport } from '@/server/modules/repo
 import { getAppBranding } from '@/server/modules/settings/branding';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /** Xuất báo cáo ra Excel. Dữ liệu luôn đi qua phạm vi dữ liệu của người đăng nhập. */
 export async function GET(req: NextRequest) {

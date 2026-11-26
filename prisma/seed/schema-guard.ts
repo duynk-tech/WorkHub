@@ -2,18 +2,18 @@ import type { PrismaClient } from '@prisma/client';
 
 /** Fail before destructive seed work when the cost/discount migration is pending. */
 export async function assertDemoSeedSchema(db: PrismaClient) {
-  const columns = await db.$queryRaw<Array<{ TABLE_NAME: string; COLUMN_NAME: string }>>`
-    SELECT TABLE_NAME, COLUMN_NAME
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
+  const columns = await db.$queryRaw<Array<{ table_name: string; column_name: string }>>`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
       AND (
-        (TABLE_NAME = 'InventoryItem' AND COLUMN_NAME IN ('avgBaseCost', 'avgShippingCost', 'avgOtherCost'))
-        OR (TABLE_NAME = 'InventoryTransactionItem' AND COLUMN_NAME IN ('baseUnitCost', 'shippingUnitCost', 'otherUnitCost'))
-        OR (TABLE_NAME = 'SparePartOrderItem' AND COLUMN_NAME IN ('shippingFee', 'customsFee'))
-        OR (TABLE_NAME = 'CustomerOrderItem' AND COLUMN_NAME = 'discountAmount')
+        (table_name = 'InventoryItem' AND column_name IN ('avgBaseCost', 'avgShippingCost', 'avgOtherCost'))
+        OR (table_name = 'InventoryTransactionItem' AND column_name IN ('baseUnitCost', 'shippingUnitCost', 'otherUnitCost'))
+        OR (table_name = 'SparePartOrderItem' AND column_name IN ('shippingFee', 'customsFee'))
+        OR (table_name = 'CustomerOrderItem' AND column_name = 'discountAmount')
       )
   `;
-  const found = new Set(columns.map((column) => `${column.TABLE_NAME}.${column.COLUMN_NAME}`));
+  const found = new Set(columns.map((column) => `${column.table_name}.${column.column_name}`));
   const required = [
     'InventoryItem.avgBaseCost',
     'InventoryItem.avgShippingCost',

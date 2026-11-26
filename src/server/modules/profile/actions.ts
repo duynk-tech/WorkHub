@@ -1,11 +1,10 @@
 'use server';
 
-import { promises as fs } from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { uploadFile } from '@/lib/storage';
 import { requireAuth } from '@/server/auth/context';
 
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
@@ -74,13 +73,13 @@ export async function uploadAvatarAction(formData: FormData): Promise<ProfileAct
     const randomSuffix = crypto.randomBytes(6).toString('hex');
     const filename = `avatar-${ctx.employeeId}-${Date.now()}-${randomSuffix}${ext}`;
 
-    const avatarsDir = path.join(process.cwd(), 'public', 'uploads', 'avatars');
-    await fs.mkdir(avatarsDir, { recursive: true });
+    const uploaded = await uploadFile({
+      objectPath: `avatars/${filename}`,
+      buffer,
+      contentType: mimeType,
+    });
 
-    const filePath = path.join(avatarsDir, filename);
-    await fs.writeFile(filePath, buffer);
-
-    const avatarUrl = `/uploads/avatars/${filename}`;
+    const avatarUrl = uploaded.url;
 
     await prisma.employee.update({
       where: { id: ctx.employeeId },

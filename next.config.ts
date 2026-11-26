@@ -10,8 +10,13 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   distDir: process.env.WORKHUB_BUILD_DIR || '.next',
-  output: 'standalone',
-  serverExternalPackages: ['@prisma/client', 'bcryptjs', 'node-cron', 'exceljs'],
+  ...(process.env.DOCKER_BUILD === '1' ? { output: 'standalone' as const } : {}),
+  serverExternalPackages: ['@prisma/client', 'bcryptjs', 'exceljs'],
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '*.supabase.co', pathname: '/storage/v1/object/public/**' },
+    ],
+  },
   experimental: {
     serverActions: { bodySizeLimit: '10mb' },
   },

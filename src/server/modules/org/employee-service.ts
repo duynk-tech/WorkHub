@@ -26,10 +26,10 @@ export async function listEmployees(ctx: AuthContext, filter: EmployeeFilter) {
   if (filter.search?.trim()) {
     const q = filter.search.trim();
     where.OR = [
-      { fullName: { contains: q } },
-      { code: { contains: q } },
-      { email: { contains: q } },
-      { phone: { contains: q } },
+      { fullName: { contains: q, mode: 'insensitive' } },
+      { code: { contains: q, mode: 'insensitive' } },
+      { email: { contains: q, mode: 'insensitive' } },
+      { phone: { contains: q, mode: 'insensitive' } },
     ];
   }
 

@@ -81,11 +81,11 @@ export async function listServiceTickets(filter: TicketFilter = {}) {
   if (filter.search?.trim()) {
     const q = filter.search.trim();
     where.OR = [
-      { ticketCode: { contains: q } },
-      { title: { contains: q } },
-      { description: { contains: q } },
-      { equipment: { machineCode: { contains: q } } },
-      { equipment: { name: { contains: q } } },
+      { ticketCode: { contains: q, mode: 'insensitive' } },
+      { title: { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
+      { equipment: { machineCode: { contains: q, mode: 'insensitive' } } },
+      { equipment: { name: { contains: q, mode: 'insensitive' } } },
     ];
   }
 

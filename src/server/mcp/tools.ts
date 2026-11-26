@@ -102,8 +102,8 @@ export const MCP_TOOLS: McpTool[] = [
       const rows = await prisma.employee.findMany({
         where: {
           ...(scopeIds ? { id: { in: scopeIds.length ? scopeIds : [-1] } } : {}),
-          ...(q ? { OR: [{ fullName: { contains: q } }, { code: { contains: q } }, { email: { contains: q } }] } : {}),
-          ...(departmentName ? { department: { name: { contains: departmentName } } } : {}),
+          ...(q ? { OR: [{ fullName: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] } : {}),
+          ...(departmentName ? { department: { name: { contains: departmentName, mode: 'insensitive' } } } : {}),
           status: { not: 'RESIGNED' },
         },
         take: limit,
@@ -807,10 +807,10 @@ export const MCP_TOOLS: McpTool[] = [
           ...(q
             ? {
                 OR: [
-                  { name: { contains: q } },
-                  { code: { contains: q } },
-                  { phone: { contains: q } },
-                  { email: { contains: q } },
+                  { name: { contains: q, mode: 'insensitive' } },
+                  { code: { contains: q, mode: 'insensitive' } },
+                  { phone: { contains: q, mode: 'insensitive' } },
+                  { email: { contains: q, mode: 'insensitive' } },
                 ],
               }
             : {}),
@@ -1012,10 +1012,10 @@ export const MCP_TOOLS: McpTool[] = [
       if (a.query?.trim()) {
         const s = a.query.trim();
         where.OR = [
-          { name: { contains: s } },
-          { itemCode: { contains: s } },
-          { compatibleWith: { contains: s } },
-          { manufacturer: { contains: s } },
+          { name: { contains: s, mode: 'insensitive' } },
+          { itemCode: { contains: s, mode: 'insensitive' } },
+          { compatibleWith: { contains: s, mode: 'insensitive' } },
+          { manufacturer: { contains: s, mode: 'insensitive' } },
         ];
       }
       if (a.category) {
@@ -1086,7 +1086,7 @@ export const MCP_TOOLS: McpTool[] = [
         where: {
           OR: [
             { itemCode: queryStr.toUpperCase() },
-            { name: { contains: queryStr } },
+            { name: { contains: queryStr, mode: 'insensitive' } },
           ],
         },
         include: {
@@ -1147,7 +1147,7 @@ export const MCP_TOOLS: McpTool[] = [
       if (a.status && ORDER_STATUSES[a.status]) where.status = a.status;
       if (a.customer?.trim()) {
         const q = a.customer.trim();
-        where.customer = { OR: [{ name: { contains: q } }, { code: { contains: q } }] };
+        where.customer = { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] };
       }
 
       const orders = await prisma.customerOrder.findMany({
@@ -1244,7 +1244,7 @@ export const MCP_TOOLS: McpTool[] = [
       if (a.status && QUOTATION_STATUSES[a.status]) where.status = a.status;
       if (a.customer?.trim()) {
         const q = a.customer.trim();
-        where.customer = { OR: [{ name: { contains: q } }, { code: { contains: q } }] };
+        where.customer = { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] };
       }
 
       const rows = await prisma.customerQuotation.findMany({
@@ -1286,7 +1286,7 @@ export const MCP_TOOLS: McpTool[] = [
       const where: Record<string, unknown> = { status: { not: 'CANCELLED' } };
       if (a.customer?.trim()) {
         const q = a.customer.trim();
-        where.customer = { OR: [{ name: { contains: q } }, { code: { contains: q } }] };
+        where.customer = { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] };
       }
 
       const orders = await prisma.customerOrder.findMany({
@@ -1398,7 +1398,7 @@ export const MCP_TOOLS: McpTool[] = [
 
       const q = a.customer.trim();
       const matches = await prisma.customer.findMany({
-        where: { OR: [{ name: { contains: q } }, { code: { contains: q } }] },
+        where: { OR: [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }] },
         select: { id: true, code: true, name: true },
         take: 5,
       });

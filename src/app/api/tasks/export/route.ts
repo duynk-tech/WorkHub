@@ -13,6 +13,7 @@ import { getAppBranding } from '@/server/modules/settings/branding';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const d = (v: Date | null) => (v ? new Date(v) : null);
 

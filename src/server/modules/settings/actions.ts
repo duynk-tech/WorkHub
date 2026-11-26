@@ -48,6 +48,15 @@ export async function deployPendingMigrationsAction(): Promise<Result> {
   const ctx = await requirePermission('FEATURE_SETTING_GENERAL');
   if (!ctx.isAdmin) return { ok: false, message: 'Chỉ quản trị viên được triển khai migration' };
 
+  if (process.env.VERCEL) {
+    return {
+      ok: false,
+      message:
+        'Môi trường Vercel Serverless không hỗ trợ chạy Prisma CLI trong runtime. ' +
+        'Hãy chạy `npm run db:deploy` (hoặc `npx prisma db push`) trong bước Build/CI với biến DIRECT_URL của Supabase.',
+    };
+  }
+
   const projectRoot = process.cwd();
   const prismaCli = resolve(projectRoot, 'node_modules/prisma/build/index.js');
   const schemaPath = resolve(projectRoot, 'prisma/schema.prisma');

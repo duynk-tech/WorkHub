@@ -627,7 +627,7 @@ export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<st
     const dateKey = `${workDate.getFullYear()}-${String(workDate.getMonth() + 1).padStart(2, '0')}-${String(workDate.getDate()).padStart(2, '0')}`;
     const key = { employeeId_workDate: { employeeId, workDate } };
     const findByCalendarDate = async () => {
-      const rows = await prisma.$queryRaw<Array<{ id: number }>>`SELECT id FROM AttendanceRecord WHERE employeeId = ${employeeId} AND DATEDIFF(workDate, STR_TO_DATE(${dateKey}, '%Y-%m-%d')) = 0 LIMIT 1`;
+      const rows = await prisma.$queryRaw<Array<{ id: number }>>`SELECT id FROM "AttendanceRecord" WHERE "employeeId" = ${employeeId} AND "workDate"::date = ${dateKey}::date LIMIT 1`;
       return rows[0] ?? null;
     };
     const existing = await findByCalendarDate();
@@ -638,7 +638,7 @@ export async function seedDemoAttendance(prisma: PrismaClient, employees: Map<st
       if ((error as { code?: string })?.code !== 'P2002') throw error;
       const raced = await findByCalendarDate();
       if (!raced) {
-        const candidates = await prisma.$queryRaw<Array<{ id: number; day: string }>>`SELECT id, DATE_FORMAT(workDate, '%Y-%m-%d') AS day FROM AttendanceRecord WHERE employeeId = ${employeeId} ORDER BY workDate DESC LIMIT 3`;
+        const candidates = await prisma.$queryRaw<Array<{ id: number; day: string }>>`SELECT id, to_char("workDate", 'YYYY-MM-DD') AS day FROM "AttendanceRecord" WHERE "employeeId" = ${employeeId} ORDER BY "workDate" DESC LIMIT 3`;
         throw new Error(`Attendance seed unique conflict: employee=${employeeId} requested=${dateKey} candidates=${JSON.stringify(candidates)}`);
       }
       return prisma.attendanceRecord.update({ where: { id: raced.id }, data });

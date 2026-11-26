@@ -71,7 +71,7 @@ async function buildTaskWhere(ctx: AuthContext, filter: TaskFilter) {
 
   if (filter.search?.trim()) {
     const q = filter.search.trim();
-    and.push({ OR: [{ title: { contains: q } }, { code: { contains: q } }, { description: { contains: q } }] });
+    and.push({ OR: [{ title: { contains: q, mode: 'insensitive' } }, { code: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }] });
   }
   if (filter.status?.length) and.push({ status: { in: filter.status as never[] } });
   if (filter.priority?.length) and.push({ priority: { in: filter.priority as never[] } });
@@ -198,7 +198,7 @@ export async function listTasksBoard(ctx: AuthContext, filter: TaskFilter, perCo
   const statuses = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED'] as const;
 
   const extra: Prisma.TaskWhereInput[] = [];
-  if (filter.search?.trim()) extra.push({ OR: [{ title: { contains: filter.search.trim() } }, { code: { contains: filter.search.trim() } }] });
+  if (filter.search?.trim()) extra.push({ OR: [{ title: { contains: filter.search.trim(), mode: 'insensitive' } }, { code: { contains: filter.search.trim(), mode: 'insensitive' } }] });
   if (filter.assigneeId) extra.push({ assigneeId: filter.assigneeId });
   if (filter.onlyMine) extra.push({ assigneeId: ctx.employeeId });
   if (filter.departmentId) extra.push({ departmentId: filter.departmentId });

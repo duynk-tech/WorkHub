@@ -125,12 +125,12 @@ export async function listAssets(filter?: ListAssetsFilter) {
   if (filter?.search?.trim()) {
     const q = filter.search.trim();
     where.OR = [
-      { assetCode: { contains: q } },
-      { name: { contains: q } },
-      { serialNumber: { contains: q } },
-      { brand: { contains: q } },
-      { model: { contains: q } },
-      { currentAssignee: { fullName: { contains: q } } },
+      { assetCode: { contains: q, mode: 'insensitive' } },
+      { name: { contains: q, mode: 'insensitive' } },
+      { serialNumber: { contains: q, mode: 'insensitive' } },
+      { brand: { contains: q, mode: 'insensitive' } },
+      { model: { contains: q, mode: 'insensitive' } },
+      { currentAssignee: { fullName: { contains: q, mode: 'insensitive' } } },
     ];
   }
 

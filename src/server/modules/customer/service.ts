@@ -63,11 +63,11 @@ export async function listCustomers(filter: CustomerFilter = {}) {
     if (filter.search?.trim()) {
       const s = filter.search.trim();
       where.OR = [
-        { name: { contains: s } },
-        { code: { contains: s } },
-        { phone: { contains: s } },
-        { contactName: { contains: s } },
-        { email: { contains: s } },
+        { name: { contains: s, mode: 'insensitive' } },
+        { code: { contains: s, mode: 'insensitive' } },
+        { phone: { contains: s, mode: 'insensitive' } },
+        { contactName: { contains: s, mode: 'insensitive' } },
+        { email: { contains: s, mode: 'insensitive' } },
       ];
     }
 
