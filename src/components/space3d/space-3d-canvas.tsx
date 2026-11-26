@@ -22,6 +22,7 @@ import {
   BUBBLE_VISIBLE_DIST,
   animateAvatarIdle,
   createChibiAvatar,
+  poseSit,
   poseWalk,
   relaxPose,
   disposeObject,
@@ -40,7 +41,7 @@ import type { ShelfSlot } from './three/props/kit';
 import { buildMerchandise } from './three/props/packaging';
 import { resolveMerchItems } from '@/lib/space-3d-merch';
 import { SPACE_OBJECT_DEF_MAP } from '@/lib/space-3d-catalog';
-import { clampInside, findCollisions, snap } from '@/lib/space-3d-layout';
+import { SEATABLE_KINDS, clampInside, findCollisions, pickSeat, seatsFor, snap, type Seat } from '@/lib/space-3d-layout';
 import { buildProductGroup } from './three/products';
 import { createEpoxyTextures, windUniform } from './three/materials';
 import { mergeStaticGroup } from './three/merge';
@@ -77,7 +78,7 @@ interface Props {
   isSelfOnDuty?: boolean;
   playerName: string;
   playerAvatar: Avatar3DConfig;
-  playerPosRef?: React.MutableRefObject<{ x: number; z: number; rotY: number }>;
+  playerPosRef?: React.MutableRefObject<{ x: number; z: number; rotY: number; sit?: number }>;
   nightMode: boolean;
   povMode: 'THIRD' | 'FIRST';
   editMode: boolean;
@@ -122,6 +123,12 @@ interface Props {
   onSelectMerchItem?: (itemId: number) => void;
   /** Đang trò chuyện với nhân viên này → 2 nhân vật quay mặt vào nhau */
   faceEmployeeId?: number | null;
+  /** Bấm vào ghế → báo ghế được chọn (hiện nút "Ngồi ghế"); null = bỏ chọn */
+  onSeatCandidate?: (info: { label: string } | null) => void;
+  /** Trạng thái ngồi thay đổi (hiện nút "Đứng dậy") */
+  onSittingChange?: (sitting: boolean) => void;
+  /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
+  seatCommand?: { kind: 'sit' | 'stand'; nonce: number } | null;
 }
 
 interface RemoteAvatarEntry {
@@ -134,6 +141,7 @@ interface RemoteAvatarEntry {
 
 /** Bán kính thân người (m) để tránh chồng nhân vật / đi xuyên đồ đạc */
 const BODY_RADIUS = 0.3;
+const MAX_REMOTE_AVATARS = 30;
 const PASS_THROUGH = new Set(['RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD', 'DOOR', 'BOOTH']); // gian hàng mở: được bước vào
 
 /**
@@ -226,6 +234,9 @@ export function Space3DCanvas({
   planView = false,
   onSelectMerchItem,
   faceEmployeeId = null,
+  onSeatCandidate,
+  onSittingChange,
+  seatCommand = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef({
@@ -256,6 +267,8 @@ export function Space3DCanvas({
     planView,
     onSelectMerchItem,
     faceEmployeeId,
+    onSeatCandidate,
+    onSittingChange,
   });
   stateRef.current = {
     editMode,
@@ -285,6 +298,8 @@ export function Space3DCanvas({
     planView,
     onSelectMerchItem,
     faceEmployeeId,
+    onSeatCandidate,
+    onSittingChange,
   };
 
   const sceneObjRef = useRef<{
@@ -808,6 +823,31 @@ export function Space3DCanvas({
         }
       }
 
+      // 2a. Click vào ghế / sofa / ghế bar → đi tới và ngồi xuống
+      {
+        const seatObjId = pickObject();
+        const seatObj = seatObjId ? stateRef.current.structures.find((x) => x.id === seatObjId) : null;
+        if (seatObj && SEATABLE_KINDS.has(seatObj.kind) && sceneObjRef.current) {
+          const clickPt = raycaster.ray.intersectPlane(floorPlane, hitPoint) ? hitPoint : new THREE.Vector3(seatObj.posX, 0, seatObj.posZ);
+          const occupied: { x: number; z: number }[] = [];
+          const rs = stateRef.current.remoteStateRef?.current;
+          rs?.forEach((st) => {
+            if ((st.sit ?? 0) > 0) occupied.push({ x: st.tx, z: st.tz });
+          });
+          const seat = pickSeat(seatsFor(seatObj), clickPt.x, clickPt.z, occupied);
+          if (seat) {
+            // Chọn ghế → hiện nút "Ngồi ghế" (vòng sáng đánh dấu chỗ ngồi)
+            const reach = seatObj.depthM / 2 + BODY_RADIUS + 0.1;
+            const ax = seatObj.posX + Math.sin(seatObj.rotY) * reach + (seat.x - seatObj.posX);
+            const az = seatObj.posZ + Math.cos(seatObj.rotY) * reach + (seat.z - seatObj.posZ);
+            setCandidate({ seat, approach: new THREE.Vector3(ax, 0, az) }, seatObj.label || 'Ghế');
+            walkRing.position.set(seat.x, 0.03, seat.z);
+            walkRing.visible = true;
+            return;
+          }
+        }
+      }
+
       // 2b. Click vào hàng hoá trên kệ / máy trưng bày → thông tin sản phẩm & giá
       if (stateRef.current.onSelectMerchItem) {
         const merchHits = raycaster.intersectObjects(objectsGroup.children, true);
@@ -826,6 +866,9 @@ export function Space3DCanvas({
         while (obj && !obj.userData?.boothId) obj = obj.parent;
         if (obj?.userData?.boothId && sceneObjRef.current) {
           const { standX, standZ, boothId } = obj.userData as { standX: number; standZ: number; boothId: string };
+          standUp();
+          pendingSeat = null;
+          setCandidate(null);
           sceneObjRef.current.walkTarget = new THREE.Vector3(standX, 0, standZ);
           walkRing.position.set(standX, 0.03, standZ);
           walkRing.visible = true;
@@ -840,6 +883,9 @@ export function Space3DCanvas({
         const pt = floorHits[0].point;
         const clampedX = THREE.MathUtils.clamp(pt.x, -widthM * 0.5, widthM * 0.5);
         const clampedZ = THREE.MathUtils.clamp(pt.z, -depthM * 0.5, depthM * 0.5);
+        standUp();
+        pendingSeat = null;
+        setCandidate(null);
         sceneObjRef.current.walkTarget = new THREE.Vector3(clampedX, 0, clampedZ);
         walkRing.position.set(clampedX, 0.03, clampedZ);
         walkRing.visible = true;
@@ -903,6 +949,44 @@ export function Space3DCanvas({
     let lastNearId: string | null = null;
     let rafId = 0;
     let blockedTime = 0;
+    // Ngồi ghế: đi tới điểm đứng trước ghế rồi ngồi xuống; phím di chuyển / bấm chỗ khác thì đứng dậy
+    let sitting: Seat | null = null;
+    let pendingSeat: Seat | null = null;
+    let seatCandidate: { seat: Seat; approach: THREE.Vector3 } | null = null;
+    const setCandidate = (c: typeof seatCandidate, label = '') => {
+      seatCandidate = c;
+      stateRef.current.onSeatCandidate?.(c ? { label } : null);
+    };
+    const setSitting = (sv: Seat | null) => {
+      const changed = Boolean(sv) !== Boolean(sitting);
+      sitting = sv;
+      if (playerPosRef) playerPosRef.current.sit = sv ? sv.y : 0;
+      if (changed) stateRef.current.onSittingChange?.(Boolean(sv));
+    };
+    const sitOnCandidate = () => {
+      if (!seatCandidate || !sceneObjRef.current) return;
+      standUp();
+      sceneObjRef.current.walkTarget = seatCandidate.approach.clone();
+      walkRing.position.set(seatCandidate.approach.x, 0.03, seatCandidate.approach.z);
+      walkRing.visible = true;
+      pendingSeat = seatCandidate.seat;
+      setCandidate(null);
+    };
+    const standUp = () => {
+      if (!sitting) return;
+      const pl = sceneObjRef.current?.player ?? player;
+      pl.group.position.x = sitting.x + Math.sin(sitting.rotY) * 0.75;
+      pl.group.position.z = sitting.z + Math.cos(sitting.rotY) * 0.75;
+      pl.group.position.y = 0;
+      setSitting(null);
+    };
+    (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void } }).seatApi = {
+      sit: sitOnCandidate,
+      stand: () => {
+        standUp();
+        pendingSeat = null;
+      },
+    };
     const tmpLabelPos = new THREE.Vector3();
 
     // Tiết kiệm tài nguyên: tối đa 60 FPS (kể cả màn 120Hz); khi cảnh đứng yên > 3s hạ còn 20 FPS
@@ -950,7 +1034,20 @@ export function Space3DCanvas({
       if (keys.has('KeyD') || keys.has('ArrowRight')) move.x += 1;
 
       const currentPlayer = sceneObjRef.current?.player ?? player;
-      if (move.lengthSq() > 0) {
+      if (move.lengthSq() > 0 && (sitting || seatCandidate)) {
+        standUp();
+        pendingSeat = null;
+        if (seatCandidate) setCandidate(null);
+      }
+      if (sitting) {
+        // Đang ngồi: giữ đúng chỗ & hướng ghế, tư thế ngồi
+        currentPlayer.group.position.x = sitting.x;
+        currentPlayer.group.position.z = sitting.z;
+        const dr = Math.atan2(Math.sin(sitting.rotY - currentPlayer.group.rotation.y), Math.cos(sitting.rotY - currentPlayer.group.rotation.y));
+        currentPlayer.group.rotation.y += dr * 0.3;
+        poseSit(currentPlayer, sitting.y);
+      } else if (move.lengthSq() > 0) {
+        pendingSeat = null;
         move.normalize();
         camera.getWorldDirection(forward);
         forward.y = 0;
@@ -977,6 +1074,11 @@ export function Space3DCanvas({
         if (dist < 0.25) {
           sceneObjRef.current.walkTarget = null;
           walkRing.visible = false;
+          if (pendingSeat) {
+            // Tới trước ghế → xoay lưng về ghế và ngồi xuống
+            setSitting(pendingSeat);
+            pendingSeat = null;
+          }
         } else {
           const step = Math.min(dist, 6.2 * dt);
           actualDx = (diffX / dist) * step;
@@ -989,7 +1091,7 @@ export function Space3DCanvas({
       }
 
       // Va chạm thân người: không đi xuyên nhân vật khác & đồ đạc (đẩy ra mềm), bị chặn thì dừng click-to-walk
-      {
+      if (!sitting) {
         const before = { x: currentPlayer.group.position.x, z: currentPlayer.group.position.z };
         const others: THREE.Object3D[] = [];
         const so = sceneObjRef.current;
@@ -1033,7 +1135,7 @@ export function Space3DCanvas({
         // Đầm công sở bước ngắn & nhanh hơn để chân luôn nằm trong váy
         walkTime += dt * (currentPlayer.stride < 1 ? 13 : 10);
         poseWalk(currentPlayer, walkTime);
-      } else {
+      } else if (!sitting) {
         relaxPose(currentPlayer);
         // Đang trò chuyện → nhân vật mình quay mặt về phía người kia
         const faceId = stateRef.current.faceEmployeeId;
@@ -1111,7 +1213,12 @@ export function Space3DCanvas({
             }
           }
           animateAvatarIdle(entry.av, totalTime);
-          if (walking) {
+          if (st && (st.sit ?? 0) > 0) {
+            // Người kia đang ngồi ghế → tư thế ngồi đúng chỗ
+            g.position.x = st.tx;
+            g.position.z = st.tz;
+            poseSit(entry.av, st.sit!);
+          } else if (walking) {
             entry.walkTime += dt * (entry.av.stride < 1 ? 13 : 10);
             poseWalk(entry.av, entry.walkTime);
           } else {
@@ -1159,7 +1266,7 @@ export function Space3DCanvas({
         const k = 1 - Math.exp(-dt * 16);
         fp.yaw += (fp.yawT - fp.yaw) * k;
         fp.pitch += (fp.pitchT - fp.pitch) * k;
-        const eyeY = currentPlayer.headBaseY + 0.01;
+        const eyeY = currentPlayer.group.position.y + currentPlayer.headBaseY + 0.01; // ngồi thì tầm mắt thấp xuống
         camera.position.set(currentPlayer.group.position.x, eyeY, currentPlayer.group.position.z);
         const cp = Math.cos(fp.pitch);
         fpLook.set(
@@ -1377,6 +1484,14 @@ export function Space3DCanvas({
     obj.renderer.shadowMap.needsUpdate = true;
   }, [planView, sceneKind, widthM, depthM]);
 
+  // Nút "Ngồi ghế" / "Đứng dậy" từ giao diện
+  useEffect(() => {
+    if (!seatCommand) return;
+    const api = (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void } } | null)?.seatApi;
+    if (seatCommand.kind === 'sit') api?.sit();
+    else api?.stand();
+  }, [seatCommand]);
+
   // Đổi preset đồ họa thủ công
   useEffect(() => {
     const obj = sceneObjRef.current;
@@ -1517,7 +1632,19 @@ export function Space3DCanvas({
     const obj = sceneObjRef.current;
     if (!obj) return;
     const seen = new Set<number>();
-    for (const m of remoteRoster ?? []) {
+    // Đông người: chỉ dựng tối đa 30 nhân vật gần nhất (nhân viên ưu tiên) để giữ mượt
+    const me = obj.player.group.position;
+    const visible = [...(remoteRoster ?? [])]
+      .map((m) => {
+        const st = remoteStateRef?.current.get(m.employeeId);
+        const dx = (st?.tx ?? m.x) - me.x;
+        const dz = (st?.tz ?? m.z) - me.z;
+        return { m, score: Math.hypot(dx, dz) + (m.isGuest ? 6 : 0) };
+      })
+      .sort((a, b) => a.score - b.score)
+      .slice(0, MAX_REMOTE_AVATARS)
+      .map((x) => x.m);
+    for (const m of visible) {
       if (currentEmployeeId && m.employeeId === currentEmployeeId) continue;
       seen.add(m.employeeId);
       const sig = remoteSig(m);
@@ -1539,7 +1666,7 @@ export function Space3DCanvas({
         obj.remoteGroup.remove(existing.av.group);
         disposeObject(existing.av.group);
       }
-      const av = createChibiAvatar({ name: m.employeeName, config: m.avatar, isOnDuty: m.onDuty, isStaff: true });
+      const av = createChibiAvatar({ name: m.employeeName, config: m.avatar, isOnDuty: m.onDuty, isStaff: !m.isGuest });
       prepareRemoteAvatar(av, m.employeeId);
       av.group.position.set(x, 0, z);
       av.group.rotation.y = r;

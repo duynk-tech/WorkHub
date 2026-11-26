@@ -31,6 +31,25 @@ export function getRealtimeConfig(): RealtimeServerConfig | null {
   };
 }
 
+export { GUEST_KEY_RE, guestNumericId } from '@/lib/space-3d-guest';
+
+/** Token realtime ngắn hạn cho khách tham quan: được track presence & gửi vị trí trên kênh space:*, không đọc được dm:* */
+export async function mintGuestRealtimeToken(
+  guestKey: string,
+  jwtSecret: string,
+  nowSec: number = Math.floor(Date.now() / 1000),
+): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = nowSec + REALTIME_TOKEN_TTL_SEC;
+  const token = await new SignJWT({ role: 'authenticated', guest_key: guestKey.slice(0, 16) })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setSubject(`guest:${guestKey.slice(0, 16)}`)
+    .setAudience('authenticated')
+    .setIssuedAt(nowSec)
+    .setExpirationTime(expiresAt)
+    .sign(new TextEncoder().encode(jwtSecret));
+  return { token, expiresAt };
+}
+
 export async function mintRealtimeToken(
   employeeId: number,
   jwtSecret: string,

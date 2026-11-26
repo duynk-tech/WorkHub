@@ -70,6 +70,19 @@ export function poseWalk(av: AnimatedAvatar, phase: number): void {
   av.group.position.y = Math.abs(Math.cos(phase)) * 0.028;
 }
 
+/** Tư thế ngồi: đùi nằm ngang ra trước, cẳng chân thả xuống, tay đặt lên đùi; hông đặt đúng độ cao mặt ghế. */
+export function poseSit(av: AnimatedAvatar, seatY: number): void {
+  const k = 0.35; // nội suy để ngồi xuống mượt
+  const lerp = (cur: number, to: number) => cur + (to - cur) * k;
+  for (const leg of [av.leftLeg, av.rightLeg]) leg.rotation.x = lerp(leg.rotation.x, -1.5);
+  for (const knee of [av.leftKnee, av.rightKnee]) knee.rotation.x = lerp(knee.rotation.x, 1.5);
+  for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = lerp(arm.rotation.x, -0.55);
+  for (const el of [av.leftElbow, av.rightElbow]) el.rotation.x = lerp(el.rotation.x, -0.7);
+  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, -0.35);
+  // Hông (pivot chân ở y = 0.9) hạ xuống mặt ghế + bề dày đùi
+  av.group.position.y = lerp(av.group.position.y, seatY - 0.9 + 0.07);
+}
+
 /** Trả dáng về đứng thẳng mượt mà khi dừng. */
 export function relaxPose(av: AnimatedAvatar): void {
   const d = 0.82;

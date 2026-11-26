@@ -198,3 +198,20 @@ describe('bố cục mẫu', () => {
     expect(upgradeLegacyLayout('CAFE', legacy, { widthM: 16, depthM: 14 })).toBeNull();
   });
 });
+
+describe('chỗ ngồi', () => {
+  it('ghế có 1 chỗ, sofa 3 chỗ quay cùng hướng sofa; chọn chỗ trống gần nhất', async () => {
+    const { seatsFor, pickSeat } = await import('@/lib/space-3d-layout');
+    const chair = createObject('CHAIR', 2, 3, [])!;
+    expect(seatsFor(chair)).toHaveLength(1);
+    expect(seatsFor(chair)[0].y).toBeCloseTo(0.47);
+    const sofa = { ...createObject('SOFA', 0, 0, [])!, widthM: 2.6, rotY: Math.PI / 2 };
+    const seats = seatsFor(sofa);
+    expect(seats).toHaveLength(3);
+    expect(seats.every((x) => x.rotY === Math.PI / 2)).toBe(true);
+    const picked = pickSeat(seats, seats[2].x, seats[2].z, [{ x: seats[2].x, z: seats[2].z }]);
+    expect(picked).not.toBeNull();
+    expect(picked).not.toEqual(seats[2]);
+    expect(seatsFor(createObject('TABLE_ROUND', 0, 0, [])!)).toHaveLength(0);
+  });
+});

@@ -7,6 +7,9 @@ import { getAuthContext, requireAuth } from '@/server/auth/context';
 import { canDesignSpace } from './permissions';
 import {
   broadcastServer,
+  GUEST_KEY_RE as GUEST_KEY_PATTERN,
+  guestNumericId,
+  mintGuestRealtimeToken,
   DM_RATE_LIMIT,
   getRealtimeConfig,
   isDmRateLimited,
@@ -326,10 +329,15 @@ export async function saveMyAvatar3DAction(raw: Avatar3DConfig): Promise<SpaceAc
 // ───────────────────────── Realtime & Chat 1-1 ─────────────────────────
 
 /** Phiên realtime: khách nhận anon key (chỉ nghe); nhân viên nhận thêm JWT ký bởi server. */
-export async function getRealtimeSessionAction(): Promise<SpaceRealtimeSession | null> {
+export async function getRealtimeSessionAction(guestKey?: string): Promise<SpaceRealtimeSession | null> {
   const cfg = getRealtimeConfig();
   if (!cfg) return null;
   const ctx = await getAuthContext();
+  if (!ctx && cfg.jwtSecret && guestKey && GUEST_KEY_PATTERN.test(guestKey)) {
+    // Khách đã vào tham quan → token tạm để hiện nhân vật & di chuyển cho mọi người cùng thấy
+    const { token, expiresAt } = await mintGuestRealtimeToken(guestKey, cfg.jwtSecret);
+    return { url: cfg.url, anonKey: cfg.anonKey, token, expiresAt, employeeId: null, guestId: guestNumericId(guestKey) };
+  }
   if (!ctx || !cfg.jwtSecret) {
     return { url: cfg.url, anonKey: cfg.anonKey, token: null, expiresAt: null, employeeId: ctx?.employeeId ?? null };
   }

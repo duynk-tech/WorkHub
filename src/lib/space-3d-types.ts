@@ -231,6 +231,8 @@ export interface RemotePlayerMeta {
   stationLabel: string | null;
   /** Chế độ trả lời khách: LIVE (tự trả lời) | AI (trợ lý AI trả lời thay) */
   chatMode?: 'LIVE' | 'AI';
+  /** Khách tham quan (id âm), không phải nhân viên */
+  isGuest?: boolean;
   /** Vị trí lúc track — dùng để đặt avatar trước khi nhận được `move` đầu tiên */
   x: number;
   z: number;
@@ -244,6 +246,8 @@ export interface RemotePlayerState {
   tr: number;
   moving: boolean;
   ts: number;
+  /** Đang ngồi: độ cao mặt ghế (0 = đứng) */
+  sit?: number;
 }
 
 export interface RemoteBubble {
@@ -276,6 +280,8 @@ export interface SpaceRealtimeSession {
   token: string | null;
   expiresAt: number | null;
   employeeId: number | null;
+  /** Id số âm của khách tham quan (khi khách có token để hiện nhân vật) */
+  guestId?: number | null;
 }
 
 export interface SpaceDepartmentInfo {

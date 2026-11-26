@@ -19,9 +19,11 @@ export interface IncomingDm {
 
 interface Options {
   sceneCode: string;
-  /** null = khách (chỉ nghe, không track, không gửi) */
+  /** null = chưa vào (chỉ nghe). Khách tham quan có id âm (isGuest) */
   self: Omit<RemotePlayerMeta, 'x' | 'z' | 'r'> | null;
-  playerPosRef: React.MutableRefObject<{ x: number; z: number; rotY: number }>;
+  /** Mã khách (khi chưa đăng nhập) để server cấp token tạm cho phép hiện nhân vật */
+  guestKey?: string | null;
+  playerPosRef: React.MutableRefObject<{ x: number; z: number; rotY: number; sit?: number }>;
   onDm?: (dm: IncomingDm) => void;
   /** Khách tham quan nhắn cho nhân viên này (chế độ trả lời trực tiếp) */
   onGuest?: (evt: { guestKey: string; message: { id: number; fromGuest: boolean; body: string; createdAt: string; guestName: string } }) => void;
@@ -36,10 +38,12 @@ const BUBBLE_TTL_MS = 5000;
 
 function sanitizeMeta(raw: Record<string, unknown>): RemotePlayerMeta | null {
   const id = Number(raw.employeeId);
-  if (!Number.isInteger(id) || id <= 0) return null;
+  if (!Number.isInteger(id) || id === 0) return null;
+  const isGuest = id < 0;
   return {
     employeeId: id,
-    employeeName: String(raw.employeeName ?? `Nhân viên #${id}`).slice(0, 80),
+    isGuest,
+    employeeName: String(raw.employeeName ?? (isGuest ? 'Khách tham quan' : `Nhân viên #${id}`)).slice(0, 80),
     department: raw.department ? String(raw.department).slice(0, 120) : null,
     avatar: normalizeAvatar3DConfig(raw.avatar),
     onDuty: Boolean(raw.onDuty),
@@ -58,7 +62,7 @@ function sanitizeMeta(raw: Record<string, unknown>): RemotePlayerMeta | null {
  * - Bong bóng chat gần (Broadcast `bubble`) → `bubbleRef`
  * - Tin nhắn 1-1 (kênh `dm:<id>`, server gửi) → callback `onDm`
  */
-export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest }: Options) {
+export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRef, onDm, onGuest }: Options) {
   const [status, setStatus] = useState<RealtimeStatus>('off');
   const [roster, setRoster] = useState<RemotePlayerMeta[]>([]);
   const remoteStateRef = useRef(new Map<number, RemotePlayerState>());
@@ -81,7 +85,7 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
     let dmChannel: RealtimeChannel | null = null;
     let moveTimer: ReturnType<typeof setInterval> | null = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const lastSent = { x: NaN, z: NaN, r: NaN, moving: false };
+    const lastSent = { x: NaN, z: NaN, r: NaN, moving: false, sit: 0 };
     const remoteState = remoteStateRef.current;
     const bubbles = bubbleRef.current;
 
@@ -93,20 +97,22 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
       const dx = Math.abs(p.x - lastSent.x);
       const dz = Math.abs(p.z - lastSent.z);
       const dr = Math.abs(p.rotY - lastSent.r);
-      const changed = Number.isNaN(lastSent.x) || dx > MOVE_EPS || dz > MOVE_EPS || dr > ROT_EPS;
+      const sit = p.sit ?? 0;
+      const changed = Number.isNaN(lastSent.x) || dx > MOVE_EPS || dz > MOVE_EPS || dr > ROT_EPS || sit !== lastSent.sit;
       if (!changed && !force) {
         if (lastSent.moving) {
           // Gửi 1 gói "đã dừng" để bên kia tắt hoạt ảnh đi bộ
           lastSent.moving = false;
-          void ch.send({ type: 'broadcast', event: 'move', payload: { id: me.employeeId, x: p.x, z: p.z, r: p.rotY, m: false } });
+          void ch.send({ type: 'broadcast', event: 'move', payload: { id: me.employeeId, x: p.x, z: p.z, r: p.rotY, m: false, s: sit } });
         }
         return;
       }
       lastSent.x = p.x;
       lastSent.z = p.z;
       lastSent.r = p.rotY;
-      lastSent.moving = changed;
-      void ch.send({ type: 'broadcast', event: 'move', payload: { id: me.employeeId, x: p.x, z: p.z, r: p.rotY, m: changed } });
+      lastSent.moving = changed && !sit;
+      lastSent.sit = sit;
+      void ch.send({ type: 'broadcast', event: 'move', payload: { id: me.employeeId, x: p.x, z: p.z, r: p.rotY, m: changed && !sit, s: sit } });
     };
 
     const rebuildRoster = (ch: RealtimeChannel) => {
@@ -132,13 +138,15 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
 
     (async () => {
       setStatus('connecting');
-      const session = await getRealtimeSessionAction().catch(() => null);
+      const session = await getRealtimeSessionAction(guestKey ?? undefined).catch(() => null);
       if (cancelled) return;
       if (!session) {
         setStatus('off');
         return;
       }
+      // Nhân viên & khách đã vào (có token) đều được hiện nhân vật + gửi vị trí
       const isStaff = Boolean(session.token && selfRef.current);
+      const isEmployee = isStaff && (selfRef.current?.employeeId ?? 0) > 0;
       client = createClient(session.url, session.anonKey, {
         auth: { persistSession: false, autoRefreshToken: false },
         realtime: { params: { eventsPerSecond: 20 } },
@@ -149,7 +157,7 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
         if (!expiresAt) return;
         const ms = Math.max(30_000, expiresAt * 1000 - Date.now() - 5 * 60_000);
         refreshTimer = setTimeout(async () => {
-          const next = await getRealtimeSessionAction().catch(() => null);
+          const next = await getRealtimeSessionAction(guestKey ?? undefined).catch(() => null);
           if (cancelled || !client || !next?.token) return;
           await client.realtime.setAuth(next.token);
           scheduleRefresh(next.expiresAt);
@@ -178,7 +186,8 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
           const z = Number(payload.z);
           const r = Number(payload.r);
           if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(r)) return;
-          remoteState.set(id, { tx: x, tz: z, tr: r, moving: Boolean(payload.m), ts: Date.now() });
+          const sitH = Number(payload.s);
+          remoteState.set(id, { tx: x, tz: z, tr: r, moving: Boolean(payload.m), ts: Date.now(), sit: Number.isFinite(sitH) && sitH > 0 && sitH < 1.5 ? sitH : 0 });
         })
         .on('broadcast', { event: 'bubble' }, ({ payload }) => {
           const id = Number(payload?.id);
@@ -205,7 +214,7 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
           }
         });
 
-      if (isStaff) {
+      if (isEmployee) {
         dmChannel = client.channel(`dm:${selfRef.current!.employeeId}`, { config: { private: true } });
         dmChannel
           .on('broadcast', { event: 'dm' }, ({ payload }) => {
@@ -234,7 +243,7 @@ export function useSpaceRealtime({ sceneCode, self, playerPosRef, onDm, onGuest 
       setRoster([]);
       setStatus('off');
     };
-  }, [sceneCode, selfId, playerPosRef]);
+  }, [sceneCode, selfId, guestKey, playerPosRef]);
 
   // Meta của bản thân đổi (diện mạo / vào trực) → track lại để người khác thấy ngay
   const selfKey = self ? JSON.stringify(self) : '';

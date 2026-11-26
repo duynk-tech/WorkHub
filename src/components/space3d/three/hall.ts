@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SpaceKind, SpaceStructure } from '@/lib/space-3d-types';
+import { labelTex } from './props/textures';
 import {
   applyWindSway,
   createCarpetTexture,
@@ -498,87 +499,8 @@ export function createExhibitionHallEnvironment(
     env.add(tree);
   }
 
-  // 6. Cổng chào Thương hiệu TIM Corp + Quầy Lễ Tân Trung Tâm
-  const archGroup = new THREE.Group();
-  const pillarMat = M.whiteGloss();
-  const blueGlow = ledMat('#2563eb', 1.3, 2.6);
-
-  for (const px of [-5.2, 5.2]) {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.7, 5.2, 0.7), pillarMat);
-    p.position.set(px, 2.6, 0);
-    p.castShadow = true;
-    p.userData.occluder = true;
-    archGroup.add(p);
-
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 4.6, 0.74), blueGlow);
-    stripe.position.set(px, 2.6, 0);
-    archGroup.add(stripe);
-  }
-
-  const headerBox = new THREE.Mesh(
-    new THREE.BoxGeometry(11.4, 1.65, 0.55),
-    sharedMat('archHeader', () => new THREE.MeshPhysicalMaterial({ color: '#0b1220', roughness: 0.25, metalness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 })),
-  );
-  headerBox.userData.occluder = true;
-  headerBox.position.set(0, 5.1, 0);
-  headerBox.castShadow = true;
-  archGroup.add(headerBox);
-
-  const canvas = document.createElement('canvas');
-  const BS = 2.5;
-  canvas.width = 1024 * BS;
-  canvas.height = 192 * BS;
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(BS, BS);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 16;
-
-  const drawLogoBanner = (img?: HTMLImageElement) => {
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, 1024, 192);
-    ctx.strokeStyle = '#3b82f6';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(8, 8, 1008, 176);
-
-    if (img) {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.roundRect(42, 32, 128, 128, 22);
-      ctx.fill();
-      ctx.drawImage(img, 54, 44, 104, 104);
-    }
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '800 48px Inter, "Segoe UI", system-ui, sans-serif';
-    ctx.textAlign = img ? 'left' : 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(companyName.toUpperCase().slice(0, 26), img ? 198 : 512, 76);
-
-    ctx.fillStyle = '#60a5fa';
-    ctx.font = '600 24px Inter, "Segoe UI", system-ui, sans-serif';
-    ctx.fillText(
-      sceneKind === 'WAREHOUSE' ? 'KHO HÀNG 3D DIGITAL TWIN' : 'TRUNG TÂM TRIỂN LÃM & SHOWROOM THIẾT BỊ 3D',
-      img ? 198 : 512,
-      134,
-    );
-    tex.needsUpdate = true;
-  };
-  drawLogoBanner();
-  if (logoUrl) {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => drawLogoBanner(img);
-    img.src = logoUrl;
-  }
-
-  const frontPlaque = new THREE.Mesh(new THREE.PlaneGeometry(11.0, 1.5), lightboxMat(tex));
-  frontPlaque.position.set(0, 5.1, 0.29);
-  const backPlaque = frontPlaque.clone();
-  backPlaque.position.z = -0.29;
-  backPlaque.rotation.y = Math.PI;
-  archGroup.add(frontPlaque, backPlaque);
-  // Cổng chào đặt tại LỐI VÀO thật (mặt trước sảnh) — khách bước qua cổng ngay khi vào
+  // 6. Cổng chào TIM Corp tại lối vào (thiết kế cổng doanh nghiệp hiện đại)
+  const archGroup = createEntranceGate(companyName, logoUrl, sceneKind);
   archGroup.position.set(0, 0, halfD - 1.4);
   env.add(archGroup);
 
@@ -587,3 +509,194 @@ export function createExhibitionHallEnvironment(
   return env;
 }
 
+
+
+/** Logo ngang chính thức (public/brand) dùng cho cổng chào */
+const GATE_LOGO_URL = '/brand/timcorp-logo-ngang.png';
+
+/**
+ * Cổng chào doanh nghiệp: 2 trụ nhôm xước trên đế granite (khe kính navy viền LED, hộp đèn biểu tượng trên đỉnh),
+ * dầm composite navy với lightbox trắng in logo ngang + dòng giới thiệu, viền halo LED, downlight dưới gầm,
+ * bồn cây cắt tỉa & thảm đón khách. Mặt sau: lời chào tạm biệt.
+ */
+function createEntranceGate(companyName: string, fallbackLogoUrl: string, sceneKind: SpaceKind): THREE.Group {
+  const g = new THREE.Group();
+  const span = 11.2; // khoảng thông thuỷ giữa 2 trụ
+  const pylonW = 0.95;
+  const pylonH = 6.3;
+  const headH = 1.9;
+  const headD = 0.85;
+  const headY = pylonH - headH / 2 + 0.15;
+  const px = span / 2 + pylonW / 2;
+
+  const granite = sharedMat('gateGranite', () => new THREE.MeshPhysicalMaterial({ color: '#2a2d33', roughness: 0.32, clearcoat: 0.6, clearcoatRoughness: 0.2 }));
+  const alu = sharedMat('gateAlu', () => new THREE.MeshStandardMaterial({ color: '#c7ccd4', metalness: 0.92, roughness: 0.3 }));
+  const navy = sharedMat('gateNavy', () => new THREE.MeshPhysicalMaterial({ color: '#0d2150', roughness: 0.22, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08 }));
+  const navyGlass = sharedMat('gateNavyGlass', () => new THREE.MeshPhysicalMaterial({ color: '#12307a', roughness: 0.08, metalness: 0.2, clearcoat: 1, transparent: true, opacity: 0.92 }));
+  const halo = ledMat('#3b82f6', 1.4, 3.2);
+  const warm = ledMat('#fff3d6', 1.6, 4.2);
+
+  const addMesh = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, occluder = false) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    if (occluder) m.userData.occluder = true;
+    g.add(m);
+    return m;
+  };
+
+  // Ảnh logo dùng chung cho dầm & hộp đèn đỉnh trụ
+  const logoImg = new Image();
+  const onLogo: (() => void)[] = [];
+  logoImg.onload = () => onLogo.forEach((f) => f());
+  logoImg.onerror = () => {
+    if (fallbackLogoUrl && logoImg.src.indexOf(fallbackLogoUrl) < 0) logoImg.src = fallbackLogoUrl;
+  };
+
+  for (const s of [-1, 1]) {
+    const x = s * px;
+    addMesh(new THREE.BoxGeometry(pylonW + 0.5, 0.32, pylonW + 0.5), granite, x, 0.16, 0); // đế granite
+    addMesh(new THREE.BoxGeometry(pylonW, pylonH, pylonW), alu, x, 0.32 + pylonH / 2, 0, true); // thân trụ
+    // Khe kính navy mặt trước & sau + viền LED hai bên khe
+    for (const fz of [1, -1]) {
+      addMesh(new THREE.BoxGeometry(pylonW * 0.46, pylonH - 1.6, 0.04), navyGlass, x, 0.32 + (pylonH - 1.6) / 2 + 0.35, fz * (pylonW / 2 + 0.01));
+      for (const ex of [-1, 1]) addMesh(new THREE.BoxGeometry(0.025, pylonH - 1.6, 0.03), halo, x + ex * pylonW * 0.25, 0.32 + (pylonH - 1.6) / 2 + 0.35, fz * (pylonW / 2 + 0.02));
+    }
+    // Hộp đèn biểu tượng trên đỉnh trụ (cắt phần biểu tượng bên trái logo ngang)
+    const embCanvas = document.createElement('canvas');
+    embCanvas.width = 512;
+    embCanvas.height = 512;
+    const ec = embCanvas.getContext('2d')!;
+    const embTex = new THREE.CanvasTexture(embCanvas);
+    embTex.colorSpace = THREE.SRGBColorSpace;
+    embTex.anisotropy = 16;
+    const drawEmblem = () => {
+      ec.fillStyle = '#ffffff';
+      ec.fillRect(0, 0, 512, 512);
+      if (logoImg.complete && logoImg.naturalWidth) {
+        // Biểu tượng chiếm ~20% bên trái logo ngang (vuông theo chiều cao)
+        const sh = logoImg.naturalHeight;
+        ec.imageSmoothingQuality = 'high';
+        ec.drawImage(logoImg, 0, 0, sh * 1.05, sh, 96, 96, 320, 305);
+      } else {
+        ec.fillStyle = '#1d3f91';
+        ec.font = '800 220px Inter, system-ui, sans-serif';
+        ec.textAlign = 'center';
+        ec.textBaseline = 'middle';
+        ec.fillText('T', 256, 270);
+      }
+      embTex.needsUpdate = true;
+    };
+    drawEmblem();
+    onLogo.push(drawEmblem);
+    const embMat = lightboxMat(embTex);
+    const embY = 0.32 + pylonH - 0.62;
+    for (const fz of [1, -1]) {
+      const emb = addMesh(new THREE.PlaneGeometry(pylonW * 0.82, pylonW * 0.82), embMat, x, embY, fz * (pylonW / 2 + 0.012));
+      emb.castShadow = false;
+      if (fz < 0) emb.rotation.y = Math.PI;
+    }
+    // Bồn cây cắt tỉa phía ngoài chân trụ
+    const potX = x + s * 1.35;
+    addMesh(new THREE.BoxGeometry(1.1, 0.7, 1.1), granite, potX, 0.35, 0.3);
+    const bush = addMesh(new THREE.SphereGeometry(0.55, 14, 10), sharedMat('gateBush', () => new THREE.MeshStandardMaterial({ color: '#2f7a3f', roughness: 0.8, flatShading: true })), potX, 1.05, 0.3);
+    bush.scale.set(1, 0.85, 1);
+  }
+
+  // Dầm ngang navy (nhô hơn trụ) + halo LED trên/dưới
+  const beamW = span + pylonW * 2 + 0.6;
+  addMesh(new THREE.BoxGeometry(beamW, headH, headD), navy, 0, headY, 0, true);
+  addMesh(new THREE.BoxGeometry(beamW + 0.08, 0.12, headD + 0.08), alu, 0, headY + headH / 2 + 0.06, 0);
+  for (const fz of [1, -1]) {
+    addMesh(new THREE.BoxGeometry(beamW - 0.3, 0.025, 0.025), halo, 0, headY + headH / 2 - 0.08, fz * (headD / 2 + 0.015));
+    addMesh(new THREE.BoxGeometry(beamW - 0.3, 0.025, 0.025), halo, 0, headY - headH / 2 + 0.08, fz * (headD / 2 + 0.015));
+  }
+  // Downlight dưới gầm dầm rọi lối vào
+  for (let i = 0; i < 6; i++) {
+    const dl = addMesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), warm, -span / 2 + 0.9 + (i * (span - 1.8)) / 5, headY - headH / 2 - 0.005, 0);
+    dl.castShadow = false;
+  }
+
+  // Lightbox mặt trước: logo ngang + dòng giới thiệu
+  const W = 2600;
+  const panelW = span - 0.6;
+  const panelH = headH - 0.45;
+  const H = Math.round((W * panelH) / panelW);
+  const fc = document.createElement('canvas');
+  fc.width = W;
+  fc.height = H;
+  const fctx = fc.getContext('2d')!;
+  const frontTex = new THREE.CanvasTexture(fc);
+  frontTex.colorSpace = THREE.SRGBColorSpace;
+  frontTex.anisotropy = 16;
+  const tagline = sceneKind === 'WAREHOUSE' ? 'KHO HÀNG & TRUNG TÂM PHÂN PHỐI' : 'TRUNG TÂM TRIỂN LÃM & SHOWROOM THIẾT BỊ F&B';
+  const drawFront = () => {
+    const bg = fctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#ffffff');
+    bg.addColorStop(1, '#eef3fb');
+    fctx.fillStyle = bg;
+    fctx.fillRect(0, 0, W, H);
+    fctx.fillStyle = '#e11d2a';
+    fctx.fillRect(0, H - 14, W * 0.16, 14);
+    fctx.fillStyle = '#1d3f91';
+    fctx.fillRect(W * 0.16, H - 14, W * 0.84, 14);
+    const leftW = W * 0.54;
+    if (logoImg.complete && logoImg.naturalWidth) {
+      const lw = leftW * 0.86;
+      const lh = (lw * logoImg.naturalHeight) / logoImg.naturalWidth;
+      fctx.imageSmoothingEnabled = true;
+      fctx.imageSmoothingQuality = 'high';
+      fctx.drawImage(logoImg, (leftW - lw) / 2 + W * 0.02, (H - lh) / 2 - 6, lw, lh);
+    } else {
+      fctx.fillStyle = '#1d3f91';
+      fctx.font = `800 ${Math.round(H * 0.42)}px Inter, "Segoe UI", system-ui, sans-serif`;
+      fctx.textAlign = 'center';
+      fctx.textBaseline = 'middle';
+      fctx.fillText((companyName || 'TIM CORP').toUpperCase().slice(0, 18), leftW / 2, H / 2);
+    }
+    // Vạch phân cách + dòng giới thiệu bên phải
+    fctx.fillStyle = '#cbd5e1';
+    fctx.fillRect(leftW + 20, H * 0.2, 4, H * 0.56);
+    fctx.textAlign = 'left';
+    fctx.textBaseline = 'middle';
+    fctx.fillStyle = '#0f172a';
+    fctx.font = `800 ${Math.round(H * 0.16)}px Inter, "Segoe UI", system-ui, sans-serif`;
+    fctx.fillText('CHÀO MỪNG QUÝ KHÁCH', leftW + 70, H * 0.38);
+    fctx.fillStyle = '#1d3f91';
+    fctx.font = `600 ${Math.round(H * 0.105)}px Inter, "Segoe UI", system-ui, sans-serif`;
+    fctx.fillText(tagline, leftW + 70, H * 0.6, W - leftW - 110);
+    frontTex.needsUpdate = true;
+  };
+  drawFront();
+  onLogo.push(drawFront);
+  const front = addMesh(new THREE.PlaneGeometry(panelW, panelH), lightboxMat(frontTex), 0, headY, headD / 2 + 0.006);
+  front.castShadow = false;
+
+  // Mặt sau: lời chào tạm biệt
+  const backTex = labelTex(
+    [
+      { text: 'CẢM ƠN QUÝ KHÁCH · HẸN GẶP LẠI', size: 96, color: '#ffffff', weight: 800, y: 170 },
+      { text: (companyName || 'TIM CORP').toUpperCase().slice(0, 30), size: 52, color: '#93c5fd', weight: 600, y: 300 },
+    ],
+    '#0d2150',
+    2400,
+    420,
+  );
+  const back = addMesh(new THREE.PlaneGeometry(panelW, panelH * 0.82), lightboxMat(backTex), 0, headY, -headD / 2 - 0.006);
+  back.rotation.y = Math.PI;
+  back.castShadow = false;
+
+  // Thảm đón khách dưới cổng
+  const mat = addMesh(
+    new THREE.BoxGeometry(5.2, 0.014, 3),
+    sharedMat('gateMat', () => new THREE.MeshStandardMaterial({ color: '#1f2a44', roughness: 0.95 })),
+    0,
+    0.022,
+    0.4,
+  );
+  mat.castShadow = false;
+
+  logoImg.src = GATE_LOGO_URL;
+  return g;
+}

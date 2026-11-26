@@ -46,6 +46,7 @@ import { normalizeSceneKind } from '@/lib/space-3d-catalog';
 import { templateFor } from '@/lib/space-3d-templates';
 import { resolveMerchItems } from '@/lib/space-3d-merch';
 import { DEMO_PRODUCT_MAP } from '@/lib/space-3d-demo-products';
+import { getOrCreateGuestKey, guestNumericId } from '@/lib/space-3d-guest';
 import {
   ROTATE_STEP,
   clampInside,
@@ -266,7 +267,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null);
   const [inspectPlacementId, setInspectPlacementId] = useState<string | null>(null);
   const [teleportTarget, setTeleportTarget] = useState<TeleportTarget | null>(null);
-  const playerPosRef = useRef({ x: 0, z: 11, rotY: 0 });
+  const playerPosRef = useRef<{ x: number; z: number; rotY: number; sit?: number }>({ x: 0, z: 11, rotY: 0, sit: 0 });
   const [nearby, setNearby] = useState<{
     zoneName: string;
     nearPlacementId: string | null;
@@ -309,6 +310,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   chatStateRef.current = { chatOpen, chatPeer };
 
   const cu = data.currentUser;
+  // Khách tham quan đã vào → có mã khách để hiện nhân vật cho mọi người (kể cả nhân viên) cùng thấy
+  const [guestKey, setGuestKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cu && entered) setGuestKey(getOrCreateGuestKey());
+  }, [cu, entered]);
   const realtimeSelf = useMemo(
     () =>
       cu
@@ -321,8 +327,19 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             stationLabel: cu.dutyStation,
             chatMode,
           }
-        : null,
-    [cu, chatMode],
+        : guestKey
+          ? {
+              employeeId: guestNumericId(guestKey),
+              employeeName: (guestName.trim() || 'Khách tham quan').slice(0, 40),
+              department: null,
+              avatar: avatarConfig,
+              onDuty: false,
+              stationLabel: null,
+              chatMode: 'LIVE' as const,
+              isGuest: true,
+            }
+          : null,
+    [cu, chatMode, guestKey, guestName, avatarConfig],
   );
 
   const handleIncomingDm = useCallback((dm: IncomingDm) => {
@@ -340,6 +357,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const realtime = useSpaceRealtime({
     sceneCode: data.activeScene.code,
     self: realtimeSelf,
+    guestKey: cu ? null : guestKey,
     playerPosRef,
     onDm: handleIncomingDm,
     onGuest: (evt) => {
@@ -374,6 +392,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     // dockTab: chụp lại vị trí mới nhất mỗi khi mở Bản đồ
   }, [realtimeLive, realtime.roster, realtime.remoteStateRef, data.presences, dockTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const onDutyCount = livePresences.filter((p) => p.status === 'ON_DUTY').length;
+  const guestOnlineCount = realtime.roster.filter((r) => r.isGuest).length;
+  const staffOnlineCount = realtime.roster.length - guestOnlineCount;
   const selectedRemote = selectedRemoteId ? realtime.roster.find((r) => r.employeeId === selectedRemoteId) ?? null : null;
 
   const openChatWith = (peer: ChatPeer | null) => {
@@ -392,6 +412,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const structures = layout.objects;
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [merchInfoId, setMerchInfoId] = useState<number | null>(null);
+  // Ngồi ghế: ghế đang chọn (hiện nút "Ngồi ghế") / đang ngồi (hiện nút "Đứng dậy")
+  const [seatPick, setSeatPick] = useState<{ label: string } | null>(null);
+  const [isSitting, setIsSitting] = useState(false);
+  const [seatCommand, setSeatCommand] = useState<{ kind: 'sit' | 'stand'; nonce: number } | null>(null);
   const [draggingKind, setDraggingKind] = useState<string | null>(null);
   const [planView, setPlanView] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -443,7 +467,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     window.setTimeout(() => setToastMsg((prev) => (prev?.text === text ? null : prev)), 3200);
   };
 
-  const canBubble = Boolean(data.currentUser) && realtimeLive;
+  const canBubble = Boolean(data.currentUser || guestKey) && realtimeLive;
 
   // Phím tắt V (POV) và E (Xem vật thể gần nhất)
   useEffect(() => {
@@ -908,6 +932,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         debug={debug3D}
         merchItems={merchPool}
         faceEmployeeId={visitorTarget?.employeeId ?? (chatOpen ? chatPeer?.employeeId ?? null : null)}
+        onSeatCandidate={setSeatPick}
+        onSittingChange={setIsSitting}
+        seatCommand={seatCommand}
         onSelectMerchItem={(id) => {
           if (!editMode) setMerchInfoId(id);
         }}
@@ -1024,7 +1051,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 700 }}>{selectedRemote.employeeName}</div>
-              <div style={{ fontSize: 12, color: '#94a3b8' }}>{selectedRemote.department || 'Nhân viên'}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>{selectedRemote.isGuest ? 'Khách tham quan' : selectedRemote.department || 'Nhân viên'}</div>
               <div style={{ fontSize: 11.5, marginTop: 4, color: selectedRemote.onDuty ? '#34d399' : '#60a5fa' }}>
                 {selectedRemote.onDuty
                   ? `● Đang trực${selectedRemote.stationLabel ? ` · ${selectedRemote.stationLabel}` : ''}`
@@ -1035,6 +1062,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               <X size={16} />
             </button>
           </div>
+          {!selectedRemote.isGuest && (
           <button
             type="button"
             onClick={() => {
@@ -1061,7 +1089,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             {selectedRemote.chatMode === 'AI' || data.currentUser ? <Sparkles size={15} /> : <MessageCircle size={15} />}
             {data.currentUser ? 'Hỏi trợ lý AI về sản phẩm' : selectedRemote.chatMode === 'AI' ? 'Hỏi (Trợ lý AI trả lời)' : 'Hỏi nhân viên'}
           </button>
-          {data.currentUser && (
+          )}
+          {data.currentUser && !selectedRemote.isGuest && (
             <button
               type="button"
               onClick={() =>
@@ -1157,6 +1186,29 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             }}
           />
         </form>
+      )}
+
+      {/* Nút Ngồi ghế / Đứng dậy */}
+      {!editMode && (seatPick || isSitting) && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 26 }}>
+          {isSitting ? (
+            <button
+              type="button"
+              onClick={() => setSeatCommand({ kind: 'stand', nonce: Date.now() })}
+              style={{ ...glassStyle, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, boxShadow: '0 10px 28px rgba(0,0,0,0.35)' }}
+            >
+              <ArrowLeft size={15} style={{ transform: 'rotate(90deg)' }} /> Đứng dậy
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSeatCommand({ kind: 'sit', nonce: Date.now() })}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#2563eb,#0891b2)', boxShadow: '0 10px 28px rgba(37,99,235,0.45)' }}
+            >
+              🪑 Ngồi ghế{seatPick?.label ? ` · ${seatPick.label}` : ''}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Màn chờ khi chuyển không gian */}
@@ -1409,9 +1461,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           <span style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{data.branding.appName}</span>
           <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: '#2563eb', color: '#fff', flex: 'none' }}>3D</span>
           {(realtimeLive || data.presences.length > 0) && (
-            <span title="Nhân viên đang online / đang trực quầy" style={{ fontSize: 11.5, color: '#34d399', whiteSpace: 'nowrap', flex: 'none' }}>
-              ● {realtimeLive ? livePresences.length + (data.currentUser ? 1 : 0) : data.presences.length}
-              {realtimeLive && onDutyCount > 0 ? ` · ${onDutyCount} trực` : ''}
+            <span title="Nhân viên trực tuyến · Khách tham quan" style={{ fontSize: 11.5, color: '#34d399', whiteSpace: 'nowrap', flex: 'none' }}>
+              ● Trực tuyến: {realtimeLive ? staffOnlineCount + (data.currentUser ? 1 : 0) : data.presences.length}
+              {realtimeLive ? ` · Khách: ${guestOnlineCount + (!data.currentUser && guestKey ? 1 : 0)}` : ''}
             </span>
           )}
         </div>

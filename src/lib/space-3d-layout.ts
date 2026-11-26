@@ -128,3 +128,58 @@ export function historyRedo(h: LayoutHistory): LayoutHistory {
   const [next, ...rest] = h.future;
   return { past: [...h.past, h.present], present: next, future: rest };
 }
+
+// ───────────── Chỗ ngồi (ghế, ghế bar, sofa, ghế bành, ghế xoay) ─────────────
+
+export interface Seat {
+  /** Toạ độ thế giới của điểm ngồi (hông) */
+  x: number;
+  z: number;
+  /** Độ cao mặt ngồi (m) */
+  y: number;
+  /** Hướng mặt người ngồi (rad) */
+  rotY: number;
+}
+
+export const SEATABLE_KINDS = new Set(['CHAIR', 'BAR_STOOL', 'SOFA', 'ARMCHAIR', 'OFFICE_CHAIR']);
+
+/** Danh sách chỗ ngồi của 1 vật thể (sofa nhiều chỗ). Mặt trước vật thể là +Z cục bộ. */
+export function seatsFor(o: Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'rotY' | 'widthM' | 'depthM' | 'heightM'>): Seat[] {
+  if (!SEATABLE_KINDS.has(o.kind)) return [];
+  const local: { lx: number; lz: number; y: number }[] = [];
+  switch (o.kind) {
+    case 'CHAIR':
+      local.push({ lx: 0, lz: 0.03, y: 0.47 });
+      break;
+    case 'BAR_STOOL':
+      local.push({ lx: 0, lz: 0, y: o.heightM - 0.02 });
+      break;
+    case 'OFFICE_CHAIR':
+      local.push({ lx: 0, lz: 0.04, y: 0.53 });
+      break;
+    case 'ARMCHAIR':
+      local.push({ lx: 0, lz: 0.08, y: 0.42 });
+      break;
+    case 'SOFA': {
+      const n = o.widthM > 2.3 ? 3 : 2;
+      const inner = o.widthM - 0.28;
+      for (let i = 0; i < n; i++) local.push({ lx: -inner / 2 + (inner / n) * (i + 0.5), lz: 0.08, y: 0.42 });
+      break;
+    }
+  }
+  const c = Math.cos(o.rotY);
+  const s = Math.sin(o.rotY);
+  return local.map((p) => ({
+    x: o.posX + p.lx * c + p.lz * s,
+    z: o.posZ - p.lx * s + p.lz * c,
+    y: p.y,
+    rotY: o.rotY,
+  }));
+}
+
+/** Chỗ ngồi trống gần điểm bấm nhất (bỏ chỗ đã có người ngồi trong bán kính 0.35m) */
+export function pickSeat(seats: Seat[], clickX: number, clickZ: number, occupied: { x: number; z: number }[]): Seat | null {
+  const free = seats.filter((st) => !occupied.some((p) => Math.hypot(p.x - st.x, p.z - st.z) < 0.35));
+  if (!free.length) return null;
+  return free.reduce((best, st) => (Math.hypot(st.x - clickX, st.z - clickZ) < Math.hypot(best.x - clickX, best.z - clickZ) ? st : best));
+}

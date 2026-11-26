@@ -9,6 +9,7 @@ import {
   sendGuestMessageAction,
   type GuestChatMessage,
 } from '@/server/modules/space3d/actions';
+import { getOrCreateGuestKey } from '@/lib/space-3d-guest';
 
 export interface VisitorChatTarget {
   employeeId: number;
@@ -36,24 +37,7 @@ interface Props {
 
 type Msg = { id: string; role: 'user' | 'assistant' | 'staff'; text: string; streaming?: boolean };
 
-const GUEST_KEY_STORE = 'space3d.guestKey';
-function getGuestKey(): string {
-  try {
-    const existing = window.localStorage.getItem(GUEST_KEY_STORE);
-    if (existing && /^[a-f0-9]{32,64}$/.test(existing)) return existing;
-  } catch {
-    // bỏ qua
-  }
-  const bytes = new Uint8Array(20);
-  crypto.getRandomValues(bytes);
-  const key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  try {
-    window.localStorage.setItem(GUEST_KEY_STORE, key);
-  } catch {
-    // bỏ qua
-  }
-  return key;
-}
+const getGuestKey = getOrCreateGuestKey;
 
 /** Hiện chữ chạy: nhả dần ký tự của `full` (kể cả sau khi luồng kết thúc), đuổi kịp nhanh hơn khi tụt xa. */
 function useTypewriter(full: string): string {

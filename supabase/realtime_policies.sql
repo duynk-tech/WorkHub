@@ -32,7 +32,8 @@ to authenticated
 with check (
   realtime.topic() like 'space:%'
   and realtime.messages.extension in ('broadcast', 'presence')
-  and coalesce(auth.jwt() ->> 'employee_id', '') <> ''
+  -- nhân viên (employee_id) hoặc khách tham quan có token tạm (guest_key)
+  and (coalesce(auth.jwt() ->> 'employee_id', '') <> '' or coalesce(auth.jwt() ->> 'guest_key', '') <> '')
 );
 
 drop policy if exists "space3d_read_own_dm" on realtime.messages;
