@@ -26,40 +26,18 @@ export function buildBarCounter(o: SpaceObject): THREE.Group {
   g.add(box(w - 0.1, 0.01, 0.02, M.glow('#ffcf8a', 0.6, 2), 0, h - 0.07, d / 2 + 0.07));
   // Dụng cụ trên quầy: ly, bình sữa, hộp ống hút
   const cupMat = M.ceramic('#ffffff');
-  for (let i = 0; i < 4; i++) g.add(lathe([[0, 0], [0.035, 0], [0.042, 0.09], [0.04, 0.09], [0.032, 0.005], [0, 0.005]], cupMat, 16)).position.set(-w * 0.35 + i * 0.1, h, -d * 0.2);
+  for (let i = 0; i < 4; i++) {
+    // Lưu ý: add() trả về nhóm cha → phải đặt vị trí trên chính chiếc ly
+    const cup = lathe([[0, 0], [0.035, 0], [0.042, 0.09], [0.04, 0.09], [0.032, 0.005], [0, 0.005]], cupMat, 16);
+    cup.position.set(-w * 0.35 + i * 0.1, h, -d * 0.2);
+    g.add(cup);
+  }
   g.add(cyl(0.04, 0.045, 0.12, M.chrome(), w * 0.3, h + 0.06, -d * 0.15, 16));
   return g;
 }
 
-export function buildEspresso(o: SpaceObject): THREE.Group {
-  const g = new THREE.Group();
-  const { widthM: w, depthM: d, heightM: h } = o;
-  const body = M.metal(o.color ?? '#d1d5db', 0.22);
-  g.add(box(w, h * 0.75, d, body, 0, h * 0.4, 0, 0.03));
-  g.add(box(w * 0.98, 0.04, d * 0.98, M.chrome(), 0, h * 0.8, 0, 0.01)); // khay hâm ly
-  // Mặt trước: 2 group pha + tay cầm, đồng hồ áp suất, khay hứng
-  for (const sx of [-0.22, 0.22]) {
-    g.add(cyl(0.035, 0.04, 0.06, M.chrome(), sx * w, h * 0.42, d / 2 + 0.03, 16));
-    const handle = box(0.02, 0.02, 0.14, M.black(), sx * w, h * 0.38, d / 2 + 0.1, 0.008);
-    handle.rotation.x = -0.15;
-    g.add(handle);
-  }
-  for (const sx of [-0.12, 0.12]) {
-    const gauge = cyl(0.03, 0.03, 0.012, M.paint('#fafafa'), sx * w, h * 0.65, d / 2 + 0.006, 20);
-    gauge.rotation.x = Math.PI / 2;
-    g.add(gauge);
-  }
-  g.add(box(w * 0.85, 0.025, 0.14, M.chrome(), 0, h * 0.06, d / 2 + 0.05, 0.006));
-  // Vòi đánh sữa
-  g.add(cyl(0.006, 0.006, 0.18, M.chrome(), w * 0.42, h * 0.45, d / 2 + 0.05, 8));
-  // Máy xay bên cạnh
-  const grinder = new THREE.Group();
-  grinder.add(box(0.18, 0.28, 0.24, M.black(), 0, 0.14, 0, 0.02));
-  grinder.add(lathe([[0.0, 0.0], [0.07, 0.0], [0.1, 0.2], [0.0, 0.2]], M.glass(), 20)).position.y = 0.28;
-  grinder.position.set(w / 2 + 0.16, 0, 0);
-  g.add(grinder);
-  return g;
-}
+// Máy pha espresso chi tiết nằm ở espresso.ts
+export { buildEspresso } from './espresso';
 
 export function buildPastryCase(o: SpaceObject): THREE.Group {
   const g = new THREE.Group();

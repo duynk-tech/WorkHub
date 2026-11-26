@@ -212,7 +212,7 @@ export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, gla
         const snapshot = acc;
         setMsgs((prev) => prev.map((m) => (m.id === assistantId ? { ...m, text: snapshot } : m)));
       }
-      setMsgs((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false, text: m.text || 'Xin lỗi, mình chưa có câu trả lời phù hợp.' } : m)));
+      setMsgs((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false, text: m.text || '⚠️ Trợ lý AI chưa phản hồi, vui lòng thử lại sau giây lát.' } : m)));
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       setMsgs((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false, text: `⚠️ ${(e as Error).message}` } : m)));

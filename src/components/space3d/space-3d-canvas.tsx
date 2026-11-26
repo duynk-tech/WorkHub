@@ -432,12 +432,16 @@ export function Space3DCanvas({
     if (isCafe || isOffice) {
       // Quán cà phê: sàn gỗ ván dài; Văn phòng: thảm tấm
       floorMapOverride = (isCafe ? plankTex() : carpetTileTex()).clone();
-      floorMapOverride.repeat.set((widthM + 4) / (isCafe ? 4 : 3), (depthM + 6) / (isCafe ? 4 : 3));
+      // Ván gỗ thật rộng ~18cm (texture 8 ván = 1.44m); thảm tấm 50cm (texture 4 tấm = 2m)
+      floorMapOverride.repeat.set((widthM + 0.2) / (isCafe ? 1.44 : 2), (depthM + 0.2) / (isCafe ? 1.44 : 2));
       floorMapOverride.needsUpdate = true;
     }
     const floorMat = new THREE.MeshPhysicalMaterial({
       map: floorMapOverride ?? floorTex.map,
       roughnessMap: floorMapOverride ? null : floorTex.roughnessMap,
+      // Khe ván / sợi thảm nổi khối dưới ánh đèn
+      bumpMap: floorMapOverride ?? null,
+      bumpScale: isCafe ? 0.9 : 1.4,
       roughness: isOffice ? 0.95 : isCafe ? 0.5 : 0.42,
       metalness: 0,
       clearcoat: isOffice ? 0 : isCafe ? 0.35 : 0.65,
@@ -1041,8 +1045,9 @@ export function Space3DCanvas({
       }
       if (sitting) {
         // Đang ngồi: giữ đúng chỗ & hướng ghế, tư thế ngồi
-        currentPlayer.group.position.x = sitting.x;
-        currentPlayer.group.position.z = sitting.z;
+        // Trượt dần từ chỗ đứng vào ghế (không giật)
+        currentPlayer.group.position.x += (sitting.x - currentPlayer.group.position.x) * 0.2;
+        currentPlayer.group.position.z += (sitting.z - currentPlayer.group.position.z) * 0.2;
         const dr = Math.atan2(Math.sin(sitting.rotY - currentPlayer.group.rotation.y), Math.cos(sitting.rotY - currentPlayer.group.rotation.y));
         currentPlayer.group.rotation.y += dr * 0.3;
         poseSit(currentPlayer, sitting.y);

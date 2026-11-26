@@ -3,7 +3,8 @@ import type { SpaceObject } from '@/lib/space-3d-types';
 import { createExpoBoothMesh } from '../hall';
 import { lightboxMat } from '../materials';
 import { M, box, cyl, plane, type BuildContext, type ShelfSlot } from './kit';
-import { labelTex } from './textures';
+import { labelTex, pegboardTex } from './textures';
+import { sharedMat } from '../materials';
 
 /** Quầy kệ bán lẻ. Các kệ ghi `group.userData.shelves: ShelfSlot[]` để bộ xếp hàng đặt sản phẩm. */
 
@@ -61,6 +62,18 @@ export function buildGondola(o: SpaceObject): THREE.Group {
   // Chân đế lùi vào 1–4cm so với đầu kệ → không trùng mặt (hết nhấp nháy z-fighting)
   g.add(box(w - 0.1, 0.12, d - 0.08, M.paint('#1f2937', 0.6), 0, 0.06, 0, 0.01)); // chân đế
   g.add(box(w, h - 0.12, 0.04, body, 0, 0.12 + (h - 0.12) / 2, 0)); // vách giữa
+  // Mặt vách đục lỗ 2 bên (pegboard) — lặp theo kích thước thật, mỗi lỗ cách 2.5cm
+  const pegMat = sharedMat(`p:peg:${o.color ?? '#f1f5f9'}:${w}:${h}`, () => {
+    const t = pegboardTex(o.color ?? '#eef1f4').clone();
+    t.repeat.set(w / 0.4, (h - 0.12) / 0.4);
+    t.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.55, metalness: 0.1 });
+  });
+  for (const side of [-1, 1]) {
+    const peg = plane(w - 0.08, h - 0.16, pegMat, 0, 0.12 + (h - 0.12) / 2, side * 0.0205);
+    if (side < 0) peg.rotation.y = Math.PI;
+    g.add(peg);
+  }
   for (const sx of [-1, 1]) g.add(box(0.04, h, d, body, sx * (w / 2 - 0.02), h / 2, 0)); // đầu kệ
   const shelves: ShelfSlot[] = [];
   const usable = h - 0.25;
@@ -68,14 +81,28 @@ export function buildGondola(o: SpaceObject): THREE.Group {
     for (let i = 0; i < levels; i++) {
       const y = 0.14 + (usable / levels) * i;
       const sd = d / 2 - 0.04;
-      g.add(box(w - 0.08, 0.02, sd, metal, 0, y, side * (sd / 2 + 0.02)));
+      g.add(box(w - 0.08, 0.02, sd, metal, 0, y, side * (sd / 2 + 0.02), 0.004));
+      // Tay đỡ kệ (bracket) tam giác 2 đầu
+      for (const bx of [-1, 1]) {
+        const br = box(0.012, 0.06, sd - 0.02, M.metal('#9ca3af', 0.35), bx * (w / 2 - 0.08), y - 0.035, side * (sd / 2 + 0.02));
+        br.scale.y = 0.9;
+        g.add(br);
+      }
       // Nẹp giá trước tầng kệ (màu nhấn)
       g.add(box(w - 0.08, 0.035, 0.008, M.paint(o.accentColor ?? '#2563eb', 0.5), 0, y + 0.005, side * (sd + 0.024)));
       shelves.push({ x: 0, y: y + 0.01, z: side * (sd / 2 + 0.02), width: w - 0.12, depth: sd - 0.02, clearance: usable / levels - 0.04, facing: side > 0 ? 0 : Math.PI });
     }
   }
-  // Bảng tên đầu kệ
-  g.add(box(w * 0.6, 0.22, 0.03, M.paint(o.accentColor ?? '#2563eb', 0.4), 0, h + 0.13, 0, 0.01));
+  // Bảng tên đầu kệ phát sáng 2 mặt: tên ngành hàng
+  const title = o.label && o.label !== 'Kệ gondola 2 mặt' ? o.label : 'PHỤ TÙNG & VẬT TƯ';
+  const headTex = labelTex([{ text: title.toUpperCase().slice(0, 26), size: 96, color: '#ffffff', weight: 800, y: 128 }], o.accentColor ?? '#2563eb', 1400, 256);
+  g.add(box(w * 0.64, 0.24, 0.04, M.paint('#111827', 0.5), 0, h + 0.13, 0, 0.01));
+  for (const side of [-1, 1]) {
+    const face = plane(w * 0.62, 0.22, lightboxMat(headTex), 0, h + 0.13, side * 0.0215);
+    if (side < 0) face.rotation.y = Math.PI;
+    g.add(face);
+  }
+  for (const sx of [-1, 1]) g.add(cyl(0.006, 0.006, 0.12, M.metal('#9ca3af', 0.3), sx * w * 0.25, h + 0.01, 0, 8));
   g.userData.shelves = shelves;
   return g;
 }
@@ -242,13 +269,13 @@ export function buildBrandWall(o: SpaceObject, ctx: BuildContext): THREE.Group {
       c2.drawImage(logo, (W - lw) / 2, H * 0.42 - lh / 2, lw, lh);
     } else {
       c2.fillStyle = '#1d3f91';
-      c2.font = `800 ${Math.round(H * 0.2)}px Inter, "Segoe UI", system-ui, sans-serif`;
+      c2.font = `800 ${Math.round(H * 0.2)}px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif`;
       c2.textAlign = 'center';
       c2.textBaseline = 'middle';
       c2.fillText((ctx.companyName || 'TIM CORP').toUpperCase().slice(0, 24), W / 2, H * 0.42);
     }
     c2.fillStyle = '#334155';
-    c2.font = `600 ${Math.round(H * 0.065)}px Inter, "Segoe UI", system-ui, sans-serif`;
+    c2.font = `600 ${Math.round(H * 0.065)}px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif`;
     c2.textAlign = 'center';
     c2.textBaseline = 'middle';
     c2.fillText(tagline.toUpperCase().slice(0, 48), W / 2, H * 0.74);

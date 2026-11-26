@@ -204,7 +204,7 @@ describe('chỗ ngồi', () => {
     const { seatsFor, pickSeat } = await import('@/lib/space-3d-layout');
     const chair = createObject('CHAIR', 2, 3, [])!;
     expect(seatsFor(chair)).toHaveLength(1);
-    expect(seatsFor(chair)[0].y).toBeCloseTo(0.47);
+    expect(seatsFor(chair)[0].y).toBeCloseTo(0.48);
     const sofa = { ...createObject('SOFA', 0, 0, [])!, widthM: 2.6, rotY: Math.PI / 2 };
     const seats = seatsFor(sofa);
     expect(seats).toHaveLength(3);

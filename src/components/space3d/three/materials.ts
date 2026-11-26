@@ -98,7 +98,7 @@ function toTexture(c: HTMLCanvasElement, repeat: number, srgb = true) {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeat, repeat);
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }

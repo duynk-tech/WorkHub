@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { SpaceObject } from '@/lib/space-3d-types';
 import { sharedMat } from '../materials';
 import { M, box, cyl, lathe, plane, tubePath } from './kit';
-import { brickTex, labelTex, woodTex } from './textures';
+import { brickBumpTex, brickTex, labelTex, woodTex } from './textures';
 
 /** Tường ngăn phòng, vách kính, cửa, đèn cây, tranh treo. */
 
@@ -15,7 +15,10 @@ export function buildWall(o: SpaceObject): THREE.Group {
       const t = brickTex().clone();
       t.repeat.set(w / 1.6, h / 1.6);
       t.needsUpdate = true;
-      return new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 });
+      const b = brickBumpTex().clone();
+      b.repeat.copy(t.repeat);
+      b.needsUpdate = true;
+      return new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 2.2, roughness: 0.95 });
     });
   } else if (o.variant === 'wood') {
     mat = sharedMat(`p:woodwall:${o.color}:${w}x${h}`, () => {
@@ -23,7 +26,7 @@ export function buildWall(o: SpaceObject): THREE.Group {
       t.repeat.set(w / 1.2, h / 2.4);
       t.rotation = Math.PI / 2;
       t.needsUpdate = true;
-      return new THREE.MeshStandardMaterial({ map: t, color: o.color ?? '#c69c6d', roughness: 0.6 });
+      return new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 0.6, color: o.color ?? '#c69c6d', roughness: 0.6 });
     });
   } else {
     mat = M.paint(o.color ?? '#f1f5f9', 0.85);

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createOutdoorTree } from './hall';
 import { createGrassTexture, lightboxMat, registerEmissive, sharedMat } from './materials';
 import { M, box, cyl } from './props/kit';
-import { brickTex, labelTex } from './props/textures';
+import { brickBumpTex, brickTex, labelTex } from './props/textures';
 
 /**
  * Môi trường kiến trúc cho Quán cà phê & Văn phòng (Showroom/Kho dùng hall.ts).
@@ -81,7 +81,11 @@ export function createCafeEnvironment(widthM: number, depthM: number, companyNam
     const t = brickTex().clone();
     t.repeat.set(w / 1.8, h / 1.8);
     t.needsUpdate = true;
-    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 });
+    const b = brickBumpTex().clone();
+    b.repeat.copy(t.repeat);
+    b.needsUpdate = true;
+    // Mạch vữa lõm thật (bump) → ánh đèn hắt lên tường gạch có chiều sâu
+    return new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 2.2, roughness: 0.95 });
   });
   perimeter(w, d, h, brick, env, true);
   // Mảng tường xanh rêu ốp gỗ phía sau quầy (điểm nhấn)
@@ -200,7 +204,7 @@ function corrugatedTex(key: string, base: string, rib: string, horizontal = fals
     t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(repeat[0], repeat[1]);
     t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
+    t.anisotropy = 16;
     return t;
   });
 }

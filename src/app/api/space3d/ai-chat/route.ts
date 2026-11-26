@@ -71,7 +71,35 @@ export async function POST(req: Request) {
     temperature: 0.4,
     maxOutputTokens: 700,
   });
-  return result.toTextStreamResponse({
-    headers: { 'Cache-Control': 'no-store', 'X-Products': products.map((p) => p.id).join(',') },
+  // Tự dựng luồng chữ để khi model lỗi (sai khoá, hết hạn mức…) khách thấy thông báo thay vì câu trả lời rỗng
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let wrote = false;
+      try {
+        for await (const part of result.fullStream) {
+          if (part.type === 'text-delta' && part.text) {
+            wrote = true;
+            controller.enqueue(encoder.encode(part.text));
+          } else if (part.type === 'error') {
+            throw part.error;
+          }
+        }
+      } catch (err) {
+        console.error('[space3d-ai] stream error:', err);
+        controller.enqueue(
+          encoder.encode(`${wrote ? '\n\n' : ''}⚠️ Trợ lý AI đang gặp sự cố, vui lòng thử lại sau hoặc chuyển sang trò chuyện trực tiếp với nhân viên.`),
+        );
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(body, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Products': products.map((p) => p.id).join(','),
+    },
   });
 }

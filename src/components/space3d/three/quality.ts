@@ -16,7 +16,8 @@ export interface QualitySettings {
 export const QUALITY_PRESETS: Record<QualityLevel, QualitySettings> = {
   low: { level: 'low', composer: false, ao: false, msaa: 0, fxaa: false, shadowMapSize: 1024, maxPixelRatio: 1 },
   medium: { level: 'medium', composer: true, ao: false, msaa: 0, fxaa: true, shadowMapSize: 2048, maxPixelRatio: 1.25 },
-  high: { level: 'high', composer: true, ao: true, msaa: 4, fxaa: false, shadowMapSize: 4096, maxPixelRatio: 1.5 },
+  // Cao: render đúng mật độ điểm ảnh màn hình retina (tối đa 2×) cho nét sắc; MSAA 2× là đủ ở 2× pixel
+  high: { level: 'high', composer: true, ao: true, msaa: 2, fxaa: false, shadowMapSize: 4096, maxPixelRatio: 2 },
 };
 
 export const QUALITY_LABEL: Record<QualityPref, string> = {

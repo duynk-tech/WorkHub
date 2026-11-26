@@ -149,21 +149,21 @@ export function seatsFor(o: Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'rotY' 
   const local: { lx: number; lz: number; y: number }[] = [];
   switch (o.kind) {
     case 'CHAIR':
-      local.push({ lx: 0, lz: 0.03, y: 0.47 });
+      local.push({ lx: 0, lz: -0.06, y: 0.48 }); // mặt ghế 0.48m, hông lùi về tựa lưng
       break;
     case 'BAR_STOOL':
       local.push({ lx: 0, lz: 0, y: o.heightM - 0.02 });
       break;
     case 'OFFICE_CHAIR':
-      local.push({ lx: 0, lz: 0.04, y: 0.53 });
+      local.push({ lx: 0, lz: -0.04, y: 0.53 });
       break;
     case 'ARMCHAIR':
-      local.push({ lx: 0, lz: 0.08, y: 0.42 });
+      local.push({ lx: 0, lz: -0.1, y: 0.47 }); // đệm ghế bành
       break;
     case 'SOFA': {
       const n = o.widthM > 2.3 ? 3 : 2;
       const inner = o.widthM - 0.28;
-      for (let i = 0; i < n; i++) local.push({ lx: -inner / 2 + (inner / n) * (i + 0.5), lz: 0.08, y: 0.42 });
+      for (let i = 0; i < n; i++) local.push({ lx: -inner / 2 + (inner / n) * (i + 0.5), lz: -0.1, y: 0.47 });
       break;
     }
   }

@@ -15,7 +15,7 @@ function mk(key: string, w: number, h: number, draw: (ctx: CanvasRenderingContex
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat[0], repeat[1]);
-  t.anisotropy = 8;
+  t.anisotropy = 16;
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   cache.set(key, t);
   return t;
@@ -273,10 +273,53 @@ export function labelTex(lines: { text: string; size: number; color: string; wei
       ctx.textBaseline = 'middle';
       for (const l of lines) {
         ctx.fillStyle = l.color;
-        ctx.font = `${l.weight ?? 700} ${l.size}px Inter, "Segoe UI", system-ui, sans-serif`;
+        ctx.font = `${l.weight ?? 700} ${l.size}px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif`;
         ctx.fillText(l.text, w / 2, l.y, w - 40);
       }
     },
     true,
   );
+}
+
+/** Vách đục lỗ (pegboard) cho kệ gondola: lỗ tròn lưới 2.5cm, nền sơn tĩnh điện */
+export function pegboardTex(color = '#eef1f4'): THREE.CanvasTexture {
+  return mk(`pegboard:${color}`, 256, 256, (ctx, w, h) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    for (let y = 8; y < h; y += 16) {
+      for (let x = 8; x < w; x += 16) {
+        const g = ctx.createRadialGradient(x - 0.6, y - 0.6, 0.2, x, y, 3.4);
+        g.addColorStop(0, '#2b2f36');
+        g.addColorStop(0.75, '#4b5563');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }, true, [1, 1]);
+}
+
+/** Bump cho tường gạch: mạch vữa lõm (đen), mặt gạch nổi (trắng) có rỗ nhẹ — khớp bố cục brickTex() */
+export function brickBumpTex(): THREE.CanvasTexture {
+  return mk('brickBump', 512, 512, (ctx, w, h) => {
+    const r = rnd(5);
+    ctx.fillStyle = '#202020';
+    ctx.fillRect(0, 0, w, h);
+    const bh = 32;
+    const bw = 96;
+    for (let row = 0; row * bh < h; row++) {
+      const off = row % 2 ? bw / 2 : 0;
+      for (let x = -bw; x < w + bw; x += bw) {
+        const v = 200 + r() * 40;
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.fillRect(x + off + 3, row * bh + 3, bw - 6, bh - 6);
+        for (let k = 0; k < 10; k++) {
+          ctx.fillStyle = `rgba(0,0,0,${0.15 + r() * 0.2})`;
+          ctx.fillRect(x + off + 4 + r() * (bw - 10), row * bh + 4 + r() * (bh - 10), 1 + r() * 2.5, 1 + r() * 2.5);
+        }
+      }
+    }
+  }, false);
 }

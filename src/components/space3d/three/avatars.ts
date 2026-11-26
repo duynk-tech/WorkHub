@@ -72,20 +72,31 @@ export function poseWalk(av: AnimatedAvatar, phase: number): void {
 
 /** Tư thế ngồi: đùi nằm ngang ra trước, cẳng chân thả xuống, tay đặt lên đùi; hông đặt đúng độ cao mặt ghế. */
 export function poseSit(av: AnimatedAvatar, seatY: number): void {
-  const k = 0.35; // nội suy để ngồi xuống mượt
+  const k = 0.18; // nội suy để hạ người ngồi xuống từ từ
   const lerp = (cur: number, to: number) => cur + (to - cur) * k;
-  for (const leg of [av.leftLeg, av.rightLeg]) leg.rotation.x = lerp(leg.rotation.x, -1.5);
-  for (const knee of [av.leftKnee, av.rightKnee]) knee.rotation.x = lerp(knee.rotation.x, 1.5);
-  for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = lerp(arm.rotation.x, -0.55);
-  for (const el of [av.leftElbow, av.rightElbow]) el.rotation.x = lerp(el.rotation.x, -0.7);
-  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, -0.35);
-  // Hông (pivot chân ở y = 0.9) hạ xuống mặt ghế + bề dày đùi
-  av.group.position.y = lerp(av.group.position.y, seatY - 0.9 + 0.07);
+  // Chiều dài cẳng chân + giày ≈ 0.46m: ghế thấp → gối gập ~90° chân chạm sàn; ghế bar cao → chân thả
+  const hipY = seatY + 0.04;
+  const shin = 0.46;
+  const kneeBend = hipY > shin + 0.08 ? 1.1 : Math.min(1.62, Math.acos(Math.min(1, Math.max(-1, (hipY - 0.02) / shin))) + 1.5 - Math.PI / 2 + 0.05);
+  for (const leg of [av.leftLeg, av.rightLeg]) leg.rotation.x = lerp(leg.rotation.x, -1.48);
+  for (const knee of [av.leftKnee, av.rightKnee]) knee.rotation.x = lerp(knee.rotation.x, kneeBend);
+  // Hai đầu gối hơi mở, tay đặt lên đùi, lưng hơi ngả
+  av.leftLeg.rotation.z = lerp(av.leftLeg.rotation.z, 0.06);
+  av.rightLeg.rotation.z = lerp(av.rightLeg.rotation.z, -0.06);
+  for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = lerp(arm.rotation.x, -0.42);
+  for (const el of [av.leftElbow, av.rightElbow]) el.rotation.x = lerp(el.rotation.x, -0.95);
+  av.headGroup.rotation.x = lerp(av.headGroup.rotation.x, -0.06);
+  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, -0.45);
+  // Pivot hông ở y = 0.9 trong nhân vật → hạ cả người cho hông chạm đệm
+  av.group.position.y = lerp(av.group.position.y, hipY - 0.9);
 }
 
 /** Trả dáng về đứng thẳng mượt mà khi dừng. */
 export function relaxPose(av: AnimatedAvatar): void {
   const d = 0.82;
+  av.leftLeg.rotation.z *= d;
+  av.rightLeg.rotation.z *= d;
+  av.headGroup.rotation.x *= d;
   av.leftLeg.rotation.x *= d;
   av.rightLeg.rotation.x *= d;
   av.leftKnee.rotation.x = av.leftKnee.rotation.x * d + 0.02 * (1 - d);
@@ -157,8 +168,8 @@ function createPillSprite(opts: {
 }): THREE.Sprite {
   const S = 3;
   const H = 44;
-  const font = '600 22px Inter, "Segoe UI", system-ui, sans-serif';
-  const chipFont = '700 14px Inter, "Segoe UI", system-ui, sans-serif';
+  const font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
+  const chipFont = '700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
   const measure = document.createElement('canvas').getContext('2d')!;
   measure.font = font;
   const tw = Math.ceil(measure.measureText(opts.text).width);
@@ -298,7 +309,7 @@ function createSkinDetailTexture(feminine: boolean): THREE.CanvasTexture {
   if (!feminine) blob(0, -0.1, 70, 'rgba(90,80,85,A)', 0.12, 1.2, 0.8);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   skinDetailCache.set(key, tex);
   return tex;
 }
@@ -376,7 +387,7 @@ function createEyeTexture(irisColor: string): THREE.CanvasTexture {
   ctx.fill();
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   irisTexCache.set(irisColor, tex);
   return tex;
 }

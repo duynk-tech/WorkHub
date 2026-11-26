@@ -29,15 +29,17 @@ export interface ShelfSlot {
 
 export const M = {
   wood: (color: string) =>
-    sharedMat(`p:wood:${color}`, () => new THREE.MeshStandardMaterial({ map: woodTex(), color, roughness: 0.55 })),
+    sharedMat(`p:wood:${color}`, () => new THREE.MeshStandardMaterial({ map: woodTex(), bumpMap: woodTex(), bumpScale: 0.45, color, roughness: 0.55 })),
   woodGloss: (color: string) =>
-    sharedMat(`p:woodGloss:${color}`, () => new THREE.MeshPhysicalMaterial({ map: woodTex(), color, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.25 })),
+    sharedMat(`p:woodGloss:${color}`, () => new THREE.MeshPhysicalMaterial({ map: woodTex(), bumpMap: woodTex(), bumpScale: 0.3, color, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.25 })),
   marble: () =>
     sharedMat('p:marble', () => new THREE.MeshPhysicalMaterial({ map: marbleTex(), roughness: 0.18, clearcoat: 0.8, clearcoatRoughness: 0.08 })),
   fabric: (color: string) =>
     sharedMat(`p:fabric:${color}`, () =>
       new THREE.MeshPhysicalMaterial({
         map: fabricTex(),
+        bumpMap: fabricTex(),
+        bumpScale: 0.8,
         color,
         roughness: 0.92,
         sheen: 1,

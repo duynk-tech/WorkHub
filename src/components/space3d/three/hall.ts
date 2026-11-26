@@ -83,23 +83,23 @@ export function createExpoBackdropTexture(title: string, subtitle: string, accen
   ctx.fill();
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = '800 38px Inter, "Segoe UI", system-ui, sans-serif';
+  ctx.font = '800 38px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(title.slice(0, 26), 36, 56);
 
   ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.font = '600 22px Inter, "Segoe UI", system-ui, sans-serif';
+  ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
   ctx.fillText((subtitle || 'EXHIBITION PAVILION').slice(0, 34), 36, 98);
 
   // Nội dung họa tiết tinh tế phần thân vách
   ctx.fillStyle = '#f1f5f9';
   ctx.fillRect(36, 158, 696, 188);
   ctx.fillStyle = '#64748b';
-  ctx.font = '700 20px Inter, "Segoe UI", system-ui, sans-serif';
+  ctx.font = '700 20px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
   ctx.fillText('KHU TRƯNG BÀY & TƯ VẤN THIẾT BỊ CHÍNH HÃNG', 60, 210);
   ctx.fillStyle = '#94a3b8';
-  ctx.font = '500 18px Inter, "Segoe UI", system-ui, sans-serif';
+  ctx.font = '500 18px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
   ctx.fillText('Chạm trực tiếp vào thiết bị hoặc gian hàng để xem thông số chi tiết', 60, 252);
 
   // Accent bar dưới
@@ -581,7 +581,7 @@ function createEntranceGate(companyName: string, fallbackLogoUrl: string, sceneK
         ec.drawImage(logoImg, 0, 0, sh * 1.05, sh, 96, 96, 320, 305);
       } else {
         ec.fillStyle = '#1d3f91';
-        ec.font = '800 220px Inter, system-ui, sans-serif';
+        ec.font = '800 220px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif';
         ec.textAlign = 'center';
         ec.textBaseline = 'middle';
         ec.fillText('T', 256, 270);
@@ -650,7 +650,7 @@ function createEntranceGate(companyName: string, fallbackLogoUrl: string, sceneK
       fctx.drawImage(logoImg, (leftW - lw) / 2 + W * 0.02, (H - lh) / 2 - 6, lw, lh);
     } else {
       fctx.fillStyle = '#1d3f91';
-      fctx.font = `800 ${Math.round(H * 0.42)}px Inter, "Segoe UI", system-ui, sans-serif`;
+      fctx.font = `800 ${Math.round(H * 0.42)}px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif`;
       fctx.textAlign = 'center';
       fctx.textBaseline = 'middle';
       fctx.fillText((companyName || 'TIM CORP').toUpperCase().slice(0, 18), leftW / 2, H / 2);
@@ -661,10 +661,10 @@ function createEntranceGate(companyName: string, fallbackLogoUrl: string, sceneK
     fctx.textAlign = 'left';
     fctx.textBaseline = 'middle';
     fctx.fillStyle = '#0f172a';
-    fctx.font = `800 ${Math.round(H * 0.16)}px Inter, "Segoe UI", system-ui, sans-serif`;
+    fctx.font = `800 ${Math.round(H * 0.16)}px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif`;
     fctx.fillText('CHÀO MỪNG QUÝ KHÁCH', leftW + 70, H * 0.38);
     fctx.fillStyle = '#1d3f91';
-    fctx.font = `600 ${Math.round(H * 0.105)}px Inter, "Segoe UI", system-ui, sans-serif`;
+    fctx.font = `600 ${Math.round(H * 0.105)}px -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Roboto, Arial, "Noto Sans", sans-serif`;
     fctx.fillText(tagline, leftW + 70, H * 0.6, W - leftW - 110);
     frontTex.needsUpdate = true;
   };

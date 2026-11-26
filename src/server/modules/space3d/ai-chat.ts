@@ -16,8 +16,13 @@ import { outboundProviderFetch } from '@/server/security/outbound-http';
 export const SPACE_AI_DEFAULT_MODEL = 'gemini-flash-lite-latest';
 
 export async function getSpaceAiModel() {
-  const apiKey = process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''));
+  const apiKey = (process.env.GEMINI_API_KEY || (await getSetting<string>('ai.geminiApiKey', ''))).trim();
   if (!apiKey) return null;
+  // Khoá trong DB vẫn còn dạng mã hoá "v1.…" → APP_ENCRYPTION_KEY của môi trường này khác lúc lưu khoá
+  if (/^v1\.[^.]+\.[^.]+\.[^.]+$/.test(apiKey)) {
+    console.error('[space3d-ai] Không giải mã được ai.geminiApiKey — kiểm tra APP_ENCRYPTION_KEY hoặc đặt GEMINI_API_KEY');
+    return null;
+  }
   const baseURL = (
     (await getSetting<string>('ai.baseUrl', '')) ||
     process.env.AI_BASE_URL ||
