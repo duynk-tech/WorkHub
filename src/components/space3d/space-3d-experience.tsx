@@ -23,7 +23,7 @@ import {
   saveSpaceSceneLayoutAction,
   toggleStaffDutyAction,
 } from '@/server/modules/space3d/actions';
-import type { TeleportTarget } from './space-3d-canvas';
+import type { ChibiHairStyle, TeleportTarget } from './space-3d-canvas';
 
 const Space3DCanvas = dynamic(
   () => import('./space-3d-canvas').then((m) => m.Space3DCanvas),
@@ -45,9 +45,12 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  // Guest entry overlay
+  // Guest entry overlay + Chibi avatar customizer
   const [entered, setEntered] = useState(data.isStaff);
   const [guestName, setGuestName] = useState('Khách tham quan');
+  const [shirtColor, setShirtColor] = useState('#2563eb');
+  const [hairStyle, setHairStyle] = useState<ChibiHairStyle>('short');
+  const [activeBoothId, setActiveBoothId] = useState<string | null>(null);
   const playerName = data.currentUser?.fullName || guestName.trim() || 'Khách tham quan';
 
   // HUD & Camera state
@@ -411,6 +414,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         placements={placements}
         presences={data.presences}
         playerName={playerName}
+        playerShirtColor={shirtColor}
+        playerHairStyle={hairStyle}
         nightMode={nightMode}
         povMode={povMode}
         editMode={editMode}
@@ -418,6 +423,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         selectedPlacementId={selectedPlacementId}
         teleportTarget={teleportTarget}
         onSelectPlacement={handleSelectPlacement}
+        onSelectBooth={(id) => setActiveBoothId(id)}
         onMovePlacement={handleMovePlacement}
         onNearbyChange={setNearby}
       />
@@ -477,12 +483,14 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               </div>
             </div>
             <div>
-              <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#60a5fa', fontWeight: 600 }}>
-                Showroom 3D · Beta
+              <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#60a5fa', fontWeight: 700 }}>
+                Showroom & Triển Lãm 3D · Beta
               </div>
-              <h1 style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{data.branding.companyName}</h1>
-              <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
-                Tham quan trực tiếp không gian trưng bày máy móc, gặp nhân viên tư vấn đang trực và xem thông số thiết bị trong không gian 3D.
+              <h1 style={{ fontSize: 22, fontWeight: 700, marginTop: 6, color: '#ffffff', lineHeight: 1.25 }}>
+                {data.branding.companyName}
+              </h1>
+              <p style={{ fontSize: 13, color: '#cbd5e1', marginTop: 8, lineHeight: 1.5 }}>
+                Tham quan trực tiếp không gian triển lãm máy móc, gặp nhân viên tư vấn tại quầy và xem thông số thiết bị trong không gian 3D.
               </p>
             </div>
             <input
@@ -493,13 +501,56 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 width: '100%',
                 padding: '10px 14px',
                 borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: 'rgba(255,255,255,0.08)',
-                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.22)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#ffffff',
                 fontSize: 14,
                 outline: 'none',
               }}
             />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#cbd5e1' }}>Màu áo Chibi:</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {['#2563eb', '#0891b2', '#059669', '#ea580c', '#db2777', '#7c3aed'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setShirtColor(c)}
+                      style={{
+                        width: 24, height: 24, borderRadius: 99, background: c, cursor: 'pointer',
+                        border: shirtColor === c ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.25)',
+                      }}
+                      aria-label={`Chọn màu áo ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#cbd5e1' }}>Kiểu tóc:</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {([
+                    { key: 'short', label: 'Ngắn' },
+                    { key: 'bob', label: 'Tóc Bob' },
+                    { key: 'spiky', label: 'Cá tính' },
+                  ] as const).map((h) => (
+                    <button
+                      key={h.key}
+                      type="button"
+                      onClick={() => setHairStyle(h.key)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 99, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        background: hairStyle === h.key ? '#2563eb' : 'rgba(255,255,255,0.08)',
+                        color: '#ffffff',
+                      }}
+                    >
+                      {h.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => setEntered(true)}
@@ -683,10 +734,62 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             {nightMode ? <Sun size={13} /> : <Moon size={13} />} {nightMode ? 'Ban ngày' : 'Ban đêm'}
           </button>
         </div>
-        <div style={{ fontSize: 11, color: nightMode ? '#94a3b8' : '#475569', paddingLeft: 4 }}>
-          WASD / Mũi tên để đi · Kéo chuột xoay góc nhìn
+        <div style={{ fontSize: 11, color: nightMode ? '#94a3b8' : '#334155', paddingLeft: 4, fontWeight: 500 }}>
+          Click sàn / gian hàng để tự đi tới · WASD · Kéo xoay góc nhìn
         </div>
       </div>
+
+      {/* Thẻ thông tin nhanh khi click vào Gian hàng / Phòng ban */}
+      {activeBoothId && (() => {
+        const booth = structures.find((s) => s.id === activeBoothId);
+        if (!booth) return null;
+        const staffAtBooth = data.presences.filter(
+          (pr) => pr.stationLabel === booth.label || Math.hypot(pr.posX - booth.posX, pr.posZ - booth.posZ) < 4.5,
+        );
+        return (
+          <div
+            style={{
+              ...glassStyle,
+              position: 'fixed',
+              top: 64,
+              right: 14,
+              zIndex: 25,
+              width: 270,
+              borderRadius: 14,
+              padding: 14,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 10.5, color: '#60a5fa', fontWeight: 700 }}>{booth.subLabel || 'GIAN HÀNG TRIỂN LÃM'}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', marginTop: 2 }}>{booth.label}</div>
+              </div>
+              <button type="button" onClick={() => setActiveBoothId(null)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={15} />
+              </button>
+            </div>
+            {staffAtBooth.length > 0 && (
+              <div style={{ fontSize: 12, color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 11, color: '#34d399', fontWeight: 600 }}>Nhân viên tư vấn tại quầy:</div>
+                {staffAtBooth.map((st) => (
+                  <div key={st.employeeId} style={{ padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.08)' }}>
+                    <div style={{ fontWeight: 600, color: '#ffffff' }}>{st.employeeName}</div>
+                    {st.department && <div style={{ fontSize: 11, color: '#94a3b8' }}>{st.department}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {data.branding.hotline && (
+              <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                Hotline: <b style={{ color: '#ffffff' }}>{data.branding.hotline}</b>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Thanh ngữ cảnh khi đứng gần thiết bị (Xem [E]) */}
       {!editMode && nearbyPlacement && !inspectPlacementId && (
@@ -1142,7 +1245,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 600 }}>
                   {inspectedPlacement.itemCode} {inspectedPlacement.locationCode ? `· Vị trí ${inspectedPlacement.locationCode}` : ''}
                 </div>
-                <h2 style={{ fontSize: 17, fontWeight: 700, marginTop: 2 }}>{inspectedPlacement.name}</h2>
+                <h2 style={{ fontSize: 17, fontWeight: 700, marginTop: 2, color: '#ffffff' }}>{inspectedPlacement.name}</h2>
               </div>
               <button type="button" onClick={() => setInspectPlacementId(null)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
                 <X size={18} />
@@ -1199,7 +1302,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 600 }}>PRODUCT 3D STUDIO</div>
-                <h3 style={{ fontSize: 16, fontWeight: 700 }}>{studioItem.name}</h3>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: '#ffffff' }}>{studioItem.name}</h3>
               </div>
               <button type="button" onClick={() => setStudioItem(null)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
                 <X size={18} />
