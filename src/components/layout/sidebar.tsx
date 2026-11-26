@@ -163,7 +163,7 @@ export function Sidebar({
                   <Link
                     key={item.href}
                     href={item.href}
-                    prefetch={true}
+                    prefetch={false}
                     className="nav-item"
                     data-active={isActive(item.href)}
                     aria-current={isActive(item.href) ? "page" : undefined}

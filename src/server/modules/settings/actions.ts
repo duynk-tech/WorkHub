@@ -11,7 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission, can } from '@/server/auth/context';
 import { encryptSecret } from '@/lib/crypto';
 import { settingsPolicy, SECRET_SETTING_KEYS } from './policy';
-import { setSetting, getSetting } from './service';
+import { setSetting, getSetting, invalidateSettingsCache } from './service';
 import { getAppBranding } from './branding';
 import { runFullDemoSeed, cleanBusinessData } from '../../../../prisma/seed/index';
 import { assertDemoSeedSchema } from '../../../../prisma/seed/schema-guard';
@@ -132,6 +132,7 @@ export async function saveSettingsAction(group: string, values: Record<string, u
     } });
   });
 
+  invalidateSettingsCache();
   revalidatePath('/settings');
   revalidatePath('/settings/integrations');
   revalidatePath('/api/openapi.json');

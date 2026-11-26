@@ -1,4 +1,4 @@
-import { getSetting } from './service';
+import { cachedSettings, getSetting, getSettingsByKeys } from './service';
 
 export interface AppBranding {
   name: string;
@@ -7,30 +7,50 @@ export interface AppBranding {
   description: string;
 }
 
+async function runCached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  return typeof cachedSettings === 'function' ? cachedSettings(key, fn) : fn();
+}
+
+async function readSettingMap(keys: string[], defaults: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (typeof getSettingsByKeys === 'function') {
+    const map = await getSettingsByKeys(keys);
+    const out: Record<string, unknown> = {};
+    for (const k of keys) out[k] = map[k] !== undefined ? map[k] : defaults[k];
+    return out;
+  }
+  const entries = await Promise.all(keys.map(async (k) => [k, await getSetting(k, defaults[k])] as const));
+  return Object.fromEntries(entries);
+}
+
 /**
- * Lấy cấu hình nhận diện thương hiệu động của hệ thống:
- * - Tên ứng dụng (app.name)
- * - Logo URL (app.logoUrl)
- * - Ký tự đại diện Logo (app.logoText)
- * - Khẩu hiệu / Mô tả ngắn (app.description)
+ * Lấy cấu hình nhận diện thương hiệu động của hệ thống (1 batch query + cache 5 phút).
  */
 export async function getAppBranding(): Promise<AppBranding> {
-  const [name, logoUrl, logoText, description] = await Promise.all([
-    getSetting<string>('app.name', process.env.APP_NAME || 'WorkHub'),
-    getSetting<string>('app.logoUrl', ''),
-    getSetting<string>('app.logoText', ''),
-    getSetting<string>('app.description', 'Hệ thống quản trị kinh doanh, thiết bị, kho vận và công việc'),
-  ]);
+  return runCached('app-branding', async () => {
+    const map = await readSettingMap(
+      ['app.name', 'app.logoUrl', 'app.logoText', 'app.description'],
+      {
+        'app.name': process.env.APP_NAME || 'WorkHub',
+        'app.logoUrl': '',
+        'app.logoText': '',
+        'app.description': 'Hệ thống quản trị kinh doanh, thiết bị, kho vận và công việc',
+      },
+    );
+    const name = typeof map['app.name'] === 'string' ? map['app.name'] : '';
+    const logoUrl = typeof map['app.logoUrl'] === 'string' ? map['app.logoUrl'] : '';
+    const logoText = typeof map['app.logoText'] === 'string' ? map['app.logoText'] : '';
+    const description = typeof map['app.description'] === 'string' ? map['app.description'] : '';
 
-  const cleanName = name?.trim() || process.env.APP_NAME || 'WorkHub';
-  const cleanLogoText = logoText?.trim() || cleanName.slice(0, 1).toUpperCase() || 'W';
+    const cleanName = name.trim() || process.env.APP_NAME || 'WorkHub';
+    const cleanLogoText = logoText.trim() || cleanName.slice(0, 1).toUpperCase() || 'W';
 
-  return {
-    name: cleanName,
-    logoUrl: logoUrl?.trim() || null,
-    logoText: cleanLogoText,
-    description: description?.trim() || '',
-  };
+    return {
+      name: cleanName,
+      logoUrl: logoUrl.trim() || null,
+      logoText: cleanLogoText,
+      description: description.trim() || '',
+    };
+  });
 }
 
 export interface CompanyInfo {
@@ -60,24 +80,34 @@ export interface PrintWatermarkConfig {
  * - Tên công ty / đơn vị xuất hiện trên dấu mờ (company.name)
  */
 export async function getPrintWatermarkConfig(): Promise<PrintWatermarkConfig> {
-  const [customWatermarkUrl, appLogoUrl, enabled, opacity, companyName] = await Promise.all([
-    getSetting<string>('print.watermarkUrl', ''),
-    getSetting<string>('app.logoUrl', ''),
-    getSetting<boolean>('print.watermarkEnabled', true),
-    getSetting<number | string>('print.watermarkOpacity', 0.08),
-    getSetting<string>('company.name', 'Công ty Sunny'),
-  ]);
+  return runCached('print-watermark', async () => {
+    const map = await readSettingMap(
+      ['print.watermarkUrl', 'app.logoUrl', 'print.watermarkEnabled', 'print.watermarkOpacity', 'company.name'],
+      {
+        'print.watermarkUrl': '',
+        'app.logoUrl': '',
+        'print.watermarkEnabled': true,
+        'print.watermarkOpacity': 0.08,
+        'company.name': 'Công ty Sunny',
+      },
+    );
+    const customWatermarkUrl = typeof map['print.watermarkUrl'] === 'string' ? map['print.watermarkUrl'] : '';
+    const appLogoUrl = typeof map['app.logoUrl'] === 'string' ? map['app.logoUrl'] : '';
+    const enabled = map['print.watermarkEnabled'] !== false;
+    const opacity = map['print.watermarkOpacity'] ?? 0.08;
+    const companyName = typeof map['company.name'] === 'string' ? map['company.name'] : 'Công ty Sunny';
 
-  const rawLogo = customWatermarkUrl?.trim() || appLogoUrl?.trim() || null;
-  const parsedOpacity = Number(opacity);
-  const validOpacity = !isNaN(parsedOpacity) && parsedOpacity > 0 && parsedOpacity <= 1 ? parsedOpacity : 0.08;
+    const rawLogo = customWatermarkUrl.trim() || appLogoUrl.trim() || null;
+    const parsedOpacity = Number(opacity);
+    const validOpacity = !isNaN(parsedOpacity) && parsedOpacity > 0 && parsedOpacity <= 1 ? parsedOpacity : 0.08;
 
-  return {
-    enabled: enabled !== false,
-    logoUrl: rawLogo,
-    opacity: validOpacity,
-    companyName: companyName?.trim() || 'Công ty Sunny',
-  };
+    return {
+      enabled,
+      logoUrl: rawLogo,
+      opacity: validOpacity,
+      companyName: companyName.trim() || 'Công ty Sunny',
+    };
+  });
 }
 
 /**
