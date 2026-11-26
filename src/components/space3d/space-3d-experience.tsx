@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Eye, Sun, Moon, Map as MapIcon, Package, Building2, Wrench, Sparkles, Upload,
   Save, RotateCw, Move, Trash2, Plus, X, ArrowLeft, UserCheck, LogIn, Search, Compass, Shirt,
+  MessageCircle, Settings2,
 } from 'lucide-react';
 import {
   DEFAULT_AVATAR_3D_CONFIG,
+  normalizeAvatar3DConfig,
   synthesizeProcedural3D,
   type Avatar3DConfig,
   type Procedural3DPart,
@@ -17,16 +19,47 @@ import {
   type SpaceCatalogItem,
   type SpacePayload,
   type SpacePlacementView,
+  type SpacePresenceView,
   type SpaceStructure,
+  normalizeSpaceObject,
 } from '@/lib/space-3d-types';
 import {
   generateProduct3DAction,
   saveMyAvatar3DAction,
   saveProduct3DModelAction,
   saveSpaceSceneLayoutAction,
+  setSpaceChatModeAction,
+  heartbeatPresenceAction,
   toggleStaffDutyAction,
 } from '@/server/modules/space3d/actions';
 import type { TeleportTarget } from './space-3d-canvas';
+import { useSpaceRealtime, type IncomingDm } from './use-space-realtime';
+import { SpaceChatPanel, type ChatPeer } from './space-chat-panel';
+import { SpaceVisitorChat, type VisitorChatTarget } from './space-visitor-chat';
+import { SpaceGuestInbox, type GuestEvent } from './space-guest-inbox';
+import { useLayoutHistory } from './editor/use-layout-history';
+// Panel trình thiết kế tải trễ (kéo theo Three.js để render ảnh thu nhỏ) — chỉ người thiết kế mới cần
+const EditorToolbar = dynamic(() => import('./editor/space-editor-panels').then((m) => m.EditorToolbar), { ssr: false });
+const LibraryPanel = dynamic(() => import('./editor/space-editor-panels').then((m) => m.LibraryPanel), { ssr: false });
+const InspectorPanel = dynamic(() => import('./editor/space-editor-panels').then((m) => m.InspectorPanel), { ssr: false });
+import { normalizeSceneKind } from '@/lib/space-3d-catalog';
+import { templateFor } from '@/lib/space-3d-templates';
+import { resolveMerchItems } from '@/lib/space-3d-merch';
+import {
+  ROTATE_STEP,
+  clampInside,
+  createObject,
+  duplicateObject,
+  findCollisions,
+  snapAngle,
+} from '@/lib/space-3d-layout';
+import {
+  QUALITY_LABEL,
+  readQualityPref,
+  writeQualityPref,
+  type QualityLevel,
+  type QualityPref,
+} from './three/quality';
 
 const Space3DCanvas = dynamic(
   () => import('./space-3d-canvas').then((m) => m.Space3DCanvas),
@@ -44,6 +77,50 @@ type DockTab = 'none' | 'departments' | 'products' | 'design' | 'map';
 
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(n))} ₫`;
 
+/** Phong cách đẹp nhất mặc định cho khách theo giới tính */
+const GUEST_PRESETS: Record<'male' | 'female', Avatar3DConfig> = {
+  male: { outfitStyle: 'suit', outfitColor: '#1e3a8a', pantsColor: '#1e293b', hairStyle: 'slick', hairColor: '#1c1917', skinTone: '#f1c9a5', hasGlasses: false },
+  female: { outfitStyle: 'dress', outfitColor: '#1e3a8a', pantsColor: '#1e293b', hairStyle: 'long', hairColor: '#2b1b14', skinTone: '#f6d5bd', hasGlasses: false },
+};
+
+/** Khách tham quan nhàn rỗi quá 30 phút → thoát về màn hình chào */
+const GUEST_IDLE_MS = 30 * 60 * 1000;
+const GUEST_KEY = 'space3d.guest';
+
+interface GuestSession {
+  name: string;
+  gender: 'male' | 'female';
+  avatar: Avatar3DConfig;
+  entered: boolean;
+  lastActive: number;
+}
+
+function readGuestSession(): GuestSession | null {
+  try {
+    const raw = window.localStorage.getItem(GUEST_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<GuestSession>;
+    if (typeof v.lastActive !== 'number') return null;
+    return {
+      name: typeof v.name === 'string' && v.name.trim() ? v.name.slice(0, 40) : 'Khách tham quan',
+      gender: v.gender === 'female' ? 'female' : 'male',
+      avatar: normalizeAvatar3DConfig(v.avatar),
+      entered: Boolean(v.entered),
+      lastActive: v.lastActive,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeGuestSession(s: GuestSession) {
+  try {
+    window.localStorage.setItem(GUEST_KEY, JSON.stringify(s));
+  } catch {
+    // localStorage bị chặn → phiên chỉ tồn tại trong tab hiện tại
+  }
+}
+
 export function Space3DExperience({ data }: { data: SpacePayload }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -51,10 +128,61 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   // Guest entry overlay + Persistent Staff Avatar customizer
   const [entered, setEntered] = useState(data.isStaff);
   const [guestName, setGuestName] = useState('Khách tham quan');
+  const [guestGender, setGuestGender] = useState<'male' | 'female'>('male');
+  /** Chỉ bay intro khi khách vừa bấm vào (không bay lại khi khôi phục phiên sau reload) */
+  const [introOnEnter, setIntroOnEnter] = useState(data.isStaff);
   const [avatarConfig, setAvatarConfig] = useState<Avatar3DConfig>(
     data.currentUser?.avatar ?? { ...DEFAULT_AVATAR_3D_CONFIG },
   );
   const [avatarPanelOpen, setAvatarPanelOpen] = useState(false);
+
+  // ───── Phiên khách tham quan: nhớ sau reload, tự thoát khi idle lâu ─────
+  useEffect(() => {
+    if (data.isStaff) return;
+    const saved = readGuestSession();
+    if (!saved) return;
+    setGuestName(saved.name);
+    setGuestGender(saved.gender);
+    setAvatarConfig(saved.avatar);
+    if (Date.now() - saved.lastActive < GUEST_IDLE_MS && saved.entered) setEntered(true);
+  }, [data.isStaff]);
+
+  useEffect(() => {
+    if (data.isStaff || !entered) return;
+    writeGuestSession({ name: guestName, gender: guestGender, avatar: avatarConfig, entered: true, lastActive: Date.now() });
+  }, [data.isStaff, entered, guestName, guestGender, avatarConfig]);
+
+  useEffect(() => {
+    if (data.isStaff || !entered) return;
+    let last = Date.now();
+    const touch = () => {
+      const now = Date.now();
+      if (now - last < 20_000) return;
+      last = now;
+      writeGuestSession({ name: guestName, gender: guestGender, avatar: avatarConfig, entered: true, lastActive: now });
+    };
+    const check = window.setInterval(() => {
+      if (Date.now() - last > GUEST_IDLE_MS) {
+        writeGuestSession({ name: guestName, gender: guestGender, avatar: avatarConfig, entered: false, lastActive: last });
+        setEntered(false);
+        setIntroOnEnter(false);
+      }
+    }, 60_000);
+    window.addEventListener('pointerdown', touch);
+    window.addEventListener('keydown', touch);
+    window.addEventListener('wheel', touch, { passive: true });
+    return () => {
+      window.clearInterval(check);
+      window.removeEventListener('pointerdown', touch);
+      window.removeEventListener('keydown', touch);
+      window.removeEventListener('wheel', touch);
+    };
+  }, [data.isStaff, entered, guestName, guestGender, avatarConfig]);
+
+  const chooseGuestGender = (g: 'male' | 'female') => {
+    setGuestGender(g);
+    setAvatarConfig({ ...GUEST_PRESETS[g] });
+  };
   const [activeBoothId, setActiveBoothId] = useState<string | null>(null);
   const playerName = data.currentUser?.fullName || guestName.trim() || 'Khách tham quan';
 
@@ -92,8 +220,127 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     nearPlacementId: null,
   });
 
-  // Editable Scene State
-  const [structures, setStructures] = useState<SpaceStructure[]>(data.activeScene.structures);
+  // ───── Đồ họa: preset chất lượng + debug ─────
+  const [qualityPref, setQualityPref] = useState<QualityPref>('auto');
+  const [qualityActive, setQualityActive] = useState<QualityLevel | null>(null);
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  const [debug3D, setDebug3D] = useState(false);
+  useEffect(() => {
+    setQualityPref(readQualityPref());
+    setDebug3D(new URLSearchParams(window.location.search).get('debug') === '1');
+  }, []);
+  const chooseQuality = (pref: QualityPref) => {
+    setQualityPref(pref);
+    writeQualityPref(pref);
+    setQualityMenuOpen(false);
+  };
+
+  // ───── Realtime: nhân viên thấy nhau di chuyển + chat ─────
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatPeer, setChatPeer] = useState<ChatPeer | null>(null);
+  const [chatUnread, setChatUnread] = useState(0);
+  const [selectedRemoteId, setSelectedRemoteId] = useState<number | null>(null);
+  const [bubbleOpen, setBubbleOpen] = useState(false);
+  const [bubbleDraft, setBubbleDraft] = useState('');
+  const dmHandlerRef = useRef<((dm: IncomingDm) => void) | null>(null);
+  // Chế độ trả lời khách của nhân viên + khung hỏi đáp khách ↔ nhân viên / AI
+  const [chatMode, setChatMode] = useState<'LIVE' | 'AI'>(data.currentUser?.chatMode ?? 'LIVE');
+  const [visitorTarget, setVisitorTarget] = useState<VisitorChatTarget | null>(null);
+  const [guestInboxOpen, setGuestInboxOpen] = useState(false);
+  const [guestUnread, setGuestUnread] = useState(0);
+  const guestEventRef = useRef<((e: GuestEvent) => void) | null>(null);
+  const chatStateRef = useRef({ chatOpen, chatPeer });
+  chatStateRef.current = { chatOpen, chatPeer };
+
+  const cu = data.currentUser;
+  const realtimeSelf = useMemo(
+    () =>
+      cu
+        ? {
+            employeeId: cu.employeeId,
+            employeeName: cu.fullName,
+            department: cu.departmentName,
+            avatar: cu.avatar,
+            onDuty: cu.isOnDuty,
+            stationLabel: cu.dutyStation,
+            chatMode,
+          }
+        : null,
+    [cu, chatMode],
+  );
+
+  const handleIncomingDm = useCallback((dm: IncomingDm) => {
+    dmHandlerRef.current?.(dm);
+    const m = dm.message;
+    if (!cu || m.fromEmployeeId === cu.employeeId) return;
+    const { chatOpen: isOpen, chatPeer: peer } = chatStateRef.current;
+    if (!isOpen || peer?.employeeId !== m.fromEmployeeId) {
+      const preview = m.body.length > 60 ? `${m.body.slice(0, 60)}…` : m.body;
+      setToastMsg({ ok: true, text: `💬 ${dm.fromName}: ${preview}` });
+      window.setTimeout(() => setToastMsg((prev) => (prev?.text.startsWith(`💬 ${dm.fromName}`) ? null : prev)), 4000);
+    }
+  }, [cu]);
+
+  const realtime = useSpaceRealtime({
+    sceneCode: data.activeScene.code,
+    self: realtimeSelf,
+    playerPosRef,
+    onDm: handleIncomingDm,
+    onGuest: (evt) => {
+      guestEventRef.current?.(evt);
+      if (evt.message.fromGuest) {
+        const preview = evt.message.body.length > 60 ? `${evt.message.body.slice(0, 60)}…` : evt.message.body;
+        setToastMsg({ ok: true, text: `🙋 ${evt.message.guestName}: ${preview}` });
+        window.setTimeout(() => setToastMsg((prev) => (prev?.text.startsWith('🙋') ? null : prev)), 4500);
+      }
+    },
+  });
+  const realtimeLive = realtime.status === 'live';
+  const onlineIds = useMemo(() => new Set(realtime.roster.map((r) => r.employeeId)), [realtime.roster]);
+
+  /** Danh sách nhân viên hiển thị trên Bản đồ 2D / thẻ Gian hàng: realtime khi đã kết nối, ngược lại dữ liệu SSR */
+  const livePresences: SpacePresenceView[] = useMemo(() => {
+    if (!realtimeLive) return data.presences;
+    return realtime.roster.map((r) => {
+      const st = realtime.remoteStateRef.current.get(r.employeeId);
+      return {
+        employeeId: r.employeeId,
+        employeeName: r.employeeName,
+        department: r.department,
+        stationLabel: r.stationLabel,
+        posX: st?.tx ?? r.x,
+        posZ: st?.tz ?? r.z,
+        rotY: st?.tr ?? r.r,
+        status: r.onDuty ? 'ON_DUTY' : 'ONLINE',
+        avatar: r.avatar,
+      };
+    });
+    // dockTab: chụp lại vị trí mới nhất mỗi khi mở Bản đồ
+  }, [realtimeLive, realtime.roster, realtime.remoteStateRef, data.presences, dockTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onDutyCount = livePresences.filter((p) => p.status === 'ON_DUTY').length;
+  const selectedRemote = selectedRemoteId ? realtime.roster.find((r) => r.employeeId === selectedRemoteId) ?? null : null;
+
+  const openChatWith = (peer: ChatPeer | null) => {
+    setChatPeer(peer);
+    setChatOpen(true);
+    setSelectedRemoteId(null);
+  };
+
+  const submitBubble = () => {
+    if (realtime.sendBubble(bubbleDraft)) setBubbleDraft('');
+    setBubbleOpen(false);
+  };
+
+  // Editable Scene State (vật thể có lịch sử hoàn tác)
+  const layout = useLayoutHistory(data.activeScene.structures);
+  const structures = layout.objects;
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [merchInfoId, setMerchInfoId] = useState<number | null>(null);
+  const [draggingKind, setDraggingKind] = useState<string | null>(null);
+  const [planView, setPlanView] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [baseUpdatedAt, setBaseUpdatedAt] = useState<string>(data.activeScene.updatedAt);
+  const savedObjectsRef = useRef(data.activeScene.structures);
   const [placements, setPlacements] = useState<SpacePlacementView[]>(data.activeScene.placements);
   const [dirty, setDirty] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -125,34 +372,44 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
 
   // Đồng bộ khi chuyển Scene
   useEffect(() => {
-    setStructures(data.activeScene.structures);
+    layout.reset(data.activeScene.structures);
+    savedObjectsRef.current = data.activeScene.structures;
+    setBaseUpdatedAt(data.activeScene.updatedAt);
+    setSelectedObjectId(null);
     setPlacements(data.activeScene.placements);
     setSelectedPlacementId(null);
     setInspectPlacementId(null);
     setDirty(false);
-  }, [data.activeScene.code, data.activeScene.structures, data.activeScene.placements]);
+  }, [data.activeScene.code, data.activeScene.structures, data.activeScene.placements]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showToast = (ok: boolean, text: string) => {
     setToastMsg({ ok, text });
     window.setTimeout(() => setToastMsg((prev) => (prev?.text === text ? null : prev)), 3200);
   };
 
+  const canBubble = Boolean(data.currentUser) && realtimeLive;
+
   // Phím tắt V (POV) và E (Xem vật thể gần nhất)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
       if (e.code === 'KeyV') setPovMode((p) => (p === 'THIRD' ? 'FIRST' : 'THIRD'));
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && canBubble) {
+        e.preventDefault();
+        setBubbleOpen(true);
+      }
       if (e.code === 'KeyE' && nearby.nearPlacementId) {
         setInspectPlacementId(nearby.nearPlacementId);
       }
       if (e.code === 'Escape') {
         setInspectPlacementId(null);
         setDockTab('none');
+        setSelectedRemoteId(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [nearby.nearPlacementId]);
+  }, [nearby.nearPlacementId, canBubble]);
 
   const teleportTo = (x: number, z: number, lookX?: number, lookZ?: number) => {
     setTeleportTarget({ x, z, lookX, lookZ, nonce: Date.now() });
@@ -217,52 +474,159 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     setPlacements((prev) => [...prev, placed]);
     setEditMode(true);
     setSelectedPlacementId(newId);
-    setDockTab('design');
+    setDockTab('none');
     setDirty(true);
     showToast(true, `Đã đặt "${item.name}" vào không gian 3D — kéo mũi tên để căn chỉnh`);
   };
 
-  const handleAddStructure = (kind: 'RACK' | 'BOOTH') => {
-    const idx = structures.length + 1;
-    const pos = playerPosRef.current;
-    const st: SpaceStructure =
-      kind === 'RACK'
-        ? {
-            id: `rack-${Date.now()}`,
-            kind: 'RACK',
-            label: `DÃY MỚI · KỆ 0${idx}`,
-            aisleCode: `K${idx}`,
-            posX: Number(pos.x.toFixed(1)),
-            posZ: Number((pos.z - 3).toFixed(1)),
-            rotY: 0,
-            widthM: 6,
-            depthM: 1.4,
-            heightM: 3.6,
-            levels: 3,
-            accentColor: '#2563eb',
-          }
-        : {
-            id: `booth-${Date.now()}`,
-            kind: 'BOOTH',
-            label: `QUẦY TRƯNG BÀY 0${idx}`,
-            subLabel: `SHOWROOM 0${idx}`,
-            posX: Number(pos.x.toFixed(1)),
-            posZ: Number((pos.z - 4).toFixed(1)),
-            rotY: 0,
-            widthM: 5.2,
-            depthM: 3.4,
-            heightM: 3.2,
-            accentColor: '#0891b2',
-          };
-    setStructures((prev) => [...prev, st]);
-    setDirty(true);
-    showToast(true, kind === 'RACK' ? 'Đã thêm dãy kệ kho 3D mới' : 'Đã thêm quầy trưng bày mới');
+  /** Sản phẩm đang bày quanh 1 vị trí (quầy của nhân viên): hàng trên kệ/tủ/bục + máy đặt rời, gần nhất trước */
+  const productsNear = (x: number, z: number, radius = 4): { ids: number[]; label: string | null } => {
+    const ids: number[] = [];
+    let label: string | null = null;
+    let best = Infinity;
+    for (const o of structures) {
+      const reach = Math.hypot(o.widthM, o.depthM) / 2 + radius;
+      const dist = Math.hypot(o.posX - x, o.posZ - z);
+      if (dist > reach) continue;
+      if (o.kind === 'BOOTH' && dist < best) {
+        best = dist;
+        label = o.label;
+      }
+      if (['GONDOLA', 'WALL_SHELF', 'DISPLAY_CABINET', 'PODIUM', 'RACK', 'PASTRY_CASE'].includes(o.kind)) {
+        resolveMerchItems(o.merch, data.merchItems, o.kind)
+          .slice(0, 6)
+          .forEach((m) => ids.push(m.id));
+      }
+    }
+    for (const p of placements) {
+      if (p.inventoryItemId && Math.hypot(p.posX - x, p.posZ - z) <= radius + 1.5) ids.unshift(p.inventoryItemId);
+    }
+    return { ids: Array.from(new Set(ids)).slice(0, 20), label };
   };
+
+  // Nhịp tim trực quầy: còn mở trang thì còn "Đang trực"; đóng tab / mất mạng → tự rời sau 3 phút
+  const onDutyNow = Boolean(data.currentUser?.isOnDuty);
+  useEffect(() => {
+    if (!onDutyNow) return;
+    const beat = () => {
+      if (document.visibilityState === 'hidden') return;
+      const p = playerPosRef.current;
+      void heartbeatPresenceAction({ x: p.x, z: p.z, r: p.rotY }).catch(() => undefined);
+    };
+    beat();
+    const t = window.setInterval(beat, 60_000);
+    document.addEventListener('visibilitychange', beat);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener('visibilitychange', beat);
+    };
+  }, [onDutyNow]);
+
+  // ───── Chuyển không gian (Showroom / Café / Văn phòng / Kho) có màn hình chờ ─────
+  const [switching, setSwitching] = useState<{ code: string; name: string } | null>(null);
+  const [, startSceneTransition] = useTransition();
+  const switchScene = (code: string, name: string) => {
+    if (code === data.activeScene.code || switching) return;
+    if ((layoutDirty || dirty) && !window.confirm('Bố cục chưa lưu sẽ bị bỏ. Vẫn chuyển không gian?')) return;
+    setSwitching({ code, name });
+    setEditMode(false);
+    startSceneTransition(() => router.push(`/3d?scene=${encodeURIComponent(code)}`));
+  };
+  useEffect(() => {
+    if (!switching || data.activeScene.code !== switching.code) return;
+    // Dữ liệu mới đã tới → chờ canvas dựng xong 2 khung hình rồi tắt màn chờ
+    let r2 = 0;
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => setSwitching(null));
+    });
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+  }, [data.activeScene.code, switching]);
+
+  // ───── Trình thiết kế: thao tác vật thể ─────
+  const sceneKindForEditor = normalizeSceneKind(data.activeScene.kind);
+  const layoutDirty = structures !== savedObjectsRef.current;
+  const selectedObject = selectedObjectId ? structures.find((o) => o.id === selectedObjectId) ?? null : null;
+  const selectedCollides = selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false;
+
+  const updateObject = (id: string, patch: Partial<SpaceStructure>) => {
+    layout.commit((prev) =>
+      prev.map((o) => {
+        if (o.id !== id) return o;
+        const next = normalizeSpaceObject({ ...o, ...patch });
+        return next ? clampInside(next, data.activeScene.widthM, data.activeScene.depthM) : o;
+      }),
+    );
+  };
+  const addObjectAt = (kind: string, x: number, z: number) => {
+    const ids = structures.map((o) => o.id);
+    const created = createObject(kind, x, z, ids);
+    if (!created) return;
+    const placed = clampInside(created, data.activeScene.widthM, data.activeScene.depthM);
+    layout.commit((prev) => [...prev, placed]);
+    setSelectedObjectId(placed.id);
+    setSelectedPlacementId(null);
+  };
+  const addObjectInFront = (kind: string) => {
+    const p = playerPosRef.current;
+    addObjectAt(kind, p.x + Math.sin(p.rotY) * 2.5, p.z + Math.cos(p.rotY) * 2.5);
+  };
+  const rotateSelected = (dir: 1 | -1) => {
+    if (!selectedObject || selectedObject.locked) return;
+    updateObject(selectedObject.id, { rotY: snapAngle(selectedObject.rotY + dir * ROTATE_STEP) });
+  };
+  const deleteSelected = () => {
+    if (!selectedObjectId) return;
+    const id = selectedObjectId;
+    layout.commit((prev) => prev.filter((o) => o.id !== id));
+    setSelectedObjectId(null);
+  };
+  const duplicateSelected = () => {
+    if (!selectedObject) return;
+    const copy = clampInside(duplicateObject(selectedObject, structures.map((o) => o.id)), data.activeScene.widthM, data.activeScene.depthM);
+    layout.commit((prev) => [...prev, copy]);
+    setSelectedObjectId(copy.id);
+  };
+
+  // Phím tắt trình thiết kế
+  useEffect(() => {
+    if (!editMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.code === 'KeyZ' && !e.shiftKey) {
+        e.preventDefault();
+        layout.undo();
+      } else if (mod && (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey))) {
+        e.preventDefault();
+        layout.redo();
+      } else if (mod && e.code === 'KeyD') {
+        e.preventDefault();
+        duplicateSelected();
+      } else if (e.code === 'KeyR' && !mod) {
+        rotateSelected(e.shiftKey ? -1 : 1);
+      } else if (e.code === 'Delete' || e.code === 'Backspace') {
+        deleteSelected();
+      } else if (selectedObject && !selectedObject.locked && e.altKey && e.code.startsWith('Arrow')) {
+        // Alt + mũi tên: nhích vật thể 5cm (mũi tên thường vẫn để đi bộ)
+        e.preventDefault();
+        const d = 0.05;
+        const dx = e.code === 'ArrowLeft' ? -d : e.code === 'ArrowRight' ? d : 0;
+        const dz = e.code === 'ArrowUp' ? -d : e.code === 'ArrowDown' ? d : 0;
+        updateObject(selectedObject.id, { posX: selectedObject.posX + dx, posZ: selectedObject.posZ + dz });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveLayout = () => {
     startTransition(async () => {
       const res = await saveSpaceSceneLayoutAction(data.activeScene.code, {
         structures,
+        baseUpdatedAt,
         placements: placements.map((p) => ({
           inventoryItemId: p.inventoryItemId,
           label: p.name,
@@ -278,6 +642,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       showToast(res.ok, res.message);
       if (res.ok) {
         setDirty(false);
+        savedObjectsRef.current = structures;
+        if (res.updatedAt) setBaseUpdatedAt(res.updatedAt);
         router.refresh();
       }
     });
@@ -451,7 +817,291 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         onSelectBooth={(id) => setActiveBoothId(id)}
         onMovePlacement={handleMovePlacement}
         onNearbyChange={setNearby}
+        remoteRoster={realtime.roster}
+        remoteStateRef={realtime.remoteStateRef}
+        bubbleRef={realtime.bubbleRef}
+        realtimeLive={realtimeLive}
+        onSelectRemotePlayer={(id) => {
+          setSelectedRemoteId(id);
+          setActiveBoothId(null);
+        }}
+        qualityPref={qualityPref}
+        onQualityChange={setQualityActive}
+        playIntro={entered && introOnEnter}
+        debug={debug3D}
+        merchItems={data.merchItems}
+        faceEmployeeId={visitorTarget?.employeeId ?? (chatOpen ? chatPeer?.employeeId ?? null : null)}
+        onSelectMerchItem={(id) => {
+          if (!editMode) setMerchInfoId(id);
+        }}
+        planView={editMode && planView}
+        selectedObjectId={selectedObjectId}
+        onSelectObject={(id) => {
+          setSelectedObjectId(id);
+          if (id) setSelectedPlacementId(null);
+        }}
+        onObjectMoved={(id, pos) => updateObject(id, pos)}
+        draggingKind={draggingKind}
+        onDropObject={(kind, x, z) => {
+          addObjectAt(kind, x, z);
+          setDraggingKind(null);
+        }}
       />
+
+      {/* Trình thiết kế kéo thả (chỉ người có quyền FEATURE_SPACE_DESIGN) */}
+      {editMode && data.canEdit && (
+        <>
+          <EditorToolbar
+            dirty={layoutDirty || dirty}
+            saving={pending}
+            canUndo={layout.canUndo}
+            canRedo={layout.canRedo}
+            planView={planView}
+            objectCount={structures.length}
+            onUndo={layout.undo}
+            onRedo={layout.redo}
+            onSave={handleSaveLayout}
+            onTogglePlan={() => setPlanView((v) => !v)}
+            onTemplate={() => setTemplateOpen(true)}
+            onExit={() => {
+              setEditMode(false);
+              setSelectedObjectId(null);
+              setPlanView(false);
+            }}
+          />
+          <LibraryPanel sceneKind={sceneKindForEditor} onDragKind={setDraggingKind} onAddKind={addObjectInFront} />
+          {templateOpen && (
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 46, background: 'rgba(2,6,23,0.55)', display: 'grid', placeItems: 'center', padding: 16 }}
+              onClick={() => setTemplateOpen(false)}
+            >
+              <div style={{ ...glassStyle, width: '100%', maxWidth: 520, borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Áp dụng bố cục mẫu</div>
+                <div style={{ fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.5 }}>
+                  Bố cục hiện tại sẽ được thay bằng mẫu (vẫn có thể <b>Ctrl+Z</b> hoàn tác, chỉ lưu khi bấm <b>Lưu bố cục</b>). Mặt bằng: {data.activeScene.widthM}×{data.activeScene.depthM}m.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {([
+                    { kind: 'SHOWROOM', title: 'Showroom thiết bị', desc: 'Vách thương hiệu, lễ tân cạnh cổng, gian hàng phòng ban, kệ hàng, ghế chờ' },
+                    { kind: 'CAFE', title: 'Quán cà phê', desc: 'Quầy bar + máy espresso, tủ bánh, bàn ghế, sofa, đèn thả, cây xanh' },
+                    { kind: 'OFFICE', title: 'Văn phòng', desc: 'Lễ tân, phòng họp kính, cụm bàn làm việc, tủ hồ sơ' },
+                    { kind: 'WAREHOUSE', title: 'Kho hàng', desc: 'Dãy kệ pallet, khu nhận hàng, xe nâng, góc văn phòng kho' },
+                  ] as const).map((t) => (
+                    <button
+                      key={t.kind}
+                      type="button"
+                      onClick={() => {
+                        layout.commit(() =>
+                          templateFor(t.kind, { widthM: data.activeScene.widthM, depthM: data.activeScene.depthM, departments: data.departments }),
+                        );
+                        setSelectedObjectId(null);
+                        setTemplateOpen(false);
+                        showToast(true, `Đã áp dụng mẫu ${t.title} — bấm Lưu bố cục để giữ lại`);
+                      }}
+                      style={{
+                        textAlign: 'left', padding: 12, borderRadius: 12, cursor: 'pointer', color: '#fff',
+                        border: t.kind === sceneKindForEditor ? '2px solid #60a5fa' : '1px solid rgba(255,255,255,0.14)',
+                        background: 'rgba(255,255,255,0.05)',
+                      }}
+                    >
+                      <div style={{ fontSize: 13.5, fontWeight: 700 }}>{t.title}</div>
+                      <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 4, lineHeight: 1.45 }}>{t.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {selectedObject && (
+            <InspectorPanel
+              object={selectedObject}
+              collides={selectedCollides}
+              catalog={data.catalog}
+              onChange={(patch) => updateObject(selectedObject.id, patch)}
+              onRotate={rotateSelected}
+              onDuplicate={duplicateSelected}
+              onDelete={deleteSelected}
+              onClose={() => setSelectedObjectId(null)}
+            />
+          )}
+        </>
+      )}
+
+      {/* Thẻ nhân viên khi click vào nhân vật realtime */}
+      {selectedRemote && (
+        <div
+          style={{
+            ...glassStyle,
+            position: 'fixed',
+            top: 64,
+            right: 14,
+            zIndex: 26,
+            width: 260,
+            borderRadius: 14,
+            padding: 14,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700 }}>{selectedRemote.employeeName}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>{selectedRemote.department || 'Nhân viên'}</div>
+              <div style={{ fontSize: 11.5, marginTop: 4, color: selectedRemote.onDuty ? '#34d399' : '#60a5fa' }}>
+                {selectedRemote.onDuty
+                  ? `● Đang trực${selectedRemote.stationLabel ? ` · ${selectedRemote.stationLabel}` : ''}`
+                  : '● Đang trong không gian 3D'}
+              </div>
+            </div>
+            <button type="button" onClick={() => setSelectedRemoteId(null)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
+              <X size={16} />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const st = realtime.remoteStateRef.current.get(selectedRemote.employeeId);
+              const near = productsNear(st?.tx ?? selectedRemote.x, st?.tz ?? selectedRemote.z);
+              setVisitorTarget({
+                employeeId: selectedRemote.employeeId,
+                name: selectedRemote.employeeName,
+                department: selectedRemote.department,
+                chatMode: selectedRemote.chatMode ?? 'LIVE',
+                online: true,
+                focusProductIds: near.ids,
+                focusLabel: near.label ?? selectedRemote.stationLabel,
+              });
+              setSelectedRemoteId(null);
+            }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '8px 12px', borderRadius: 10, border: 0, cursor: 'pointer',
+              background: selectedRemote.chatMode === 'AI' || data.currentUser ? 'linear-gradient(135deg,#7c3aed,#2563eb)' : '#16a34a',
+              color: '#fff', fontSize: 13, fontWeight: 600,
+            }}
+          >
+            {selectedRemote.chatMode === 'AI' || data.currentUser ? <Sparkles size={15} /> : <MessageCircle size={15} />}
+            {data.currentUser ? 'Hỏi trợ lý AI về sản phẩm' : selectedRemote.chatMode === 'AI' ? 'Hỏi (Trợ lý AI trả lời)' : 'Hỏi nhân viên'}
+          </button>
+          {data.currentUser && (
+            <button
+              type="button"
+              onClick={() =>
+                openChatWith({
+                  employeeId: selectedRemote.employeeId,
+                  name: selectedRemote.employeeName,
+                  department: selectedRemote.department,
+                })
+              }
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '8px 12px', borderRadius: 10, border: 0, cursor: 'pointer',
+                background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 600,
+              }}
+            >
+              <MessageCircle size={15} /> Nhắn tin
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Hỏi đáp với nhân viên: trực tiếp (khách) hoặc Trợ lý AI chạy chữ realtime */}
+      {visitorTarget && (
+        <SpaceVisitorChat
+          key={`${visitorTarget.employeeId}-${visitorTarget.chatMode}-${visitorTarget.initialQuestion ?? ''}`}
+          target={visitorTarget}
+          askerIsStaff={Boolean(data.currentUser)}
+          guestName={playerName}
+          onClose={() => setVisitorTarget(null)}
+          glassStyle={glassStyle}
+        />
+      )}
+      {data.currentUser && (
+        <SpaceGuestInbox
+          myEmployeeId={data.currentUser.employeeId}
+          open={guestInboxOpen}
+          onClose={() => setGuestInboxOpen(false)}
+          onUnreadChange={setGuestUnread}
+          eventRef={guestEventRef}
+          glassStyle={glassStyle}
+        />
+      )}
+
+      {/* Panel tin nhắn 1-1 (chỉ nhân viên) */}
+      {data.currentUser && (
+        <SpaceChatPanel
+          myEmployeeId={data.currentUser.employeeId}
+          open={chatOpen}
+          peer={chatPeer}
+          onPeerChange={setChatPeer}
+          onClose={() => setChatOpen(false)}
+          onUnreadChange={setChatUnread}
+          dmHandlerRef={dmHandlerRef}
+          onlineIds={onlineIds}
+          glassStyle={glassStyle}
+        />
+      )}
+
+      {/* Ô bong bóng chat gần (Enter) */}
+      {bubbleOpen && canBubble && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitBubble();
+          }}
+          style={{
+            ...glassStyle,
+            position: 'fixed',
+            bottom: 92,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 41,
+            width: 'min(420px, calc(100vw - 32px))',
+            borderRadius: 999,
+            padding: 5,
+            display: 'flex',
+            gap: 6,
+          }}
+        >
+          <input
+            autoFocus
+            value={bubbleDraft}
+            maxLength={140}
+            onChange={(e) => setBubbleDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setBubbleOpen(false);
+            }}
+            onBlur={() => setBubbleOpen(false)}
+            placeholder="Nói với mọi người xung quanh (≤ 8m)… Enter để gửi"
+            style={{
+              flex: 1, minWidth: 0, padding: '7px 14px', borderRadius: 999,
+              border: 0, background: 'transparent', color: '#f8fafc', fontSize: 13, outline: 'none',
+            }}
+          />
+        </form>
+      )}
+
+      {/* Màn chờ khi chuyển không gian */}
+      {switching && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'grid', placeItems: 'center', background: 'rgba(2,6,23,0.62)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+          <style>{`@keyframes space3dSpin{to{transform:rotate(360deg)}}@keyframes space3dBar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}`}</style>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: '#f8fafc', textAlign: 'center', padding: 24 }}>
+            <div style={{ position: 'relative', width: 64, height: 64 }}>
+              <div style={{ position: 'absolute', inset: 0, borderRadius: 99, border: '3px solid rgba(255,255,255,0.12)', borderTopColor: '#60a5fa', animation: 'space3dSpin .8s linear infinite' }} />
+              <img src={data.branding.logoUrl} alt="" style={{ position: 'absolute', inset: 14, width: 36, height: 36, objectFit: 'contain', borderRadius: 8, background: '#fff', padding: 4 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: '0.12em', color: '#93c5fd', fontWeight: 700 }}>ĐANG CHUYỂN KHÔNG GIAN</div>
+              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{switching.name}</div>
+              <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 4 }}>Đang dựng kiến trúc, nội thất và hàng hoá…</div>
+            </div>
+            <div style={{ width: 200, height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+              <div style={{ width: '40%', height: '100%', borderRadius: 99, background: 'linear-gradient(90deg,#2563eb,#60a5fa)', animation: 'space3dBar 1.1s ease-in-out infinite' }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast nổi */}
       {toastMsg && (
@@ -533,6 +1183,30 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 outline: 'none',
               }}
             />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {([
+                { key: 'male', label: 'Nam', hint: 'Vest công sở · tóc rẽ ngôi' },
+                { key: 'female', label: 'Nữ', hint: 'Đầm công sở · tóc dài xõa' },
+              ] as const).map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => chooseGuestGender(g.key)}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: guestGender === g.key ? '2px solid #60a5fa' : '1px solid rgba(255,255,255,0.18)',
+                    background: guestGender === g.key ? 'rgba(37,99,235,0.35)' : 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{g.label}</div>
+                  <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 2 }}>{g.hint}</div>
+                </button>
+              ))}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#cbd5e1' }}>Trang phục:</span>
@@ -578,12 +1252,14 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#cbd5e1' }}>Kiểu tóc:</span>
-                <div style={{ display: 'flex', gap: 5 }}>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {([
                     { key: 'slick', label: 'Rẽ ngôi' },
                     { key: 'short', label: 'Ngắn' },
                     { key: 'bob', label: 'Bob' },
                     { key: 'ponytail', label: 'Đuôi ngựa' },
+                    { key: 'long', label: 'Dài xõa' },
+                    { key: 'bun', label: 'Búi' },
                   ] as const).map((h) => (
                     <button
                       key={h.key}
@@ -604,7 +1280,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             </div>
             <button
               type="button"
-              onClick={() => setEntered(true)}
+              onClick={() => {
+                setIntroOnEnter(true);
+                setEntered(true);
+              }}
               style={{
                 width: '100%',
                 padding: '11px 16px',
@@ -663,10 +1342,17 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#2563eb', color: '#fff' }}>
             3D BETA
           </span>
-          {data.presences.length > 0 && (
+          {realtimeLive ? (
             <span style={{ fontSize: 12, color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              ● {data.presences.length} nhân viên đang trực
+              ● {livePresences.length + (data.currentUser ? 1 : 0)} nhân viên online
+              {onDutyCount > 0 ? ` · ${onDutyCount} đang trực` : ''}
             </span>
+          ) : (
+            data.presences.length > 0 && (
+              <span style={{ fontSize: 12, color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                ● {data.presences.length} nhân viên đang trực
+              </span>
+            )
           )}
         </div>
 
@@ -683,10 +1369,13 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             }}
           >
             {data.scenes.map((sc) => (
-              <Link
+              <button
+                type="button"
                 key={sc.code}
-                href={`/3d?scene=${encodeURIComponent(sc.code)}`}
+                onClick={() => switchScene(sc.code, sc.name)}
                 style={{
+                  border: 0,
+                  cursor: 'pointer',
                   padding: '5px 12px',
                   borderRadius: 999,
                   fontSize: 12,
@@ -697,12 +1386,81 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 }}
               >
                 {sc.name}
-              </Link>
+              </button>
             ))}
           </div>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, pointerEvents: 'auto' }}>
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setQualityMenuOpen((v) => !v)}
+              title="Chất lượng đồ họa"
+              style={{
+                ...glassStyle,
+                padding: '7px 12px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: qualityMenuOpen ? '#2563eb' : glassStyle.background,
+              }}
+            >
+              <Settings2 size={14} />
+              {QUALITY_LABEL[qualityPref]}
+              {qualityPref === 'auto' && qualityActive ? ` · ${QUALITY_LABEL[qualityActive]}` : ''}
+            </button>
+            {qualityMenuOpen && (
+              <div
+                style={{
+                  ...glassStyle,
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  minWidth: 190,
+                  borderRadius: 12,
+                  padding: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  zIndex: 40,
+                  boxShadow: '0 12px 28px rgba(0,0,0,0.35)',
+                }}
+              >
+                <div style={{ fontSize: 10.5, color: '#94a3b8', padding: '4px 8px', fontWeight: 600, letterSpacing: 0.4 }}>CHẤT LƯỢNG ĐỒ HỌA</div>
+                {(['auto', 'high', 'medium', 'low'] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => chooseQuality(opt)}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '7px 10px',
+                      borderRadius: 8,
+                      border: 0,
+                      cursor: 'pointer',
+                      background: qualityPref === opt ? 'rgba(37,99,235,0.85)' : 'transparent',
+                      color: '#f8fafc',
+                      fontSize: 12.5,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span>{QUALITY_LABEL[opt]}</span>
+                    <span style={{ fontSize: 10.5, color: qualityPref === opt ? '#dbeafe' : '#64748b' }}>
+                      {opt === 'auto' ? 'đo FPS' : opt === 'high' ? 'AO + Bloom + MSAA' : opt === 'medium' ? 'Bloom + SMAA' : 'nhẹ nhất'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setAvatarPanelOpen((v) => !v)}
@@ -741,6 +1499,60 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             >
               <UserCheck size={14} />
               {data.currentUser?.isOnDuty ? 'Đang trực (Rời quầy)' : 'Vào trực quầy'}
+            </button>
+          )}
+          {data.isStaff && (
+            <button
+              type="button"
+              title="Chế độ trả lời khách hỏi bạn"
+              onClick={() => {
+                const next = chatMode === 'AI' ? 'LIVE' : 'AI';
+                setChatMode(next);
+                startTransition(async () => {
+                  const res = await setSpaceChatModeAction(next);
+                  showToast(res.ok, res.message);
+                  if (!res.ok) setChatMode(chatMode);
+                });
+              }}
+              style={{
+                ...glassStyle,
+                padding: '7px 12px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: chatMode === 'AI' ? 'linear-gradient(135deg,#7c3aed,#2563eb)' : glassStyle.background,
+              }}
+            >
+              {chatMode === 'AI' ? <Sparkles size={14} /> : <MessageCircle size={14} />}
+              {chatMode === 'AI' ? 'AI trả lời thay' : 'Tự trả lời khách'}
+            </button>
+          )}
+          {data.isStaff && (
+            <button
+              type="button"
+              onClick={() => setGuestInboxOpen((v) => !v)}
+              style={{
+                ...glassStyle,
+                position: 'relative',
+                padding: '7px 12px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: guestInboxOpen ? '#16a34a' : glassStyle.background,
+              }}
+            >
+              🙋 Khách hỏi
+              {guestUnread > 0 && (
+                <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 99, background: '#ef4444', fontSize: 10, display: 'grid', placeItems: 'center' }}>{guestUnread}</span>
+              )}
             </button>
           )}
           {data.isStaff ? (
@@ -905,6 +1717,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 { key: 'short', label: 'Ngắn hiện đại' },
                 { key: 'bob', label: 'Tóc Bob' },
                 { key: 'ponytail', label: 'Đuôi ngựa' },
+                { key: 'long', label: 'Dài xõa ngang lưng' },
+                { key: 'bun', label: 'Búi công sở' },
               ] as const).map((h) => (
                 <button
                   key={h.key}
@@ -986,7 +1800,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       {activeBoothId && (() => {
         const booth = structures.find((s) => s.id === activeBoothId);
         if (!booth) return null;
-        const staffAtBooth = data.presences.filter(
+        const staffAtBooth = livePresences.filter(
+          (pr) => pr.status === 'ON_DUTY',
+        ).filter(
           (pr) => pr.stationLabel === booth.label || Math.hypot(pr.posX - booth.posX, pr.posZ - booth.posZ) < 4.5,
         );
         return (
@@ -1322,51 +2138,6 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           )}
 
           {/* Tab Thiết kế / Sắp xếp */}
-          {dockTab === 'design' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.5 }}>
-                Bật chế độ Thiết kế, bấm chọn trực tiếp vào thiết bị trong không gian 3D để hiện trục mũi tên kéo di chuyển (snap 0.25m) hoặc xoay góc, sau đó nhấn <b>Lưu sơ đồ 3D</b>.
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setEditMode((v) => !v)}
-                  style={{
-                    padding: '8px 14px', borderRadius: 9, border: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
-                    background: editMode ? '#f59e0b' : '#2563eb', color: '#fff',
-                  }}
-                >
-                  {editMode ? 'Đang bật chế độ Kéo-Thả (Bấm để tắt)' : 'Bật chế độ Kéo-Thả 3D'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddStructure('RACK')}
-                  style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 12.5, cursor: 'pointer' }}
-                >
-                  + Thêm Kệ kho 3D
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddStructure('BOOTH')}
-                  style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 12.5, cursor: 'pointer' }}
-                >
-                  + Thêm Quầy trưng bày
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveLayout}
-                  disabled={pending}
-                  style={{
-                    marginLeft: 'auto', padding: '8px 16px', borderRadius: 9, border: 0, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
-                    background: dirty ? '#16a34a' : '#334155', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6,
-                  }}
-                >
-                  <Save size={14} /> {pending ? 'Đang lưu…' : 'Lưu sơ đồ 3D'}
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Tab Bản đồ 2D (Minimap Teleport) */}
           {dockTab === 'map' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1402,11 +2173,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 {placements.map((p) => (
                   <circle key={p.id} cx={p.posX} cy={p.posZ} r={0.45} fill="#38bdf8" />
                 ))}
-                {data.presences
+                {livePresences
                   .filter((pr) => !data.currentUser || pr.employeeId !== data.currentUser.employeeId)
                   .map((pr) => (
                   <g key={pr.employeeId}>
-                    <circle cx={pr.posX} cy={pr.posZ} r={0.65} fill="#10b981" stroke="#ffffff" strokeWidth={0.2} />
+                    <circle cx={pr.posX} cy={pr.posZ} r={0.65} fill={pr.status === 'ON_DUTY' ? '#10b981' : '#a78bfa'} stroke="#ffffff" strokeWidth={0.2} />
                     <text
                       x={pr.posX}
                       y={pr.posZ - 1.1}
@@ -1426,6 +2197,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 <span>● Xanh đậm: Vị trí của bạn</span>
                 <span>● Xanh ngọc: Thiết bị</span>
                 <span>● Xanh lá: Nhân viên đang trực</span>
+                {realtimeLive && <span>● Tím: Nhân viên online</span>}
               </div>
             </div>
           )}
@@ -1453,18 +2225,25 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           [
             { key: 'departments', label: 'Phòng ban', icon: Building2, visible: true },
             { key: 'products', label: 'Sản phẩm & 3D', icon: Package, visible: true },
-            { key: 'design', label: dirty ? 'Thiết kế ●' : 'Thiết kế kho', icon: Wrench, visible: data.canEdit },
+            { key: 'design', label: layoutDirty || dirty ? 'Thiết kế ●' : 'Thiết kế', icon: Wrench, visible: data.canEdit },
             { key: 'map', label: 'Bản đồ', icon: MapIcon, visible: true },
           ] as const
         )
           .filter((item) => item.visible)
           .map((item) => {
-            const active = dockTab === item.key;
+            const active = item.key === 'design' ? editMode : dockTab === item.key;
             return (
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setDockTab(active ? 'none' : item.key)}
+                onClick={() => {
+                  if (item.key === 'design') {
+                    setEditMode((v) => !v);
+                    setDockTab('none');
+                    return;
+                  }
+                  setDockTab(active ? 'none' : item.key);
+                }}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -1486,9 +2265,124 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               </button>
             );
           })}
+        {data.currentUser && (
+          <button
+            type="button"
+            onClick={() => setChatOpen((o) => !o)}
+            style={{
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 3,
+              minWidth: 88,
+              padding: '7px 10px',
+              borderRadius: 11,
+              border: 0,
+              cursor: 'pointer',
+              background: chatOpen ? '#2563eb' : 'transparent',
+              color: chatOpen ? '#fff' : '#cbd5e1',
+              fontSize: 11.5,
+              fontWeight: 600,
+            }}
+          >
+            <MessageCircle size={16} />
+            <span>Tin nhắn</span>
+            {chatUnread > 0 && (
+              <span
+                style={{
+                  position: 'absolute', top: 2, right: 16, minWidth: 16, height: 16, padding: '0 4px',
+                  borderRadius: 99, background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700,
+                  display: 'grid', placeItems: 'center',
+                }}
+              >
+                {chatUnread > 99 ? '99+' : chatUnread}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Modal Xem chi tiết Thiết bị */}
+      {/* Thông tin sản phẩm trên kệ / máy trưng bày */}
+      {merchInfoId !== null && (() => {
+        const item = data.merchItems.find((m) => m.id === merchInfoId);
+        if (!item) return null;
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 45, background: 'rgba(2,6,23,0.55)', display: 'grid', placeItems: 'center', padding: 16 }}
+            onClick={() => setMerchInfoId(null)}
+          >
+            <div
+              style={{ ...glassStyle, width: '100%', maxWidth: 420, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 600 }}>
+                    {item.itemCode}
+                    {item.isMachine ? ' · Máy / thiết bị' : ''}
+                  </div>
+                  <h2 style={{ fontSize: 17, fontWeight: 700, marginTop: 2, color: '#fff', lineHeight: 1.3 }}>{item.name}</h2>
+                  {item.manufacturer && <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 2 }}>Hãng: {item.manufacturer}</div>}
+                </div>
+                <button type="button" onClick={() => setMerchInfoId(null)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer', alignSelf: 'flex-start' }}>
+                  <X size={18} />
+                </button>
+              </div>
+              {item.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.imageUrl} alt={item.name} style={{ width: '100%', maxHeight: 200, objectFit: 'contain', background: '#fff', borderRadius: 10, padding: 8 }} />
+              )}
+              {item.description && <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{item.description}</p>}
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, padding: '10px 12px', borderRadius: 12, background: 'rgba(37,99,235,0.15)', border: '1px solid rgba(96,165,250,0.3)' }}>
+                <span style={{ fontSize: 12, color: '#93c5fd' }}>Giá bán niêm yết</span>
+                <span style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{item.sellingPrice ? money(item.sellingPrice) : 'Liên hệ'}</span>
+              </div>
+              {typeof item.stockQty === 'number' && (
+                <div style={{ fontSize: 12.5, color: item.stockQty > 0 ? '#34d399' : '#fca5a5' }}>
+                  ● Tồn kho: {item.stockQty}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  // Nhờ nhân viên online gần nhất (nếu có) — trợ lý AI trả lời bằng thông tin sản phẩm đã nạp
+                  const me = playerPosRef.current;
+                  let nearest: (typeof realtime.roster)[number] | null = null;
+                  let bestD = Infinity;
+                  for (const r of realtime.roster) {
+                    const st = realtime.remoteStateRef.current.get(r.employeeId);
+                    const d = Math.hypot((st?.tx ?? r.x) - me.x, (st?.tz ?? r.z) - me.z);
+                    if (d < bestD) {
+                      bestD = d;
+                      nearest = r;
+                    }
+                  }
+                  setVisitorTarget({
+                    employeeId: nearest?.employeeId ?? 0,
+                    name: nearest?.employeeName ?? data.branding.appName,
+                    department: nearest?.department ?? null,
+                    chatMode: 'AI',
+                    online: Boolean(nearest),
+                    focusProductIds: [item.id],
+                    focusLabel: null,
+                    initialQuestion: `Giới thiệu giúp mình về ${item.name}`,
+                  });
+                  setMerchInfoId(null);
+                }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 14px', borderRadius: 12, border: 0,
+                  cursor: 'pointer', background: 'linear-gradient(135deg,#7c3aed,#2563eb)', color: '#fff', fontSize: 13.5, fontWeight: 700,
+                }}
+              >
+                <Sparkles size={15} /> Hỏi tư vấn sản phẩm này
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {inspectedPlacement && (
         <div
           style={{

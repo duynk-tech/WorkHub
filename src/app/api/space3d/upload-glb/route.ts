@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import crypto from 'crypto';
-import { can, requireAuth } from '@/server/auth/context';
+import { requireAuth } from '@/server/auth/context';
+import { canDesignSpace } from '@/server/modules/space3d/permissions';
 import { uploadFile } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
@@ -10,12 +11,7 @@ const MAX_GLB_SIZE = 4 * 1024 * 1024; // 4MB (dưới trần Vercel 4.5MB)
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireAuth();
-    const allowed =
-      ctx.isAdmin ||
-      can(ctx, 'FEATURE_EQUIPMENT_MANAGE') ||
-      can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') ||
-      can(ctx, 'FEATURE_SETTING_GENERAL');
-    if (!allowed) {
+    if (!canDesignSpace(ctx)) {
       return NextResponse.json({ error: 'Bạn không có quyền tải tệp mô hình 3D' }, { status: 403 });
     }
 

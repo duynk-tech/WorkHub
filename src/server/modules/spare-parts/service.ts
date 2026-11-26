@@ -173,6 +173,7 @@ export async function saveSparePart(id: number | null, input: SaveSparePartInput
     // Chỉ giữ loại máy F&B cho máy nguyên chiếc, tránh rác ở dòng linh kiện
     fnbCategory: input.category === 'EQUIPMENT' ? input.fnbCategory?.trim() || 'OTHER' : null,
     description: input.description?.trim() || null,
+    introduction: input.introduction?.trim() || null,
     imageUrl: input.imageUrl?.trim() || null,
     status: input.status,
   };

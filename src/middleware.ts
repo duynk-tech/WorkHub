@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   '/api/cron',
   '/api/health',
   '/api/space3d/public',
+  '/api/space3d/ai-chat', // Trợ lý AI tư vấn sản phẩm cho khách tham quan (có giới hạn tần suất)
 ];
 
 export function middleware(req: NextRequest) {

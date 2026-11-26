@@ -101,6 +101,7 @@ export function SparePartModal({
     manufacturer: part?.manufacturer || '',
     fnbCategory: part?.fnbCategory || 'OTHER',
     description: parsedDesc.cleanDesc || part?.description || '',
+    introduction: (part as { introduction?: string | null } | null | undefined)?.introduction || '',
     imageUrl: part?.imageUrl || '',
     status: part?.status || 'ACTIVE',
   });
@@ -408,6 +409,17 @@ export function SparePartModal({
             </div>
           )}
         </div>
+
+        {/* Giới thiệu sản phẩm — hiển thị cho khách & trợ lý AI tư vấn trong Showroom 3D */}
+        <Field label="Giới thiệu sản phẩm (cho khách & Trợ lý AI tư vấn)">
+          <Textarea
+            rows={3}
+            maxLength={4000}
+            placeholder="Công dụng, ưu điểm nổi bật, phù hợp với mô hình quán nào, chế độ bảo hành…"
+            value={form.introduction || ''}
+            onChange={(e) => setForm({ ...form, introduction: e.target.value })}
+          />
+        </Field>
 
         {/* Hàng 5: Mô tả kỹ thuật & Hình ảnh phụ tùng */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, alignItems: 'start' }}>

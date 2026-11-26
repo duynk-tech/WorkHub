@@ -1,7 +1,9 @@
-export type SpaceKind = 'SHOWROOM' | 'WAREHOUSE';
+import { SPACE_OBJECT_DEF_MAP } from './space-3d-catalog';
+
+export type SpaceKind = 'SHOWROOM' | 'WAREHOUSE' | 'CAFE' | 'OFFICE';
 export type Product3DType = 'BOX_PRESET' | 'PROCEDURAL_JSON' | 'GLB';
 export type AvatarOutfitStyle = 'suit' | 'dress' | 'shirt' | 'polo';
-export type AvatarHairStyle = 'slick' | 'short' | 'bob' | 'ponytail';
+export type AvatarHairStyle = 'slick' | 'short' | 'bob' | 'ponytail' | 'long' | 'bun';
 
 export interface Avatar3DConfig {
   outfitStyle: AvatarOutfitStyle;
@@ -31,7 +33,7 @@ export function normalizeAvatar3DConfig(raw: unknown): Avatar3DConfig {
       ? r.outfitStyle
       : DEFAULT_AVATAR_3D_CONFIG.outfitStyle;
   const hairStyle: AvatarHairStyle =
-    r.hairStyle === 'slick' || r.hairStyle === 'short' || r.hairStyle === 'bob' || r.hairStyle === 'ponytail'
+    r.hairStyle === 'slick' || r.hairStyle === 'short' || r.hairStyle === 'bob' || r.hairStyle === 'ponytail' || r.hairStyle === 'long' || r.hairStyle === 'bun'
       ? r.hairStyle
       : DEFAULT_AVATAR_3D_CONFIG.hairStyle;
   return {
@@ -70,21 +72,119 @@ export interface Product3DModelView {
   aiPrompt: string | null;
 }
 
+/** Hàng hoá trưng bày trên kệ: AUTO = tự lấy SP công khai phù hợp, MANUAL = chọn danh sách */
+/** Sản phẩm hiển thị trên kệ (dữ liệu công khai: tên, hãng, ảnh, giá niêm yết) */
+export interface SpaceMerchItem {
+  id: number;
+  itemCode?: string;
+  name: string;
+  category: string;
+  manufacturer: string | null;
+  imageUrl: string | null;
+  sellingPrice: number | null;
+  description?: string | null;
+  /** Máy / thiết bị nguyên chiếc (trưng bày ở tủ kính, bục) */
+  isMachine?: boolean;
+  /** Tồn kho — chỉ trả cho nhân viên */
+  stockQty?: number | null;
+  /** Mô hình 3D thật của máy (để trưng bày đúng hình dáng) */
+  model3D?: Product3DModelView | null;
+}
+
+export interface SpaceMerch {
+  mode: 'AUTO' | 'MANUAL';
+  itemIds: number[];
+}
+
+/**
+ * Vật thể trong không gian (gian hàng, kệ, bàn ghế, cây, tường…). Lưu trong `SpaceScene.structuresJson`.
+ * `kind` là một khoá trong `SPACE_OBJECT_DEFS` (src/lib/space-3d-catalog.ts).
+ */
 export interface SpaceStructure {
   id: string;
-  kind: 'BOOTH' | 'RACK' | 'PODIUM';
+  kind: string;
   label: string;
   subLabel?: string;
   departmentId?: number | null;
   aisleCode?: string;
   posX: number;
+  posY?: number;
   posZ: number;
   rotY: number;
   widthM: number;
   depthM: number;
   heightM: number;
-  levels?: number; // Số tầng kệ (cho RACK)
+  levels?: number; // Số tầng kệ
   accentColor: string;
+  /** Màu chính (gỗ, vải, chậu…) */
+  color?: string;
+  variant?: string;
+  merch?: SpaceMerch;
+  locked?: boolean;
+}
+export type SpaceObject = SpaceStructure;
+
+const clamp = (v: number, [lo, hi]: [number, number]) => Math.min(hi, Math.max(lo, v));
+const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const hex = (v: unknown, d: string) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : d);
+const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : undefined);
+
+/** Chuẩn hoá & kẹp giá trị một vật thể (dùng cả khi đọc DB lẫn khi lưu). Trả null nếu kind không hợp lệ. */
+export function normalizeSpaceObject(raw: unknown): SpaceObject | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const kind = typeof r.kind === 'string' ? r.kind : '';
+  const def = SPACE_OBJECT_DEF_MAP[kind];
+  if (!def) return null;
+  const id = typeof r.id === 'string' && r.id.length > 0 && r.id.length <= 64 ? r.id : null;
+  if (!id) return null;
+  const [dw, dd, dh] = def.size;
+  const merchRaw = r.merch as Record<string, unknown> | undefined;
+  const merch: SpaceMerch | undefined =
+    def.shelves && merchRaw && typeof merchRaw === 'object'
+      ? {
+          mode: merchRaw.mode === 'MANUAL' ? 'MANUAL' : 'AUTO',
+          itemIds: Array.isArray(merchRaw.itemIds)
+            ? merchRaw.itemIds.filter((x): x is number => Number.isInteger(x) && (x as number) > 0).slice(0, 60)
+            : [],
+        }
+      : def.shelves
+        ? { mode: 'AUTO', itemIds: [] }
+        : undefined;
+  return {
+    id,
+    kind,
+    label: str(r.label, 80) ?? def.label,
+    subLabel: str(r.subLabel, 80),
+    departmentId: Number.isInteger(r.departmentId) ? (r.departmentId as number) : null,
+    aisleCode: str(r.aisleCode, 16),
+    posX: clamp(num(r.posX, 0), [-200, 200]),
+    posY: clamp(num(r.posY, 0), [0, 10]),
+    posZ: clamp(num(r.posZ, 0), [-200, 200]),
+    rotY: num(r.rotY, 0) % (Math.PI * 2),
+    widthM: clamp(num(r.widthM, dw), def.limits.w),
+    depthM: clamp(num(r.depthM, dd), def.limits.d),
+    heightM: clamp(num(r.heightM, dh), def.limits.h),
+    levels: def.shelves ? Math.round(clamp(num(r.levels, def.defaultLevels ?? 3), [1, 8])) : undefined,
+    accentColor: hex(r.accentColor, def.color && def.labeled ? def.color : '#2563eb'),
+    color: hex(r.color, def.color ?? '#e5e7eb'),
+    variant: def.variants?.some((v) => v.key === r.variant) ? (r.variant as string) : def.variants?.[0]?.key,
+    merch,
+    locked: Boolean(r.locked),
+  };
+}
+
+export function normalizeSpaceObjects(raw: unknown): SpaceObject[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SpaceObject[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    const o = normalizeSpaceObject(r);
+    if (!o || seen.has(o.id)) continue;
+    seen.add(o.id);
+    out.push(o);
+  }
+  return out;
 }
 
 export interface SpacePlacementView {
@@ -119,6 +219,63 @@ export interface SpacePresenceView {
   rotY: number;
   status: string;
   avatar: Avatar3DConfig;
+}
+
+/** Meta của người chơi realtime (Presence) — đổi hiếm: vào/ra, đổi diện mạo, vào trực */
+export interface RemotePlayerMeta {
+  employeeId: number;
+  employeeName: string;
+  department: string | null;
+  avatar: Avatar3DConfig;
+  onDuty: boolean;
+  stationLabel: string | null;
+  /** Chế độ trả lời khách: LIVE (tự trả lời) | AI (trợ lý AI trả lời thay) */
+  chatMode?: 'LIVE' | 'AI';
+  /** Vị trí lúc track — dùng để đặt avatar trước khi nhận được `move` đầu tiên */
+  x: number;
+  z: number;
+  r: number;
+}
+
+/** Trạng thái vị trí realtime — mutate qua ref, KHÔNG setState */
+export interface RemotePlayerState {
+  tx: number;
+  tz: number;
+  tr: number;
+  moving: boolean;
+  ts: number;
+}
+
+export interface RemoteBubble {
+  text: string;
+  expiresAt: number;
+}
+
+export interface SpaceDmMessage {
+  id: number;
+  fromEmployeeId: number;
+  toEmployeeId: number;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface SpaceDmThread {
+  otherEmployeeId: number;
+  otherName: string;
+  otherDepartment: string | null;
+  lastBody: string;
+  lastAt: string;
+  lastFromMe: boolean;
+  unread: number;
+}
+
+export interface SpaceRealtimeSession {
+  url: string;
+  anonKey: string;
+  token: string | null;
+  expiresAt: number | null;
+  employeeId: number | null;
 }
 
 export interface SpaceDepartmentInfo {
@@ -160,6 +317,7 @@ export interface SpacePayload {
     isOnDuty: boolean;
     dutyStation: string | null;
     avatar: Avatar3DConfig;
+    chatMode: 'LIVE' | 'AI';
   } | null;
   branding: {
     appName: string;
@@ -174,6 +332,8 @@ export interface SpacePayload {
     code: string;
     name: string;
     kind: SpaceKind;
+    /** ISO — dùng làm phiên bản bố cục khi lưu */
+    updatedAt: string;
     isPublic: boolean;
     widthM: number;
     depthM: number;
@@ -184,6 +344,8 @@ export interface SpacePayload {
   departments: SpaceDepartmentInfo[];
   presences: SpacePresenceView[];
   catalog: SpaceCatalogItem[];
+  /** Hàng hoá công khai dùng để xếp lên kệ */
+  merchItems: SpaceMerchItem[];
 }
 
 export function defaultModel3D(category?: string, color?: string): Product3DModelView {

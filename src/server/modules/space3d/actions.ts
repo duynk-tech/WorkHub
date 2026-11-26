@@ -3,14 +3,28 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { can, requireAuth } from '@/server/auth/context';
+import { getAuthContext, requireAuth } from '@/server/auth/context';
+import { canDesignSpace } from './permissions';
+import {
+  broadcastServer,
+  DM_RATE_LIMIT,
+  getRealtimeConfig,
+  isDmRateLimited,
+  mintRealtimeToken,
+  validateDmInput,
+} from './realtime';
 import {
   normalizeAvatar3DConfig,
   synthesizeProcedural3D,
   type Avatar3DConfig,
   type Procedural3DPart,
+  type SpaceDmMessage,
+  type SpaceDmThread,
+  type SpaceRealtimeSession,
   type SpaceStructure,
+  normalizeSpaceObjects,
 } from '@/lib/space-3d-types';
+import { MAX_SPACE_OBJECTS } from '@/lib/space-3d-catalog';
 
 export interface SpaceActionResult {
   ok: boolean;
@@ -19,12 +33,7 @@ export interface SpaceActionResult {
 }
 
 function canEditSpace(ctx: Awaited<ReturnType<typeof requireAuth>>) {
-  return (
-    ctx.isAdmin ||
-    can(ctx, 'FEATURE_EQUIPMENT_MANAGE') ||
-    can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') ||
-    can(ctx, 'FEATURE_SETTING_GENERAL')
-  );
+  return canDesignSpace(ctx);
 }
 
 const placementInputSchema = z.object({
@@ -44,8 +53,13 @@ export async function saveSpaceSceneLayoutAction(
   payload: {
     structures: SpaceStructure[];
     placements: z.infer<typeof placementInputSchema>[];
+    /** updatedAt của scene lúc bắt đầu chỉnh sửa — chống ghi đè khi 2 người cùng sửa */
+    baseUpdatedAt?: string | null;
+    /** Kích thước mặt bằng (tuỳ chọn) */
+    widthM?: number;
+    depthM?: number;
   },
-): Promise<SpaceActionResult> {
+): Promise<SpaceActionResult & { updatedAt?: string }> {
   try {
     const ctx = await requireAuth();
     if (!canEditSpace(ctx)) {
@@ -54,16 +68,28 @@ export async function saveSpaceSceneLayoutAction(
 
     const scene = await prisma.spaceScene.findUnique({ where: { code: sceneCode } });
     if (!scene) return { ok: false, message: 'Không tìm thấy không gian 3D' };
+    if (payload.baseUpdatedAt && new Date(payload.baseUpdatedAt).getTime() !== scene.updatedAt.getTime()) {
+      return {
+        ok: false,
+        message: 'Bố cục vừa được người khác cập nhật. Hãy tải lại trang để xem bản mới trước khi lưu.',
+      };
+    }
+    const objects = normalizeSpaceObjects(payload.structures);
+    if (objects.length > MAX_SPACE_OBJECTS) {
+      return { ok: false, message: `Tối đa ${MAX_SPACE_OBJECTS} vật thể trong một không gian` };
+    }
+    const widthM = typeof payload.widthM === 'number' ? Math.min(120, Math.max(10, payload.widthM)) : scene.widthM;
+    const depthM = typeof payload.depthM === 'number' ? Math.min(120, Math.max(10, payload.depthM)) : scene.depthM;
 
     const validPlacements = payload.placements
       .map((p) => placementInputSchema.safeParse(p))
       .filter((r) => r.success)
       .map((r) => r.data);
 
-    await prisma.$transaction(async (tx) => {
-      await tx.spaceScene.update({
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.spaceScene.update({
         where: { id: scene.id },
-        data: { structuresJson: payload.structures as never },
+        data: { structuresJson: objects as never, widthM, depthM },
       });
       await tx.spacePlacement.deleteMany({ where: { sceneId: scene.id } });
       if (validPlacements.length > 0) {
@@ -82,10 +108,15 @@ export async function saveSpaceSceneLayoutAction(
           })),
         });
       }
+      return row;
     });
 
     revalidatePath('/3d');
-    return { ok: true, message: `Đã lưu sơ đồ 3D (${validPlacements.length} thiết bị)` };
+    return {
+      ok: true,
+      message: `Đã lưu bố cục (${objects.length} vật thể, ${validPlacements.length} thiết bị)`,
+      updatedAt: updated.updatedAt.toISOString(),
+    };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Lưu sơ đồ 3D thất bại' };
   }
@@ -290,4 +321,267 @@ export async function saveMyAvatar3DAction(raw: Avatar3DConfig): Promise<SpaceAc
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Lưu diện mạo nhân vật thất bại' };
   }
+}
+
+// ───────────────────────── Realtime & Chat 1-1 ─────────────────────────
+
+/** Phiên realtime: khách nhận anon key (chỉ nghe); nhân viên nhận thêm JWT ký bởi server. */
+export async function getRealtimeSessionAction(): Promise<SpaceRealtimeSession | null> {
+  const cfg = getRealtimeConfig();
+  if (!cfg) return null;
+  const ctx = await getAuthContext();
+  if (!ctx || !cfg.jwtSecret) {
+    return { url: cfg.url, anonKey: cfg.anonKey, token: null, expiresAt: null, employeeId: ctx?.employeeId ?? null };
+  }
+  const { token, expiresAt } = await mintRealtimeToken(ctx.employeeId, cfg.jwtSecret);
+  return { url: cfg.url, anonKey: cfg.anonKey, token, expiresAt, employeeId: ctx.employeeId };
+}
+
+function toDmView(m: {
+  id: number;
+  fromEmployeeId: number;
+  toEmployeeId: number;
+  body: string;
+  createdAt: Date;
+  readAt: Date | null;
+}): SpaceDmMessage {
+  return {
+    id: m.id,
+    fromEmployeeId: m.fromEmployeeId,
+    toEmployeeId: m.toEmployeeId,
+    body: m.body,
+    createdAt: m.createdAt.toISOString(),
+    readAt: m.readAt ? m.readAt.toISOString() : null,
+  };
+}
+
+export async function sendSpaceDmAction(
+  toEmployeeId: number,
+  body: string,
+): Promise<{ ok: boolean; message: string; data?: SpaceDmMessage }> {
+  try {
+    const ctx = await requireAuth();
+    const v = validateDmInput(ctx.employeeId, { toEmployeeId, body });
+    if (!v.ok) return { ok: false, message: v.message };
+
+    const recent = await prisma.spaceChatMessage.count({
+      where: { fromEmployeeId: ctx.employeeId, createdAt: { gte: new Date(Date.now() - DM_RATE_LIMIT.windowMs) } },
+    });
+    if (isDmRateLimited(recent)) return { ok: false, message: 'Bạn gửi quá nhanh, vui lòng chờ vài giây' };
+
+    const target = await prisma.employee.findFirst({
+      where: { id: v.data.toEmployeeId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!target) return { ok: false, message: 'Không tìm thấy nhân viên nhận' };
+
+    const row = await prisma.spaceChatMessage.create({
+      data: { fromEmployeeId: ctx.employeeId, toEmployeeId: target.id, body: v.data.body },
+    });
+    const view = toDmView(row);
+    const payload = { message: view, fromName: ctx.fullName, fromDepartment: ctx.departmentName };
+    await Promise.all([
+      broadcastServer(`dm:${target.id}`, 'dm', payload),
+      broadcastServer(`dm:${ctx.employeeId}`, 'dm', payload),
+    ]);
+    return { ok: true, message: 'Đã gửi', data: view };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Gửi tin nhắn thất bại' };
+  }
+}
+
+export async function listSpaceDmThreadsAction(): Promise<SpaceDmThread[]> {
+  const ctx = await getAuthContext();
+  if (!ctx) return [];
+  const me = ctx.employeeId;
+  const [recent, unreadGroups] = await Promise.all([
+    prisma.spaceChatMessage.findMany({
+      where: { OR: [{ fromEmployeeId: me }, { toEmployeeId: me }] },
+      orderBy: { id: 'desc' },
+      take: 400,
+    }),
+    prisma.spaceChatMessage.groupBy({
+      by: ['fromEmployeeId'],
+      where: { toEmployeeId: me, readAt: null },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const lastByOther = new Map<number, (typeof recent)[number]>();
+  for (const m of recent) {
+    const other = m.fromEmployeeId === me ? m.toEmployeeId : m.fromEmployeeId;
+    if (!lastByOther.has(other)) lastByOther.set(other, m);
+  }
+  const unreadMap = new Map(unreadGroups.map((g) => [g.fromEmployeeId, g._count._all]));
+
+  const ids = [...lastByOther.keys()];
+  if (ids.length === 0) return [];
+  const people = await prisma.employee.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, fullName: true, department: { select: { name: true } } },
+  });
+  const personMap = new Map(people.map((p) => [p.id, p]));
+
+  return ids.map((id) => {
+    const m = lastByOther.get(id)!;
+    const p = personMap.get(id);
+    return {
+      otherEmployeeId: id,
+      otherName: p?.fullName ?? `Nhân viên #${id}`,
+      otherDepartment: p?.department?.name ?? null,
+      lastBody: m.body,
+      lastAt: m.createdAt.toISOString(),
+      lastFromMe: m.fromEmployeeId === me,
+      unread: unreadMap.get(id) ?? 0,
+    };
+  });
+}
+
+export async function listSpaceDmMessagesAction(
+  otherEmployeeId: number,
+  beforeId?: number,
+): Promise<{ messages: SpaceDmMessage[]; hasMore: boolean }> {
+  const ctx = await getAuthContext();
+  if (!ctx || !Number.isInteger(otherEmployeeId)) return { messages: [], hasMore: false };
+  const me = ctx.employeeId;
+  const PAGE = 30;
+  const rows = await prisma.spaceChatMessage.findMany({
+    where: {
+      OR: [
+        { fromEmployeeId: me, toEmployeeId: otherEmployeeId },
+        { fromEmployeeId: otherEmployeeId, toEmployeeId: me },
+      ],
+      ...(beforeId ? { id: { lt: beforeId } } : {}),
+    },
+    orderBy: { id: 'desc' },
+    take: PAGE + 1,
+  });
+  const hasMore = rows.length > PAGE;
+  return { messages: rows.slice(0, PAGE).reverse().map(toDmView), hasMore };
+}
+
+export async function markSpaceDmReadAction(otherEmployeeId: number): Promise<void> {
+  const ctx = await getAuthContext();
+  if (!ctx || !Number.isInteger(otherEmployeeId)) return;
+  await prisma.spaceChatMessage.updateMany({
+    where: { fromEmployeeId: otherEmployeeId, toEmployeeId: ctx.employeeId, readAt: null },
+    data: { readAt: new Date() },
+  });
+}
+
+// ───────────────────────── Khách tham quan ↔ nhân viên & chế độ trả lời ─────────────────────────
+
+const GUEST_KEY_RE = /^[a-f0-9]{32,64}$/;
+
+export interface GuestChatMessage {
+  id: number;
+  fromGuest: boolean;
+  body: string;
+  createdAt: string;
+  guestName: string;
+}
+
+/** Nhân viên chọn chế độ trả lời khách: LIVE (tự trả lời) hoặc AI (trợ lý AI trả lời thay). */
+export async function setSpaceChatModeAction(mode: 'LIVE' | 'AI'): Promise<SpaceActionResult> {
+  try {
+    const ctx = await requireAuth();
+    const m = mode === 'AI' ? 'AI' : 'LIVE';
+    await prisma.spaceAvatarConfig.upsert({
+      where: { employeeId: ctx.employeeId },
+      create: { employeeId: ctx.employeeId, configJson: normalizeAvatar3DConfig(null) as never, chatMode: m },
+      update: { chatMode: m },
+    });
+    return { ok: true, message: m === 'AI' ? 'Đã bật Trợ lý AI trả lời thay bạn' : 'Đã bật chế độ tự trả lời trực tiếp' };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Không đổi được chế độ trả lời' };
+  }
+}
+
+/** Khách gửi câu hỏi cho nhân viên (chế độ LIVE). Công khai, giới hạn tần suất theo guestKey. */
+export async function sendGuestMessageAction(
+  staffEmployeeId: number,
+  guestKey: string,
+  guestName: string,
+  body: string,
+): Promise<{ ok: boolean; message: string; data?: GuestChatMessage }> {
+  const text = (body || '').trim().slice(0, 1000);
+  if (!GUEST_KEY_RE.test(guestKey) || !text || !Number.isInteger(staffEmployeeId)) {
+    return { ok: false, message: 'Tin nhắn không hợp lệ' };
+  }
+  const recent = await prisma.spaceGuestMessage.count({
+    where: { guestKey, fromGuest: true, createdAt: { gte: new Date(Date.now() - 30_000) } },
+  });
+  if (recent >= 6) return { ok: false, message: 'Bạn gửi hơi nhanh, vui lòng chờ vài giây' };
+  const staff = await prisma.employee.findFirst({ where: { id: staffEmployeeId, status: 'ACTIVE' }, select: { id: true } });
+  if (!staff) return { ok: false, message: 'Nhân viên không còn trực tuyến' };
+  const name = (guestName || 'Khách tham quan').trim().slice(0, 40) || 'Khách tham quan';
+  const row = await prisma.spaceGuestMessage.create({
+    data: { staffEmployeeId, guestKey, guestName: name, fromGuest: true, body: text },
+  });
+  const view: GuestChatMessage = { id: row.id, fromGuest: true, body: row.body, createdAt: row.createdAt.toISOString(), guestName: name };
+  await broadcastServer(`dm:${staffEmployeeId}`, 'guest', { guestKey, message: view });
+  return { ok: true, message: 'Đã gửi', data: view };
+}
+
+/** Nhân viên trả lời khách — đẩy realtime về kênh riêng của khách. */
+export async function replyGuestAction(guestKey: string, body: string): Promise<{ ok: boolean; message: string; data?: GuestChatMessage }> {
+  try {
+    const ctx = await requireAuth();
+    const text = (body || '').trim().slice(0, 1000);
+    if (!GUEST_KEY_RE.test(guestKey) || !text) return { ok: false, message: 'Tin nhắn không hợp lệ' };
+    const last = await prisma.spaceGuestMessage.findFirst({
+      where: { guestKey, staffEmployeeId: ctx.employeeId },
+      orderBy: { id: 'desc' },
+      select: { guestName: true },
+    });
+    if (!last) return { ok: false, message: 'Không tìm thấy cuộc trò chuyện với khách này' };
+    const row = await prisma.spaceGuestMessage.create({
+      data: { staffEmployeeId: ctx.employeeId, guestKey, guestName: last.guestName, fromGuest: false, body: text },
+    });
+    const view: GuestChatMessage = { id: row.id, fromGuest: false, body: row.body, createdAt: row.createdAt.toISOString(), guestName: last.guestName };
+    await broadcastServer(`gchat:${guestKey}`, 'reply', { message: view, staffName: ctx.fullName });
+    await broadcastServer(`dm:${ctx.employeeId}`, 'guest', { guestKey, message: view });
+    return { ok: true, message: 'Đã gửi', data: view };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Gửi trả lời thất bại' };
+  }
+}
+
+/** Lịch sử 1 cuộc trò chuyện khách ↔ nhân viên (khách đọc bằng guestKey bí mật; nhân viên đọc của mình). */
+export async function listGuestMessagesAction(guestKey: string, staffEmployeeId: number): Promise<GuestChatMessage[]> {
+  if (!GUEST_KEY_RE.test(guestKey) || !Number.isInteger(staffEmployeeId)) return [];
+  const rows = await prisma.spaceGuestMessage.findMany({
+    where: { guestKey, staffEmployeeId },
+    orderBy: { id: 'desc' },
+    take: 50,
+  });
+  return rows.reverse().map((r) => ({ id: r.id, fromGuest: r.fromGuest, body: r.body, createdAt: r.createdAt.toISOString(), guestName: r.guestName }));
+}
+
+/** Danh sách khách đang hỏi nhân viên hiện tại (24 giờ gần nhất). */
+export async function listMyGuestThreadsAction(): Promise<{ guestKey: string; guestName: string; lastBody: string; lastAt: string; lastFromGuest: boolean }[]> {
+  const ctx = await getAuthContext();
+  if (!ctx) return [];
+  const rows = await prisma.spaceGuestMessage.findMany({
+    where: { staffEmployeeId: ctx.employeeId, createdAt: { gte: new Date(Date.now() - 24 * 3600_000) } },
+    orderBy: { id: 'desc' },
+    take: 300,
+  });
+  const seen = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (!seen.has(r.guestKey)) seen.set(r.guestKey, r);
+  return [...seen.values()].map((r) => ({ guestKey: r.guestKey, guestName: r.guestName, lastBody: r.body, lastAt: r.createdAt.toISOString(), lastFromGuest: r.fromGuest }));
+}
+
+/** Nhịp tim trực quầy: client gọi mỗi 60s khi đang trực để giữ trạng thái "Đang trực" (hết nhịp → tự rời sau 3 phút). */
+export async function heartbeatPresenceAction(pos?: { x: number; z: number; r: number }): Promise<boolean> {
+  const ctx = await getAuthContext();
+  if (!ctx) return false;
+  const data: { lastSeenAt: Date; posX?: number; posZ?: number; rotY?: number } = { lastSeenAt: new Date() };
+  if (pos && [pos.x, pos.z, pos.r].every(Number.isFinite)) {
+    data.posX = pos.x;
+    data.posZ = pos.z;
+    data.rotY = pos.r;
+  }
+  const res = await prisma.spacePresence.updateMany({ where: { employeeId: ctx.employeeId }, data });
+  return res.count > 0;
 }

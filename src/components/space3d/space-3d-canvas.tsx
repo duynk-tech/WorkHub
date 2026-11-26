@@ -5,15 +5,57 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import type {
   Avatar3DConfig,
-  Procedural3DPart,
-  Product3DModelView,
   SpaceKind,
   SpacePlacementView,
+  RemoteBubble,
+  RemotePlayerMeta,
+  RemotePlayerState,
+  SpaceMerchItem,
   SpacePresenceView,
   SpaceStructure,
 } from '@/lib/space-3d-types';
+
+import {
+  BUBBLE_VISIBLE_DIST,
+  animateAvatarIdle,
+  createChibiAvatar,
+  poseWalk,
+  relaxPose,
+  disposeObject,
+  htmlLabels,
+  prepareRemoteAvatar,
+  remoteSig,
+  syncBubble,
+  type AnimatedAvatar,
+  type BubbleSlot,
+} from './three/avatars';
+import { createExhibitionHallEnvironment } from './three/hall';
+import { createCafeEnvironment, createOfficeEnvironment } from './three/environments';
+import { carpetTileTex, plankTex } from './three/props/textures';
+import { buildSpaceObject, objectSignature, applyTransform } from './three/props/registry';
+import type { ShelfSlot } from './three/props/kit';
+import { buildMerchandise } from './three/props/packaging';
+import { resolveMerchItems } from '@/lib/space-3d-merch';
+import { SPACE_OBJECT_DEF_MAP } from '@/lib/space-3d-catalog';
+import { clampInside, findCollisions, snap } from '@/lib/space-3d-layout';
+import { buildProductGroup } from './three/products';
+import { createEpoxyTextures, windUniform } from './three/materials';
+import { mergeStaticGroup } from './three/merge';
+import { createRenderPipeline, type RenderPipeline } from './three/pipeline';
+import { createEnvironmentMap, createSkySystem, type SkySystem } from './three/sky';
+import { createDayNightRig, type DayNightRig } from './three/lighting';
+import { createCameraRig, type CameraRig } from './three/camera-rig';
+import {
+  QUALITY_PRESETS,
+  createFpsGovernor,
+  detectQuality,
+  lowerQuality,
+  type QualityLevel,
+  type QualityPref,
+} from './three/quality';
 
 export interface TeleportTarget {
   x: number;
@@ -46,1070 +88,100 @@ interface Props {
   onSelectBooth?: (boothId: string) => void;
   onMovePlacement: (id: string, pos: { posX: number; posY: number; posZ: number; rotY: number }) => void;
   onNearbyChange: (info: { zoneName: string; nearPlacementId: string | null }) => void;
+  /** Realtime: roster người chơi khác (Presence) */
+  remoteRoster?: RemotePlayerMeta[];
+  /** Realtime: vị trí mục tiêu của người chơi khác — đọc trong vòng animate, không re-render */
+  remoteStateRef?: React.MutableRefObject<Map<number, RemotePlayerState>>;
+  /** Realtime: bong bóng chat gần (kể cả của chính mình) */
+  bubbleRef?: React.MutableRefObject<Map<number, RemoteBubble>>;
+  /** Realtime đã kết nối → bỏ avatar tĩnh từ SpacePresence (tránh avatar "ma") */
+  realtimeLive?: boolean;
+  onSelectRemotePlayer?: (employeeId: number) => void;
+  /** Preset đồ họa người dùng chọn ('auto' = tự đo FPS) */
+  qualityPref?: QualityPref;
+  onQualityChange?: (level: QualityLevel) => void;
+  /** Chạy intro bay camera khi chuyển sang true */
+  playIntro?: boolean;
+  /** Hiện bảng FPS / draw call */
+  debug?: boolean;
+  /** Trình thiết kế: vật thể đang chọn */
+  selectedObjectId?: string | null;
+  onSelectObject?: (id: string | null) => void;
+  /** Kết thúc kéo vật thể trên sàn (đã snap & kẹp trong mặt bằng) */
+  onObjectMoved?: (id: string, pos: { posX: number; posZ: number }) => void;
+  /** Loại vật thể đang được kéo từ thư viện (HTML5 drag) */
+  draggingKind?: string | null;
+  onDropObject?: (kind: string, x: number, z: number) => void;
+  /** Hook khi kệ dựng xong (tuỳ chọn) */
+  onShelvesBuilt?: (id: string, root: THREE.Group, shelves: ShelfSlot[]) => void;
+  /** Hàng hoá công khai để xếp lên kệ */
+  merchItems?: SpaceMerchItem[];
+  /** Mặt bằng 2D nhìn từ trên (ẩn mái, hiện lưới 1m) */
+  planView?: boolean;
+  /** Bấm vào hàng hoá trên kệ → xem thông tin & giá */
+  onSelectMerchItem?: (itemId: number) => void;
+  /** Đang trò chuyện với nhân viên này → 2 nhân vật quay mặt vào nhau */
+  faceEmployeeId?: number | null;
 }
 
-interface AnimatedAvatar {
-  group: THREE.Group;
-  leftLeg: THREE.Group;
-  rightLeg: THREE.Group;
-  leftArm: THREE.Group;
-  rightArm: THREE.Group;
-  headGroup: THREE.Group;
+interface RemoteAvatarEntry {
+  av: AnimatedAvatar;
+  sig: string;
+  walkTime: number;
 }
 
-/** Vẽ khuôn mặt Chibi lịch sự, thanh tú, thân thiện (tỷ lệ hài hòa, mắt trong có điểm sáng, lông mày gọn, mũi thanh, cười nhẹ). */
-function createPoliteFaceTexture(skinColor = '#fce2c4'): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = skinColor;
-  ctx.fillRect(0, 0, 512, 512);
 
-  const drawEye = (cx: number, isLeft: boolean) => {
-    // Lông mày thanh lịch, gọn gàng
-    ctx.strokeStyle = '#3b2b20';
-    ctx.lineWidth = 5.5;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(cx - 18, 224);
-    ctx.quadraticCurveTo(cx, 215, cx + 18, 223);
-    ctx.stroke();
-
-    // Lòng trắng mắt nhẹ giúp ánh nhìn chân thực hơn
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.ellipse(cx, 254, 17, 15, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Tròng mắt nâu trầm ấm áp
-    ctx.fillStyle = '#1e293b';
-    ctx.beginPath();
-    ctx.ellipse(cx, 255, 11.5, 13.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Đốm sáng trắng tinh tế (catchlight)
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(cx - 4, 249, 4.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx + 4, 260, 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Đường mi trên sắc nét lịch sự
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 4.2;
-    ctx.beginPath();
-    ctx.arc(cx, 256, 17.5, Math.PI * 1.12, Math.PI * 1.88);
-    ctx.stroke();
-
-    // Nét đuôi mắt nhẹ
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    const outerX = isLeft ? cx - 16 : cx + 16;
-    const tipX = isLeft ? cx - 21 : cx + 21;
-    ctx.moveTo(outerX, 249);
-    ctx.lineTo(tipX, 246);
-    ctx.stroke();
-  };
-
-  drawEye(212, true);
-  drawEye(300, false);
-
-  // Sắc ửng má rất nhẹ tạo nét tự nhiên
-  const blushGrad = (cx: number) => {
-    const g = ctx.createRadialGradient(cx, 282, 2, cx, 282, 20);
-    g.addColorStop(0, 'rgba(244, 114, 182, 0.22)');
-    g.addColorStop(1, 'rgba(244, 114, 182, 0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(cx, 282, 20, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  blushGrad(186);
-  blushGrad(326);
-
-  // Sống mũi thanh tú
-  ctx.strokeStyle = 'rgba(180, 120, 90, 0.45)';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(256, 264);
-  ctx.lineTo(254, 276);
-  ctx.lineTo(259, 278);
-  ctx.stroke();
-
-  // Nụ cười lịch sự thân thiện
-  ctx.strokeStyle = '#b45340';
-  ctx.lineWidth = 4.2;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(240, 294);
-  ctx.quadraticCurveTo(256, 304, 272, 294);
-  ctx.stroke();
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-/** Tạo nhãn tên nổi sắc nét trên đầu nhân vật / sản phẩm (đủ rộng để không bị cắt tên tiếng Việt). */
-function createBadgeSprite(text: string, bgColor = '#0f172a', textColor = '#ffffff'): THREE.Sprite {
-  const canvas = document.createElement('canvas');
-  canvas.width = 480;
-  canvas.height = 76;
-  const ctx = canvas.getContext('2d')!;
-
-  ctx.fillStyle = bgColor;
-  ctx.beginPath();
-  ctx.roundRect(10, 10, 460, 56, 28);
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.fillStyle = textColor;
-  ctx.font = 'bold 22px Inter, system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text.slice(0, 34), 240, 38);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-  const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(2.55, 0.42, 1);
-  return sprite;
-}
-
-/** Dựng nhân vật 3D phong cách lịch sự, chuyên nghiệp (Vest / Sơ mi / Polo, 4 kiểu tóc, kính gọng mảnh, giày chỉn chu, khớp đi bộ). */
-function createChibiAvatar(opts: {
-  name: string;
-  config: Avatar3DConfig;
-  isSelf?: boolean;
-  isOnDuty?: boolean;
-}): AnimatedAvatar {
-  const { name, config, isSelf = false, isOnDuty = false } = opts;
-  const group = new THREE.Group();
-  const skinColor = config.skinTone || '#fce2c4';
-  const outfitColor = config.outfitColor || '#1e3a8a';
-  const pantsColor = config.pantsColor || '#1e293b';
-  const hairColor = config.hairColor || '#1c1917';
-
-  // Khớp chân trái / phải với giày tây / giày công sở
-  const makeLeg = (offsetX: number) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(offsetX, 0.44, 0);
-
-    const legColor = config.outfitStyle === 'dress' ? skinColor : pantsColor;
-    const pant = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.075, 0.065, 0.36, 12),
-      new THREE.MeshStandardMaterial({ color: legColor, roughness: 0.58 }),
-    );
-    pant.position.y = -0.18;
-    pant.castShadow = true;
-    pivot.add(pant);
-
-    const shoeColor = config.outfitStyle === 'suit' || config.outfitStyle === 'dress' ? '#1e293b' : '#ffffff';
-    const shoe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.145, 0.09, 0.23),
-      new THREE.MeshStandardMaterial({ color: shoeColor, roughness: 0.35 }),
-    );
-    shoe.position.set(0, -0.39, 0.04);
-    shoe.castShadow = true;
-    pivot.add(shoe);
-
-    return pivot;
-  };
-
-  const leftLeg = makeLeg(-0.105);
-  const rightLeg = makeLeg(0.105);
-  group.add(leftLeg, rightLeg);
-
-  // Thân trang phục (Vest / Đầm công sở / Sơ mi / Polo)
-  if (config.outfitStyle === 'dress') {
-    // Thân trên đầm công sở thanh lịch
-    const bodice = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.165, 0.185, 0.34, 16),
-      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.45 }),
-    );
-    bodice.position.y = 0.79;
-    bodice.castShadow = true;
-    group.add(bodice);
-
-    // Chân váy chữ A thanh lịch
-    const skirt = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.185, 0.28, 0.34, 18),
-      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
-    );
-    skirt.position.y = 0.46;
-    skirt.castShadow = true;
-    group.add(skirt);
-
-    // Đai thắt lưng tinh tế
-    const belt = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.19, 0.19, 0.045, 16),
-      new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.35 }),
-    );
-    belt.position.y = 0.62;
-    group.add(belt);
-  } else {
-    const torso = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.185, 0.22, 0.52, 16),
-      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
-    );
-    torso.position.y = 0.7;
-    torso.castShadow = true;
-    group.add(torso);
-  }
-
-  // Cổ áo sơ mi / polo trắng lịch sự
-  const collar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.125, 0.155, 0.075, 14),
-    new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 }),
-  );
-  collar.position.y = 0.96;
-  group.add(collar);
-
-  if (config.outfitStyle === 'suit') {
-    // Áo sơ mi trắng lồng bên trong vest + cà vạt lịch lãm
-    const innerShirt = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.34, 0.04),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.45 }),
-    );
-    innerShirt.position.set(0, 0.78, 0.185);
-    group.add(innerShirt);
-
-    const tie = new THREE.Mesh(
-      new THREE.BoxGeometry(0.048, 0.28, 0.025),
-      new THREE.MeshStandardMaterial({ color: outfitColor === '#1e3a8a' ? '#dc2626' : '#2563eb', roughness: 0.35 }),
-    );
-    tie.position.set(0, 0.76, 0.21);
-    group.add(tie);
-  } else if (config.outfitStyle === 'shirt') {
-    // Hàng nút áo sơ mi tinh tế
-    const placket = new THREE.Mesh(
-      new THREE.BoxGeometry(0.03, 0.36, 0.02),
-      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.5 }),
-    );
-    placket.position.set(0, 0.74, 0.205);
-    group.add(placket);
-  }
-
-  // Thẻ tên công ty trên ngực khi đang trực
-  if (isOnDuty) {
-    const badgeCard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.075, 0.11, 0.02),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 }),
-    );
-    badgeCard.position.set(0.09, 0.74, 0.205);
-    const badgeTop = new THREE.Mesh(
-      new THREE.BoxGeometry(0.077, 0.03, 0.022),
-      new THREE.MeshStandardMaterial({ color: '#2563eb' }),
-    );
-    badgeTop.position.set(0.09, 0.78, 0.207);
-    group.add(badgeCard, badgeTop);
-  }
-
-  // Khớp tay trái / phải
-  const makeArm = (offsetX: number) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(offsetX, 0.88, 0);
-
-    const isLongSleeve = config.outfitStyle === 'suit' || config.outfitStyle === 'shirt';
-    const sleeve = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.068, 0.06, isLongSleeve ? 0.33 : 0.18, 12),
-      new THREE.MeshStandardMaterial({ color: outfitColor, roughness: 0.48 }),
-    );
-    sleeve.position.y = isLongSleeve ? -0.165 : -0.09;
-    sleeve.castShadow = true;
-    pivot.add(sleeve);
-
-    if (!isLongSleeve) {
-      const forearm = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.052, 0.048, 0.18, 12),
-        new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.52 }),
-      );
-      forearm.position.y = -0.26;
-      forearm.castShadow = true;
-      pivot.add(forearm);
-    } else {
-      const cuff = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.062, 0.062, 0.035, 12),
-        new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 }),
-      );
-      cuff.position.y = -0.33;
-      pivot.add(cuff);
-    }
-
-    const hand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 12, 12),
-      new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.52 }),
-    );
-    hand.position.y = -0.37;
-    pivot.add(hand);
-
-    return pivot;
-  };
-
-  const leftArm = makeArm(-0.245);
-  const rightArm = makeArm(0.245);
-  group.add(leftArm, rightArm);
-
-  // Đầu Chibi thanh lịch + Khuôn mặt vẽ nét + Tóc nhiều lớp + Kính mắt (tùy chọn)
-  const headGroup = new THREE.Group();
-  headGroup.position.y = 1.25;
-
-  const faceTex = createPoliteFaceTexture(skinColor);
-  const headMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.275, 28, 22),
-    new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.48 }),
-  );
-  headMesh.scale.set(1.03, 1.0, 0.96);
-  headMesh.rotation.y = -Math.PI / 2;
-  headMesh.castShadow = true;
-  headGroup.add(headMesh);
-
-  // Tai 2 bên gọn gàng
-  const earMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.52 });
-  const earGeo = new THREE.SphereGeometry(0.052, 10, 10);
-  const leftEar = new THREE.Mesh(earGeo, earMat);
-  leftEar.position.set(-0.275, -0.02, 0);
-  const rightEar = leftEar.clone();
-  rightEar.position.x = 0.275;
-  headGroup.add(leftEar, rightEar);
-
-  // Tóc 3D nhiều lớp theo 4 phong cách
-  const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.58 });
-  const hairCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.292, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.56),
-    hairMat,
-  );
-  hairCap.scale.set(1.04, 1.01, 0.99);
-  hairCap.position.y = 0.025;
-  hairCap.castShadow = true;
-  headGroup.add(hairCap);
-
-  if (config.hairStyle === 'slick') {
-    // Rẽ ngôi lệch lịch lãm
-    const wave = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.095, 0.14), hairMat);
-    wave.position.set(0.04, 0.19, 0.19);
-    wave.rotation.set(0.2, 0, -0.14);
-    headGroup.add(wave);
-  } else if (config.hairStyle === 'bob') {
-    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.13), hairMat);
-    bangs.position.set(0, 0.17, 0.2);
-    bangs.rotation.x = 0.25;
-    headGroup.add(bangs);
-    for (const sx of [-0.245, 0.245]) {
-      const sideLock = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.082, 0.34, 12), hairMat);
-      sideLock.position.set(sx, -0.05, -0.02);
-      headGroup.add(sideLock);
-    }
-    const backHair = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.34, 0.17), hairMat);
-    backHair.position.set(0, -0.05, -0.21);
-    headGroup.add(backHair);
-  } else if (config.hairStyle === 'ponytail') {
-    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.12), hairMat);
-    bangs.position.set(0, 0.175, 0.2);
-    bangs.rotation.x = 0.22;
-    const tieBand = new THREE.Mesh(
-      new THREE.TorusGeometry(0.055, 0.016, 8, 16),
-      new THREE.MeshStandardMaterial({ color: '#2563eb' }),
-    );
-    tieBand.position.set(0, 0.06, -0.29);
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.34, 10), hairMat);
-    tail.position.set(0, -0.08, -0.34);
-    tail.rotation.x = -0.35;
-    headGroup.add(bangs, tieBand, tail);
-  } else {
-    // short tự nhiên
-    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.13), hairMat);
-    bangs.position.set(0, 0.175, 0.2);
-    bangs.rotation.x = 0.24;
-    headGroup.add(bangs);
-  }
-
-  // Kính mắt gọng mảnh lịch sự (nếu bật)
-  if (config.hasGlasses) {
-    const frameMat = new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.75, roughness: 0.2 });
-    const lensMat = new THREE.MeshStandardMaterial({ color: '#e0f2fe', transparent: true, opacity: 0.28, roughness: 0.08 });
-    for (const gx of [-0.088, 0.088]) {
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.056, 0.008, 8, 20), frameMat);
-      rim.position.set(gx, 0.015, 0.268);
-      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.052, 16), lensMat);
-      lens.position.set(gx, 0.015, 0.267);
-      headGroup.add(rim, lens);
-    }
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.01, 0.01), frameMat);
-    bridge.position.set(0, 0.02, 0.27);
-    headGroup.add(bridge);
-  }
-
-  group.add(headGroup);
-
-  // Nhãn tên nổi
-  const badgeLabel = isOnDuty ? `● Đang trực · ${name}` : name;
-  const badgeBg = isOnDuty ? '#059669' : isSelf ? '#2563eb' : '#0f172a';
-  const badge = createBadgeSprite(badgeLabel, badgeBg);
-  badge.position.y = 1.84;
-  group.add(badge);
-
-  return { group, leftLeg, rightLeg, leftArm, rightArm, headGroup };
-}
-
-/** Dựng cây xanh Low-Poly tán nhiều tầng chân thực cho sân vườn bên ngoài nhà triển lãm. */
-function createOutdoorTree(scale = 1): THREE.Group {
-  const g = new THREE.Group();
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22 * scale, 0.36 * scale, 2.2 * scale, 8),
-    new THREE.MeshStandardMaterial({ color: '#78350f', roughness: 0.85 }),
-  );
-  trunk.position.y = 1.1 * scale;
-  trunk.castShadow = true;
-  g.add(trunk);
-
-  const greens = ['#15803d', '#16a34a', '#22c55e'];
-  const clusters: [number, number, number, number][] = [
-    [0, 2.9, 0, 1.35],
-    [-0.75, 2.4, 0.4, 0.95],
-    [0.75, 2.45, -0.35, 1.0],
-    [0.1, 3.65, 0.2, 0.85],
-  ];
-  clusters.forEach(([x, y, z, r], idx) => {
-    const foliage = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(r * scale, 1),
-      new THREE.MeshStandardMaterial({ color: greens[idx % greens.length], roughness: 0.72, flatShading: true }),
-    );
-    foliage.position.set(x * scale, y * scale, z * scale);
-    foliage.castShadow = true;
-    g.add(foliage);
-  });
-  return g;
-}
-
-/** Tạo texture vách hậu Lightbox chuyên nghiệp cho Gian hàng Triển lãm Expo. */
-function createExpoBackdropTexture(title: string, subtitle: string, accentColor: string): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 768;
-  canvas.height = 384;
-  const ctx = canvas.getContext('2d')!;
-
-  // Nền trắng sạch hiện đại + dải màu thương hiệu
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 768, 384);
-
-  // Header band màu nhấn
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(0, 0, 768, 128);
-
-  // Đường trang trí hình học tinh tế
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.beginPath();
-  ctx.moveTo(560, 0);
-  ctx.lineTo(768, 0);
-  ctx.lineTo(768, 128);
-  ctx.lineTo(480, 128);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 38px Inter, system-ui, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(title.slice(0, 26), 36, 56);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.font = '600 22px Inter, system-ui, sans-serif';
-  ctx.fillText((subtitle || 'EXHIBITION PAVILION').slice(0, 34), 36, 98);
-
-  // Nội dung họa tiết tinh tế phần thân vách
-  ctx.fillStyle = '#f1f5f9';
-  ctx.fillRect(36, 158, 696, 188);
-  ctx.fillStyle = '#64748b';
-  ctx.font = '600 20px Inter, system-ui, sans-serif';
-  ctx.fillText('KHU TRƯNG BÀY & TƯ VẤN THIẾT BỊ CHÍNH HÃNG', 60, 210);
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '400 18px Inter, system-ui, sans-serif';
-  ctx.fillText('Chạm trực tiếp vào thiết bị hoặc gian hàng để xem thông số chi tiết', 60, 252);
-
-  // Accent bar dưới
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(36, 336, 180, 10);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-/** Tạo texture sàn Epoxy công nghiệp sáng mịn. */
-function createEpoxyFloorTexture(night: boolean, isWarehouse: boolean): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = night ? '#1e293b' : isWarehouse ? '#e5e7eb' : '#f4f6f9';
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.strokeStyle = night ? '#334155' : isWarehouse ? '#d1d5db' : '#e2e8f0';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(0, 0, 256, 256);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(24, 24);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-/** Dựng Gian hàng Triển lãm Hiện đại (Aluminum Truss + Lightbox Wall + LED Plinths + Bàn ghế tư vấn). */
-function createExpoBoothMesh(s: SpaceStructure): THREE.Group {
-  const g = new THREE.Group();
-  const w = s.widthM;
-  const d = s.depthM;
-  const h = Math.max(3.2, s.heightM);
-  const standX = s.posX < 0 ? s.posX + d * 0.5 + 2.1 : s.posX - d * 0.5 - 2.1;
-
-  const boothMeta = { boothId: s.id, standX, standZ: s.posZ, lookX: s.posX, lookZ: s.posZ };
-  g.userData = boothMeta;
-
-  // Sàn nâng trải thảm xám sáng bo viền nhôm
-  const platform = new THREE.Mesh(
-    new THREE.BoxGeometry(w, 0.1, d),
-    new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.75 }),
-  );
-  platform.position.y = 0.05;
-  platform.receiveShadow = true;
-  platform.userData = boothMeta;
-  g.add(platform);
-
-  // Viền nhôm sáng quanh sàn nâng
-  const trim = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.08, 0.08, d + 0.08),
-    new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.65, roughness: 0.3 }),
-  );
-  trim.position.y = 0.04;
-  g.add(trim);
-
-  // Vách hậu Lightbox phát sáng hiện đại
-  const backWall = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, 0.18),
-    new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.4 }),
-  );
-  backWall.position.set(0, h * 0.5 + 0.08, -d * 0.5 + 0.1);
-  backWall.castShadow = true;
-  backWall.receiveShadow = true;
-  backWall.userData = boothMeta;
-  g.add(backWall);
-
-  const lightbox = new THREE.Mesh(
-    new THREE.PlaneGeometry(w - 0.24, h - 0.24),
-    new THREE.MeshBasicMaterial({ map: createExpoBackdropTexture(s.label, s.subLabel || '', s.accentColor) }),
-  );
-  lightbox.position.set(0, h * 0.5 + 0.08, -d * 0.5 + 0.2);
-  lightbox.userData = boothMeta;
-  g.add(lightbox);
-
-  // Khung trụ nhôm Truss 2 bên mặt trước + thanh giàn đèn rọi trên cao
-  const aluMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.72, roughness: 0.28 });
-  for (const px of [-w * 0.48, w * 0.48]) {
-    const col = new THREE.Mesh(new THREE.BoxGeometry(0.14, h, 0.14), aluMat);
-    col.position.set(px, h * 0.5 + 0.08, d * 0.46);
-    col.castShadow = true;
-    g.add(col);
-  }
-  const topBeam = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, 0.18), aluMat);
-  topBeam.position.set(0, h + 0.08, d * 0.46);
-  g.add(topBeam);
-
-  // Dải LED nhấn màu thương hiệu trên thanh giàn
-  const topLed = new THREE.Mesh(
-    new THREE.BoxGeometry(w - 0.2, 0.06, 0.2),
-    new THREE.MeshStandardMaterial({ color: s.accentColor, emissive: s.accentColor, emissiveIntensity: 0.6 }),
-  );
-  topLed.position.set(0, h + 0.18, d * 0.46);
-  g.add(topLed);
-
-  // 2 Bục trưng bày máy móc (Display Plinths cao 0.92m) màu trắng mờ viền LED
-  const plinthMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.32, metalness: 0.08 });
-  for (const bx of [-1.1, 1.1]) {
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.86, 1.05), plinthMat);
-    plinth.position.set(bx, 0.48, d * 0.5 - 0.72);
-    plinth.castShadow = true;
-    plinth.receiveShadow = true;
-    plinth.userData = boothMeta;
-    g.add(plinth);
-
-    const plinthLed = new THREE.Mesh(
-      new THREE.BoxGeometry(1.67, 0.04, 1.07),
-      new THREE.MeshStandardMaterial({ color: s.accentColor, emissive: s.accentColor, emissiveIntensity: 0.45 }),
-    );
-    plinthLed.position.set(bx, 0.88, d * 0.5 - 0.72);
-    g.add(plinthLed);
-  }
-
-  // Bàn tư vấn tròn + 2 ghế hiện đại góc trong gian hàng
-  const tableTop = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.46, 0.46, 0.05, 18),
-    new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.35 }),
-  );
-  tableTop.position.set(-w * 0.32, 0.82, -0.35);
-  tableTop.castShadow = true;
-  const tableLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.74, 10), aluMat);
-  tableLeg.position.set(-w * 0.32, 0.45, -0.35);
-  g.add(tableTop, tableLeg);
-
-  // Chậu cây trang trí góc gian hàng
-  const pot = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.24, 0.2, 0.42, 12),
-    new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.35 }),
-  );
-  pot.position.set(w * 0.44, 0.3, -0.6);
-  const leaf = new THREE.Mesh(
-    new THREE.DodecahedronGeometry(0.36, 1),
-    new THREE.MeshStandardMaterial({ color: '#16a34a', roughness: 0.65, flatShading: true }),
-  );
-  leaf.position.set(w * 0.44, 0.78, -0.6);
-  g.add(pot, leaf);
-
-  g.position.set(s.posX, 0, s.posZ);
-  g.rotation.y = s.rotY;
-  return g;
-}
-
-/** Dựng Kệ Kho Công Nghiệp Selective Pallet Rack (kèm pallet gỗ). */
-function createWarehouseRackMesh(s: SpaceStructure): THREE.Group {
-  const g = new THREE.Group();
-  const w = s.widthM;
-  const d = s.depthM;
-  const h = s.heightM;
-  const levels = Math.max(2, Math.min(5, s.levels ?? 3));
-
-  const uprightMat = new THREE.MeshStandardMaterial({ color: '#1d4ed8', metalness: 0.65, roughness: 0.32 });
-  const beamMat = new THREE.MeshStandardMaterial({ color: '#f97316', metalness: 0.4, roughness: 0.42 });
-  const deckMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.3, roughness: 0.55 });
-  const palletMat = new THREE.MeshStandardMaterial({ color: '#d4a373', roughness: 0.85 });
-
-  const colGeo = new THREE.BoxGeometry(0.11, h, 0.11);
-  for (const px of [-w * 0.5 + 0.06, 0, w * 0.5 - 0.06]) {
-    for (const pz of [-d * 0.5 + 0.06, d * 0.5 - 0.06]) {
-      const col = new THREE.Mesh(colGeo, uprightMat);
-      col.position.set(px, h * 0.5, pz);
-      col.castShadow = true;
-      g.add(col);
+/** Bán kính thân người (m) để tránh chồng nhân vật / đi xuyên đồ đạc */
+const BODY_RADIUS = 0.3;
+const PASS_THROUGH = new Set(['RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD', 'DOOR', 'BOOTH']); // gian hàng mở: được bước vào
+
+/**
+ * Đẩy vị trí `pos` ra khỏi các nhân vật khác (hình tròn) và vật thể (hộp xoay theo rotY).
+ * Trả về true nếu có va chạm.
+ */
+function resolveBodyCollisions(pos: THREE.Vector3, avatars: THREE.Object3D[], objects: SpaceStructure[] | null): boolean {
+  let hit = false;
+  for (const a of avatars) {
+    const dx = pos.x - a.position.x;
+    const dz = pos.z - a.position.z;
+    const d = Math.hypot(dx, dz);
+    const min = BODY_RADIUS * 2;
+    if (d < min) {
+      const nx = d > 1e-4 ? dx / d : 1;
+      const nz = d > 1e-4 ? dz / d : 0;
+      pos.x += nx * (min - d);
+      pos.z += nz * (min - d);
+      hit = true;
     }
   }
-
-  for (let lv = 0; lv < levels; lv++) {
-    const y = 0.14 + lv * ((h - 0.5) / levels);
-    const frontBeam = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, 0.06), beamMat);
-    frontBeam.position.set(0, y, d * 0.5 - 0.03);
-    const backBeam = frontBeam.clone();
-    backBeam.position.z = -d * 0.5 + 0.03;
-
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(w - 0.08, 0.04, d - 0.08), deckMat);
-    deck.position.set(0, y + 0.02, 0);
-    deck.receiveShadow = true;
-    deck.castShadow = true;
-    g.add(frontBeam, backBeam, deck);
-
-    if (lv === 0) {
-      for (const px of [-w * 0.3, 0, w * 0.3]) {
-        const pallet = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, d * 0.85), palletMat);
-        pallet.position.set(px, y + 0.06, 0);
-        g.add(pallet);
+  if (objects) {
+    for (const o of objects) {
+      if (PASS_THROUGH.has(o.kind) || (o.posY ?? 0) > 0.3) continue;
+      const rx = pos.x - o.posX;
+      const rz = pos.z - o.posZ;
+      if (Math.abs(rx) > o.widthM + o.depthM + 1 || Math.abs(rz) > o.widthM + o.depthM + 1) continue;
+      // Đổi sang hệ toạ độ cục bộ của vật thể
+      const c = Math.cos(o.rotY);
+      const s = Math.sin(o.rotY);
+      const lx = rx * c - rz * s;
+      const lz = rx * s + rz * c;
+      const hx = o.widthM / 2 + BODY_RADIUS;
+      const hz = o.depthM / 2 + BODY_RADIUS;
+      if (Math.abs(lx) < hx && Math.abs(lz) < hz) {
+        const px = hx - Math.abs(lx);
+        const pz = hz - Math.abs(lz);
+        let nlx = lx;
+        let nlz = lz;
+        if (px < pz) nlx = Math.sign(lx || 1) * hx;
+        else nlz = Math.sign(lz || 1) * hz;
+        pos.x = o.posX + nlx * c + nlz * s;
+        pos.z = o.posZ - nlx * s + nlz * c;
+        hit = true;
       }
     }
   }
-
-  const sign = new THREE.Mesh(
-    new THREE.BoxGeometry(2.6, 0.62, 0.08),
-    new THREE.MeshBasicMaterial({ map: createExpoBackdropTexture(s.label, s.aisleCode ? `ZONE ${s.aisleCode}` : 'PALLET RACK', s.accentColor) }),
-  );
-  sign.position.set(0, h + 0.45, 0);
-  g.add(sign);
-
-  g.position.set(s.posX, 0, s.posZ);
-  g.rotation.y = s.rotY;
-  return g;
-}
-
-/** Dựng kiến trúc Nhà Triển Lãm (Cột thép, Giàn mái Truss, Tường kính, Cổng chào Logo TIM Corp, Quầy lễ tân & Cây xanh bên ngoài). */
-function createExhibitionHallEnvironment(
-  widthM: number,
-  depthM: number,
-  sceneKind: SpaceKind,
-  companyName: string,
-  logoUrl: string,
-): THREE.Group {
-  const env = new THREE.Group();
-  const halfW = widthM * 0.5 + 1;
-  const halfD = depthM * 0.5 + 2;
-  const hallH = 6.8;
-
-  // 1. Thảm cỏ sân vườn xanh mát bao quanh bên ngoài nhà triển lãm
-  const lawn = new THREE.Mesh(
-    new THREE.PlaneGeometry(140, 140),
-    new THREE.MeshStandardMaterial({ color: '#86efac', roughness: 0.92 }),
-  );
-  lawn.rotation.x = -Math.PI / 2;
-  lawn.position.y = -0.05;
-  lawn.receiveShadow = true;
-  env.add(lawn);
-
-  // Vỉa hè đá sáng bao quanh nhà triển lãm
-  const sidewalk = new THREE.Mesh(
-    new THREE.BoxGeometry(widthM + 8, 0.06, depthM + 10),
-    new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.8 }),
-  );
-  sidewalk.position.y = -0.03;
-  sidewalk.receiveShadow = true;
-  env.add(sidewalk);
-
-  // 2. Thảm lối đi trung tâm màu xanh thương hiệu TIM Corp (Showroom) hoặc vạch an toàn (Kho)
-  if (sceneKind === 'SHOWROOM') {
-    const carpet = new THREE.Mesh(
-      new THREE.PlaneGeometry(4.8, depthM + 2),
-      new THREE.MeshStandardMaterial({ color: '#1e40af', roughness: 0.85 }),
-    );
-    carpet.rotation.x = -Math.PI / 2;
-    carpet.position.set(0, 0.015, 0);
-    carpet.receiveShadow = true;
-    env.add(carpet);
-
-    for (const ex of [-2.45, 2.45]) {
-      const border = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.14, depthM + 2),
-        new THREE.MeshBasicMaterial({ color: '#ffffff' }),
-      );
-      border.rotation.x = -Math.PI / 2;
-      border.position.set(ex, 0.018, 0);
-      env.add(border);
-    }
-  } else {
-    for (const ex of [-2.8, 2.8]) {
-      const safetyLine = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.16, depthM),
-        new THREE.MeshBasicMaterial({ color: '#f59e0b' }),
-      );
-      safetyLine.rotation.x = -Math.PI / 2;
-      safetyLine.position.set(ex, 0.018, 0);
-      env.add(safetyLine);
-    }
-  }
-
-  // 3. Hệ cột thép kiến trúc & MÁI XÉO TRUNG TÂM HỘI NGHỊ (Pitched Gable Roof + Skylight + Steel Trusses)
-  const steelMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.58, roughness: 0.34 });
-  const roofMetalMat = new THREE.MeshStandardMaterial({ color: '#334155', metalness: 0.45, roughness: 0.42 });
-  const ceilingSoffitMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.75 });
-  const skylightMat = new THREE.MeshStandardMaterial({
-    color: '#e0f2fe',
-    emissive: '#bae6fd',
-    emissiveIntensity: 0.45,
-    transparent: true,
-    opacity: 0.72,
-    roughness: 0.1,
-  });
-  const ledLightMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
-
-  const eaveH = 6.4;
-  const ridgeH = 9.8;
-  const roofOverhang = 1.8;
-  const slopeSpanX = halfW + roofOverhang;
-  const slopeRiseY = ridgeH - eaveH;
-  const slopeLen = Math.hypot(slopeSpanX, slopeRiseY);
-  const pitchAngle = Math.atan2(slopeRiseY, slopeSpanX);
-  const hallLen = halfD * 2 + 2.4;
-
-  // Hai tấm mái xéo kiến trúc đối xứng (mặt ngoài tôn seam xám đậm + trần nội thất sáng mịn + khe giếng trời ở đỉnh mái)
-  for (const side of [-1, 1] as const) {
-    const roofGroup = new THREE.Group();
-    const outerSheet = new THREE.Mesh(new THREE.BoxGeometry(slopeLen - 0.9, 0.14, hallLen), roofMetalMat);
-    outerSheet.position.y = 0.08;
-    outerSheet.castShadow = true;
-    const innerCeiling = new THREE.Mesh(new THREE.BoxGeometry(slopeLen - 0.95, 0.06, hallLen - 0.2), ceilingSoffitMat);
-    innerCeiling.position.y = -0.02;
-    // Viền nhôm diềm mái sắc nét
-    const fascia = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.34, hallLen + 0.1), steelMat);
-    fascia.position.set(side * (slopeLen * 0.5 - 0.45), -0.02, 0);
-
-    roofGroup.add(outerSheet, innerCeiling, fascia);
-    roofGroup.position.set(
-      side * (slopeSpanX * 0.5 + 0.4),
-      eaveH + slopeRiseY * 0.5 - 0.05,
-      0,
-    );
-    roofGroup.rotation.z = -side * pitchAngle;
-    env.add(roofGroup);
-  }
-
-  // Giếng trời kính dọc đỉnh mái xéo (Skylight Ridge)
-  const skylight = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.12, hallLen - 0.6), skylightMat);
-  skylight.position.set(0, ridgeH + 0.04, 0);
-  env.add(skylight);
-
-  // Hệ cột thép + vì kèo giàn mái xéo (Gable Steel Trusses) dọc theo chiều dài hội trường
-  const zPositions = [-halfD + 2, -halfD * 0.45, 0, halfD * 0.45, halfD - 2];
-  for (const pz of zPositions) {
-    for (const px of [-halfW, halfW]) {
-      const col = new THREE.Mesh(new THREE.BoxGeometry(0.42, eaveH, 0.42), steelMat);
-      col.position.set(px, eaveH * 0.5, pz);
-      col.castShadow = true;
-      env.add(col);
-    }
-    // Thanh giằng ngang dưới (Bottom Chord)
-    const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2, 0.22, 0.18), steelMat);
-    tieBeam.position.set(0, eaveH - 0.1, pz);
-    env.add(tieBeam);
-
-    // 2 thanh kèo mái xéo trái/phải + thanh chống đứng trung tâm (King Post)
-    for (const side of [-1, 1] as const) {
-      const rafter = new THREE.Mesh(new THREE.BoxGeometry(slopeLen - 1.2, 0.2, 0.18), steelMat);
-      rafter.position.set(side * (halfW * 0.5), eaveH + slopeRiseY * 0.46, pz);
-      rafter.rotation.z = -side * pitchAngle;
-      env.add(rafter);
-    }
-    const kingPost = new THREE.Mesh(new THREE.BoxGeometry(0.18, slopeRiseY - 0.3, 0.18), steelMat);
-    kingPost.position.set(0, eaveH + slopeRiseY * 0.5, pz);
-    env.add(kingPost);
-
-    // Dàn đèn High-Bay LED treo dưới giàn mái
-    for (const lx of [-8.5, 0, 8.5]) {
-      const fixture = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 0.36), ledLightMat);
-      fixture.position.set(lx, eaveH - 0.26, pz);
-      env.add(fixture);
-    }
-  }
-
-  // 4. Tường kính Curtain Wall 2 bên hông (nhìn xuyên ra hàng cây xanh bên ngoài)
-  const glassMat = new THREE.MeshStandardMaterial({
-    color: '#bae6fd',
-    transparent: true,
-    opacity: 0.22,
-    roughness: 0.1,
-    metalness: 0.2,
-  });
-  for (const px of [-halfW, halfW]) {
-    const glassWall = new THREE.Mesh(new THREE.BoxGeometry(0.08, hallH - 0.4, halfD * 2), glassMat);
-    glassWall.position.set(px, hallH * 0.5, 0);
-    env.add(glassWall);
-  }
-
-  // 5. Hàng cây xanh Low-Poly tán nhiều lớp bao quanh khuôn viên ngoài tường kính
-  const treeCoords: [number, number, number][] = [
-    [-halfW - 4.5, -14, 1.3], [-halfW - 5, -5, 1.15], [-halfW - 4.5, 5, 1.35], [-halfW - 5, 14, 1.2],
-    [halfW + 4.5, -14, 1.25], [halfW + 5, -5, 1.3], [halfW + 4.5, 5, 1.15], [halfW + 5, 14, 1.3],
-    [-12, -halfD - 5, 1.4], [-4, -halfD - 6, 1.2], [4, -halfD - 6, 1.25], [12, -halfD - 5, 1.35],
-    [-11, halfD + 5, 1.25], [11, halfD + 5, 1.3],
-  ];
-  for (const [tx, tz, sc] of treeCoords) {
-    const tree = createOutdoorTree(sc);
-    tree.position.set(tx, 0, tz);
-    env.add(tree);
-  }
-
-  // 6. Cổng chào Thương hiệu TIM Corp + Quầy Lễ Tân Trung Tâm
-  const archGroup = new THREE.Group();
-  const pillarMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.35, metalness: 0.15 });
-  const blueGlow = new THREE.MeshStandardMaterial({ color: '#2563eb', emissive: '#2563eb', emissiveIntensity: 0.5 });
-
-  for (const px of [-5.2, 5.2]) {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.7, 5.2, 0.7), pillarMat);
-    p.position.set(px, 2.6, 0);
-    p.castShadow = true;
-    archGroup.add(p);
-
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 4.6, 0.74), blueGlow);
-    stripe.position.set(px, 2.6, 0);
-    archGroup.add(stripe);
-  }
-
-  const headerBox = new THREE.Mesh(new THREE.BoxGeometry(11.4, 1.65, 0.55), new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.3 }));
-  headerBox.position.set(0, 5.1, 0);
-  headerBox.castShadow = true;
-  archGroup.add(headerBox);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 192;
-  const ctx = canvas.getContext('2d')!;
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-
-  const drawLogoBanner = (img?: HTMLImageElement) => {
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, 1024, 192);
-    ctx.strokeStyle = '#3b82f6';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(8, 8, 1008, 176);
-
-    if (img) {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.roundRect(42, 32, 128, 128, 22);
-      ctx.fill();
-      ctx.drawImage(img, 54, 44, 104, 104);
-    }
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 48px Inter, system-ui, sans-serif';
-    ctx.textAlign = img ? 'left' : 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(companyName.toUpperCase().slice(0, 26), img ? 198 : 512, 76);
-
-    ctx.fillStyle = '#60a5fa';
-    ctx.font = '600 24px Inter, system-ui, sans-serif';
-    ctx.fillText(
-      sceneKind === 'WAREHOUSE' ? 'KHO HÀNG 3D DIGITAL TWIN' : 'TRUNG TÂM TRIỂN LÃM & SHOWROOM THIẾT BỊ 3D',
-      img ? 198 : 512,
-      134,
-    );
-    tex.needsUpdate = true;
-  };
-  drawLogoBanner();
-  if (logoUrl) {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => drawLogoBanner(img);
-    img.src = logoUrl;
-  }
-
-  const frontPlaque = new THREE.Mesh(new THREE.PlaneGeometry(11.0, 1.5), new THREE.MeshBasicMaterial({ map: tex }));
-  frontPlaque.position.set(0, 5.1, 0.29);
-  const backPlaque = frontPlaque.clone();
-  backPlaque.position.z = -0.29;
-  backPlaque.rotation.y = Math.PI;
-  archGroup.add(frontPlaque, backPlaque);
-  archGroup.position.set(0, 0, -halfD + 2.5);
-  env.add(archGroup);
-
-  // Quầy Lễ Tân hiện đại ngay dưới cổng chào (Showroom)
-  if (sceneKind === 'SHOWROOM') {
-    const desk = new THREE.Mesh(
-      new THREE.BoxGeometry(3.8, 1.05, 1.0),
-      new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 }),
-    );
-    desk.position.set(0, 0.525, -halfD + 5.6);
-    desk.castShadow = true;
-    desk.receiveShadow = true;
-    env.add(desk);
-
-    const deskAccent = new THREE.Mesh(
-      new THREE.BoxGeometry(3.84, 0.14, 1.04),
-      blueGlow,
-    );
-    deskAccent.position.set(0, 0.14, -halfD + 5.6);
-    env.add(deskAccent);
-  }
-
-  return env;
-}
-
-/** Dựng vật thể 3D của sản phẩm từ Product3DModelView. */
-function buildProductGroup(placement: SpacePlacementView, gltfLoader: GLTFLoader): THREE.Group {
-  const root = new THREE.Group();
-  root.userData = { placementId: placement.id };
-  const m: Product3DModelView = placement.model3D;
-
-  const addProcedural = (parts: Procedural3DPart[]) => {
-    for (const part of parts) {
-      let geo: THREE.BufferGeometry;
-      if (part.shape === 'cylinder') {
-        geo = new THREE.CylinderGeometry(part.size[0], part.size[2] ?? part.size[0], part.size[1], 14);
-      } else if (part.shape === 'sphere') {
-        geo = new THREE.SphereGeometry(part.size[0], 14, 12);
-      } else {
-        geo = new THREE.BoxGeometry(part.size[0], part.size[1], part.size[2]);
-      }
-      const mat = new THREE.MeshStandardMaterial({
-        color: part.color || m.primaryColor,
-        metalness: part.metalness ?? 0.35,
-        roughness: part.roughness ?? 0.4,
-        transparent: (part.opacity ?? 1) < 1,
-        opacity: part.opacity ?? 1,
-        emissive: part.emissive ? new THREE.Color(part.emissive) : undefined,
-        emissiveIntensity: part.emissive ? 0.35 : 0,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(part.pos[0], part.pos[1], part.pos[2]);
-      if (part.rot) mesh.rotation.set(part.rot[0], part.rot[1], part.rot[2]);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData = { placementId: placement.id };
-      root.add(mesh);
-    }
-  };
-
-  if (m.modelType === 'GLB' && m.glbUrl) {
-    const placeholder = new THREE.Mesh(
-      new THREE.BoxGeometry(m.widthM, m.heightM, m.depthM),
-      new THREE.MeshStandardMaterial({ color: m.primaryColor, wireframe: true }),
-    );
-    placeholder.position.y = m.heightM * 0.5;
-    placeholder.userData = { placementId: placement.id };
-    root.add(placeholder);
-
-    gltfLoader.load(m.glbUrl, (gltf) => {
-      root.remove(placeholder);
-      const model = gltf.scene;
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z) || 1;
-      const targetMax = Math.max(m.widthM, m.heightM, m.depthM);
-      const s = targetMax / maxDim;
-      model.scale.multiplyScalar(s);
-      model.position.set(-center.x * s, -box.min.y * s, -center.z * s);
-      model.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          obj.castShadow = true;
-          obj.receiveShadow = true;
-          obj.userData = { placementId: placement.id };
-        }
-      });
-      root.add(model);
-    });
-  } else if (m.modelType === 'PROCEDURAL_JSON' && m.proceduralParts && m.proceduralParts.length > 0) {
-    addProcedural(m.proceduralParts);
-  } else {
-    const box = new THREE.Mesh(
-      new THREE.BoxGeometry(m.widthM, m.heightM, m.depthM),
-      new THREE.MeshStandardMaterial({ color: m.primaryColor, roughness: 0.42, metalness: 0.22 }),
-    );
-    box.position.y = m.heightM * 0.5;
-    box.castShadow = true;
-    box.receiveShadow = true;
-    box.userData = { placementId: placement.id };
-    root.add(box);
-
-    if (placement.imageUrl) {
-      const loader = new THREE.TextureLoader();
-      loader.setCrossOrigin('anonymous');
-      loader.load(placement.imageUrl, (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        const front = new THREE.Mesh(
-          new THREE.PlaneGeometry(m.widthM * 0.85, m.heightM * 0.85),
-          new THREE.MeshBasicMaterial({ map: tex }),
-        );
-        front.position.set(0, m.heightM * 0.5, m.depthM * 0.5 + 0.008);
-        front.userData = { placementId: placement.id };
-        root.add(front);
-      });
-    }
-  }
-
-  const tagText = placement.locationCode ? `${placement.itemCode} · ${placement.locationCode}` : placement.itemCode;
-  const tag = createBadgeSprite(tagText, '#0f172a', '#e2e8f0');
-  tag.scale.set(1.45, 0.32, 1);
-  tag.position.y = m.heightM + 0.38;
-  root.add(tag);
-
-  root.position.set(placement.posX, placement.posY, placement.posZ);
-  root.rotation.y = placement.rotY;
-  root.scale.setScalar(placement.scale || 1);
-  return root;
+  return hit;
 }
 
 export function Space3DCanvas({
@@ -1135,6 +207,25 @@ export function Space3DCanvas({
   onSelectBooth,
   onMovePlacement,
   onNearbyChange,
+  remoteRoster,
+  remoteStateRef,
+  bubbleRef,
+  realtimeLive = false,
+  onSelectRemotePlayer,
+  qualityPref = 'auto',
+  onQualityChange,
+  playIntro = false,
+  debug = false,
+  selectedObjectId = null,
+  onSelectObject,
+  onObjectMoved,
+  draggingKind = null,
+  onDropObject,
+  onShelvesBuilt,
+  merchItems = [],
+  planView = false,
+  onSelectMerchItem,
+  faceEmployeeId = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef({
@@ -1148,6 +239,23 @@ export function Space3DCanvas({
     onSelectBooth,
     onMovePlacement,
     onNearbyChange,
+    remoteStateRef,
+    bubbleRef,
+    onSelectRemotePlayer,
+    currentEmployeeId,
+    qualityPref,
+    onQualityChange,
+    debug,
+    selectedObjectId,
+    onSelectObject,
+    onObjectMoved,
+    draggingKind,
+    onDropObject,
+    onShelvesBuilt,
+    branding,
+    planView,
+    onSelectMerchItem,
+    faceEmployeeId,
   });
   stateRef.current = {
     editMode,
@@ -1160,6 +268,23 @@ export function Space3DCanvas({
     onSelectBooth,
     onMovePlacement,
     onNearbyChange,
+    remoteStateRef,
+    bubbleRef,
+    onSelectRemotePlayer,
+    currentEmployeeId,
+    qualityPref,
+    onQualityChange,
+    debug,
+    selectedObjectId,
+    onSelectObject,
+    onObjectMoved,
+    draggingKind,
+    onDropObject,
+    onShelvesBuilt,
+    branding,
+    planView,
+    onSelectMerchItem,
+    faceEmployeeId,
   };
 
   const sceneObjRef = useRef<{
@@ -1172,8 +297,16 @@ export function Space3DCanvas({
     staffAvatars: AnimatedAvatar[];
     placementMeshes: Map<string, THREE.Group>;
     boothMeshes: THREE.Group[];
+    objectsGroup: THREE.Group;
+    objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
+    selectionBox: THREE.Box3Helper;
+    ghost: THREE.Mesh;
     dynamicGroup: THREE.Group;
     presenceGroup: THREE.Group;
+    remoteGroup: THREE.Group;
+    remoteAvatars: Map<number, RemoteAvatarEntry>;
+    remoteBubbles: Map<number, BubbleSlot>;
+    selfBubble: BubbleSlot;
     highlightRing: THREE.Mesh;
     walkRing: THREE.Mesh;
     walkTarget: THREE.Vector3 | null;
@@ -1181,64 +314,121 @@ export function Space3DCanvas({
     sunLight: THREE.DirectionalLight;
     hemiLight: THREE.HemisphereLight;
     floorMesh: THREE.Mesh;
-    dayFloorTex: THREE.CanvasTexture;
-    nightFloorTex: THREE.CanvasTexture;
+    pipeline: RenderPipeline;
+    rig: DayNightRig;
+    camRig: CameraRig;
+    sky: SkySystem;
+    envOccluders: THREE.Object3D[];
+    occluders: THREE.Object3D[];
+    quality: QualityLevel;
+    applyQuality: (level: QualityLevel) => void;
   } | null>(null);
+  const introPlayedRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#dbeafe');
-    scene.fog = new THREE.Fog('#e6effa', 38, 95);
+    scene.background = null;
+    scene.fog = new THREE.Fog('#bfd3ea', 80, 380);
 
     const camera = new THREE.PerspectiveCamera(
       50,
       container.clientWidth / Math.max(1, container.clientHeight),
       0.1,
-      180,
+      1500,
     );
-    camera.position.set(0, 7.2, 18);
+    // Đặt camera thấp hơn xà giàn mái gần lối vào để không bị che khi vừa vào
+    // Điểm xuất phát gần lối vào (mặt trước +Z), co theo không gian nhỏ (quán cà phê / văn phòng)
+    const spawnZ = Math.min(11, depthM / 2 - 2.5);
+    // Camera thấp & gần hơn: luồn dưới xà cổng chào (đáy xà ~4.3m), không bị cổng che
+    camera.position.set(0, 2.9, spawnZ + 5.4);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    let qualityLevel: QualityLevel =
+      stateRef.current.qualityPref && stateRef.current.qualityPref !== 'auto'
+        ? stateRef.current.qualityPref
+        : detectQuality(renderer);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY_PRESETS[qualityLevel].maxPixelRatio));
+    renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    // Neutral (Khronos PBR) giữ màu & chữ trắng trên lightbox trung thực hơn ACES
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.info.autoReset = false; // đếm draw call cả frame (composer render nhiều pass)
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
 
+    // Lớp nhãn HTML (tên nhân vật, bong bóng chat) — chữ trình duyệt vẽ nên luôn sắc nét
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(container.clientWidth, container.clientHeight);
+    labelRenderer.domElement.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;user-select:none;caret-color:transparent';
+    container.appendChild(labelRenderer.domElement);
+
+    // Environment map procedural (phản chiếu PBR cho thép, kính, sàn epoxy)
+    const envRT = createEnvironmentMap(renderer);
+    scene.environment = envRT.texture;
+
+    // Bầu trời procedural (Sky vật lý + dome đêm, sao, trăng, mây)
+    const skySys = createSkySystem();
+    scene.add(skySys.group);
+
     // Ánh sáng 3 điểm chuẩn Exhibition Hall sáng trong
-    const hemiLight = new THREE.HemisphereLight('#ffffff', '#e2e8f0', 1.25);
+    const hemiLight = new THREE.HemisphereLight('#eaf2ff', '#c9d3df', 0.55);
     scene.add(hemiLight);
 
-    const sunLight = new THREE.DirectionalLight('#fffaf0', 1.15);
+    const sunLight = new THREE.DirectionalLight('#fff4e0', 2.6);
     sunLight.position.set(18, 28, 16);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(1024, 1024);
-    sunLight.shadow.camera.near = 2;
-    sunLight.shadow.camera.far = 85;
-    sunLight.shadow.camera.left = -28;
-    sunLight.shadow.camera.right = 28;
-    sunLight.shadow.camera.top = 28;
-    sunLight.shadow.camera.bottom = -28;
-    sunLight.shadow.bias = -0.0005;
-    scene.add(sunLight);
+    // Frustum bóng ôm sát mặt bằng hội trường (+ biên cho cây/cổng chào) → texel nhỏ, bóng sắc nét
+    const shadowRadius = Math.hypot(widthM * 0.5 + 7, depthM * 0.5 + 9);
+    sunLight.shadow.mapSize.set(QUALITY_PRESETS[qualityLevel].shadowMapSize, QUALITY_PRESETS[qualityLevel].shadowMapSize);
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 110;
+    sunLight.shadow.camera.left = -shadowRadius;
+    sunLight.shadow.camera.right = shadowRadius;
+    sunLight.shadow.camera.top = shadowRadius;
+    sunLight.shadow.camera.bottom = -shadowRadius;
+    sunLight.shadow.bias = -0.0002;
+    // normalBias theo kích thước texel bóng → hết sọc acne/nhấp nháy ở mọi preset
+    const fitBias = (size: number) => {
+      sunLight.shadow.normalBias = ((shadowRadius * 2) / size) * 1.25;
+    };
+    fitBias(QUALITY_PRESETS[qualityLevel].shadowMapSize);
+    sunLight.shadow.radius = 3;
+    scene.add(sunLight, sunLight.target);
 
-    const fillLight = new THREE.DirectionalLight('#dbeafe', 0.45);
+    const fillLight = new THREE.DirectionalLight('#dbeafe', 0.35);
     fillLight.position.set(-16, 14, -12);
     scene.add(fillLight);
 
-    // Sàn Epoxy nhà triển lãm (cache sẵn 2 texture ngày/đêm để đổi tức thì không giật)
-    const dayFloorTex = createEpoxyFloorTexture(false, sceneKind === 'WAREHOUSE');
-    const nightFloorTex = createEpoxyFloorTexture(true, sceneKind === 'WAREHOUSE');
+    // Sàn Epoxy bóng (clearcoat phản chiếu environment + đèn); màu sàn do rig Ngày/Đêm điều khiển
+    const floorTex = createEpoxyTextures(sceneKind === 'WAREHOUSE', Math.round((widthM + 4) / 2));
+    const isCafe = sceneKind === 'CAFE';
+    const isOffice = sceneKind === 'OFFICE';
+    let floorMapOverride: THREE.Texture | null = null;
+    if (isCafe || isOffice) {
+      // Quán cà phê: sàn gỗ ván dài; Văn phòng: thảm tấm
+      floorMapOverride = (isCafe ? plankTex() : carpetTileTex()).clone();
+      floorMapOverride.repeat.set((widthM + 4) / (isCafe ? 4 : 3), (depthM + 6) / (isCafe ? 4 : 3));
+      floorMapOverride.needsUpdate = true;
+    }
+    const floorMat = new THREE.MeshPhysicalMaterial({
+      map: floorMapOverride ?? floorTex.map,
+      roughnessMap: floorMapOverride ? null : floorTex.roughnessMap,
+      roughness: isOffice ? 0.95 : isCafe ? 0.5 : 0.42,
+      metalness: 0,
+      clearcoat: isOffice ? 0 : isCafe ? 0.35 : 0.65,
+      clearcoatRoughness: isCafe ? 0.3 : 0.14,
+    });
     const floorMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(widthM + 4, depthM + 6),
-      new THREE.MeshStandardMaterial({ map: dayFloorTex, roughness: 0.65, metalness: 0.08 }),
+      new THREE.PlaneGeometry(widthM + (isCafe || isOffice ? 0.2 : 4), depthM + (isCafe || isOffice ? 0.2 : 6)),
+      floorMat,
     );
     floorMesh.rotation.x = -Math.PI / 2;
     floorMesh.receiveShadow = true;
@@ -1246,8 +436,27 @@ export function Space3DCanvas({
     scene.add(floorMesh);
 
     // Kiến trúc Nhà triển lãm + Cây cối bên ngoài + Logo TIM Corp
-    const hallEnv = createExhibitionHallEnvironment(widthM, depthM, sceneKind, branding.companyName, branding.logoUrl);
+    // Gộp geometry tĩnh theo vật liệu → giảm mạnh draw call
+    const interior =
+      isCafe ? createCafeEnvironment(widthM, depthM, branding.companyName) : isOffice ? createOfficeEnvironment(widthM, depthM, branding.companyName) : null;
+    const hallEnv = mergeStaticGroup(
+      interior ? interior.group : createExhibitionHallEnvironment(widthM, depthM, sceneKind, branding.companyName, branding.logoUrl),
+    );
+    // Đèn nội thất ấm (point light) không merge được → thêm riêng
+    interior?.lights.forEach((l) => scene.add(l));
     scene.add(hallEnv);
+    const envOccluders = hallEnv.children.filter((c) => c.userData.occluder);
+
+    // Pipeline hậu kỳ + rig Ngày/Đêm
+    let pipeline = createRenderPipeline(
+      renderer,
+      scene,
+      camera,
+      QUALITY_PRESETS[qualityLevel],
+      container.clientWidth,
+      container.clientHeight,
+    );
+    const rig = createDayNightRig({ scene, renderer, sun: sunLight, hemi: hemiLight, fill: fillLight, sky: skySys, floorMat, pipeline });
 
     // Vòng highlight sản phẩm gần nhất
     const highlightRing = new THREE.Mesh(
@@ -1269,8 +478,26 @@ export function Space3DCanvas({
     scene.add(walkRing);
 
     const dynamicGroup = new THREE.Group();
+    const objectsGroup = new THREE.Group();
+    scene.add(objectsGroup);
+    // Khung chọn vật thể (xanh = hợp lệ, đỏ = chồng lấn)
+    const selectionBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#38bdf8'));
+    selectionBox.visible = false;
+    (selectionBox.material as THREE.LineBasicMaterial).depthTest = false;
+    selectionBox.renderOrder = 20;
+    scene.add(selectionBox);
+    // Bóng xem trước khi kéo vật thể từ thư viện vào
+    const ghost = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    ghost.rotation.x = -Math.PI / 2;
+    ghost.position.y = 0.03;
+    ghost.visible = false;
+    scene.add(ghost);
     const presenceGroup = new THREE.Group();
-    scene.add(dynamicGroup, presenceGroup);
+    const remoteGroup = new THREE.Group();
+    scene.add(dynamicGroup, presenceGroup, remoteGroup);
 
     // Nhân vật Chibi của người dùng
     const player = createChibiAvatar({
@@ -1279,7 +506,7 @@ export function Space3DCanvas({
       isSelf: true,
       isOnDuty: isSelfOnDuty,
     });
-    player.group.position.set(0, 0, 11);
+    player.group.position.set(0, 0, spawnZ);
     scene.add(player.group);
 
     const orbit = new OrbitControls(camera, renderer.domElement);
@@ -1288,7 +515,8 @@ export function Space3DCanvas({
     orbit.maxPolarAngle = Math.PI / 2 - 0.05;
     orbit.minDistance = 2.8;
     orbit.maxDistance = 42;
-    orbit.target.set(0, 1.3, 11);
+    orbit.target.set(0, 1.3, spawnZ);
+    orbit.update();
 
     const transform = new TransformControls(camera, renderer.domElement);
     transform.setTranslationSnap(0.25);
@@ -1311,6 +539,42 @@ export function Space3DCanvas({
     });
     scene.add(transform.getHelper());
 
+    const camRig = createCameraRig(
+      camera,
+      orbit,
+      () => sceneObjRef.current?.occluders ?? envOccluders,
+      () => stateRef.current.povMode !== 'FIRST' && !stateRef.current.planView,
+    );
+    const onWheel = () => camRig.notifyZoom();
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: true });
+    renderer.domElement.addEventListener('touchmove', onWheel, { passive: true });
+
+    const applyQuality = (level: QualityLevel) => {
+      const q = QUALITY_PRESETS[level];
+      qualityLevel = level;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.maxPixelRatio));
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      if (sunLight.shadow.mapSize.x !== q.shadowMapSize) {
+        sunLight.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize);
+        fitBias(q.shadowMapSize);
+        sunLight.shadow.map?.dispose();
+        sunLight.shadow.map = null;
+        renderer.shadowMap.needsUpdate = true;
+      }
+      pipeline.dispose();
+      pipeline = createRenderPipeline(renderer, scene, camera, q, container.clientWidth, container.clientHeight);
+      rig.setPipeline(pipeline);
+      if (sceneObjRef.current) {
+        sceneObjRef.current.pipeline = pipeline;
+        sceneObjRef.current.quality = level;
+      }
+      stateRef.current.onQualityChange?.(level);
+    };
+    const governor = createFpsGovernor(() => {
+      if (stateRef.current.qualityPref !== 'auto' || qualityLevel === 'low') return;
+      applyQuality(lowerQuality(qualityLevel));
+    });
+
     const gltfLoader = new GLTFLoader();
     const placementMeshes = new Map<string, THREE.Group>();
     const boothMeshes: THREE.Group[] = [];
@@ -1326,8 +590,16 @@ export function Space3DCanvas({
       staffAvatars,
       placementMeshes,
       boothMeshes,
+      objectsGroup,
+      objectMap: new Map(),
+      selectionBox,
+      ghost,
       dynamicGroup,
       presenceGroup,
+      remoteGroup,
+      remoteAvatars: new Map(),
+      remoteBubbles: new Map(),
+      selfBubble: { sprite: null, text: '' },
       highlightRing,
       walkRing,
       walkTarget: null,
@@ -1335,13 +607,31 @@ export function Space3DCanvas({
       sunLight,
       hemiLight,
       floorMesh,
-      dayFloorTex,
-      nightFloorTex,
+      pipeline,
+      rig,
+      camRig,
+      sky: skySys,
+      envOccluders,
+      occluders: envOccluders,
+      quality: qualityLevel,
+      applyQuality,
     };
+    stateRef.current.onQualityChange?.(qualityLevel);
+    // ?debug=1: lộ scene ra window để kiểm tra trực quan (không bật ở chế độ thường)
+    if (stateRef.current.debug) (window as unknown as { __space3d?: unknown }).__space3d = sceneObjRef.current;
+
+    // Bảng debug (?debug=1) cập nhật trực tiếp DOM, không qua React
+    const debugEl = document.createElement('div');
+    debugEl.style.cssText =
+      'position:fixed;left:12px;bottom:84px;z-index:70;padding:6px 10px;border-radius:8px;background:rgba(2,6,23,.78);color:#a7f3d0;font:11px/1.5 ui-monospace,monospace;pointer-events:none;white-space:pre;display:none';
+    container.appendChild(debugEl);
+    let debugFrames = 0;
+    let debugTime = 0;
 
     const keys = new Set<string>();
     const onKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+      if (camRig.introActive) camRig.skipIntro();
       keys.add(e.code);
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         if (sceneObjRef.current) {
@@ -1359,12 +649,123 @@ export function Space3DCanvas({
     const pointer = new THREE.Vector2();
     let downX = 0;
     let downY = 0;
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const hitPoint = new THREE.Vector3();
+    const setPointer = (e: { clientX: number; clientY: number }) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+    };
+    /** Vật thể (theo id) dưới con trỏ, ưu tiên trước sản phẩm khi đang ở chế độ thiết kế */
+    const pickObject = (): string | null => {
+      const hits = raycaster.intersectObjects(objectsGroup.children, true);
+      for (const h of hits) {
+        const id = h.object.userData?.objectId as string | undefined;
+        if (id) return id;
+      }
+      return null;
+    };
+    let drag: { id: string; offX: number; offZ: number; moved: boolean } | null = null;
+    // Góc nhìn thứ nhất: kéo chuột để quay đầu (yaw/pitch có giảm chấn)
+    const fp = { active: false, yaw: 0, pitch: 0, yawT: 0, pitchT: 0, looking: false, lx: 0, ly: 0 };
+    const fpLook = new THREE.Vector3();
+    const onFpDown = (e: PointerEvent) => {
+      if (!fp.active || stateRef.current.editMode) return;
+      fp.looking = true;
+      fp.lx = e.clientX;
+      fp.ly = e.clientY;
+    };
+    const onFpMove = (e: PointerEvent) => {
+      if (!fp.looking) return;
+      const dx = e.clientX - fp.lx;
+      const dy = e.clientY - fp.ly;
+      fp.lx = e.clientX;
+      fp.ly = e.clientY;
+      fp.yawT -= dx * 0.0042;
+      fp.pitchT = THREE.MathUtils.clamp(fp.pitchT - dy * 0.0035, -1.1, 0.9);
+    };
+    const onFpUp = () => {
+      fp.looking = false;
+    };
+    renderer.domElement.addEventListener('pointerdown', onFpDown);
+    window.addEventListener('pointermove', onFpMove);
+    window.addEventListener('pointerup', onFpUp);
+
+    const updateSelectionBox = (id: string | null, collide = false) => {
+      const entry = id ? sceneObjRef.current?.objectMap.get(id) : null;
+      if (!entry) {
+        selectionBox.visible = false;
+        return;
+      }
+      selectionBox.box.setFromObject(entry.root);
+      selectionBox.box.expandByScalar(0.03);
+      (selectionBox.material as THREE.LineBasicMaterial).color.set(collide ? '#ef4444' : '#38bdf8');
+      selectionBox.visible = true;
+    };
+
     const onPointerDown = (e: PointerEvent) => {
+      if (camRig.introActive) camRig.skipIntro();
       downX = e.clientX;
       downY = e.clientY;
+      if (!stateRef.current.editMode || e.button !== 0) return;
+      setPointer(e);
+      // Sản phẩm (TransformControls) ưu tiên nếu đang chọn sản phẩm
+      if (transform.dragging) return;
+      const id = pickObject();
+      if (!id) return;
+      const o = stateRef.current.structures.find((x) => x.id === id);
+      if (!o || o.locked) {
+        stateRef.current.onSelectObject?.(id);
+        return;
+      }
+      if (raycaster.ray.intersectPlane(floorPlane, hitPoint)) {
+        drag = { id, offX: hitPoint.x - o.posX, offZ: hitPoint.z - o.posZ, moved: false };
+        orbit.enabled = false;
+        stateRef.current.onSelectObject?.(id);
+      }
     };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!drag) return;
+      setPointer(e);
+      if (!raycaster.ray.intersectPlane(floorPlane, hitPoint)) return;
+      const entry = sceneObjRef.current?.objectMap.get(drag.id);
+      const o = stateRef.current.structures.find((x) => x.id === drag!.id);
+      if (!entry || !o) return;
+      let nx = hitPoint.x - drag.offX;
+      let nz = hitPoint.z - drag.offZ;
+      if (!e.altKey) {
+        nx = snap(nx);
+        nz = snap(nz);
+      }
+      const clamped = clampInside({ ...o, posX: nx, posZ: nz }, widthM, depthM);
+      if (Math.abs(clamped.posX - o.posX) > 0.001 || Math.abs(clamped.posZ - o.posZ) > 0.001) drag.moved = true;
+      entry.root.position.x = clamped.posX;
+      entry.root.position.z = clamped.posZ;
+      entry.root.userData.dragPos = { posX: clamped.posX, posZ: clamped.posZ };
+      const others = stateRef.current.structures.map((x) => (x.id === o.id ? clamped : x));
+      updateSelectionBox(o.id, findCollisions(others, o.id).length > 0);
+    };
+    const endDrag = () => {
+      if (!drag) return false;
+      const d = drag;
+      drag = null;
+      orbit.enabled = true;
+      const entry = sceneObjRef.current?.objectMap.get(d.id);
+      const pos = entry?.root.userData.dragPos as { posX: number; posZ: number } | undefined;
+      if (entry) delete entry.root.userData.dragPos;
+      if (d.moved && pos) {
+        stateRef.current.onObjectMoved?.(d.id, pos);
+        renderer.shadowMap.needsUpdate = true;
+      }
+      return true;
+    };
+
     const onPointerUp = (e: PointerEvent) => {
+      const wasDrag = drag !== null;
+      endDrag();
       if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return;
+      if (wasDrag) return; // click chọn vật thể đã xử lý ở pointerdown
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1383,10 +784,35 @@ export function Space3DCanvas({
 
       if (stateRef.current.editMode) {
         stateRef.current.onSelectPlacement(null);
+        const objId = pickObject();
+        stateRef.current.onSelectObject?.(objId);
         return;
       }
 
-      // 2. Click vào Gian hàng / Phòng ban -> Tự đi bộ tới trước gian hàng đó
+      // 2. Click vào nhân vật nhân viên khác (realtime) -> mở thẻ / nhắn tin
+      if (stateRef.current.onSelectRemotePlayer) {
+        const remoteHits = raycaster.intersectObjects(remoteGroup.children, true);
+        const hitId = remoteHits.find((h) => h.object.userData?.remoteEmployeeId)?.object.userData.remoteEmployeeId as
+          | number
+          | undefined;
+        if (hitId) {
+          stateRef.current.onSelectRemotePlayer(hitId);
+          return;
+        }
+      }
+
+      // 2b. Click vào hàng hoá trên kệ / máy trưng bày → thông tin sản phẩm & giá
+      if (stateRef.current.onSelectMerchItem) {
+        const merchHits = raycaster.intersectObjects(objectsGroup.children, true);
+        const first = merchHits[0];
+        const merchId = first?.object.userData?.merchItemId as number | undefined;
+        if (merchId) {
+          stateRef.current.onSelectMerchItem(merchId);
+          return;
+        }
+      }
+
+      // 3. Click vào Gian hàng / Phòng ban -> Tự đi bộ tới trước gian hàng đó
       const boothHits = raycaster.intersectObjects(sceneObjRef.current?.boothMeshes ?? [], true);
       if (boothHits.length > 0) {
         let obj: THREE.Object3D | null = boothHits[0].object;
@@ -1401,7 +827,7 @@ export function Space3DCanvas({
         }
       }
 
-      // 3. Click vào mặt sàn -> Click-to-Walk mượt mà
+      // 4. Click vào mặt sàn -> Click-to-Walk mượt mà
       const floorHits = raycaster.intersectObject(floorMesh, false);
       if (floorHits.length > 0 && sceneObjRef.current) {
         const pt = floorHits[0].point;
@@ -1414,12 +840,48 @@ export function Space3DCanvas({
     };
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', endDrag);
+
+    // Kéo thả HTML5 từ Thư viện vào cảnh
+    const onDragOver = (e: DragEvent) => {
+      const kind = stateRef.current.draggingKind;
+      if (!kind || !stateRef.current.editMode) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      setPointer(e);
+      if (raycaster.ray.intersectPlane(floorPlane, hitPoint)) {
+        const def = SPACE_OBJECT_DEF_MAP[kind];
+        ghost.scale.set(def?.size[0] ?? 1, def?.size[1] ?? 1, 1);
+        ghost.position.set(snap(hitPoint.x), 0.03, snap(hitPoint.z));
+        ghost.visible = true;
+      }
+    };
+    const onDragLeave = () => {
+      ghost.visible = false;
+    };
+    const onDrop = (e: DragEvent) => {
+      const kind = stateRef.current.draggingKind;
+      ghost.visible = false;
+      if (!kind || !stateRef.current.editMode) return;
+      e.preventDefault();
+      setPointer(e);
+      if (raycaster.ray.intersectPlane(floorPlane, hitPoint)) {
+        stateRef.current.onDropObject?.(kind, snap(hitPoint.x), snap(hitPoint.z));
+      }
+    };
+    container.addEventListener('dragover', onDragOver);
+    container.addEventListener('dragleave', onDragLeave);
+    container.addEventListener('drop', onDrop);
+    (sceneObjRef.current as unknown as { updateSelectionBox?: typeof updateSelectionBox }).updateSelectionBox = updateSelectionBox;
 
     const onResize = () => {
       if (!container) return;
       camera.aspect = container.clientWidth / Math.max(1, container.clientHeight);
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
+      (sceneObjRef.current?.pipeline ?? pipeline).setSize(container.clientWidth, container.clientHeight);
+      labelRenderer.setSize(container.clientWidth, container.clientHeight);
     };
     window.addEventListener('resize', onResize);
 
@@ -1433,11 +895,23 @@ export function Space3DCanvas({
     let lastZone = '';
     let lastNearId: string | null = null;
     let rafId = 0;
+    let blockedTime = 0;
+    const tmpLabelPos = new THREE.Vector3();
 
     const animate = () => {
       rafId = requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.05);
+      renderer.info.reset();
+      const rawDt = clock.getDelta();
+      const dt = Math.min(rawDt, 0.05);
       totalTime += dt;
+      windUniform.value = totalTime;
+      governor.tick(rawDt);
+      if (rig.update(Math.min(rawDt, 0.25))) {
+        // Ánh sáng đổi hướng khi chuyển ngày/đêm → bake lại bóng theo nhịp thưa
+        if (frameCount % 10 === 0) renderer.shadowMap.needsUpdate = true;
+      }
+      const introLock = camRig.introActive;
+      if (introLock) keys.clear();
 
       let isMoving = false;
       let actualDx = 0;
@@ -1469,7 +943,7 @@ export function Space3DCanvas({
         currentPlayer.group.position.z = nextZ;
         currentPlayer.group.rotation.y = Math.atan2(actualDx, actualDz);
         isMoving = true;
-      } else if (sceneObjRef.current?.walkTarget) {
+      } else if (!introLock && sceneObjRef.current?.walkTarget) {
         // B. Tự động đi bộ tới điểm Click-to-Walk / Gian hàng
         const target = sceneObjRef.current.walkTarget;
         const diffX = target.x - currentPlayer.group.position.x;
@@ -1489,27 +963,67 @@ export function Space3DCanvas({
         }
       }
 
+      // Va chạm thân người: không đi xuyên nhân vật khác & đồ đạc (đẩy ra mềm), bị chặn thì dừng click-to-walk
+      {
+        const before = { x: currentPlayer.group.position.x, z: currentPlayer.group.position.z };
+        const others: THREE.Object3D[] = [];
+        const so = sceneObjRef.current;
+        if (so) {
+          so.staffAvatars.forEach((a) => others.push(a.group));
+          so.remoteAvatars.forEach((e) => others.push(e.av.group));
+        }
+        const pushed = resolveBodyCollisions(currentPlayer.group.position, others, isMoving ? stateRef.current.structures : null);
+        const pdx = currentPlayer.group.position.x - before.x;
+        const pdz = currentPlayer.group.position.z - before.z;
+        if (pushed) {
+          actualDx += pdx;
+          actualDz += pdz;
+          if (!isMoving && (Math.abs(pdx) > 1e-4 || Math.abs(pdz) > 1e-4)) {
+            // Đứng yên mà bị đẩy (ví dụ xuất hiện trùng chỗ) → camera đi theo
+            camera.position.x += pdx;
+            camera.position.z += pdz;
+            orbit.target.x += pdx;
+            orbit.target.z += pdz;
+          }
+          if (so?.walkTarget) {
+            blockedTime += dt;
+            if (blockedTime > 0.6) {
+              so.walkTarget = null;
+              walkRing.visible = false;
+              blockedTime = 0;
+            }
+          }
+        } else {
+          blockedTime = 0;
+        }
+      }
+
       if (isMoving) {
         camera.position.x += actualDx;
         camera.position.z += actualDz;
         orbit.target.x += actualDx;
         orbit.target.z += actualDz;
 
-        walkTime += dt * 11;
-        const swing = Math.sin(walkTime) * 0.58;
-        currentPlayer.leftLeg.rotation.x = swing;
-        currentPlayer.rightLeg.rotation.x = -swing;
-        currentPlayer.leftArm.rotation.x = -swing * 0.8;
-        currentPlayer.rightArm.rotation.x = swing * 0.8;
-        currentPlayer.group.position.y = Math.abs(Math.sin(walkTime)) * 0.055;
+        // Đầm công sở bước ngắn & nhanh hơn để chân luôn nằm trong váy
+        walkTime += dt * (currentPlayer.stride < 1 ? 13 : 10);
+        poseWalk(currentPlayer, walkTime);
       } else {
-        currentPlayer.leftLeg.rotation.x *= 0.82;
-        currentPlayer.rightLeg.rotation.x *= 0.82;
-        currentPlayer.leftArm.rotation.x *= 0.82;
-        currentPlayer.rightArm.rotation.x *= 0.82;
-        currentPlayer.group.position.y = 0;
-        currentPlayer.headGroup.position.y = 1.25 + Math.sin(totalTime * 2.2) * 0.01;
+        relaxPose(currentPlayer);
+        // Đang trò chuyện → nhân vật mình quay mặt về phía người kia
+        const faceId = stateRef.current.faceEmployeeId;
+        const partner = faceId ? sceneObjRef.current?.remoteAvatars.get(faceId) : null;
+        if (partner && stateRef.current.povMode !== 'FIRST') {
+          const want = Math.atan2(
+            partner.av.group.position.x - currentPlayer.group.position.x,
+            partner.av.group.position.z - currentPlayer.group.position.z,
+          );
+          const d = Math.atan2(Math.sin(want - currentPlayer.group.rotation.y), Math.cos(want - currentPlayer.group.rotation.y));
+          currentPlayer.group.rotation.y += d * (1 - Math.exp(-dt * 8));
+        }
+        currentPlayer.headGroup.position.y = currentPlayer.headBaseY + Math.sin(totalTime * 2.2) * 0.01;
       }
+
+      animateAvatarIdle(currentPlayer, totalTime);
 
       if (walkRing.visible) {
         const pulse = 1 + Math.sin(totalTime * 6) * 0.14;
@@ -1518,23 +1032,125 @@ export function Space3DCanvas({
 
       for (let i = 0; i < (sceneObjRef.current?.staffAvatars.length ?? 0); i++) {
         const stAv = sceneObjRef.current!.staffAvatars[i];
-        stAv.headGroup.position.y = 1.25 + Math.sin(totalTime * 2 + i) * 0.01;
+        stAv.headGroup.position.y = stAv.headBaseY + Math.sin(totalTime * 2 + i) * 0.01;
+        animateAvatarIdle(stAv, totalTime);
         stAv.rightArm.rotation.z = -0.15 - Math.max(0, Math.sin(totalTime * 1.4 + i * 2.3) - 0.65) * 1.6;
       }
 
-      if (stateRef.current.povMode === 'FIRST') {
+      // Người chơi realtime: nội suy mượt tới vị trí mục tiêu (đọc ref, không React re-render)
+      const objNow = sceneObjRef.current;
+      if (objNow && objNow.remoteAvatars.size + (stateRef.current.bubbleRef?.current.size ?? 0) > 0) {
+        const rs = stateRef.current.remoteStateRef?.current;
+        const bubbles = stateRef.current.bubbleRef?.current;
+        const nowMs = Date.now();
+        const posK = 1 - Math.exp(-dt * 12);
+        const rotK = 1 - Math.exp(-dt * 14);
+        const px = currentPlayer.group.position.x;
+        const pz = currentPlayer.group.position.z;
+        for (const [rid, entry] of objNow.remoteAvatars) {
+          const g = entry.av.group;
+          const st = rs?.get(rid);
+          let walking = false;
+          if (st) {
+            const dx = st.tx - g.position.x;
+            const dz = st.tz - g.position.z;
+            const d = Math.hypot(dx, dz);
+            if (d > 5) {
+              g.position.x = st.tx;
+              g.position.z = st.tz;
+            } else {
+              g.position.x += dx * posK;
+              g.position.z += dz * posK;
+            }
+            // Đang nói chuyện với mình → quay mặt về phía mình (khi họ đứng yên)
+            const faceMe = stateRef.current.faceEmployeeId === rid && !st.moving;
+            const wantR = faceMe ? Math.atan2(px - g.position.x, pz - g.position.z) : st.tr;
+            const dr = Math.atan2(Math.sin(wantR - g.rotation.y), Math.cos(wantR - g.rotation.y));
+            g.rotation.y += dr * rotK;
+            walking = (st.moving && nowMs - st.ts < 600) || d > 0.06;
+          }
+          // Hai nhân vật đứng trùng chỗ → tách nhẹ (chỉ phần hiển thị, không đổi vị trí thật của họ)
+          for (const [oid, other] of objNow.remoteAvatars) {
+            if (oid === rid) continue;
+            const ox = g.position.x - other.av.group.position.x;
+            const oz = g.position.z - other.av.group.position.z;
+            const od = Math.hypot(ox, oz);
+            if (od < BODY_RADIUS * 2) {
+              const push = (BODY_RADIUS * 2 - od) * 0.5;
+              const nx = od > 1e-4 ? ox / od : Math.cos(rid);
+              const nz = od > 1e-4 ? oz / od : Math.sin(rid);
+              g.position.x += nx * push;
+              g.position.z += nz * push;
+            }
+          }
+          animateAvatarIdle(entry.av, totalTime);
+          if (walking) {
+            entry.walkTime += dt * (entry.av.stride < 1 ? 13 : 10);
+            poseWalk(entry.av, entry.walkTime);
+          } else {
+            relaxPose(entry.av);
+            entry.av.headGroup.position.y = entry.av.headBaseY + Math.sin(totalTime * 2 + rid) * 0.01;
+          }
+
+          if (frameCount % 6 === 0) {
+            const b = bubbles?.get(rid);
+            const near = Math.hypot(g.position.x - px, g.position.z - pz) <= BUBBLE_VISIBLE_DIST;
+            let slot = objNow.remoteBubbles.get(rid);
+            if (!slot) {
+              slot = { sprite: null, text: '' };
+              objNow.remoteBubbles.set(rid, slot);
+            }
+            syncBubble(slot, g, b && b.expiresAt > nowMs && near ? b.text : null);
+          }
+        }
+        const selfId = stateRef.current.currentEmployeeId;
+        if (selfId && frameCount % 6 === 0) {
+          const b = bubbles?.get(selfId);
+          syncBubble(objNow.selfBubble, currentPlayer.group, b && b.expiresAt > nowMs ? b.text : null);
+        }
+      }
+
+      const firstPerson = stateRef.current.povMode === 'FIRST' && !stateRef.current.planView;
+      if (firstPerson !== fp.active) {
+        // Chuyển góc nhìn: vào POV lấy hướng nhân vật; ra POV đặt camera lại sau lưng
+        fp.active = firstPerson;
+        if (firstPerson) {
+          fp.yaw = fp.yawT = currentPlayer.group.rotation.y;
+          fp.pitch = fp.pitchT = -0.05;
+          orbit.enabled = false;
+        } else {
+          orbit.enabled = true;
+          const px = currentPlayer.group.position.x;
+          const pz = currentPlayer.group.position.z;
+          orbit.target.set(px, 1.3, pz);
+          camera.position.set(px - Math.sin(fp.yaw) * 5.2, 3.2, pz - Math.cos(fp.yaw) * 5.2);
+        }
+      }
+      if (firstPerson) {
         currentPlayer.group.visible = false;
-        camera.position.lerp(new THREE.Vector3(currentPlayer.group.position.x, 1.55, currentPlayer.group.position.z), 0.25);
-        orbit.target.set(
-          currentPlayer.group.position.x + Math.sin(currentPlayer.group.rotation.y) * 2.5,
-          1.45,
-          currentPlayer.group.position.z + Math.cos(currentPlayer.group.rotation.y) * 2.5,
+        // Nội suy góc nhìn (giảm chấn) → kéo chuột mượt, không giật
+        const k = 1 - Math.exp(-dt * 16);
+        fp.yaw += (fp.yawT - fp.yaw) * k;
+        fp.pitch += (fp.pitchT - fp.pitch) * k;
+        const eyeY = currentPlayer.headBaseY + 0.01;
+        camera.position.set(currentPlayer.group.position.x, eyeY, currentPlayer.group.position.z);
+        const cp = Math.cos(fp.pitch);
+        fpLook.set(
+          camera.position.x + Math.sin(fp.yaw) * cp,
+          eyeY + Math.sin(fp.pitch),
+          camera.position.z + Math.cos(fp.yaw) * cp,
         );
+        camera.lookAt(fpLook);
+        orbit.target.copy(fpLook);
       } else {
         currentPlayer.group.visible = true;
       }
 
-      orbit.update();
+      camRig.beforeOrbit();
+      if (!camRig.introActive && !firstPerson) orbit.update();
+      // Intro dùng thời gian thực (không bị kẹp 0.05s) để không "đứng hình" khi máy chậm
+      camRig.afterOrbit(Math.min(rawDt, 0.1), frameCount);
+      skySys.update(dt, camera.position);
 
       // Cập nhật tọa độ nhân vật qua ref (KHÔNG gây React re-render 60fps!)
       if (playerPosRef) {
@@ -1580,7 +1196,41 @@ export function Space3DCanvas({
         }
       }
 
-      renderer.render(scene, camera);
+      (sceneObjRef.current?.pipeline ?? pipeline).render();
+      // Nhãn HTML: mờ dần khi xa (> 18m), ẩn khi > 30m để không rối mắt
+      if (frameCount % 6 === 0) {
+        for (const lbl of htmlLabels) {
+          // Nhãn của nhân vật đã bị gỡ khỏi cảnh (đổi diện mạo, người chơi rời đi) → xoá phần tử DOM
+          let root: THREE.Object3D = lbl;
+          while (root.parent) root = root.parent;
+          if (root !== scene) {
+            (lbl.element as HTMLElement).remove();
+            htmlLabels.delete(lbl);
+            continue;
+          }
+          lbl.getWorldPosition(tmpLabelPos);
+          const dist = tmpLabelPos.distanceTo(camera.position);
+          const op = dist > 30 ? 0 : dist > 18 ? 1 - (dist - 18) / 12 : 1;
+          const el = lbl.element as HTMLElement;
+          const v = op.toFixed(2);
+          if (el.style.opacity !== v) el.style.opacity = v;
+        }
+      }
+      labelRenderer.render(scene, camera);
+
+      if (stateRef.current.debug) {
+        debugFrames += 1;
+        debugTime += rawDt;
+        if (debugTime >= 0.5) {
+          const info = renderer.info;
+          debugEl.style.display = 'block';
+          debugEl.textContent = `FPS ${(debugFrames / debugTime).toFixed(0)}  ·  ${qualityLevel.toUpperCase()}\ndraw ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(1)}k\ngeo ${info.memory.geometries}  tex ${info.memory.textures}  prog ${info.programs?.length ?? 0}`;
+          debugFrames = 0;
+          debugTime = 0;
+        }
+      } else if (debugEl.style.display !== 'none') {
+        debugEl.style.display = 'none';
+      }
     };
     animate();
 
@@ -1591,13 +1241,33 @@ export function Space3DCanvas({
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerdown', onFpDown);
+      window.removeEventListener('pointermove', onFpMove);
+      window.removeEventListener('pointerup', onFpUp);
+      window.removeEventListener('pointerup', endDrag);
+      container.removeEventListener('dragover', onDragOver);
+      container.removeEventListener('dragleave', onDragLeave);
+      container.removeEventListener('drop', onDrop);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      renderer.domElement.removeEventListener('touchmove', onWheel);
+      camRig.dispose();
       orbit.dispose();
       transform.dispose();
+      (sceneObjRef.current?.pipeline ?? pipeline).dispose();
+      skySys.dispose();
+      envRT.dispose();
+      floorTex.map.dispose();
+      floorTex.roughnessMap.dispose();
+      floorMat.dispose();
+      debugEl.remove();
+      labelRenderer.domElement.remove();
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
       }
       sceneObjRef.current = null;
+      introPlayedRef.current = false;
     };
   }, [sceneKind, widthM, depthM, branding.companyName, branding.logoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1619,55 +1289,173 @@ export function Space3DCanvas({
     nextPlayer.group.rotation.y = oldRotY;
     obj.scene.add(nextPlayer.group);
     obj.player = nextPlayer;
+    if (obj.selfBubble.sprite) {
+      obj.selfBubble.sprite.parent?.remove(obj.selfBubble.sprite);
+      nextPlayer.group.add(obj.selfBubble.sprite);
+    }
   }, [avatarSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const obj = sceneObjRef.current;
     if (!obj) return;
-    const bg = nightMode ? '#0f172a' : '#dbeafe';
-    obj.scene.background = new THREE.Color(bg);
-    obj.scene.fog = new THREE.Fog(nightMode ? '#0f172a' : '#e6effa', 36, 95);
-    obj.sunLight.intensity = nightMode ? 0.42 : 1.15;
-    obj.hemiLight.intensity = nightMode ? 0.62 : 1.25;
-    const floorMat = obj.floorMesh.material as THREE.MeshStandardMaterial;
-    floorMat.map = nightMode ? obj.nightFloorTex : obj.dayFloorTex;
-    floorMat.needsUpdate = true;
+    obj.rig.setNight(nightMode);
     obj.renderer.shadowMap.needsUpdate = true;
-  }, [nightMode]);
+  }, [nightMode, sceneKind, widthM, depthM]);
 
+  // Mặt bằng 2D: camera nhìn thẳng từ trên, ẩn mái/trần, hiện lưới 1m; trả lại góc nhìn cũ khi tắt
+  const planSaved = useRef<{ pos: THREE.Vector3; target: THREE.Vector3; maxDist: number } | null>(null);
+  const planGrid = useRef<THREE.GridHelper | null>(null);
   useEffect(() => {
     const obj = sceneObjRef.current;
     if (!obj) return;
+    const roofs: THREE.Object3D[] = [];
+    obj.scene.traverse((c) => {
+      if (c.userData?.roof) roofs.push(c);
+    });
+    if (planView) {
+      planSaved.current = { pos: obj.camera.position.clone(), target: obj.orbit.target.clone(), maxDist: obj.orbit.maxDistance };
+      roofs.forEach((r) => (r.visible = false));
+      const size = Math.max(widthM, depthM);
+      const grid = new THREE.GridHelper(size + 4, Math.round(size + 4), 0x60a5fa, 0x334155);
+      grid.position.y = 0.025;
+      (grid.material as THREE.Material).transparent = true;
+      (grid.material as THREE.Material).opacity = 0.45;
+      obj.scene.add(grid);
+      planGrid.current = grid;
+      const fov = THREE.MathUtils.degToRad(obj.camera.fov / 2);
+      const h = (Math.max(widthM / obj.camera.aspect, depthM) / 2 + 2) / Math.tan(fov);
+      obj.orbit.maxDistance = Math.max(120, h * 1.5);
+      obj.orbit.enableRotate = false;
+      obj.orbit.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+      obj.orbit.target.set(0, 0, 0);
+      obj.camera.position.set(0, h, 0.01);
+      obj.orbit.update();
+    } else if (planSaved.current) {
+      roofs.forEach((r) => (r.visible = true));
+      if (planGrid.current) {
+        obj.scene.remove(planGrid.current);
+        planGrid.current.geometry.dispose();
+        planGrid.current = null;
+      }
+      obj.orbit.enableRotate = true;
+      obj.orbit.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+      obj.orbit.maxDistance = planSaved.current.maxDist;
+      obj.camera.position.copy(planSaved.current.pos);
+      obj.orbit.target.copy(planSaved.current.target);
+      obj.orbit.update();
+      planSaved.current = null;
+    }
+    obj.renderer.shadowMap.needsUpdate = true;
+  }, [planView, sceneKind, widthM, depthM]);
 
+  // Đổi preset đồ họa thủ công
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj || qualityPref === 'auto' || obj.quality === qualityPref) return;
+    obj.applyQuality(qualityPref);
+  }, [qualityPref]);
+
+  // Intro bay camera cinematic khi vào không gian
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj || !playIntro || introPlayedRef.current) return;
+    introPlayedRef.current = true;
+    const p = obj.player.group.position;
+    const halfD = depthM * 0.5 + 2;
+    obj.camRig.playIntro(
+      { target: new THREE.Vector3(p.x, 1.35, p.z), position: new THREE.Vector3(p.x, 2.9, p.z + 5.4) },
+      [
+        new THREE.Vector3(-34, 26, halfD + 46),
+        new THREE.Vector3(-10, 12, halfD + 22),
+        // Hạ thấp trước cổng rồi luồn dưới xà cổng chào vào sảnh
+        new THREE.Vector3(0, 3.1, halfD + 6),
+        new THREE.Vector3(0, 2.9, halfD - 1.4),
+      ],
+    );
+  }, [playIntro, sceneKind, widthM, depthM]);
+
+  // Vật thể (quầy kệ, nội thất, cây, tường…): dựng lại THEO DIFF — kéo 1 món chỉ cập nhật vị trí món đó
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj) return;
+    const ctx = { companyName: branding.companyName, logoUrl: branding.logoUrl };
+    const seen = new Set<string>();
+    let changed = false;
+    for (const o of structures) {
+      seen.add(o.id);
+      const sig = objectSignature(o, `${ctx.companyName}|${o.merch ? `${o.merch.mode}:${o.merch.itemIds.join(',')}:${merchItems.length}` : ''}`);
+      const existing = obj.objectMap.get(o.id);
+      if (existing && existing.sig === sig) {
+        if (existing.root.position.x !== o.posX || existing.root.position.z !== o.posZ || existing.root.rotation.y !== o.rotY) {
+          applyTransform(existing.root, o);
+          changed = true;
+        }
+        continue;
+      }
+      if (existing) {
+        obj.objectsGroup.remove(existing.root);
+        disposeObject(existing.root);
+      }
+      const built = buildSpaceObject(o, ctx);
+      if (built.shelves.length && merchItems.length) {
+        built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind)));
+      }
+      obj.objectsGroup.add(built.root);
+      obj.objectMap.set(o.id, { sig, root: built.root, shelves: built.shelves });
+      if (built.shelves.length) stateRef.current.onShelvesBuilt?.(o.id, built.root, built.shelves);
+      changed = true;
+    }
+    for (const [id, entry] of obj.objectMap) {
+      if (seen.has(id)) continue;
+      obj.objectsGroup.remove(entry.root);
+      disposeObject(entry.root);
+      obj.objectMap.delete(id);
+      changed = true;
+    }
+    obj.boothMeshes.length = 0;
+    const objOccluders: THREE.Object3D[] = [];
+    for (const entry of obj.objectMap.values()) {
+      if (entry.root.userData.isBooth) obj.boothMeshes.push(entry.root);
+      entry.root.traverse((c) => {
+        if (c.userData?.occluder) objOccluders.push(c);
+      });
+    }
+    obj.occluders = [...obj.envOccluders, ...objOccluders];
+    if (changed) obj.renderer.shadowMap.needsUpdate = true;
+    const upd = (obj as unknown as { updateSelectionBox?: (id: string | null, c?: boolean) => void }).updateSelectionBox;
+    upd?.(editMode ? selectedObjectId : null, selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false);
+  }, [structures, sceneKind, widthM, depthM, editMode, selectedObjectId, branding.companyName, merchItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sản phẩm đặt rời (SpacePlacement)
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj) return;
     obj.transform.detach();
+    for (const child of obj.dynamicGroup.children) disposeObject(child);
     obj.dynamicGroup.clear();
     obj.placementMeshes.clear();
-    obj.boothMeshes.length = 0;
-
-    for (const st of structures) {
-      const mesh = st.kind === 'RACK' ? createWarehouseRackMesh(st) : createExpoBoothMesh(st);
-      obj.dynamicGroup.add(mesh);
-      if (st.kind !== 'RACK') obj.boothMeshes.push(mesh);
-    }
-
     for (const p of placements) {
       const group = buildProductGroup(p, obj.gltfLoader);
       obj.dynamicGroup.add(group);
       obj.placementMeshes.set(p.id, group);
     }
-
     if (editMode && selectedPlacementId) {
       const target = obj.placementMeshes.get(selectedPlacementId);
       if (target) obj.transform.attach(target);
     }
     obj.renderer.shadowMap.needsUpdate = true;
-  }, [structures, placements]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [placements, sceneKind, widthM, depthM]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const obj = sceneObjRef.current;
     if (!obj) return;
     obj.presenceGroup.clear();
     obj.staffAvatars.length = 0;
+    // Realtime đã kết nối → người online lấy từ roster realtime, bỏ bản ghi tĩnh (tránh avatar "ma")
+    if (realtimeLive) {
+      obj.renderer.shadowMap.needsUpdate = true;
+      return;
+    }
     // Lọc bỏ chính mình khỏi danh sách presences để KHÔNG bao giờ hiện 2 bản sao trùng nhau!
     presences
       .filter((pr) => !currentEmployeeId || pr.employeeId !== currentEmployeeId)
@@ -1676,6 +1464,7 @@ export function Space3DCanvas({
           name: pr.employeeName,
           config: pr.avatar,
           isOnDuty: pr.status === 'ON_DUTY',
+          isStaff: true,
         });
         av.group.position.set(pr.posX, 0, pr.posZ);
         av.group.rotation.y = pr.rotY;
@@ -1683,7 +1472,50 @@ export function Space3DCanvas({
         obj.staffAvatars.push(av);
       });
     obj.renderer.shadowMap.needsUpdate = true;
-  }, [presences, currentEmployeeId]);
+  }, [presences, currentEmployeeId, realtimeLive, sceneKind, widthM, depthM]);
+
+  // Người chơi realtime: thêm / xoá / dựng lại avatar THEO DIFF (không clear toàn bộ)
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj) return;
+    const seen = new Set<number>();
+    for (const m of remoteRoster ?? []) {
+      if (currentEmployeeId && m.employeeId === currentEmployeeId) continue;
+      seen.add(m.employeeId);
+      const sig = remoteSig(m);
+      const existing = obj.remoteAvatars.get(m.employeeId);
+      if (existing && existing.sig === sig) continue;
+
+      const st = remoteStateRef?.current.get(m.employeeId);
+      const x = existing ? existing.av.group.position.x : st?.tx ?? m.x;
+      const z = existing ? existing.av.group.position.z : st?.tz ?? m.z;
+      const r = existing ? existing.av.group.rotation.y : st?.tr ?? m.r;
+      if (existing) {
+        const slot = obj.remoteBubbles.get(m.employeeId);
+        if (slot?.sprite) {
+          slot.sprite.parent?.remove(slot.sprite);
+          disposeObject(slot.sprite);
+          slot.sprite = null;
+          slot.text = '';
+        }
+        obj.remoteGroup.remove(existing.av.group);
+        disposeObject(existing.av.group);
+      }
+      const av = createChibiAvatar({ name: m.employeeName, config: m.avatar, isOnDuty: m.onDuty, isStaff: true });
+      prepareRemoteAvatar(av, m.employeeId);
+      av.group.position.set(x, 0, z);
+      av.group.rotation.y = r;
+      obj.remoteGroup.add(av.group);
+      obj.remoteAvatars.set(m.employeeId, { av, sig, walkTime: Math.random() * 6 });
+    }
+    for (const [id, entry] of obj.remoteAvatars) {
+      if (seen.has(id)) continue;
+      obj.remoteGroup.remove(entry.av.group);
+      disposeObject(entry.av.group);
+      obj.remoteAvatars.delete(id);
+      obj.remoteBubbles.delete(id);
+    }
+  }, [remoteRoster, currentEmployeeId, sceneKind, widthM, depthM]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const obj = sceneObjRef.current;

@@ -155,13 +155,13 @@ model User {
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   externalIdentities ExternalIdentity[]
-  roles         UserRole[]
-  auditLogs     AuditLog[]
-  inAppNotifs   InAppNotification[]
-  mcpClients    McpClient[]         @relation("McpActAsUser")
-  reportPresets   ReportPreset[]
-  zaloLinkCodes   ZaloLinkCode[]
-  dashboardBoards DashboardBoard[]
+  roles              UserRole[]
+  auditLogs          AuditLog[]
+  inAppNotifs        InAppNotification[]
+  mcpClients         McpClient[]         @relation("McpActAsUser")
+  reportPresets      ReportPreset[]
+  zaloLinkCodes      ZaloLinkCode[]
+  dashboardBoards    DashboardBoard[]
 }
 
 model DashboardBoard {
@@ -1146,20 +1146,20 @@ model AssetLiquidation {
 // ============================================================
 
 model Customer {
-  profile CustomerProfile?
-  contacts CustomerContact[]
+  profile        CustomerProfile?
+  contacts       CustomerContact[]
   careActivities CustomerCareActivity[]
-  id          Int      @id @default(autoincrement())
-  code        String   @unique @db.VarChar(32)
-  name        String   @db.VarChar(191)
-  contactName String?  @db.VarChar(100)
-  phone       String   @db.VarChar(32)
-  email       String?  @db.VarChar(191)
-  address     String?  @db.VarChar(255)
-  status      String   @default("ACTIVE") @db.VarChar(32)
-  notes       String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             Int                    @id @default(autoincrement())
+  code           String                 @unique @db.VarChar(32)
+  name           String                 @db.VarChar(191)
+  contactName    String?                @db.VarChar(100)
+  phone          String                 @db.VarChar(32)
+  email          String?                @db.VarChar(191)
+  address        String?                @db.VarChar(255)
+  status         String                 @default("ACTIVE") @db.VarChar(32)
+  notes          String?                @db.Text
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
 
   locations       CustomerLocation[]
   contracts       ServiceContract[]
@@ -1173,33 +1173,33 @@ model Customer {
 }
 
 model CustomerOrder {
-  allocations CustomerPaymentAllocation[]
-  id              Int       @id @default(autoincrement())
-  orderCode       String    @unique @db.VarChar(64)
+  allocations     CustomerPaymentAllocation[]
+  id              Int                         @id @default(autoincrement())
+  orderCode       String                      @unique @db.VarChar(64)
   customerId      Int
   locationId      Int?
-  orderType       String    @default("MACHINE_PURCHASE") @db.VarChar(32) // MACHINE_PURCHASE, RENTAL, CONSIGNMENT, SPARE_PART, SERVICE
-  status          String    @default("COMPLETED") @db.VarChar(32) // PENDING, CONFIRMED, DELIVERED, COMPLETED, CANCELLED
-  goodsAmount     Decimal   @default(0) @db.Decimal(15, 2) // Tiền hàng (chưa cước, chưa VAT)
-  shippingFee     Decimal   @default(0) @db.Decimal(15, 2) // Cước vận chuyển thu của khách
-  exchangeRate    Decimal?  @db.Decimal(15, 2) // Tỷ giá snapshot từ báo giá khi có
-  vatRate         Decimal   @default(0) @db.Decimal(5, 2) // %
-  vatAmount       Decimal   @default(0) @db.Decimal(15, 2)
-  totalAmount     Decimal?  @db.Decimal(15, 2) // Tổng khách phải trả = hàng + cước + VAT
-  orderDate       DateTime  @default(now()) @db.Date
-  deliveryDate    DateTime? @db.Date
-  dueDate         DateTime? @db.Date // Hạn thanh toán
-  invoiceNo       String?   @db.VarChar(32) // Số hóa đơn VAT
-  invoiceSerial   String?   @db.VarChar(32) // Ký hiệu hóa đơn, VD 1C26TAA
-  invoiceDate     DateTime? @db.Date
-  returnedAmount  Decimal   @default(0) @db.Decimal(15, 2) // Giá trị trả hàng gồm VAT
-  paidAmount      Decimal   @default(0) @db.Decimal(15, 2) // Đã thu (cộng dồn từ các phiếu thu)
-  notes           String?   @db.Text
+  orderType       String                      @default("MACHINE_PURCHASE") @db.VarChar(32) // MACHINE_PURCHASE, RENTAL, CONSIGNMENT, SPARE_PART, SERVICE
+  status          String                      @default("COMPLETED") @db.VarChar(32) // PENDING, CONFIRMED, DELIVERED, COMPLETED, CANCELLED
+  goodsAmount     Decimal                     @default(0) @db.Decimal(15, 2) // Tiền hàng (chưa cước, chưa VAT)
+  shippingFee     Decimal                     @default(0) @db.Decimal(15, 2) // Cước vận chuyển thu của khách
+  exchangeRate    Decimal?                    @db.Decimal(15, 2) // Tỷ giá snapshot từ báo giá khi có
+  vatRate         Decimal                     @default(0) @db.Decimal(5, 2) // %
+  vatAmount       Decimal                     @default(0) @db.Decimal(15, 2)
+  totalAmount     Decimal?                    @db.Decimal(15, 2) // Tổng khách phải trả = hàng + cước + VAT
+  orderDate       DateTime                    @default(now()) @db.Date
+  deliveryDate    DateTime?                   @db.Date
+  dueDate         DateTime?                   @db.Date // Hạn thanh toán
+  invoiceNo       String?                     @db.VarChar(32) // Số hóa đơn VAT
+  invoiceSerial   String?                     @db.VarChar(32) // Ký hiệu hóa đơn, VD 1C26TAA
+  invoiceDate     DateTime?                   @db.Date
+  returnedAmount  Decimal                     @default(0) @db.Decimal(15, 2) // Giá trị trả hàng gồm VAT
+  paidAmount      Decimal                     @default(0) @db.Decimal(15, 2) // Đã thu (cộng dồn từ các phiếu thu)
+  notes           String?                     @db.Text
   quotationId     Int? // Đơn được chốt từ báo giá nào
   serviceTicketId Int? // Đơn dịch vụ sinh từ phiếu sự cố nào — để quy doanh thu về đúng máy
   stockIssuedAt   DateTime? // Thời điểm đã xuất kho giao khách
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
 
   customer        Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   location        CustomerLocation?   @relation(fields: [locationId], references: [id], onDelete: SetNull)
@@ -1219,20 +1219,20 @@ model CustomerOrder {
 }
 
 model CustomerOrderItem {
-  id          Int     @id @default(autoincrement())
-  orderId     Int
-  itemType    String  @default("EQUIPMENT") @db.VarChar(32) // EQUIPMENT, SPARE_PART, SERVICE
-  name        String  @db.VarChar(191)
-  quantity    Int     @default(1)
-  unitPrice   Decimal @db.Decimal(15, 2)
-  totalPrice  Decimal @db.Decimal(15, 2)
-  discountAmount Decimal @default(0) @db.Decimal(15, 2) // Chiết khấu đã phân bổ riêng cho dòng này
-  unitCostVnd Decimal? @db.Decimal(15, 2) // Giá vốn đơn vị tại thời điểm lập đơn
-  shippingFee Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm lập đơn
-  customsFee Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm lập đơn
-  unitPriceEur Decimal? @db.Decimal(15, 2) // Giá NCC EUR snapshot từ báo giá
-  equipmentId Int?
-  notes       String? @db.Text
+  id             Int      @id @default(autoincrement())
+  orderId        Int
+  itemType       String   @default("EQUIPMENT") @db.VarChar(32) // EQUIPMENT, SPARE_PART, SERVICE
+  name           String   @db.VarChar(191)
+  quantity       Int      @default(1)
+  unitPrice      Decimal  @db.Decimal(15, 2)
+  totalPrice     Decimal  @db.Decimal(15, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(15, 2) // Chiết khấu đã phân bổ riêng cho dòng này
+  unitCostVnd    Decimal? @db.Decimal(15, 2) // Giá vốn đơn vị tại thời điểm lập đơn
+  shippingFee    Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm lập đơn
+  customsFee     Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm lập đơn
+  unitPriceEur   Decimal? @db.Decimal(15, 2) // Giá NCC EUR snapshot từ báo giá
+  equipmentId    Int?
+  notes          String?  @db.Text
 
   order           CustomerOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
@@ -1279,21 +1279,21 @@ model CustomerQuotation {
 }
 
 model CustomerQuotationItem {
-  id          Int     @id @default(autoincrement())
-  quotationId Int
-  itemType    String  @default("EQUIPMENT") @db.VarChar(32) // EQUIPMENT, SPARE_PART, SERVICE
-  name        String  @db.VarChar(191)
-  quantity    Int     @default(1)
-  unitPrice   Decimal @db.Decimal(15, 2)
-  discountVnd Decimal @default(0) @db.Decimal(15, 2) // Chiết khấu theo dòng
-  totalPrice  Decimal @db.Decimal(15, 2)
+  id           Int      @id @default(autoincrement())
+  quotationId  Int
+  itemType     String   @default("EQUIPMENT") @db.VarChar(32) // EQUIPMENT, SPARE_PART, SERVICE
+  name         String   @db.VarChar(191)
+  quantity     Int      @default(1)
+  unitPrice    Decimal  @db.Decimal(15, 2)
+  discountVnd  Decimal  @default(0) @db.Decimal(15, 2) // Chiết khấu theo dòng
+  totalPrice   Decimal  @db.Decimal(15, 2)
   unitPriceEur Decimal? @db.Decimal(15, 2)
-  unitCostVnd Decimal? @db.Decimal(15, 2) // Giá hàng cơ sở tại thời điểm báo giá
-  shippingFee Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm báo giá
-  customsFee Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm báo giá
-  priceSource String? @db.VarChar(32)
-  equipmentId Int?
-  notes       String? @db.Text
+  unitCostVnd  Decimal? @db.Decimal(15, 2) // Giá hàng cơ sở tại thời điểm báo giá
+  shippingFee  Decimal? @db.Decimal(15, 2) // Cước mua phân bổ cho dòng tại thời điểm báo giá
+  customsFee   Decimal? @db.Decimal(15, 2) // Phí mua khác phân bổ cho dòng tại thời điểm báo giá
+  priceSource  String?  @db.VarChar(32)
+  equipmentId  Int?
+  notes        String?  @db.Text
 
   quotation       CustomerQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem?    @relation(fields: [inventoryItemId], references: [id])
@@ -1303,19 +1303,19 @@ model CustomerQuotationItem {
 }
 
 model CustomerPayment {
-  allocationVersion Int @default(0)
-  allocations CustomerPaymentAllocation[]
-  id          Int      @id @default(autoincrement())
-  paymentCode String   @unique @db.VarChar(64) // TT-YYYY-XXXX
-  customerId  Int
-  orderId     Int? // Thu cho đơn nào; để trống = thu chung trừ dần công nợ
-  amount      Decimal  @db.Decimal(15, 2)
-  method      String   @default("TRANSFER") @db.VarChar(32) // CASH, TRANSFER, CARD, OFFSET
-  paidAt      DateTime @default(now()) @db.Date
-  reference   String?  @db.VarChar(191) // Số UNC / mã giao dịch
-  note        String?  @db.Text
-  createdById Int?
-  createdAt   DateTime @default(now())
+  allocationVersion Int                         @default(0)
+  allocations       CustomerPaymentAllocation[]
+  id                Int                         @id @default(autoincrement())
+  paymentCode       String                      @unique @db.VarChar(64) // TT-YYYY-XXXX
+  customerId        Int
+  orderId           Int? // Thu cho đơn nào; để trống = thu chung trừ dần công nợ
+  amount            Decimal                     @db.Decimal(15, 2)
+  method            String                      @default("TRANSFER") @db.VarChar(32) // CASH, TRANSFER, CARD, OFFSET
+  paidAt            DateTime                    @default(now()) @db.Date
+  reference         String?                     @db.VarChar(191) // Số UNC / mã giao dịch
+  note              String?                     @db.Text
+  createdById       Int?
+  createdAt         DateTime                    @default(now())
 
   customer Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
   order    CustomerOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
@@ -1326,19 +1326,19 @@ model CustomerPayment {
 }
 
 model SupplierPayment {
-  allocationVersion Int @default(0)
-  allocations SupplierPaymentAllocation[]
-  id          Int      @id @default(autoincrement())
-  paymentCode String   @unique @db.VarChar(64) // CTT-YYYY-XXXX
-  supplier    String   @db.VarChar(128)
-  orderId     Int? // Trả cho phiếu đặt hàng nào
-  amount      Decimal  @db.Decimal(15, 2)
-  method      String   @default("TRANSFER") @db.VarChar(32)
-  paidAt      DateTime @default(now()) @db.Date
-  reference   String?  @db.VarChar(191)
-  note        String?  @db.Text
-  createdById Int?
-  createdAt   DateTime @default(now())
+  allocationVersion Int                         @default(0)
+  allocations       SupplierPaymentAllocation[]
+  id                Int                         @id @default(autoincrement())
+  paymentCode       String                      @unique @db.VarChar(64) // CTT-YYYY-XXXX
+  supplier          String                      @db.VarChar(128)
+  orderId           Int? // Trả cho phiếu đặt hàng nào
+  amount            Decimal                     @db.Decimal(15, 2)
+  method            String                      @default("TRANSFER") @db.VarChar(32)
+  paidAt            DateTime                    @default(now()) @db.Date
+  reference         String?                     @db.VarChar(191)
+  note              String?                     @db.Text
+  createdById       Int?
+  createdAt         DateTime                    @default(now())
 
   order SparePartOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
@@ -1383,8 +1383,8 @@ model CustomerReturnItem {
   unitPrice       Decimal @db.Decimal(15, 2)
   totalPrice      Decimal @db.Decimal(15, 2)
 
-  return CustomerReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  equipment FnbEquipment? @relation("ReturnedEquipment", fields: [equipmentId], references: [id], onDelete: SetNull)
+  return    CustomerReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  equipment FnbEquipment?  @relation("ReturnedEquipment", fields: [equipmentId], references: [id], onDelete: SetNull)
 
   @@index([returnId])
 }
@@ -1427,42 +1427,42 @@ model ServiceContract {
 }
 
 model FnbEquipment {
-  id                Int       @id @default(autoincrement())
-  serialNumber      String    @unique @db.VarChar(100)
-  machineCode       String    @unique @db.VarChar(64)
-  name              String    @db.VarChar(191)
-  category          String    @db.VarChar(64) // ICE_CREAM_MACHINE, CHOCOLATE_MACHINE, KITCHEN_HOT, KITCHEN_COLD, BEVERAGE_BAR, OTHER
-  brand             String?   @db.VarChar(100)
-  model             String?   @db.VarChar(100)
-  ownershipType     String    @default("SOLD") @db.VarChar(32) // SOLD, RENTAL, LOAN, CONSIGNMENT
-  specs             Json? // Specs JSON chi tiết
-  status            String    @default("OPERATING") @db.VarChar(32) // OPERATING, BREAKDOWN, UNDER_MAINTENANCE, IN_STOCK, LIQUIDATED
-  customerId        Int?
-  locationId        Int?
-  warehouseId       Int?
+  id                  Int       @id @default(autoincrement())
+  serialNumber        String    @unique @db.VarChar(100)
+  machineCode         String    @unique @db.VarChar(64)
+  name                String    @db.VarChar(191)
+  category            String    @db.VarChar(64) // ICE_CREAM_MACHINE, CHOCOLATE_MACHINE, KITCHEN_HOT, KITCHEN_COLD, BEVERAGE_BAR, OTHER
+  brand               String?   @db.VarChar(100)
+  model               String?   @db.VarChar(100)
+  ownershipType       String    @default("SOLD") @db.VarChar(32) // SOLD, RENTAL, LOAN, CONSIGNMENT
+  specs               Json? // Specs JSON chi tiết
+  status              String    @default("OPERATING") @db.VarChar(32) // OPERATING, BREAKDOWN, UNDER_MAINTENANCE, IN_STOCK, LIQUIDATED
+  customerId          Int?
+  locationId          Int?
+  warehouseId         Int?
   // Chốt tại thời điểm giao máy — giá vốn và giá bán về sau đều có thể đổi,
   // nên phải đóng băng con số của chính lần bán này để tính lãi cho đúng
-  unitCost          Decimal?  @db.Decimal(15, 2)
-  soldPrice         Decimal?  @db.Decimal(15, 2)
-  customerOrderId   Int?
+  unitCost            Decimal?  @db.Decimal(15, 2)
+  soldPrice           Decimal?  @db.Decimal(15, 2)
+  customerOrderId     Int?
   customerOrderItemId Int?
-  installedDate     DateTime? @db.Date
-  warrantyExpiresAt DateTime? @db.Date
-  lastPmDate        DateTime? @db.Date
-  nextPmDate        DateTime? @db.Date
-  notes             String?   @db.Text
-  imageUrl          String?   @db.VarChar(512)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  installedDate       DateTime? @db.Date
+  warrantyExpiresAt   DateTime? @db.Date
+  lastPmDate          DateTime? @db.Date
+  nextPmDate          DateTime? @db.Date
+  notes               String?   @db.Text
+  imageUrl            String?   @db.VarChar(512)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  location        CustomerLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  warehouse       Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  customerOrder   CustomerOrder?    @relation("OrderSoldMachines", fields: [customerOrderId], references: [id], onDelete: SetNull)
-  customerOrderItem CustomerOrderItem? @relation(fields: [customerOrderItemId], references: [id], onDelete: SetNull)
-  returns         CustomerReturnItem[] @relation("ReturnedEquipment")
-  tickets         ServiceTicket[]
-  sparePartOrders SparePartOrder[]
+  customer          Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  location          CustomerLocation?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  warehouse         Warehouse?           @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  customerOrder     CustomerOrder?       @relation("OrderSoldMachines", fields: [customerOrderId], references: [id], onDelete: SetNull)
+  customerOrderItem CustomerOrderItem?   @relation(fields: [customerOrderItemId], references: [id], onDelete: SetNull)
+  returns           CustomerReturnItem[] @relation("ReturnedEquipment")
+  tickets           ServiceTicket[]
+  sparePartOrders   SparePartOrder[]
 
   @@index([category])
   @@index([status])
@@ -1529,36 +1529,38 @@ model Warehouse {
 }
 
 model InventoryItem {
-  id             Int       @id @default(autoincrement())
-  itemCode       String    @unique @db.VarChar(64)
-  name           String    @db.VarChar(191)
-  category       String    @db.VarChar(64) // SPARE_PART, CONSUMABLE, MACHINE
-  supplyType     String    @default("READY_STOCK") @db.VarChar(32) // READY_STOCK, ON_ORDER
-  unit           String    @db.VarChar(32)
-  compatibleWith String?   @db.VarChar(255)
-  minStockAlert  Int       @default(5)
-  costPrice      Decimal?  @db.Decimal(15, 2)
-  sellingPrice   Decimal?  @db.Decimal(15, 2)
-  priceEur       Decimal?  @db.Decimal(15, 2)
-  priceUsd       Decimal?  @db.Decimal(15, 2)
+  id              Int       @id @default(autoincrement())
+  itemCode        String    @unique @db.VarChar(64)
+  name            String    @db.VarChar(191)
+  category        String    @db.VarChar(64) // SPARE_PART, CONSUMABLE, MACHINE
+  supplyType      String    @default("READY_STOCK") @db.VarChar(32) // READY_STOCK, ON_ORDER
+  unit            String    @db.VarChar(32)
+  compatibleWith  String?   @db.VarChar(255)
+  minStockAlert   Int       @default(5)
+  costPrice       Decimal?  @db.Decimal(15, 2)
+  sellingPrice    Decimal?  @db.Decimal(15, 2)
+  priceEur        Decimal?  @db.Decimal(15, 2)
+  priceUsd        Decimal?  @db.Decimal(15, 2)
   // Máy nguyên chiếc (category = EQUIPMENT): loại máy F&B tương ứng, dùng khi xuất
   // bán để sinh hồ sơ máy mà không phải hỏi lại người xuất kho
-  fnbCategory    String?   @db.VarChar(64)
-  avgCost        Decimal?  @db.Decimal(15, 2) // Giá vốn bình quân gia quyền, cập nhật mỗi lần nhập
-  avgBaseCost    Decimal?  @db.Decimal(15, 2) // Phần giá hàng trong giá vốn bình quân
-  avgShippingCost Decimal? @db.Decimal(15, 2) // Phần cước phân bổ trong giá vốn bình quân
-  avgOtherCost   Decimal?  @db.Decimal(15, 2) // Phần phí khác phân bổ trong giá vốn bình quân
-  autoPrice      Decimal?  @db.Decimal(15, 2) // Giá bán suy ra từ giá vốn + margin, lưu lại để báo giá ổn định
-  autoPriceAt    DateTime? // Thời điểm tính lại giá bán tự động
-  autoPriceBasis Decimal?  @db.Decimal(15, 2) // Giá vốn đã dùng để tính autoPrice → phát hiện lệch
-  lifespan       String?   @db.VarChar(64)
-  leadTimeDays   Int?      @default(14)
-  description    String?   @db.Text
-  imageUrl       String?   @db.VarChar(512)
-  manufacturer   String?   @db.VarChar(128)
-  status         String    @default("ACTIVE") @db.VarChar(32)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @default(now()) @updatedAt
+  fnbCategory     String?   @db.VarChar(64)
+  avgCost         Decimal?  @db.Decimal(15, 2) // Giá vốn bình quân gia quyền, cập nhật mỗi lần nhập
+  avgBaseCost     Decimal?  @db.Decimal(15, 2) // Phần giá hàng trong giá vốn bình quân
+  avgShippingCost Decimal?  @db.Decimal(15, 2) // Phần cước phân bổ trong giá vốn bình quân
+  avgOtherCost    Decimal?  @db.Decimal(15, 2) // Phần phí khác phân bổ trong giá vốn bình quân
+  autoPrice       Decimal?  @db.Decimal(15, 2) // Giá bán suy ra từ giá vốn + margin, lưu lại để báo giá ổn định
+  autoPriceAt     DateTime? // Thời điểm tính lại giá bán tự động
+  autoPriceBasis  Decimal?  @db.Decimal(15, 2) // Giá vốn đã dùng để tính autoPrice → phát hiện lệch
+  lifespan        String?   @db.VarChar(64)
+  leadTimeDays    Int?      @default(14)
+  description     String?   @db.Text
+  /// Giới thiệu sản phẩm (công dụng, ưu điểm, điểm nổi bật) — trợ lý AI dùng để tư vấn khách
+  introduction    String?   @db.Text
+  imageUrl        String?   @db.VarChar(512)
+  manufacturer    String?   @db.VarChar(128)
+  status          String    @default("ACTIVE") @db.VarChar(32)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
 
   stocks             InventoryStock[]
   transItems         InventoryTransactionItem[]
@@ -1627,17 +1629,17 @@ model InventoryTransaction {
 }
 
 model InventoryTransactionItem {
-  id              Int      @id @default(autoincrement())
-  transactionId   Int
-  itemId          Int
-  ticketId        Int?
-  quantity        Int
-  unitPrice       Decimal? @db.Decimal(15, 2)
-  unitCost        Decimal? @db.Decimal(15, 2) // Giá vốn bình quân tại thời điểm ghi sổ
-  baseUnitCost    Decimal? @db.Decimal(15, 2) // Phần giá hàng tại thời điểm ghi sổ
+  id               Int      @id @default(autoincrement())
+  transactionId    Int
+  itemId           Int
+  ticketId         Int?
+  quantity         Int
+  unitPrice        Decimal? @db.Decimal(15, 2)
+  unitCost         Decimal? @db.Decimal(15, 2) // Giá vốn bình quân tại thời điểm ghi sổ
+  baseUnitCost     Decimal? @db.Decimal(15, 2) // Phần giá hàng tại thời điểm ghi sổ
   shippingUnitCost Decimal? @db.Decimal(15, 2) // Phần cước phân bổ tại thời điểm ghi sổ
-  otherUnitCost   Decimal? @db.Decimal(15, 2) // Phần phí khác phân bổ tại thời điểm ghi sổ
-  oldPartPhotoUrl String?  @db.VarChar(512)
+  otherUnitCost    Decimal? @db.Decimal(15, 2) // Phần phí khác phân bổ tại thời điểm ghi sổ
+  oldPartPhotoUrl  String?  @db.VarChar(512)
 
   transaction InventoryTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   item        InventoryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
@@ -1679,37 +1681,37 @@ model StockCountItem {
 }
 
 model SparePartOrder {
-  allocations SupplierPaymentAllocation[]
-  id                Int       @id @default(autoincrement())
-  orderCode         String    @unique @db.VarChar(64) // PO-YYYY-XXXX
-  supplier          String    @default("Selmi") @db.VarChar(128)
-  status            String    @default("REQUESTED") @db.VarChar(32) // REQUESTED, ORDERED_SUPPLIER, SHIPPING_INTL, CUSTOMS_CLEARING, ARRIVED_WAREHOUSE, INSPECTING, STOCKED, COMPLETED, CANCELLED
-  currency          String    @default("EUR") @db.VarChar(10)
-  exchangeRate      Decimal   @default(32500) @db.Decimal(15, 2)
-  shippingFee       Decimal   @default(3500000) @db.Decimal(15, 2)
-  customsFee        Decimal   @default(0) @db.Decimal(15, 2)
-  extraShippingRate Decimal   @default(0) @db.Decimal(5, 2)
-  discountRate      Decimal   @default(0) @db.Decimal(5, 4)
-  totalItemsQty     Int       @default(0)
-  subtotalVnd       Decimal   @default(0) @db.Decimal(15, 2)
-  discountVnd       Decimal   @default(0) @db.Decimal(15, 2)
-  totalVnd          Decimal   @default(0) @db.Decimal(15, 2)
-  trackingNumber    String?   @db.VarChar(128)
-  paidAmount        Decimal   @default(0) @db.Decimal(15, 2) // Đã trả nhà cung cấp
-  dueDate           DateTime? @db.Date // Hạn thanh toán cho nhà cung cấp
-  etaDate           DateTime? @db.Date
-  arrivedDate       DateTime? @db.Date
+  allocations       SupplierPaymentAllocation[]
+  id                Int                         @id @default(autoincrement())
+  orderCode         String                      @unique @db.VarChar(64) // PO-YYYY-XXXX
+  supplier          String                      @default("Selmi") @db.VarChar(128)
+  status            String                      @default("REQUESTED") @db.VarChar(32) // REQUESTED, ORDERED_SUPPLIER, SHIPPING_INTL, CUSTOMS_CLEARING, ARRIVED_WAREHOUSE, INSPECTING, STOCKED, COMPLETED, CANCELLED
+  currency          String                      @default("EUR") @db.VarChar(10)
+  exchangeRate      Decimal                     @default(32500) @db.Decimal(15, 2)
+  shippingFee       Decimal                     @default(3500000) @db.Decimal(15, 2)
+  customsFee        Decimal                     @default(0) @db.Decimal(15, 2)
+  extraShippingRate Decimal                     @default(0) @db.Decimal(5, 2)
+  discountRate      Decimal                     @default(0) @db.Decimal(5, 4)
+  totalItemsQty     Int                         @default(0)
+  subtotalVnd       Decimal                     @default(0) @db.Decimal(15, 2)
+  discountVnd       Decimal                     @default(0) @db.Decimal(15, 2)
+  totalVnd          Decimal                     @default(0) @db.Decimal(15, 2)
+  trackingNumber    String?                     @db.VarChar(128)
+  paidAmount        Decimal                     @default(0) @db.Decimal(15, 2) // Đã trả nhà cung cấp
+  dueDate           DateTime?                   @db.Date // Hạn thanh toán cho nhà cung cấp
+  etaDate           DateTime?                   @db.Date
+  arrivedDate       DateTime?                   @db.Date
   stockedAt         DateTime? // Thời điểm đã nhập kho (chốt sau khi kiểm hàng)
-  inspectionNote    String?   @db.Text
+  inspectionNote    String?                     @db.Text
   targetWarehouseId Int?
   customerId        Int?
   customerOrderId   Int? // Đặt hàng để phục vụ đơn hàng khách nào
   equipmentId       Int?
   serviceTicketId   Int?
-  notes             String?   @db.Text
+  notes             String?                     @db.Text
   createdById       Int
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
 
   targetWarehouse  Warehouse?           @relation(fields: [targetWarehouseId], references: [id], onDelete: SetNull)
   customer         Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -1748,73 +1750,81 @@ model SparePartOrderItem {
 
 /// Provider subject is stable; email is informational, never an account-linking key.
 model ExternalIdentity {
-  id Int @id @default(autoincrement())
-  userId Int
-  provider String @db.VarChar(32)
-  subject String @db.VarChar(191)
-  email String @db.VarChar(191)
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  provider  String   @db.VarChar(32)
+  subject   String   @db.VarChar(191)
+  email     String   @db.VarChar(191)
   createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([provider, subject])
   @@unique([userId, provider])
 }
 
 model CustomerPaymentAllocation {
-  id Int @id @default(autoincrement())
+  id        Int             @id @default(autoincrement())
   paymentId Int
-  orderId Int
-  amount Decimal @db.Decimal(15, 2)
-  payment CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  order CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderId   Int
+  amount    Decimal         @db.Decimal(15, 2)
+  payment   CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order     CustomerOrder   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
   @@unique([paymentId, orderId])
   @@index([orderId])
 }
+
 model SupplierPaymentAllocation {
-  id Int @id @default(autoincrement())
+  id        Int             @id @default(autoincrement())
   paymentId Int
-  orderId Int
-  amount Decimal @db.Decimal(15, 2)
-  payment SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  order SparePartOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderId   Int
+  amount    Decimal         @db.Decimal(15, 2)
+  payment   SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order     SparePartOrder  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
   @@unique([paymentId, orderId])
   @@index([orderId])
 }
 
 model CustomerProfile {
-  customerId Int @id
-  kind String @default("BUSINESS") @db.VarChar(20)
-  legalName String? @db.VarChar(191)
-  taxCode String? @db.VarChar(32)
-  billingAddress String? @db.VarChar(255)
-  billingEmail String? @db.VarChar(191)
-  paymentTerms String? @db.VarChar(500)
+  customerId      Int      @id
+  kind            String   @default("BUSINESS") @db.VarChar(20)
+  legalName       String?  @db.VarChar(191)
+  taxCode         String?  @db.VarChar(32)
+  billingAddress  String?  @db.VarChar(255)
+  billingEmail    String?  @db.VarChar(191)
+  paymentTerms    String?  @db.VarChar(500)
   ownerEmployeeId Int?
-  updatedAt DateTime @updatedAt
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  updatedAt       DateTime @updatedAt
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
+
 model CustomerContact {
-  id Int @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   customerId Int
-  name String @db.VarChar(100)
-  role String? @db.VarChar(100)
-  phone String? @db.VarChar(32)
-  email String? @db.VarChar(191)
-  isPrimary Boolean @default(false)
-  createdAt DateTime @default(now())
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name       String   @db.VarChar(100)
+  role       String?  @db.VarChar(100)
+  phone      String?  @db.VarChar(32)
+  email      String?  @db.VarChar(191)
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
   @@index([customerId])
 }
+
 model CustomerCareActivity {
-  id Int @id @default(autoincrement())
-  customerId Int
-  title String @db.VarChar(191)
-  note String? @db.Text
-  channel String @default("CALL") @db.VarChar(20)
-  assigneeId Int
-  dueAt DateTime?
+  id          Int       @id @default(autoincrement())
+  customerId  Int
+  title       String    @db.VarChar(191)
+  note        String?   @db.Text
+  channel     String    @default("CALL") @db.VarChar(20)
+  assigneeId  Int
+  dueAt       DateTime?
   completedAt DateTime?
-  createdAt DateTime @default(now())
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
   @@index([customerId, dueAt])
 }
 
@@ -1823,18 +1833,18 @@ model CustomerCareActivity {
 // ============================================================
 
 model SpaceScene {
-  id             Int       @id @default(autoincrement())
-  code           String    @unique @db.VarChar(64)
-  name           String    @db.VarChar(191)
-  kind           String    @default("SHOWROOM") @db.VarChar(32) // SHOWROOM | WAREHOUSE
+  id             Int      @id @default(autoincrement())
+  code           String   @unique @db.VarChar(64)
+  name           String   @db.VarChar(191)
+  kind           String   @default("SHOWROOM") @db.VarChar(32) // SHOWROOM | WAREHOUSE
   warehouseId    Int?
-  isPublic       Boolean   @default(false)
-  widthM         Float     @default(36)
-  depthM         Float     @default(28)
-  wallHeightM    Float     @default(5)
-  structuresJson Json      @default("[]")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  isPublic       Boolean  @default(false)
+  widthM         Float    @default(36)
+  depthM         Float    @default(28)
+  wallHeightM    Float    @default(5)
+  structuresJson Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   warehouse  Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   placements SpacePlacement[]
@@ -1898,10 +1908,40 @@ model SpacePresence {
   @@index([sceneCode, lastSeenAt])
 }
 
+/// Hội thoại khách tham quan (không đăng nhập) ↔ nhân viên trong Không gian 3D
+model SpaceGuestMessage {
+  id              Int      @id @default(autoincrement())
+  staffEmployeeId Int
+  /// Khoá bí mật ngẫu nhiên của khách (lưu localStorage) — đồng thời là tên kênh realtime
+  guestKey        String   @db.VarChar(64)
+  guestName       String   @db.VarChar(80)
+  fromGuest       Boolean
+  body            String   @db.Text
+  createdAt       DateTime @default(now())
+
+  @@index([staffEmployeeId, createdAt])
+  @@index([guestKey, createdAt])
+}
+
+model SpaceChatMessage {
+  id             Int       @id @default(autoincrement())
+  fromEmployeeId Int
+  toEmployeeId   Int
+  body           String    @db.Text
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([toEmployeeId, readAt])
+  @@index([fromEmployeeId, toEmployeeId, createdAt])
+  @@index([toEmployeeId, fromEmployeeId, createdAt])
+}
+
 model SpaceAvatarConfig {
   id         Int      @id @default(autoincrement())
   employeeId Int      @unique
   configJson Json
+  /// LIVE = tự trả lời khách; AI = trợ lý AI trả lời thay về sản phẩm trong kho
+  chatMode   String   @default("LIVE") @db.VarChar(16)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }

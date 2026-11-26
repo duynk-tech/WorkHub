@@ -1,6 +1,9 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
-import { can, type AuthContext } from '@/server/auth/context';
+import { type AuthContext } from '@/server/auth/context';
+import { canDesignSpace } from './permissions';
+import { normalizeSceneKind } from '@/lib/space-3d-catalog';
+import { DEFAULT_SCENE_SIZE, templateFor, upgradeLegacyLayout } from '@/lib/space-3d-templates';
 import { getAppBranding } from '@/server/modules/settings/branding';
 import { getSettingsByKeys } from '@/server/modules/settings/service';
 import {
@@ -13,13 +16,22 @@ import {
   type SpacePayload,
   type SpacePlacementView,
   type SpaceStructure,
+  normalizeSpaceObjects,
 } from '@/lib/space-3d-types';
 
 const BOOTH_COLORS = ['#2563eb', '#0891b2', '#ea580c', '#7c3aed', '#059669', '#d97706'];
 
+/** Bỏ siêu dữ liệu nội bộ (<!--fees:...-->) trước khi đưa mô tả ra cho khách / AI */
+function cleanPublicDescription(text: string | null | undefined): string | null {
+  const t = (text || '').replace(/<!--[\s\S]*?-->/g, '').trim();
+  return t ? t.slice(0, 600) : null;
+}
+
+/** Thời gian sống của bản ghi trực quầy nếu không có nhịp tim */
+const PRESENCE_TTL_MS = 3 * 60 * 1000;
+
 function parseStructures(raw: unknown): SpaceStructure[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((s): s is SpaceStructure => Boolean(s && typeof s === 'object' && typeof (s as { id?: unknown }).id === 'string'));
+  return normalizeSpaceObjects(raw);
 }
 
 function toModel3DView(
@@ -50,6 +62,59 @@ function toModel3DView(
 }
 
 /** Tự tạo scene Showroom & Văn phòng mặc định từ phòng ban và sản phẩm thật của công ty. */
+/**
+ * Bổ sung scene Quán cà phê & Văn phòng (mẫu thiết kế) và nâng cấp 1 lần bố cục cũ của Showroom/Kho
+ * (thêm lễ tân lệch bên cổng, vách thương hiệu, khu ghế chờ, kệ hàng, cây cảnh…) nếu chưa từng thiết kế.
+ */
+async function ensureDesignScenes() {
+  const [existing, departments] = await Promise.all([
+    prisma.spaceScene.findMany({ select: { id: true, code: true, kind: true, widthM: true, depthM: true, structuresJson: true } }),
+    prisma.department.findMany({
+      where: { isActive: true },
+      orderBy: [{ level: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+      take: 8,
+      select: { id: true, code: true, name: true },
+    }),
+  ]);
+  const codes = new Set(existing.map((s) => s.code));
+  const creates: Promise<unknown>[] = [];
+  for (const def of [
+    { code: 'CAFE', name: 'Quán cà phê mẫu', kind: 'CAFE' as const, isPublic: true },
+    { code: 'OFFICE', name: 'Văn phòng công ty', kind: 'OFFICE' as const, isPublic: false },
+  ]) {
+    if (codes.has(def.code)) continue;
+    const size = DEFAULT_SCENE_SIZE[def.kind];
+    creates.push(
+      prisma.spaceScene
+        .create({
+          data: {
+            code: def.code,
+            name: def.name,
+            kind: def.kind,
+            isPublic: def.isPublic,
+            widthM: size.widthM,
+            depthM: size.depthM,
+            wallHeightM: def.kind === 'CAFE' ? 3.8 : 3.2,
+            structuresJson: templateFor(def.kind, { ...size, departments }) as never,
+          },
+        })
+        .catch(() => undefined), // tạo song song từ 2 request → bỏ qua lỗi trùng code
+    );
+  }
+  for (const sc of existing) {
+    const kind = normalizeSceneKind(sc.kind);
+    const upgraded = upgradeLegacyLayout(kind, normalizeSpaceObjects(sc.structuresJson), {
+      widthM: sc.widthM,
+      depthM: sc.depthM,
+      departments,
+    });
+    if (upgraded && upgraded.length > normalizeSpaceObjects(sc.structuresJson).length) {
+      creates.push(prisma.spaceScene.update({ where: { id: sc.id }, data: { structuresJson: upgraded as never } }));
+    }
+  }
+  await Promise.all(creates);
+}
+
 async function ensureDefaultShowroomScene() {
   const existing = await prisma.spaceScene.findUnique({ where: { code: 'SHOWROOM' } });
   if (existing) return existing;
@@ -223,18 +288,13 @@ export async function loadSpace3DData(
   requestedSceneCode?: string | null,
 ): Promise<SpacePayload> {
   const isStaff = Boolean(ctx);
-  const canEdit = Boolean(
-    ctx &&
-      (ctx.isAdmin ||
-        can(ctx, 'FEATURE_EQUIPMENT_MANAGE') ||
-        can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') ||
-        can(ctx, 'FEATURE_SETTING_GENERAL')),
-  );
+  const canEdit = canDesignSpace(ctx);
 
   await ensureDefaultShowroomScene();
   if (isStaff) {
     await ensureWarehouseScenes();
   }
+  await ensureDesignScenes();
 
   const [branding, companyCfg, allScenes, departments] = await Promise.all([
     getAppBranding(),
@@ -260,7 +320,10 @@ export async function loadSpace3DData(
     allScenes.find((s) => s.code === 'SHOWROOM') ??
     allScenes[0];
 
-  const activeSince = new Date(Date.now() - 8 * 60 * 60 * 1000);
+  // Chỉ coi là "đang trực" khi trình duyệt của nhân viên còn gửi nhịp tim (mỗi 60s).
+  // Quá 3 phút không có tín hiệu (đóng tab, mất mạng, bản ghi seed cũ) → không hiển thị & dọn khỏi DB.
+  const activeSince = new Date(Date.now() - PRESENCE_TTL_MS);
+  await prisma.spacePresence.deleteMany({ where: { lastSeenAt: { lt: activeSince } } }).catch(() => undefined);
   const [placementRows, presenceRows, catalogRows, myAvatarRow] = await Promise.all([
     prisma.spacePlacement.findMany({
       where: {
@@ -314,6 +377,67 @@ export async function loadSpace3DData(
   ]);
 
   const parsedStructures = parseStructures(activeSceneRow.structuresJson);
+
+  // Hàng hoá công khai cho kệ trưng bày: ưu tiên SP có ảnh thật, kèm các SP được chọn tay trên kệ
+  const manualIds = Array.from(
+    new Set(parsedStructures.flatMap((o) => (o.merch?.mode === 'MANUAL' ? o.merch.itemIds : []))),
+  ).slice(0, 200);
+  // Ưu tiên MÁY MÓC / THIẾT BỊ đang CÓ TỒN trong kho (trưng bày tủ kính, bục), sau đó linh kiện & vật tư có tồn (kệ gondola)
+  const merchSelect = {
+    id: true,
+    itemCode: true,
+    name: true,
+    category: true,
+    manufacturer: true,
+    imageUrl: true,
+    sellingPrice: true,
+    description: true,
+    introduction: true,
+    fnbCategory: true,
+    product3DModel: true,
+    stocks: { select: { quantity: true } },
+  } as const;
+  const inStock = { stocks: { some: { quantity: { gt: 0 } } } };
+  const machineWhere = { OR: [{ category: { in: ['MACHINE', 'EQUIPMENT'] } }, { fnbCategory: { not: null } }] };
+  const wantMerch = parsedStructures.some((o) => o.merch || o.kind === 'PODIUM') || canEdit;
+  const [machineRows, partRows, manualRows] = wantMerch
+    ? await Promise.all([
+        prisma.inventoryItem.findMany({
+          where: { status: 'ACTIVE', ...inStock, ...machineWhere },
+          orderBy: [{ imageUrl: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+          take: 40,
+          select: merchSelect,
+        }),
+        prisma.inventoryItem.findMany({
+          where: { status: 'ACTIVE', ...inStock, NOT: machineWhere },
+          orderBy: [{ imageUrl: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+          take: 50,
+          select: merchSelect,
+        }),
+        manualIds.length
+          ? prisma.inventoryItem.findMany({ where: { id: { in: manualIds } }, select: merchSelect })
+          : Promise.resolve([]),
+      ])
+    : [[], [], []];
+  const seenMerch = new Set<number>();
+  const merchItems = [...machineRows, ...partRows, ...manualRows]
+    .filter((m) => (seenMerch.has(m.id) ? false : (seenMerch.add(m.id), true)))
+    .map((m) => {
+      const isMachine = m.category === 'MACHINE' || m.category === 'EQUIPMENT' || Boolean(m.fnbCategory);
+      return {
+        id: m.id,
+        itemCode: m.itemCode,
+        name: m.name,
+        category: m.category,
+        manufacturer: m.manufacturer,
+        imageUrl: m.imageUrl,
+        sellingPrice: m.sellingPrice ? Number(m.sellingPrice) : null,
+        description: cleanPublicDescription(m.introduction || m.description),
+        isMachine,
+        stockQty: isStaff ? m.stocks.reduce((acc, st) => acc + st.quantity, 0) : null,
+        model3D: isMachine ? toModel3DView('MACHINE', m.product3DModel) : null,
+      };
+    });
   const myPresence = ctx ? presenceRows.find((p) => p.employeeId === ctx.employeeId) ?? null : null;
 
   // Chỉ hiển thị các nhân viên THỰC SỰ đang đăng nhập và vào trực tại quầy (không tự tạo nhân viên ảo)
@@ -391,6 +515,7 @@ export async function loadSpace3DData(
           isOnDuty: Boolean(myPresence),
           dutyStation: myPresence?.stationLabel ?? null,
           avatar: normalizeAvatar3DConfig(myAvatarRow?.configJson),
+          chatMode: myAvatarRow?.chatMode === 'AI' ? ('AI' as const) : ('LIVE' as const),
         }
       : null,
     branding: {
@@ -403,7 +528,7 @@ export async function loadSpace3DData(
     scenes: allScenes.map((s) => ({
       code: s.code,
       name: s.name,
-      kind: (s.kind === 'WAREHOUSE' ? 'WAREHOUSE' : 'SHOWROOM') as 'SHOWROOM' | 'WAREHOUSE',
+      kind: normalizeSceneKind(s.kind),
       isPublic: s.isPublic,
       warehouseId: s.warehouseId,
     })),
@@ -411,7 +536,8 @@ export async function loadSpace3DData(
       id: activeSceneRow.id,
       code: activeSceneRow.code,
       name: activeSceneRow.name,
-      kind: (activeSceneRow.kind === 'WAREHOUSE' ? 'WAREHOUSE' : 'SHOWROOM') as 'SHOWROOM' | 'WAREHOUSE',
+      updatedAt: activeSceneRow.updatedAt.toISOString(),
+      kind: normalizeSceneKind(activeSceneRow.kind),
       isPublic: activeSceneRow.isPublic,
       widthM: activeSceneRow.widthM,
       depthM: activeSceneRow.depthM,
@@ -428,5 +554,6 @@ export async function loadSpace3DData(
     })),
     presences: combinedPresences,
     catalog,
+    merchItems,
   };
 }

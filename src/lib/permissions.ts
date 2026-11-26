@@ -90,6 +90,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'FEATURE_REPORT_SCHEDULE', name: 'Lịch gửi báo cáo tự động', group: 'Báo cáo', category: 'FEATURE', sortOrder: 605 },
 
   // ── Hệ thống ──
+  // ── Không gian 3D ──
+  { code: 'FEATURE_SPACE_DESIGN', name: 'Thiết kế Không gian 3D (kéo thả bố cục, nội thất, kệ hàng)', group: 'Không gian 3D', category: 'FEATURE', sortOrder: 690 },
+
   { code: 'MENU_SETTINGS', name: 'Menu Cấu hình hệ thống', group: 'Hệ thống', category: 'MENU', sortOrder: 700 },
   { code: 'FEATURE_SETTING_GENERAL', name: 'Cấu hình chung', group: 'Hệ thống', category: 'FEATURE', sortOrder: 701 },
   { code: 'FEATURE_SETTING_ZALO', name: 'Cấu hình Zalo Bot', group: 'Hệ thống', category: 'FEATURE', sortOrder: 702 },

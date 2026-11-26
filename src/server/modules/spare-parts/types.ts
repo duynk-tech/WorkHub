@@ -86,6 +86,8 @@ export const SaveSparePartSchema = z.object({
   /** Loại máy F&B, chỉ dùng khi category = EQUIPMENT. */
   fnbCategory: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
+  /** Giới thiệu sản phẩm (công dụng, ưu điểm) — trợ lý AI dùng để tư vấn khách */
+  introduction: z.string().max(4000).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });

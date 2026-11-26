@@ -17,6 +17,8 @@
     "db:seed:all": "tsx prisma/seed/index.ts --demo",
     "db:seed:clean": "tsx prisma/seed/index.ts --demo --clean",
     "db:seed:equipment": "tsx prisma/seed/fnb-equipment.ts",
+    "db:seed:space3d": "tsx prisma/seed/space3d-demo.ts",
+    "db:seed:product-intro": "tsx prisma/seed/product-intro.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force && npm run db:seed",
     "test": "vitest run",
@@ -30,10 +32,13 @@
     "seed": "tsx prisma/seed/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^1.0.65",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@prisma/client": "^6.9.0",
+    "@supabase/supabase-js": "^2.119.2",
     "@tanstack/react-query": "^5.80.0",
     "@tanstack/react-table": "^8.21.3",
+    "ai": "^5.0.294",
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

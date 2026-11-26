@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, hashPassword, checkPasswordStrength } from '@/server/auth/password';
 import { createSessionCookie, destroySessionCookie } from '@/server/auth/session';
-import { requireAuth } from '@/server/auth/context';
+import { getAuthContext, requireAuth } from '@/server/auth/context';
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 10;
@@ -95,6 +95,13 @@ export async function loginAction(_prev: ActionState, formData: FormData): Promi
 }
 
 export async function logoutAction() {
+  // Rời Không gian 3D ngay khi đăng xuất (không để avatar "đang trực" treo lại)
+  try {
+    const ctx = await getAuthContext();
+    if (ctx) await prisma.spacePresence.deleteMany({ where: { employeeId: ctx.employeeId } });
+  } catch {
+    // bỏ qua — vẫn đăng xuất bình thường
+  }
   await destroySessionCookie();
   redirect('/login');
 }
