@@ -1,9 +1,28 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/google', '/install', '/api/zalo', '/api/mcp', '/api/cron', '/api/health'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/3d',
+  '/api/auth/google',
+  '/install',
+  '/api/zalo',
+  '/api/mcp',
+  '/api/cron',
+  '/api/health',
+  '/api/space3d/public',
+];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const host = (req.headers.get('host') || '').toLowerCase();
+
+  // Hỗ trợ tách subdomain riêng (VD: 3d.timcorp.vn hoặc 3d-worker-console.vercel.app)
+  if ((host.startsWith('3d.') || host.startsWith('3d-')) && pathname === '/') {
+    const url = req.nextUrl.clone();
+    url.pathname = '/3d';
+    return NextResponse.rewrite(url);
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
   // Chỉ kiểm tra sự hiện diện của cookie ở tầng middleware (Edge).
@@ -19,5 +38,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|glb|gltf)$).*)'],
 };
