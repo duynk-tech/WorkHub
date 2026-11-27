@@ -297,7 +297,7 @@ export function createBadgeSprite(text: string, bgColor = '#0f172a', textColor =
   return createPillSprite({ text: text.slice(0, 40), bg: bgColor, fg: textColor, dot: null, height: 0.2 });
 }
 
-export type NameTagStatus = 'self' | 'duty' | 'staff' | 'guest';
+export type NameTagStatus = 'self' | 'duty' | 'staff' | 'guest' | 'npc';
 
 /** Nhãn tên trên đầu nhân vật: viên thuốc kính mờ tối, chấm trạng thái, tên rõ nét; đang trực có chip xanh. */
 /**
@@ -306,7 +306,7 @@ export type NameTagStatus = 'self' | 'duty' | 'staff' | 'guest';
  */
 export function createNameTag(name: string, status: NameTagStatus): CSS2DObject {
   // Bản thân: viền xanh dương; đang trực: viền xanh lá (không chữ); còn lại: viên tối gọn
-  const ring = status === 'self' ? '#3b82f6' : status === 'duty' ? '#22c55e' : null;
+  const ring = status === 'self' ? '#3b82f6' : status === 'duty' ? '#22c55e' : status === 'npc' ? '#a8a29e' : null;
   const border = ring ? `1.5px solid ${ring}` : '1px solid rgba(255,255,255,0.16)';
   const el = document.createElement('div');
   el.style.cssText = [
@@ -767,6 +767,8 @@ export function createChibiAvatar(opts: {
   isOnDuty?: boolean;
   /** Nhân viên (không phải khách) — đổi màu chấm trạng thái */
   isStaff?: boolean;
+  /** Nhân vật tự động (NPC) — nhãn viền xám */
+  npc?: boolean;
 }): AnimatedAvatar {
   const { name, config, isSelf = false, isOnDuty = false } = opts;
   const group = new THREE.Group();
@@ -829,8 +831,10 @@ export function createChibiAvatar(opts: {
     const pivot = new THREE.Group();
     pivot.position.set(offsetX, 0.9, 0);
     const legMat = bareLegs ? skin : pantsMat;
+    // Mặc váy: đùi dùng chính vải váy (như lớp lót) → khi bước chân vung ra khỏi mép váy không lộ đùi trần
+    const thighMat = isDress ? fabric : pencilSkirt ? pantsMat : legMat;
     // Đùi (thon dần về gối)
-    const thigh = limb(bareLegs ? 0.058 : 0.078, bareLegs ? 0.043 : 0.057, 0.36, legMat, 0.06);
+    const thigh = limb(bareLegs ? 0.064 : 0.078, bareLegs ? 0.046 : 0.057, 0.36, thighMat, 0.06);
     thigh.position.y = -0.21;
     pivot.add(thigh);
     // Gối → ống chân (bắp chân nở nhẹ) → giày
@@ -1327,7 +1331,7 @@ export function createChibiAvatar(opts: {
   group.add(headGroup);
 
   // Nhãn tên nổi
-  const badge = createNameTag(name, isOnDuty ? 'duty' : isSelf ? 'self' : opts.isStaff ? 'staff' : 'guest');
+  const badge = createNameTag(name, opts.npc ? 'npc' : isOnDuty ? 'duty' : isSelf ? 'self' : opts.isStaff ? 'staff' : 'guest');
   badge.position.y = 1.97;
   group.add(badge);
 

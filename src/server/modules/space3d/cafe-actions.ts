@@ -197,3 +197,42 @@ export async function clearDrinkOrdersAction(input: {
     return { ok: false, message: friendlyError(e, 'Dọn bàn thất bại') };
   }
 }
+
+const NPC_SERVER_NAME = 'Bé Na (phục vụ)';
+/** Có nhân viên thật đang trực trong cảnh (presence ON_DUTY còn hạn 3 phút) */
+async function hasStaffOnDuty(sceneCode: string): Promise<boolean> {
+  const n = await prisma.spacePresence.count({
+    where: { sceneCode, status: 'ON_DUTY', lastSeenAt: { gte: new Date(Date.now() - 3 * 60_000) } },
+  });
+  return n > 0;
+}
+
+/**
+ * NPC quán cà phê tự pha & bưng nước khi KHÔNG có nhân viên trực.
+ * Chỉ người gọi đơn được đẩy trạng thái; đúng thứ tự & đủ thời gian (chống spam / nhảy cóc).
+ */
+export async function npcAdvanceOrderAction(
+  orderId: number,
+  to: 'PREPARING' | 'SERVED',
+  guestKey?: string | null,
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const ctx = await getAuthContext();
+    const cur = await prisma.spaceDrinkOrder.findUnique({ where: { id: Number(orderId) } });
+    if (!cur) return { ok: false, message: 'Không tìm thấy đơn' };
+    const owner = ctx ? cur.employeeId === ctx.employeeId : Boolean(guestKey && GUEST_KEY_RE.test(guestKey) && cur.guestKey === guestKey);
+    if (!owner) return { ok: false, message: 'Không phải đơn của bạn' };
+    if (await hasStaffOnDuty(cur.sceneCode)) return { ok: false, message: 'Nhân viên đang trực sẽ phục vụ bạn' };
+    const age = Date.now() - cur.createdAt.getTime();
+    if (to === 'PREPARING' && (cur.status !== 'NEW' || age < 2500)) return { ok: false, message: 'Chưa thể nhận đơn' };
+    if (to === 'SERVED' && (cur.status !== 'PREPARING' || age < 10_000)) return { ok: false, message: 'Đồ uống đang được pha' };
+    await prisma.spaceDrinkOrder.update({
+      where: { id: cur.id },
+      data: { status: to, servedByName: NPC_SERVER_NAME, servedAt: to === 'SERVED' ? new Date() : null },
+    });
+    await broadcastServer(`space:${cur.sceneCode}`, 'order', { id: cur.id });
+    return { ok: true, message: to === 'SERVED' ? 'Đã phục vụ' : 'Đang pha chế' };
+  } catch (e) {
+    return { ok: false, message: friendlyError(e, 'Không cập nhật được đơn') };
+  }
+}

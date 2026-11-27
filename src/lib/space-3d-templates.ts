@@ -114,18 +114,27 @@ export function showroomTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceOb
         accentColor: ACCENTS[idx % ACCENTS.length],
         variant: idx % 3 === 2 ? 'dark' : 'wood',
       };
-      // Ghế nhân viên tư vấn phía sau quầy (chỉ nhân viên được ngồi)
-      s.push(counter, staffSeatBehind(counter, 'BAR_STOOL', 0.38, 0.95));
+      // Quầy áp tường: nhân viên đứng tư vấn phía trước cùng khách (không đặt ghế phía sau — vô nghĩa)
+      s.push(counter);
       idx++;
     }
   }
   // Khu giữa: kệ gondola phụ tùng & vật tư + tủ kính linh kiện (chừa đại lộ thảm 4.8m)
   for (const side of [-1, 1]) {
-    s.push({ kind: 'GONDOLA', posX: side * 6.2, posZ: -4.5, rotY: HALF_PI, widthM: 3.6, accentColor: side < 0 ? '#2563eb' : '#ea580c', label: 'Phụ tùng & Linh kiện' });
+    if (side < 0) s.push({ kind: 'GONDOLA', posX: side * 6.2, posZ: -4.5, rotY: HALF_PI, widthM: 3.6, accentColor: '#2563eb', label: 'Phụ tùng & Linh kiện' });
+    // Phải: khu máy làm kem — tủ kem gelato kính cong quay ra lối giữa
+    else s.push({ kind: 'GELATO_CASE', posX: 6.2, posZ: -4.5, rotY: -HALF_PI, widthM: 2.4, label: 'Gelato · Kem tươi' });
     s.push({ kind: 'GONDOLA', posX: side * 6.2, posZ: 0.5, rotY: HALF_PI, widthM: 3.6, accentColor: side < 0 ? '#0891b2' : '#16a34a', label: 'Vật tư tiêu hao' });
     s.push({ kind: 'DISPLAY_CABINET', posX: side * 4, posZ: -2, rotY: side < 0 ? HALF_PI : -HALF_PI });
     s.push({ kind: 'PLANT_PALM', posX: side * 3.3, posZ: halfD - 2.2 });
   }
+  // Cuối sảnh giữa: QUẦY PHA THỬ MÁY — nhân viên đứng sau pha cho khách, khách ngồi ghế bar phía trước xem & thử
+  const demoZ = -halfD + 5;
+  s.push({ kind: 'DEMO_BAR', posX: 0, posZ: demoZ, widthM: 4, label: 'Quầy pha thử máy' });
+  for (let i = 0; i < 4; i++) s.push({ kind: 'BAR_STOOL', posX: -1.5 + i, posZ: demoZ + 1.0, rotY: Math.PI, color: '#1f2937' });
+  // Góc sau phải: 2 tủ mát đứng (sữa, nước, topping) cạnh khu kem
+  s.push({ kind: 'DISPLAY_CHILLER', posX: Math.min(10.6, halfW - 7.4), posZ: -halfD + 0.45, label: 'Tủ mát' });
+  s.push({ kind: 'DISPLAY_CHILLER', posX: Math.min(9.25, halfW - 8.75), posZ: -halfD + 0.45, label: 'Sữa · Topping' });
   // Kệ áp tường cuối sảnh hai góc
   s.push({ kind: 'WALL_SHELF', posX: -halfW + 4.2, posZ: -halfD + 0.4, widthM: 3, variant: 'wood', color: '#a47148' });
   s.push({ kind: 'WALL_SHELF', posX: halfW - 4.2, posZ: -halfD + 0.4, widthM: 3, variant: 'wood', color: '#a47148' });

@@ -54,6 +54,9 @@ export const SPACE_OBJECT_DEFS: SpaceObjectDef[] = [
   { kind: 'WALL_SHELF', label: 'Kệ áp tường', category: 'RETAIL', size: [2.4, 0.5, 2.1], limits: L([1, 6], [0.35, 0.8], [1.4, 2.6]), color: '#f8fafc', palette: ['#f8fafc', '#1f2937', '#a47148', '#c69c6d'], shelves: true, defaultLevels: 5, variants: [{ key: 'metal', label: 'Kim loại' }, { key: 'wood', label: 'Gỗ' }] },
   { kind: 'DISPLAY_CABINET', label: 'Tủ kính trưng bày', category: 'RETAIL', size: [1.2, 0.5, 1.9], limits: L([0.6, 2.4], [0.4, 0.8], [1, 2.2]), color: '#e5e7eb', shelves: true, defaultLevels: 4 },
   { kind: 'PODIUM', label: 'Bục trưng bày', category: 'RETAIL', size: [1.2, 1.2, 0.6], limits: L([0.5, 3], [0.5, 3], [0.2, 1.2]), color: '#ffffff', palette: ['#ffffff', '#111827', '#e2e8f0', ...ACCENT], shelves: true, defaultLevels: 1 },
+  { kind: 'DEMO_BAR', label: 'Quầy pha thử máy', category: 'RETAIL', size: [3.6, 0.9, 1.05], limits: L([2, 6], [0.7, 1.4], [0.95, 1.15]), color: '#6b4226', palette: WOOD, labeled: true },
+  { kind: 'GELATO_CASE', label: 'Tủ kem gelato kính cong', category: 'RETAIL', size: [1.8, 1, 1.3], limits: L([1, 3.6], [0.8, 1.2], [1.1, 1.5]), color: '#f8fafc', palette: ['#f8fafc', '#111827', '#be185d', '#a47148'], labeled: true },
+  { kind: 'DISPLAY_CHILLER', label: 'Tủ mát đứng cửa kính', category: 'RETAIL', size: [1.2, 0.72, 2], limits: L([0.6, 2], [0.6, 0.85], [1.7, 2.2]), color: '#111827', palette: ['#111827', '#f8fafc', '#1d4ed8', '#b91c1c'], labeled: true },
   { kind: 'CHECKOUT', label: 'Quầy thu ngân', category: 'RETAIL', size: [2, 0.7, 1.05], limits: L([1.2, 3.5], [0.5, 1], [0.9, 1.2]), color: '#f8fafc', palette: WOOD },
   { kind: 'RECEPTION_DESK', label: 'Quầy lễ tân chữ L', category: 'RETAIL', size: [3.2, 1.8, 1.1], limits: L([2, 5], [1, 3], [0.95, 1.25]), color: '#2563eb', palette: ACCENT, labeled: true },
 

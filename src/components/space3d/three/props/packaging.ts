@@ -2,9 +2,8 @@ import * as THREE from 'three';
 import type { SpaceMerchItem } from '@/lib/space-3d-types';
 import { choosePackKind, packSize, type PackKind } from '@/lib/space-3d-merch';
 import type { ShelfSlot } from './kit';
-import { buildEspresso } from './cafe';
-import { normalizeSpaceObject } from '@/lib/space-3d-types';
-import { DEMO_PRODUCTS } from '@/lib/space-3d-demo-products';
+import { demoProductsForCounter } from '@/lib/space-3d-demo-products';
+import { buildDemoByKind } from './demo-machines';
 import { hashId, seeded } from './kit';
 
 /**
@@ -344,7 +343,7 @@ function packMaterial(item: SpaceMerchItem, kind: PackKind): THREE.Material {
  * Xếp hàng lên các tầng kệ: mỗi SP chiếm 1 đoạn facing liền nhau (2 hàng sâu, chồng 2 tầng nếu thấp),
  * xoay lệch nhẹ ngẫu nhiên cho tự nhiên. Trả về group chứa các InstancedMesh.
  */
-export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: SpaceMerchItem[], manual = false): THREE.Group {
+export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: SpaceMerchItem[], manual = false, counterLabel?: string): THREE.Group {
   const g = new THREE.Group();
   g.userData.noMerge = true;
   if (!items.length || !shelves.length) return g;
@@ -364,11 +363,12 @@ export function buildMerchandise(objectId: string, shelves: ShelfSlot[], items: 
     if (shelf.single || (shelf.demoMachines && !manual) || items.some(machineFit)) {
       const machines = items.filter(machineFit);
       if (!machines.length && shelf.demoMachines && !manual) {
-        // Kho chưa có máy nguyên chiếc → bày máy pha espresso mẫu để quầy giống showroom thật
+        // Kho chưa có máy nguyên chiếc → bày máy mẫu ĐÚNG LOẠI theo tên quầy (kem, xay, sinh tố, lò nướng…)
+        const pool = demoProductsForCounter(counterLabel);
         const n = shelf.single ? 1 : Math.max(1, Math.min(3, Math.floor(shelf.width / 0.95)));
         for (let i = 0; i < n; i++) {
-          const product = DEMO_PRODUCTS[(hashId(objectId) + i) % 3]; // 3 máy pha espresso mẫu
-          const demo = buildDemoMachine(objectId, i);
+          const product = pool[(hashId(objectId) + i) % pool.length];
+          const demo = buildDemoByKind(product.demoKind ?? 'espresso', objectId, i);
           demo.traverse((c) => (c.userData.merchItemId = product.id));
           const lx = -shelf.width / 2 + (shelf.width / n) * (i + 0.5) - (shelf.single ? 0 : 0.08);
           placeOnShelf(demo, shelf, lx, -0.06);
@@ -547,16 +547,7 @@ function buildTentCard(item: SpaceMerchItem, model: string | null): THREE.Group 
   return g;
 }
 
-const DEMO_COLORS = ['#d1d5db', '#111827', '#b91c1c', '#e7e5e4'];
 
-/** Máy pha espresso mẫu (kèm máy xay) — dùng khi kho chưa có máy thật */
-function buildDemoMachine(objectId: string, idx: number): THREE.Group {
-  const color = DEMO_COLORS[(hashId(objectId) + idx) % DEMO_COLORS.length];
-  const o = normalizeSpaceObject({ id: `demo-${objectId}-${idx}`, kind: 'ESPRESSO_MACHINE', color, widthM: 0.7, depthM: 0.52, heightM: 0.5 });
-  const g = o ? buildEspresso(o) : new THREE.Group();
-  g.userData.noMerge = true;
-  return g;
-}
 
 /** Máy trưng bày: dựng từ các khối procedural của Product3DModel (thép, kính, đèn…) + ảnh thật ở mặt trước. */
 function buildMachineModel(item: SpaceMerchItem, scale: number): THREE.Group {

@@ -153,7 +153,9 @@ describe('bố cục mẫu', () => {
     objs.filter((o) => o.kind !== 'RUG' && o.kind !== 'PENDANT_LIGHT').every((o) => {
       const fp = footprintOf(o);
       // Đại lộ thảm giữa (rộng 4.8m) không bị chắn bởi vật thể đứng
-      return fp.maxX <= -2.4 || fp.minX >= 2.4 || o.kind === 'BRAND_WALL' || o.kind === 'PLANTER_BOX';
+      // Cuối đại lộ: vách thương hiệu + quầy pha thử máy (điểm nhấn) & ghế khách trước quầy
+      const backFocal = (o.kind === 'DEMO_BAR' || o.kind === 'BAR_STOOL') && o.posZ < -14 + 7;
+      return fp.maxX <= -2.4 || fp.minX >= 2.4 || o.kind === 'BRAND_WALL' || o.kind === 'PLANTER_BOX' || backFocal;
     });
 
   it('showroom: lễ tân lệch khỏi đại lộ, gần lối vào', () => {
@@ -164,7 +166,7 @@ describe('bố cục mẫu', () => {
     expect(lobbyClear(objs)).toBe(true);
   });
 
-  it('showroom như cửa hàng thật: không gian hàng, có quầy trưng bày đặt tên, không chồng lấn', () => {
+  it('showroom như cửa hàng thật: không gian hàng, có quầy trưng bày đặt tên, không chồng lấn', async () => {
     for (const [w, d] of [[36, 28], [36, 32]] as const) {
       const objs = showroomTemplate({ widthM: w, depthM: d });
       expect(objs.some((o) => o.kind === 'BOOTH')).toBe(false);
@@ -183,12 +185,21 @@ describe('bố cục mẫu', () => {
         if (o.kind === 'RUG') continue;
         expect(findCollisions(objs, o.id).filter((c) => !pairOk(o.id, c)), `${w}x${d} ${o.id}`).toEqual([]);
       }
-      // Mỗi quầy trưng bày có 1 ghế nhân viên phía sau, khách không được ngồi
-      for (const c of counters) {
-        const seat = objs.find((o) => SEATABLE_KINDS.has(o.kind) && counterBehind(o, [c]));
-        expect(seat, `ghế sau ${c.id}`).toBeTruthy();
-        expect(isStaffSeat(seat!, objs)).toBe(true);
-      }
+      // Quầy áp tường không đặt ghế phía sau (nhân viên đứng tư vấn); lễ tân vẫn có ghế nhân viên
+      for (const c of counters) expect(objs.some((o) => SEATABLE_KINDS.has(o.kind) && counterBehind(o, [c])), `ghế sau ${c.id}`).toBe(false);
+      const reception = objs.find((o) => o.kind === 'RECEPTION_DESK')!;
+      const recSeat = objs.find((o) => SEATABLE_KINDS.has(o.kind) && counterBehind(o, [reception]));
+      expect(recSeat && isStaffSeat(recSeat, objs)).toBe(true);
+      // Ghế bar trước quầy pha thử là ghế khách
+      const demoStools = objs.filter((o) => o.kind === 'BAR_STOOL' && o.posZ < 0 && Math.abs(o.posX) < 2.5);
+      expect(demoStools.length).toBe(4);
+      expect(demoStools.every((o) => !isStaffSeat(o, objs))).toBe(true);
+      // Quầy kem & sinh tố bày đúng loại máy
+      const { demoProductsForCounter } = await import('@/lib/space-3d-demo-products');
+      expect(demoProductsForCounter('Máy làm kem & Socola')[0].demoKind).toBe('softserve');
+      expect(demoProductsForCounter('Máy xay sinh tố & Pha chế')[0].demoKind).toBe('blender');
+      expect(demoProductsForCounter('Máy xay cà phê')[0].demoKind).toBe('grinder');
+      expect(demoProductsForCounter('Thiết bị bếp & Bánh')[0].demoKind).toBe('oven');
       // Sofa khu chờ không phải ghế nhân viên
       const sofa = objs.find((o) => o.kind === 'SOFA')!;
       expect(isStaffSeat(sofa, objs)).toBe(false);

@@ -86,3 +86,41 @@ describe('hội thoại trên đầu nhân vật', () => {
     expect(isSpaceEmote('dance')).toBe(false);
   });
 });
+
+describe('NPC quán cà phê', () => {
+  it('tìm đủ vị trí barista, chị bán bánh, phục vụ, bảo vệ theo mẫu quán vườn', async () => {
+    const { cafeTemplate } = await import('@/lib/space-3d-templates');
+    const { findNpcSpots } = await import('@/lib/space-3d-npc');
+    const objs = cafeTemplate({ widthM: 30, depthM: 24 });
+    const spots = findNpcSpots(objs);
+    expect(Object.keys(spots).sort()).toEqual(['barista', 'guard', 'vendor', 'waiter']);
+    const bar = objs.find((o) => o.kind === 'BAR_COUNTER')!;
+    // Barista đứng SAU quầy (phía -Z cục bộ, quầy rotY = 0 → z nhỏ hơn)
+    expect(spots.barista!.z).toBeLessThan(bar.posZ - bar.depthM / 2);
+    const gate = objs.find((o) => o.kind === 'GARDEN_GATE')!;
+    // Bảo vệ đứng phía trong cổng, gần cổng
+    expect(spots.guard!.z).toBeLessThan(gate.posZ);
+    expect(Math.hypot(spots.guard!.x - gate.posX, spots.guard!.z - gate.posZ)).toBeLessThan(5);
+    // Mọi vị trí nằm trong mặt bằng
+    for (const sp of Object.values(spots)) {
+      expect(Math.abs(sp!.x)).toBeLessThanOrEqual(15);
+      expect(Math.abs(sp!.z)).toBeLessThanOrEqual(12);
+    }
+  });
+  it('quán không có quầy bánh / cổng → không có NPC tương ứng', async () => {
+    const { findNpcSpots } = await import('@/lib/space-3d-npc');
+    const spots = findNpcSpots([{ kind: 'BAR_COUNTER', posX: 0, posZ: 0, rotY: 0, widthM: 3, depthM: 0.8 }]);
+    expect(spots.barista).toBeTruthy();
+    expect(spots.vendor).toBeUndefined();
+    expect(spots.guard).toBeUndefined();
+  });
+  it('đường phục vụ kết thúc cạnh bàn, lệch khỏi mặt khách', async () => {
+    const { serveRoute } = await import('@/lib/space-3d-npc');
+    const spot = { x: 0, z: 0 };
+    const customer = { x: 0, z: 1 };
+    const route = serveRoute({ x: -5, z: -6 }, spot, customer);
+    const end = route[route.length - 1];
+    expect(Math.hypot(end.x - spot.x, end.z - spot.z)).toBeLessThan(1);
+    expect(Math.abs(end.x)).toBeGreaterThan(0.5); // đứng bên cạnh, không chắn trước mặt khách
+  });
+});

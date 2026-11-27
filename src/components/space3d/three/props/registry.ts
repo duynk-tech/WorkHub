@@ -23,6 +23,7 @@ import { buildBooth, buildBrandWall, buildDisplayCounter, buildCheckout, buildDi
 import { buildBarCounter, buildEspresso, buildMenuBoard, buildPastryCase, buildPendant } from './cafe';
 import { buildCartonStack, buildForklift, buildPalletStack, buildRack } from './warehouse';
 import { FESTIVE_BUILDERS } from './festive';
+import { buildDemoBar, buildDisplayChiller, buildGelatoCase } from './showroom-extras';
 import { buildFridge, buildMeetingTv, buildPantryCounter, buildWaterDispenser } from './office-extras';
 import { buildDoor, buildFloorLamp, buildGlassWall, buildRoomZone, buildWall, buildWallArt } from './structure';
 import {
@@ -118,6 +119,9 @@ const BUILDERS: Record<string, Builder> = {
   WATER_DISPENSER: buildWaterDispenser,
   FRIDGE: buildFridge,
   ...FESTIVE_BUILDERS,
+  DEMO_BAR: buildDemoBar,
+  GELATO_CASE: buildGelatoCase,
+  DISPLAY_CHILLER: buildDisplayChiller,
   FOOD_CART: buildFoodCart,
   CLAY_JAR: buildClayJar,
   VINE_RAILING: buildVineRailing,

@@ -1293,45 +1293,125 @@ export function buildBanhQueKiosk(o: SpaceObject): THREE.Group {
 }
 
 // ───────────── Xe đò Sài Gòn – Sa Đéc ─────────────
+/** Chữ hông xe đò như xe thật: dòng 1 "XE ĐÒ" đen nhỏ + "XỞI LỞI" đỏ to; dòng 2 "SÀI GÒN - SA ĐÉC" đen to */
 function vanSideTex(title: string, route: string) {
-  return gTex(`vanSide:${title}|${route}`, 1024, 384, (ctx, w, h) => {
+  return gTex(`vanSide2:${title}|${route}`, 1400, 520, (ctx, w, h) => {
     ctx.clearRect(0, 0, w, h);
-    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 58px ${SERIF}`;
+    ctx.lineJoin = 'round';
+    // Dòng 1
+    ctx.font = `800 92px ${SERIF}`;
+    const xeDo = 'XE ĐÒ  ';
+    const xw = ctx.measureText(xeDo).width;
+    ctx.font = `800 150px ${SERIF}`;
+    const tw = ctx.measureText(title.toUpperCase()).width;
+    let x = (w - xw - tw) / 2;
+    ctx.font = `800 92px ${SERIF}`;
     ctx.fillStyle = '#1f2937';
-    ctx.fillText('XE ĐÒ', w * 0.3, h * 0.3);
-    ctx.font = `800 108px ${SERIF}`;
-    ctx.fillStyle = '#c8352b';
-    ctx.fillText(title.toUpperCase(), w * 0.62, h * 0.3);
-    ctx.font = `800 82px ${SERIF}`;
+    ctx.fillText(xeDo, x, h * 0.3 + 10);
+    x += xw;
+    ctx.font = `800 150px ${SERIF}`;
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = '#7f1d1d';
+    ctx.strokeText(title.toUpperCase(), x, h * 0.3);
+    ctx.fillStyle = '#d6332a';
+    ctx.fillText(title.toUpperCase(), x, h * 0.3);
+    // Dòng 2
+    ctx.textAlign = 'center';
+    let size = 140;
+    ctx.font = `800 ${size}px ${SERIF}`;
+    while (ctx.measureText(route.toUpperCase()).width > w * 0.94 && size > 60) {
+      size -= 6;
+      ctx.font = `800 ${size}px ${SERIF}`;
+    }
     ctx.fillStyle = '#1f2937';
-    ctx.fillText(route.toUpperCase(), w / 2, h * 0.72);
+    ctx.fillText(route.toUpperCase(), w / 2, h * 0.74);
   });
 }
+function vanRearTex(title: string) {
+  return gTex(`vanRear:${title}`, 512, 512, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#efe6cf';
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.42, w * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = '#2f7a5b';
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 78px ${SERIF}`;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#f2c14e';
+    ctx.strokeText(title.toUpperCase(), w / 2, h * 0.4);
+    ctx.fillStyle = '#c8352b';
+    ctx.fillText(title.toUpperCase(), w / 2, h * 0.4);
+    ctx.font = `700 34px ${SERIF}`;
+    ctx.fillStyle = '#2f7a5b';
+    ctx.fillText('CAFÉ', w / 2, h * 0.53);
+  });
+}
+
+/** Xe đò Sài Gòn – Sa Đéc (van mui cao kiểu Sprinter): thân kem, dải dưới xanh nhạt, hông kín in chữ, đèn hậu đỏ dọc */
 export function buildFoodVan(o: SpaceObject): THREE.Group {
   const g = new THREE.Group();
   const { widthM: L, depthM: W, heightM: H } = o;
   const cream = M.gloss('#efe6cf');
-  const blue = M.gloss('#8ec5d6');
-  const wheelY = 0.36;
-  // Thân xe: nửa dưới xanh, nửa trên kem; mũi xe thấp phía +x
-  g.add(box(L, H * 0.38, W, blue, 0, wheelY + H * 0.19, 0, 0.06));
-  g.add(box(L * 0.8, H * 0.46, W, cream, -L * 0.1, wheelY + H * 0.38 + H * 0.23, 0, 0.12));
-  g.add(box(L * 0.2, H * 0.3, W * 0.98, cream, L * 0.4, wheelY + H * 0.38 + H * 0.12, 0, 0.1));
-  // Kính chắn gió & cửa sổ cabin
-  const glass = M.paint('#1c2733', 0.15);
-  const ws = box(0.04, H * 0.3, W * 0.85, glass, L * 0.3 + 0.01, wheelY + H * 0.62, 0);
-  ws.rotation.z = 0.45;
-  g.add(ws);
-  for (const s of [-1, 1]) g.add(box(L * 0.12, H * 0.22, 0.02, glass, L * 0.28, wheelY + H * 0.62, s * (W / 2 + 0.005)));
-  // Chữ hai bên hông
-  const txtMat = sharedMat(`g:vanTxt:${o.label}|${o.subLabel}`, () =>
+  const blue = M.gloss('#9fd0de');
+  const dark = M.paint('#1f2328', 0.5);
+  const glass = M.paint('#1c2733', 0.12);
+  const wheelR = 0.34;
+  const floorY = wheelR + 0.12;
+  const bodyH = H - floorY;
+  const cabL = L * 0.2; // phần đầu xe (nắp ca-pô + kính lái)
+  const boxL = L - cabL;
+  const boxX = -L / 2 + boxL / 2;
+  // Khoang thùng mui cao bo tròn
+  g.add(box(boxL, bodyH, W, cream, boxX, floorY + bodyH / 2, 0, 0.16));
+  // Dải xanh phía dưới (~32% chiều cao) + chỉ xanh đậm phân cách
+  g.add(box(L - 0.06, bodyH * 0.32, W + 0.01, blue, -0.03, floorY + bodyH * 0.16, 0, 0.08));
+  g.add(box(L - 0.1, 0.03, W + 0.02, M.gloss('#5aa5bd'), -0.03, floorY + bodyH * 0.325, 0));
+  // Đầu xe: ca-pô thấp + kính lái nghiêng + cửa ca-bin có kính
+  const hoodH = bodyH * 0.42;
+  g.add(box(cabL, hoodH, W * 0.98, cream, L / 2 - cabL / 2, floorY + hoodH / 2, 0, 0.12));
+  const shield = box(0.04, bodyH * 0.42, W * 0.86, glass, L / 2 - cabL * 0.55, floorY + hoodH + bodyH * 0.19, 0);
+  shield.rotation.z = 0.5;
+  g.add(shield);
+  const cabTop = box(cabL * 0.55, bodyH - hoodH, W * 0.98, cream, boxX + boxL / 2 + cabL * 0.2, floorY + hoodH + (bodyH - hoodH) / 2, 0, 0.12);
+  g.add(cabTop);
+  for (const s of [-1, 1]) {
+    // Kính cửa ca-bin 2 bên
+    g.add(box(cabL * 0.55, bodyH * 0.25, 0.02, glass, boxX + boxL / 2 + cabL * 0.15, floorY + bodyH * 0.66, s * (W / 2 + 0.005)));
+    // Đường cửa lùa thân xe
+    g.add(box(0.02, bodyH * 0.62, 0.012, dark, boxX + boxL * 0.18, floorY + bodyH * 0.55, s * (W / 2 + 0.004)));
+  }
+  // Lưới tản nhiệt + đèn pha + cản
+  g.add(box(0.03, hoodH * 0.45, W * 0.55, dark, L / 2 + 0.005, floorY + hoodH * 0.55, 0, 0.02));
+  const lamp = M.glow('#fff7d6', 0.6, 2);
+  for (const s of [-1, 1]) g.add(box(0.04, 0.12, 0.26, lamp, L / 2 + 0.01, floorY + hoodH * 0.62, s * W * 0.34, 0.03));
+  g.add(box(0.12, 0.14, W + 0.04, dark, L / 2 + 0.03, floorY + 0.05, 0, 0.03));
+  g.add(box(0.12, 0.14, W + 0.04, dark, -L / 2 - 0.03, floorY + 0.05, 0, 0.03));
+  // Đuôi xe: 2 cánh cửa + logo + đèn hậu đỏ dọc
+  g.add(box(0.012, bodyH * 0.8, 0.02, dark, -L / 2 - 0.004, floorY + bodyH * 0.5, 0));
+  const tail = M.glow('#dc2626', 0.5, 1.8);
+  for (const s of [-1, 1]) g.add(box(0.05, bodyH * 0.32, 0.1, tail, -L / 2 - 0.01, floorY + bodyH * 0.35, s * (W / 2 - 0.08), 0.02));
+  const rear = new THREE.Mesh(
+    new THREE.PlaneGeometry(W * 0.55, W * 0.55),
+    sharedMat(`g:vanRear:${o.label}`, () => new THREE.MeshStandardMaterial({ map: vanRearTex(o.label || 'Xởi Lởi'), transparent: true, alphaTest: 0.05, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2 })),
+  );
+  rear.position.set(-L / 2 - 0.012, floorY + bodyH * 0.62, 0);
+  rear.rotation.y = -Math.PI / 2;
+  rear.userData.noMerge = true;
+  g.add(rear);
+  // Chữ hông 2 bên (phần kem phía trên dải xanh)
+  const txtMat = sharedMat(`g:vanTxt2:${o.label}|${o.subLabel}`, () =>
     new THREE.MeshStandardMaterial({ map: vanSideTex(o.label || 'Xởi Lởi', o.subLabel || 'Sài Gòn - Sa Đéc'), transparent: true, alphaTest: 0.05, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2 }),
   );
+  const tw = boxL * 0.86;
+  const th = Math.min(bodyH * 0.6, tw * (520 / 1400));
   for (const s of [-1, 1]) {
-    const t = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.62, L * 0.62 * 0.375), txtMat);
-    t.position.set(-L * 0.12, wheelY + H * 0.58, s * (W / 2 + 0.008));
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(tw, th), txtMat);
+    t.position.set(boxX + 0.05, floorY + bodyH * 0.34 + th / 2 + 0.04, s * (W / 2 + 0.012));
     if (s < 0) t.rotation.y = Math.PI;
     t.userData.noMerge = true;
     g.add(t);
@@ -1341,16 +1421,16 @@ export function buildFoodVan(o: SpaceObject): THREE.Group {
   const rim = M.chrome();
   for (const x of [-L * 0.32, L * 0.3]) {
     for (const s of [-1, 1]) {
-      const wheel = cyl(wheelY, wheelY, 0.22, tire, x, wheelY, s * (W / 2 - 0.08), 18);
+      const z = s * (W / 2 - 0.1);
+      const wheel = cyl(wheelR, wheelR, 0.24, tire, x, wheelR, z, 20);
       wheel.rotation.x = Math.PI / 2;
-      const hub = cyl(wheelY * 0.5, wheelY * 0.5, 0.23, rim, x, wheelY, s * (W / 2 - 0.08), 14);
+      const hub = cyl(wheelR * 0.5, wheelR * 0.5, 0.25, rim, x, wheelR, z, 14);
       hub.rotation.x = Math.PI / 2;
       g.add(wheel, hub);
     }
   }
-  // Đèn pha
-  const lamp = M.glow('#fff7d6', 0.6, 2);
-  for (const s of [-1, 1]) g.add(sphere(0.08, lamp, L / 2 + 0.01, wheelY + H * 0.22, s * W * 0.32));
+  // Gương chiếu hậu
+  for (const s of [-1, 1]) g.add(box(0.06, 0.16, 0.1, dark, L / 2 - cabL * 0.6, floorY + bodyH * 0.6, s * (W / 2 + 0.08), 0.02));
   return g;
 }
 

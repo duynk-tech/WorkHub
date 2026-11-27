@@ -38,6 +38,7 @@ import {
 } from './three/avatars';
 import { createExhibitionHallEnvironment } from './three/hall';
 import { rebuildInstancing } from './three/instancing';
+import { NpcSystem } from './three/npc';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { buildDrink, buildOrderDrinks } from './three/props/drinks';
@@ -152,6 +153,10 @@ interface Props {
   holdRef?: React.MutableRefObject<Map<number, { code: string; at: number }>>;
   /** Đứng gần pantry (quầy bếp / bình nước / tủ lạnh) */
   onPantryNear?: (near: boolean) => void;
+  /** Đơn cần NPC phục vụ bưng ra bàn (quán cà phê) */
+  npcDeliveries?: DrinkOrderView[];
+  /** NPC phục vụ đã bưng tới bàn */
+  onNpcArrive?: (orderId: number) => void;
   /** Trạng thái ngồi thay đổi (hiện nút "Đứng dậy") */
   onSittingChange?: (sitting: boolean) => void;
   /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
@@ -320,6 +325,8 @@ export function Space3DCanvas({
   holdRef,
   onPantryNear,
   onAutoEmote,
+  npcDeliveries,
+  onNpcArrive,
   onSittingChange,
   seatCommand = null,
 }: Props) {
@@ -362,6 +369,9 @@ export function Space3DCanvas({
     holdRef,
     onPantryNear,
     onAutoEmote,
+    npcDeliveries,
+    onNpcArrive,
+    cafeMenu,
     isSelfOnDuty,
     remoteRoster,
     onSittingChange,
@@ -404,6 +414,9 @@ export function Space3DCanvas({
     holdRef,
     onPantryNear,
     onAutoEmote,
+    npcDeliveries,
+    onNpcArrive,
+    cafeMenu,
     isSelfOnDuty,
     remoteRoster,
     onSittingChange,
@@ -422,6 +435,8 @@ export function Space3DCanvas({
     objectsGroup: THREE.Group;
     /** Bản vẽ gộp instancing cho các vật thể giống hệt nhau (ghế, đá, cây…) — chỉ khi không ở chế độ thiết kế */
     instancedGroup: THREE.Group;
+    /** Nhân vật tự động quán cà phê */
+    npcs: NpcSystem;
     objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
     selectionBox: THREE.Box3Helper;
     ghost: THREE.Mesh;
@@ -629,6 +644,8 @@ export function Space3DCanvas({
     scene.add(objectsGroup);
     const instancedGroup = new THREE.Group();
     scene.add(instancedGroup);
+    const npcs = new NpcSystem((orderId) => stateRef.current.onNpcArrive?.(orderId));
+    scene.add(npcs.group);
     // Khung chọn vật thể (xanh = hợp lệ, đỏ = chồng lấn)
     const selectionBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#38bdf8'));
     selectionBox.visible = false;
@@ -743,6 +760,7 @@ export function Space3DCanvas({
       boothMeshes,
       objectsGroup,
       instancedGroup,
+      npcs,
       objectMap: new Map(),
       selectionBox,
       ghost,
@@ -983,7 +1001,7 @@ export function Space3DCanvas({
             // Ghế bar tròn: ngồi quay mặt vào quầy bar / bàn gần nhất (như ngoài đời)
             let best: { d: number; x: number; z: number } | null = null;
             for (const o of stateRef.current.structures) {
-              if (!['BAR_COUNTER', 'LIVE_EDGE_TABLE', 'TABLE_RECT', 'TABLE_ROUND'].includes(o.kind)) continue;
+              if (!['BAR_COUNTER', 'DEMO_BAR', 'LIVE_EDGE_TABLE', 'TABLE_RECT', 'TABLE_ROUND'].includes(o.kind)) continue;
               const d = Math.hypot(o.posX - seat.x, o.posZ - seat.z) - Math.max(o.widthM, o.depthM) / 2;
               if (d < 1.4 && (!best || d < best.d)) {
                 // Điểm gần nhất trên mặt quầy (theo hệ cục bộ của quầy)
@@ -1563,6 +1581,7 @@ export function Space3DCanvas({
         const so = sceneObjRef.current;
         if (so) {
           so.staffAvatars.forEach((a) => others.push(a.group));
+          so.npcs.avatars.forEach((a) => others.push(a.group));
           so.remoteAvatars.forEach((e) => others.push(e.av.group));
         }
         const pushed = resolveBodyCollisions(currentPlayer.group.position, others, isMoving ? stateRef.current.structures : null);
@@ -1777,6 +1796,20 @@ export function Space3DCanvas({
       }
 
       if (frameCount % 10 === 0) updateDutyHost(currentPlayer, totalTime);
+      // NPC quán cà phê: làm việc, chào khách, bưng nước
+      if (sceneObjRef.current?.npcs.avatars.length) {
+        const people: { id: string; x: number; z: number }[] = [{ id: 'self', x: currentPlayer.group.position.x, z: currentPlayer.group.position.z }];
+        for (const [rid, e] of sceneObjRef.current.remoteAvatars) people.push({ id: String(rid), x: e.av.group.position.x, z: e.av.group.position.z });
+        sceneObjRef.current.npcs.update(
+          dt,
+          totalTime,
+          people,
+          stateRef.current.npcDeliveries ?? [],
+          stateRef.current.cafeMenu ?? DEFAULT_CAFE_MENU,
+          (pos) => resolveBodyCollisions(pos, [], stateRef.current.structures),
+          frameCount,
+        );
+      }
       // Ly nước đang cầm (mình + người khác)
       const holds = stateRef.current.holdRef?.current;
       if (holds && sceneObjRef.current) {
@@ -1847,6 +1880,14 @@ export function Space3DCanvas({
         const kd = 1 - Math.exp(-dt * 5);
         for (const door of doorList) {
           let near = Math.hypot(currentPlayer.group.position.x - door.x, currentPlayer.group.position.z - door.z) < 1.6;
+          if (!near) {
+            for (const a of sceneObjRef.current!.npcs.avatars) {
+              if (Math.hypot(a.group.position.x - door.x, a.group.position.z - door.z) < 1.6) {
+                near = true;
+                break;
+              }
+            }
+          }
           if (!near) {
             for (const e of sceneObjRef.current!.remoteAvatars.values()) {
               if (Math.hypot(e.av.group.position.x - door.x, e.av.group.position.z - door.z) < 1.6) {
@@ -1974,6 +2015,7 @@ export function Space3DCanvas({
       transform.dispose();
       (sceneObjRef.current?.pipeline ?? pipeline).dispose();
       skySys.dispose();
+      sceneObjRef.current?.npcs.dispose();
       envRT.dispose();
       floorTex.map.dispose();
       floorTex.roughnessMap.dispose();
@@ -2143,7 +2185,7 @@ export function Space3DCanvas({
       }
       if (built.shelves.length && merchItems.length) {
         const manualPick = o.merch?.mode === 'MANUAL' && o.merch.itemIds.length > 0;
-        built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind), manualPick));
+        built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind), manualPick, o.label));
       }
       freezeStaticDescendants(built.root);
       if (o.kind === 'ROOM_ZONE') built.root.visible = editMode;
@@ -2200,6 +2242,8 @@ export function Space3DCanvas({
     }
     obj.doors = doors;
     rebuildInstancing(obj.objectMap, obj.instancedGroup, editMode);
+    // NPC quán cà phê theo bố cục (tắt khi đang thiết kế)
+    obj.npcs.rebuild(structures, sceneKind === 'CAFE' && !editMode);
     // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
     obj.renderer.shadowMap.needsUpdate = true;
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
@@ -2315,7 +2359,9 @@ export function Space3DCanvas({
         obj.remoteGroup.remove(existing.av.group);
         disposeObject(existing.av.group);
       }
-      const av = createChibiAvatar({ name: m.employeeName, config: m.avatar, isOnDuty: m.onDuty, isStaff: !m.isGuest });
+      // Khách không mặc đồng phục công ty → hiển thị sơ mi
+      const cfg = m.isGuest && m.avatar.outfitStyle === 'uniform' ? { ...m.avatar, outfitStyle: 'shirt' as const } : m.avatar;
+      const av = createChibiAvatar({ name: m.employeeName, config: cfg, isOnDuty: m.onDuty, isStaff: !m.isGuest });
       prepareRemoteAvatar(av, m.employeeId);
       av.group.position.set(x, 0, z);
       av.group.rotation.y = r;
