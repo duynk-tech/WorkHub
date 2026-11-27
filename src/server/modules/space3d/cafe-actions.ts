@@ -92,6 +92,9 @@ export async function placeDrinkOrderAction(input: {
   note?: string;
   x: number;
   z: number;
+  /** Điểm ngắm đặt ly (trước mặt người đang ngồi); không có → dùng x, z */
+  aimX?: number;
+  aimZ?: number;
 }): Promise<{ ok: boolean; message: string; order?: DrinkOrderView }> {
   try {
     const ctx = await getAuthContext();
@@ -116,7 +119,9 @@ export async function placeDrinkOrderAction(input: {
     if (recent >= 2) return { ok: false, message: 'Bạn gọi hơi nhanh, vui lòng chờ một chút' };
     if (pending >= 3) return { ok: false, message: 'Bạn đang có 3 đơn chờ phục vụ' };
 
-    const spot = findServeSpot(normalizeSpaceObjects(scene.structuresJson), x, z);
+    const ax = Number.isFinite(Number(input.aimX)) ? Number(input.aimX) : x;
+    const az = Number.isFinite(Number(input.aimZ)) ? Number(input.aimZ) : z;
+    const spot = findServeSpot(normalizeSpaceObjects(scene.structuresJson), ax, az);
     const name = (ctx ? ctx.fullName : String(input.name || 'Khách tham quan')).trim().slice(0, 40) || 'Khách tham quan';
     const row = await prisma.spaceDrinkOrder.create({
       data: {
@@ -165,4 +170,30 @@ export async function updateDrinkOrderAction(
   await broadcastServer(`space:${row.sceneCode}`, 'order', { id: row.id });
   const msg = status === 'SERVED' ? 'Đã phục vụ' : status === 'PREPARING' ? 'Đang pha chế' : 'Đã huỷ đơn';
   return { ok: true, message: msg, order: toView(row) };
+}
+
+/**
+ * Dọn bàn: dọn ly của 1 đơn hoặc TẤT CẢ ly đã phục vụ trong cảnh.
+ * Nhân viên dọn được mọi đơn; khách chỉ dọn được ly của mình (guestKey).
+ */
+export async function clearDrinkOrdersAction(input: {
+  sceneCode: string;
+  orderId?: number | null;
+  guestKey?: string | null;
+}): Promise<{ ok: boolean; message: string; count?: number }> {
+  try {
+    const ctx = await getAuthContext();
+    const code = String(input.sceneCode).slice(0, 64);
+    const where: Record<string, unknown> = { sceneCode: code, status: 'SERVED' };
+    if (input.orderId) where.id = Number(input.orderId);
+    if (!ctx) {
+      if (!input.guestKey || !GUEST_KEY_RE.test(input.guestKey)) return { ok: false, message: 'Không có quyền dọn bàn' };
+      where.guestKey = input.guestKey;
+    }
+    const res = await prisma.spaceDrinkOrder.updateMany({ where, data: { status: 'CLEARED' } });
+    if (res.count > 0) await broadcastServer(`space:${code}`, 'order', { cleared: res.count });
+    return { ok: true, message: res.count ? `Đã dọn ${res.count} đơn` : 'Không còn ly nào để dọn', count: res.count };
+  } catch (e) {
+    return { ok: false, message: friendlyError(e, 'Dọn bàn thất bại') };
+  }
 }

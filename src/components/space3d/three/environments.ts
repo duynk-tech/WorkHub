@@ -70,64 +70,100 @@ function perimeter(w: number, d: number, h: number, wallMat: THREE.Material, env
   }
 }
 
+/**
+ * Quán cà phê SÂN VƯỜN miền Tây (ngoài trời): nền bê tông mài, hàng rào gỗ & rọ đá, hàng cây cao bao quanh.
+ * Cổng gỗ bảng hiệu, cây đa, lưới che, bàn gỗ nguyên tấm… là vật thể kéo thả (mẫu "Quán cà phê").
+ */
 export function createCafeEnvironment(widthM: number, depthM: number, companyName: string): { group: THREE.Group; lights: THREE.Light[] } {
+  void companyName;
   const env = new THREE.Group();
   const lights: THREE.Light[] = [];
   const w = widthM;
   const d = depthM;
-  const h = 3.8;
   outdoor(w, d, env);
-  const brick = sharedMat(`cafeBrick:${w}`, () => {
-    const t = brickTex().clone();
-    t.repeat.set(w / 1.8, h / 1.8);
-    t.needsUpdate = true;
-    const b = brickBumpTex().clone();
-    b.repeat.copy(t.repeat);
-    b.needsUpdate = true;
-    // Mạch vữa lõm thật (bump) → ánh đèn hắt lên tường gạch có chiều sâu
-    return new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 2.2, roughness: 0.95 });
+  // Nền bê tông mài loang nhẹ
+  const yard = sharedMat(`gardenYard:${w}x${d}`, () => {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 512;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#bdb9b0';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 260; i++) {
+      const v = 160 + Math.random() * 50;
+      ctx.fillStyle = `rgba(${v},${v - 4},${v - 10},0.18)`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * 512, Math.random() * 512, 6 + Math.random() * 40, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(90,85,80,0.35)';
+    ctx.lineWidth = 2;
+    for (let x = 0; x <= 512; x += 128) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, x);
+      ctx.lineTo(512, x);
+      ctx.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w / 6, d / 6);
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.92 });
   });
-  perimeter(w, d, h, brick, env, true);
-  // Mảng tường xanh rêu ốp gỗ phía sau quầy (điểm nhấn)
-  const accent = box(w * 0.45, h - 0.4, 0.04, M.paint('#2f4f3a', 0.85), -w * 0.2, (h - 0.4) / 2 + 0.2, -d / 2 + 0.03);
-  env.add(accent);
-  // Bảng hiệu neon tên quán
-  const sign = labelTex(
-    [
-      { text: (companyName || 'TIM').toUpperCase().slice(0, 18) + ' CAFÉ', size: 110, color: '#ffe8b0', weight: 800, y: 210 },
-      { text: 'SPECIALTY COFFEE · SINCE 2026', size: 46, color: '#fcd34d', weight: 600, y: 330 },
-    ],
-    '#1a1410',
-    1400,
-    480,
-  );
-  const plaque = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.2), lightboxMat(sign));
-  plaque.position.set(-w * 0.2, h * 0.68, -d / 2 + 0.06);
-  env.add(plaque);
-  const front = plaque.clone();
-  front.position.set(0, h + 0.55, d / 2 + 0.12);
-  env.add(front);
-  // Trần đen lộ dầm + ống gió (phong cách industrial)
-  const ceiling = box(w + 0.4, 0.12, d + 0.4, M.paint('#1b1b1d', 0.9), 0, h + 0.06, 0);
-  ceiling.castShadow = false; ceiling.userData.roof = true;
-  env.add(ceiling);
-  for (let z = -d / 2 + 1.5; z < d / 2; z += 3) {
-    const beam = box(w, 0.28, 0.16, M.paint('#222224', 0.8), 0, h - 0.14, z);
-    beam.castShadow = false; beam.userData.roof = true;
-    env.add(beam);
+  const slab = box(w, 0.05, d, yard, 0, -0.02, 0);
+  slab.castShadow = false;
+  slab.receiveShadow = true;
+  env.add(slab);
+  // Hàng rào gỗ xám sau & hai bên (cao 2m) + rọ đá mặt tiền, chừa cổng giữa
+  const fence = M.paint('#7f7a70', 0.92);
+  const fenceH = 2;
+  const addFence = (len: number, x: number, z: number, rotY: number) => {
+    const grp = new THREE.Group();
+    for (const y of [0.4, 1.6]) grp.add(box(len, 0.07, 0.04, fence, 0, y, -0.03));
+    for (let px = -len / 2 + 0.07; px <= len / 2; px += 0.15) grp.add(box(0.11, fenceH - (Math.abs(Math.sin(px * 7)) * 0.08), 0.025, fence, px, fenceH / 2, 0));
+    grp.position.set(x, 0, z);
+    grp.rotation.y = rotY;
+    grp.traverse((o) => (o.userData.occluder = true));
+    env.add(grp);
+  };
+  addFence(w, 0, -d / 2, 0);
+  addFence(d, -w / 2, 0, Math.PI / 2);
+  addFence(d, w / 2, 0, -Math.PI / 2);
+  // Mặt tiền: trái là hàng rào gỗ thưa (cọc so le), phải là rọ đá gabion — chừa lối vào giữa cho cổng
+  const gabion = M.paint('#77756d', 0.9);
+  const gap = Math.min(6, w * 0.3);
+  const len = w / 2 - gap / 2;
+  const picket = M.paint('#9b958a', 0.9);
+  const fx = -(gap / 2 + len / 2);
+  for (const y of [0.35, 0.95]) env.add(box(len, 0.06, 0.04, picket, fx, y, d / 2 - 0.05));
+  for (let px = -len / 2; px <= len / 2; px += 0.16) env.add(box(0.1, 1.15 + Math.abs(Math.sin(px * 5)) * 0.12, 0.025, picket, fx + px, 0.6, d / 2 - 0.02));
+  const seg = box(len, 1.0, 0.55, gabion, gap / 2 + len / 2, 0.5, d / 2 - 0.27);
+  seg.userData.occluder = true;
+  env.add(seg);
+  // Hàng cây cao rợp bóng bao quanh (bàng, sa kê, me tây)
+  for (let x = -w / 2 - 1.5; x <= w / 2 + 1.5; x += 4.2) {
+    const t = createOutdoorTree(1.5 + Math.abs(Math.sin(x)) * 0.5);
+    t.position.set(x, 0, -d / 2 - 2.2);
+    env.add(t);
   }
-  for (const x of [-w * 0.28, w * 0.28]) {
-    const duct = cyl(0.22, 0.22, d - 0.6, M.metal('#9ca3af', 0.45), x, h - 0.45, 0, 20);
-    duct.rotation.x = Math.PI / 2;
-    duct.castShadow = false; duct.userData.roof = true;
-    env.add(duct);
+  for (const sgn of [-1, 1]) {
+    for (let z = -d / 2; z <= d / 2 - 2; z += 4.6) {
+      const t = createOutdoorTree(1.4 + Math.abs(Math.cos(z)) * 0.5);
+      t.position.set(sgn * (w / 2 + 2.2), 0, z);
+      env.add(t);
+    }
   }
-  // Đèn ấm khắp quán (không đổ bóng)
-  for (let x = -w / 2 + 3; x < w / 2; x += 6) for (let z = -d / 2 + 3; z < d / 2; z += 6) warmLight(env, lights, x, h - 0.6, z, 9);
+  // Ánh vàng ấm dưới tán (đêm nổi bật nhờ dây đèn phát sáng)
+  for (const [x, z] of [[0, -d * 0.15], [-w * 0.25, d * 0.1], [w * 0.25, -d * 0.3]] as [number, number][]) warmLight(env, lights, x, 3.4, z, 3.2, '#ffcf8a', 13);
   return { group: env, lights };
 }
 
-export function createOfficeEnvironment(widthM: number, depthM: number, companyName: string): { group: THREE.Group; lights: THREE.Light[] } {
+export function createOfficeEnvironment(widthM: number, depthM: number, companyName: string, logoUrl = ''): { group: THREE.Group; lights: THREE.Light[] } {
   const env = new THREE.Group();
   const lights: THREE.Light[] = [];
   const w = widthM;
@@ -160,19 +196,56 @@ export function createOfficeEnvironment(widthM: number, depthM: number, companyN
       env.add(p);
     }
   }
-  // Logo công ty trên tường sau
-  const logo = labelTex(
+  // Tường thương hiệu: ốp lam gỗ, tấm trắng giữa có LOGO công ty ở giữa, TÊN CÔNG TY bên dưới, viền LED hắt
+  const bw = Math.min(8, w * 0.5);
+  const bh = h - 0.3;
+  const zWall = -d / 2 + 0.02;
+  const slat = M.wood('#9a6b45');
+  for (let x = -bw / 2; x <= bw / 2 + 0.001; x += 0.12) env.add(box(0.07, bh, 0.05, slat, x, bh / 2 + 0.05, zWall + 0.03));
+  const pw = Math.min(5.2, bw - 1.2);
+  const ph = Math.min(2.3, bh - 0.4);
+  const py = 0.25 + ph / 2 + 0.35;
+  env.add(box(pw, ph, 0.06, M.paint('#f8fafc', 0.4), 0, py, zWall + 0.09));
+  const led = M.glow('#60a5fa', 1.1, 3);
+  env.add(box(pw + 0.06, 0.025, 0.02, led, 0, py + ph / 2 + 0.02, zWall + 0.12), box(pw + 0.06, 0.025, 0.02, led, 0, py - ph / 2 - 0.02, zWall + 0.12));
+  // Logo: tải ảnh, co theo tỉ lệ thật, đặt ở nửa trên tấm
+  const logoMat = new THREE.MeshBasicMaterial({ transparent: true, toneMapped: false, color: '#ffffff', opacity: 0 });
+  const logoMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), logoMat);
+  logoMesh.position.set(0, py + ph * 0.18, zWall + 0.125);
+  logoMesh.userData.noMerge = true;
+  env.add(logoMesh);
+  const maxW = pw * 0.7;
+  const maxH = ph * 0.42;
+  const src = logoUrl || '/brand/timcorp-logo-ngang.png';
+  new THREE.TextureLoader().load(src, (t) => {
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    const img = t.image as { width: number; height: number };
+    const aspect = img.width / Math.max(1, img.height);
+    const lw = Math.min(maxW, maxH * aspect);
+    logoMesh.scale.set(lw, lw / aspect, 1);
+    // Môi trường đã đóng băng ma trận → cập nhật thủ công sau khi đổi kích thước
+    logoMesh.updateMatrix();
+    logoMesh.updateMatrixWorld(true);
+    logoMat.map = t;
+    logoMat.opacity = 1;
+    logoMat.needsUpdate = true;
+  });
+  // Tên công ty bên dưới logo + dòng phụ
+  const nameTex = labelTex(
     [
-      { text: (companyName || 'TIM CORP').toUpperCase().slice(0, 26), size: 100, color: '#1e3a8a', weight: 800, y: 200 },
-      { text: 'VĂN PHÒNG LÀM VIỆC', size: 44, color: '#475569', weight: 600, y: 320 },
+      { text: (companyName || 'TIM CORP').toUpperCase().slice(0, 30), size: 92, color: '#1e3a8a', weight: 800, y: 130 },
+      { text: 'VĂN PHÒNG LÀM VIỆC', size: 40, color: '#64748b', weight: 600, y: 230 },
     ],
-    '#f3f4f6',
+    '#f8fafc',
     1600,
-    460,
+    300,
   );
-  const plaque = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.26), new THREE.MeshStandardMaterial({ map: logo, roughness: 0.6 }));
-  plaque.position.set(0, 2.1, -d / 2 + 0.02);
-  env.add(plaque);
+  const name = new THREE.Mesh(new THREE.PlaneGeometry(pw * 0.92, pw * 0.92 * (300 / 1600)), new THREE.MeshStandardMaterial({ map: nameTex, roughness: 0.6 }));
+  name.position.set(0, py - ph * 0.28, zWall + 0.123);
+  env.add(name);
+  // Đèn rọi chiếu tường thương hiệu
+  for (const x of [-pw / 3, 0, pw / 3]) env.add(cyl(0.05, 0.07, 0.1, M.metal('#111827', 0.4), x, h - 0.08, zWall + 0.7, 12));
   for (let x = -w / 2 + 4; x < w / 2; x += 8) for (let z = -d / 2 + 4; z < d / 2; z += 8) warmLight(env, lights, x, h - 0.4, z, 6, '#f1f5ff', 12);
   return { group: env, lights };
 }

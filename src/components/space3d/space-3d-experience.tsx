@@ -41,7 +41,7 @@ import { useSpaceRealtime, type IncomingDm } from './use-space-realtime';
 import { SpaceCafeMenu } from './space-cafe-menu';
 import { SpaceCafeOrders } from './space-cafe-orders';
 import { playChime, startCafeAmbience } from './space-sound';
-import { getCafeStateAction, placeDrinkOrderAction, updateDrinkOrderAction } from '@/server/modules/space3d/cafe-actions';
+import { clearDrinkOrdersAction, getCafeStateAction, placeDrinkOrderAction, updateDrinkOrderAction } from '@/server/modules/space3d/cafe-actions';
 import { DEFAULT_CAFE_MENU, orderSummary, type CafeMenuItem, type DrinkOrderView, type OrderLine } from '@/lib/space-3d-cafe-menu';
 import { SpaceChatPanel, type ChatPeer } from './space-chat-panel';
 import { SpaceVisitorChat, type VisitorChatTarget } from './space-visitor-chat';
@@ -63,6 +63,9 @@ import {
   createObject,
   duplicateObject,
   findCollisions,
+  isStaffSeat,
+  SEATABLE_KINDS,
+  seatsFor,
   snapAngle,
 } from '@/lib/space-3d-layout';
 import {
@@ -445,6 +448,16 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     const t = window.setTimeout(() => setGuestArrivals((a) => a.filter((x) => Date.now() - x.at < 15_000)), 15_500);
     return () => window.clearTimeout(t);
   }, [guestArrivals]);
+  /** Thông báo tự tắt sau vài giây (dùng trong callback trước khi showToast được khai báo) */
+  const flashToast = (text: string, ms = 4500) => {
+    setToastMsg({ ok: true, text });
+    window.setTimeout(() => setToastMsg((prev) => (prev?.text === text ? null : prev)), ms);
+  };
+  // Đổi không gian → xoá thông báo của không gian cũ
+  useEffect(() => {
+    setToastMsg(null);
+  }, [data.activeScene.code]);
+
   // ───── Quán cà phê: gọi món ↔ nhân viên phục vụ ─────
   const isCafe = data.activeScene.kind === 'CAFE';
   const [cafeMenu, setCafeMenu] = useState<CafeMenuItem[]>(DEFAULT_CAFE_MENU);
@@ -478,9 +491,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         window.setTimeout(() => setToastMsg((p) => (p?.text.startsWith('☕') ? null : p)), 5000);
         playChime();
       } else if (mine && o.status === 'PREPARING') {
-        setToastMsg({ ok: true, text: `👨‍🍳 ${o.servedByName ?? 'Quầy'} đang pha đồ uống cho bạn…` });
+        flashToast(`👨‍🍳 ${o.servedByName ?? 'Quầy'} đang pha đồ uống cho bạn…`);
       } else if (mine && o.status === 'SERVED') {
-        setToastMsg({ ok: true, text: `✅ Đồ uống của bạn đã được phục vụ${o.spot ? ' tại bàn' : ''}!` });
+        flashToast(`✅ Đồ uống của bạn đã được phục vụ${o.spot ? ' tại bàn' : ''}!`);
         playChime(0.08);
       }
     }
@@ -503,12 +516,20 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const newOrderCount = drinkOrders.filter((o) => o.status === 'NEW').length;
   const placeOrder = async (lines: OrderLine[], note: string) => {
     const p = playerPosRef.current;
-    const res = await placeDrinkOrderAction({ sceneCode, guestKey: cu ? null : guestKey, name: playerName, lines, note, x: p.x, z: p.z });
+    // Đang ngồi → đặt ly ngay trước mặt (điểm cách ghế ~45cm theo hướng nhìn), không lệch sang chỗ khác trên bàn
+    const ox = isSittingRef.current ? Math.sin(p.rotY) * 0.45 : 0;
+    const oz = isSittingRef.current ? Math.cos(p.rotY) * 0.45 : 0;
+    const res = await placeDrinkOrderAction({ sceneCode, guestKey: cu ? null : guestKey, name: playerName, lines, note, x: p.x, z: p.z, aimX: p.x + ox, aimZ: p.z + oz });
     showToast(res.ok, res.message);
     if (!res.ok) return false;
     realtime.sendBubble(`Cho mình ${orderSummary(lines, cafeMenu).toLowerCase()} nhé!`);
     await refreshCafe();
     return true;
+  };
+  const clearOrders = async (orderId: number | null) => {
+    const res = await clearDrinkOrdersAction({ sceneCode, orderId, guestKey: cu ? null : guestKey });
+    showToast(res.ok, res.message);
+    if (res.ok) await refreshCafe();
   };
   const goToOrder = (o: DrinkOrderView) => {
     const tx = o.spot?.x ?? o.posX;
@@ -555,12 +576,43 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   // Editable Scene State (vật thể có lịch sử hoàn tác)
   const layout = useLayoutHistory(data.activeScene.structures);
   const structures = layout.objects;
+  useEffect(() => {
+    const calc = () => {
+      const isStaffUser = Boolean(data.currentUser);
+      const all = structures.filter((o) => SEATABLE_KINDS.has(o.kind) && (isStaffUser || !isStaffSeat(o, structures)));
+      const seats = all.flatMap((o) => seatsFor(o));
+      if (!seats.length) {
+        setSeatStats(null);
+        return;
+      }
+      const sitters: { x: number; z: number }[] = [];
+      realtime.remoteStateRef.current.forEach((st) => {
+        if ((st.sit ?? 0) > 0) sitters.push({ x: st.tx, z: st.tz });
+      });
+      if (isSittingRef.current) sitters.push({ x: playerPosRef.current.x, z: playerPosRef.current.z });
+      const used = seats.filter((st) => sitters.some((p) => Math.hypot(p.x - st.x, p.z - st.z) < 0.4)).length;
+      setSeatStats((prev) => (prev && prev.used === used && prev.total === seats.length ? prev : { used, total: seats.length }));
+    };
+    calc();
+    const t = window.setInterval(calc, 2000);
+    return () => window.clearInterval(t);
+  }, [structures, data.currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [merchInfoId, setMerchInfoId] = useState<number | null>(null);
   // Ngồi ghế: ghế đang chọn (hiện nút "Ngồi ghế") / đang ngồi (hiện nút "Đứng dậy")
   const [seatPick, setSeatPick] = useState<{ label: string } | null>(null);
   const [isSitting, setIsSitting] = useState(false);
-  const [seatCommand, setSeatCommand] = useState<{ kind: 'sit' | 'stand'; nonce: number } | null>(null);
+  /** Phòng đang đứng trong (camera đã chuyển vào phòng) */
+  const [roomName, setRoomName] = useState<string | null>(null);
+  const isSittingRef = useRef(false);
+  /** Pantry: đứng gần quầy bếp / bình nước; đang cầm ly */
+  const [pantryNear, setPantryNear] = useState(false);
+  const [holding, setHolding] = useState<string | null>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  /** Chỗ ngồi: đã có người / tổng (khách không tính ghế nhân viên) */
+  const [seatStats, setSeatStats] = useState<{ used: number; total: number } | null>(null);
+  const [seatCommand, setSeatCommand] = useState<{ kind: 'sit' | 'stand' | 'dutySit'; nonce: number } | null>(null);
   const [draggingKind, setDraggingKind] = useState<string | null>(null);
   const [planView, setPlanView] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -909,7 +961,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         nextActive,
       );
       showToast(res.ok, res.message);
-      if (res.ok) router.refresh();
+      if (res.ok) {
+        // Vào trực → tự đi tới ghế nhân viên sau quầy gần nhất; rời trực → đứng dậy
+        setSeatCommand({ kind: nextActive ? 'dutySit' : 'stand', nonce: Date.now() });
+        router.refresh();
+      }
     });
   };
 
@@ -1082,8 +1138,16 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         debug={debug3D}
         merchItems={merchPool}
         faceEmployeeId={visitorTarget?.employeeId ?? (chatOpen ? chatPeer?.employeeId ?? null : null)}
+        onNotice={(t) => showToast(true, `ℹ️ ${t}`)}
+        onRoomChange={setRoomName}
+        holdRef={realtime.holdRef}
+        onPantryNear={setPantryNear}
+        onAutoEmote={(k) => realtime.sendEmote(k)}
         onSeatCandidate={setSeatPick}
-        onSittingChange={setIsSitting}
+        onSittingChange={(v) => {
+          isSittingRef.current = v;
+          setIsSitting(v);
+        }}
         seatCommand={seatCommand}
         onSelectMerchItem={(id) => {
           if (!editMode) setMerchInfoId(id);
@@ -1346,6 +1410,46 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         </form>
       )}
 
+      {/* Pantry: lấy nước / đặt ly xuống */}
+      {!editMode && realtimeSelf && (pantryNear || holding) && !isSitting && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 140, transform: 'translateX(-50%)', zIndex: 26 }}>
+          {holding ? (
+            <button
+              type="button"
+              onClick={() => {
+                realtime.sendHold(null);
+                setHolding(null);
+                if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
+              }}
+              style={{ ...glassStyle, padding: '9px 16px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}
+            >
+              Đặt ly xuống
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                // Pha / rót nước 2 giây rồi cầm ly trên tay (3 phút tự đặt xuống)
+                realtime.sendEmote('brew');
+                window.setTimeout(() => {
+                  const code = Math.random() < 0.5 ? 'LATTE' : 'NUOC';
+                  realtime.sendHold(code);
+                  setHolding(code);
+                  if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
+                  holdTimerRef.current = window.setTimeout(() => {
+                    realtime.sendHold(null);
+                    setHolding(null);
+                  }, 180_000);
+                }, 1800);
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#b45309,#d97706)', boxShadow: '0 10px 28px rgba(180,83,9,0.45)' }}
+            >
+              ☕ Lấy nước
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Nút Ngồi ghế / Đứng dậy */}
       {!editMode && (seatPick || isSitting) && (
         <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 26 }}>
@@ -1363,7 +1467,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               onClick={() => setSeatCommand({ kind: 'sit', nonce: Date.now() })}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#2563eb,#0891b2)', boxShadow: '0 10px 28px rgba(37,99,235,0.45)' }}
             >
-              🪑 Ngồi ghế{seatPick?.label ? ` · ${seatPick.label}` : ''}
+              🪑 Ngồi ghế
             </button>
           )}
         </div>
@@ -1408,7 +1512,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         </button>
       )}
       {isCafe && cafeMenuOpen && (
-        <SpaceCafeMenu menu={cafeMenu} myOrders={myDrinkOrders} onClose={() => setCafeMenuOpen(false)} onPlace={placeOrder} glassStyle={glassStyle} />
+        <SpaceCafeMenu menu={cafeMenu} myOrders={myDrinkOrders} onClose={() => setCafeMenuOpen(false)} onPlace={placeOrder} onClear={(id) => {
+            // Menu cá nhân: "dọn tất cả" = chỉ các ly của mình (nhân viên cũng vậy)
+            if (id !== null) void clearOrders(id);
+            else for (const o of myDrinkOrders.filter((x) => x.status === 'SERVED')) void clearOrders(o.id);
+          }} glassStyle={glassStyle} />
       )}
       {isCafe && cu && cafeOrdersOpen && (
         <SpaceCafeOrders
@@ -1418,6 +1526,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           onClose={() => setCafeOrdersOpen(false)}
           onUpdate={(o, st) => void updateOrder(o, st)}
           onGoTo={goToOrder}
+          onClear={(id) => void clearOrders(id)}
           glassStyle={glassStyle}
         />
       )}
@@ -1818,9 +1927,20 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           title="Click sàn / gian hàng để tự đi tới · WASD di chuyển · Kéo để xoay góc nhìn"
           style={{ ...glassStyle, borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 260 }}
         >
-          <Compass size={13} style={{ color: '#60a5fa', flex: 'none' }} />
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nearby.zoneName}</span>
+          <Compass size={13} style={{ color: roomName ? '#34d399' : '#60a5fa', flex: 'none' }} />
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roomName ? `Trong phòng: ${roomName}` : nearby.zoneName}</span>
         </div>
+        {seatStats && (
+          <div
+            title={seatStats.used >= seatStats.total ? 'Đã hết chỗ ngồi' : 'Số chỗ đang có người ngồi / tổng số chỗ ngồi'}
+            style={{
+              ...glassStyle, borderRadius: 999, padding: '5px 11px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+              color: seatStats.used >= seatStats.total ? '#fca5a5' : '#e2e8f0',
+            }}
+          >
+            🪑 {seatStats.used}/{seatStats.total}{seatStats.used >= seatStats.total ? ' · Hết chỗ' : ''}
+          </div>
+        )}
         <div style={{ ...glassStyle, borderRadius: 999, padding: 3, display: 'flex', gap: 2 }}>
           <HudButton small title={povMode === 'FIRST' ? 'Đang ở góc nhìn thứ nhất (V)' : 'Chuyển góc nhìn thứ nhất (V)'} active={povMode === 'FIRST'} onClick={() => setPovMode((p) => (p === 'THIRD' ? 'FIRST' : 'THIRD'))}>
             <Eye size={14} />

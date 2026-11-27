@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeDeskScreenMaterial } from './office-extras';
 import type { SpaceObject } from '@/lib/space-3d-types';
 import { M, box, cyl, lathe, plane, tubePath } from './kit';
 import { fabricTex } from './textures';
@@ -155,7 +156,10 @@ export function buildDesk(o: SpaceObject): THREE.Group {
   // Màn hình + bàn phím + chuột
   const mon = new THREE.Group();
   mon.add(box(0.56, 0.34, 0.025, M.black(), 0, 0.27, 0, 0.008));
-  mon.add(plane(0.53, 0.31, M.screen(), 0, 0.27, 0.0135));
+  // Màn hình riêng từng bàn: canvas bật sáng giao diện làm việc khi có người ngồi gõ phím
+  const screen = plane(0.53, 0.31, makeDeskScreenMaterial(), 0, 0.27, 0.0135);
+  screen.userData = { noMerge: true, screenOf: o.id, screenVariant: Math.abs([...o.id].reduce((a, c) => a + c.charCodeAt(0), 0)) };
+  mon.add(screen);
   mon.add(box(0.05, 0.12, 0.04, M.black(), 0, 0.07, -0.02));
   mon.add(box(0.2, 0.012, 0.14, M.black(), 0, 0.006, -0.02, 0.004));
   mon.position.set(0, h, -d / 2 + 0.2);

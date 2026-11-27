@@ -106,7 +106,8 @@ export function buildOrderDrinks(order: DrinkOrderView, menu: CafeMenuItem[]): T
   }
   if (!cups.length) return null;
   const g = new THREE.Group();
-  g.position.set(order.spot.x, order.spot.y, order.spot.z);
+  // Nhấc 1.2cm khỏi mặt bàn (mặt bàn gỗ nguyên tấm có vát cạnh ~1cm) → không lún ly khi nhìn sát ở góc thứ nhất
+  g.position.set(order.spot.x, order.spot.y + 0.012, order.spot.z);
   // Quay mặt (tay cầm) về phía khách
   g.rotation.y = Math.atan2(order.posX - order.spot.x, order.posZ - order.spot.z) + Math.PI / 2;
   const gap = 0.12;

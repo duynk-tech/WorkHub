@@ -13,6 +13,11 @@ import {
   historyUndo,
   snap,
   snapAngle,
+  SEATABLE_KINDS,
+  seatsFor,
+  counterBehind,
+  isStaffSeat,
+  seatActivity,
 } from '@/lib/space-3d-layout';
 import { choosePackKind, packSize, resolveMerchItems } from '@/lib/space-3d-merch';
 import { cafeTemplate, officeTemplate, showroomTemplate, upgradeLegacyLayout, warehouseTemplate } from '@/lib/space-3d-templates';
@@ -166,8 +171,39 @@ describe('bố cục mẫu', () => {
       const counters = objs.filter((o) => o.kind === 'DISPLAY_COUNTER');
       expect(counters.length).toBeGreaterThanOrEqual(4);
       expect(counters.every((c) => c.label && c.label !== 'Quầy trưng bày sản phẩm')).toBe(true);
-      for (const o of objs) if (o.kind !== 'RUG') expect(findCollisions(objs, o.id), `${w}x${d} ${o.id}`).toEqual([]);
+      // Ghế nhân viên sát sau quầy được phép chạm hộp bao (hộp bao thẳng trục của quầy xoay chéo phình to)
+      const pairOk = (a: string, b: string) => {
+        const A = objs.find((o) => o.id === a)!;
+        const B = objs.find((o) => o.id === b)!;
+        const seat = SEATABLE_KINDS.has(A.kind) ? A : SEATABLE_KINDS.has(B.kind) ? B : null;
+        const counter = seat === A ? B : A;
+        return Boolean(seat && counterBehind(seat, [counter]));
+      };
+      for (const o of objs) {
+        if (o.kind === 'RUG') continue;
+        expect(findCollisions(objs, o.id).filter((c) => !pairOk(o.id, c)), `${w}x${d} ${o.id}`).toEqual([]);
+      }
+      // Mỗi quầy trưng bày có 1 ghế nhân viên phía sau, khách không được ngồi
+      for (const c of counters) {
+        const seat = objs.find((o) => SEATABLE_KINDS.has(o.kind) && counterBehind(o, [c]));
+        expect(seat, `ghế sau ${c.id}`).toBeTruthy();
+        expect(isStaffSeat(seat!, objs)).toBe(true);
+      }
+      // Sofa khu chờ không phải ghế nhân viên
+      const sofa = objs.find((o) => o.kind === 'SOFA')!;
+      expect(isStaffSeat(sofa, objs)).toBe(false);
+      expect(isStaffSeat({ ...sofa, seatAccess: 'staff' }, objs)).toBe(true);
     }
+  });
+
+  it('hoạt động khi ngồi: ghế trước bàn làm việc → gõ phím, quanh bàn họp → họp', () => {
+    const objs = officeTemplate({ widthM: 26, depthM: 20 });
+    const deskChair = objs.find((o) => o.kind === 'OFFICE_CHAIR' && seatActivity(seatsFor(o)[0], objs).activity === 'type');
+    expect(deskChair).toBeTruthy();
+    const meetChairs = objs.filter((o) => o.kind === 'OFFICE_CHAIR' && seatActivity(seatsFor(o)[0], objs).activity === 'meeting');
+    expect(meetChairs.length).toBeGreaterThanOrEqual(4);
+    const sofa = objs.find((o) => o.kind === 'SOFA')!;
+    expect(seatActivity(seatsFor(sofa)[0], objs).activity).toBe('rest');
   });
 
   it('mọi mẫu: id duy nhất, nằm trong mặt bằng', () => {

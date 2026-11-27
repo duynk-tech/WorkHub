@@ -12,6 +12,7 @@ import {
   type SpaceSceneKind,
 } from '@/lib/space-3d-catalog';
 import type { SpaceCatalogItem, SpaceObject } from '@/lib/space-3d-types';
+import { SEATABLE_KINDS } from '@/lib/space-3d-layout';
 import { getThumbnail, getThumbnailVersion, requestThumbnails, subscribeThumbnails } from '../three/props/thumbnails';
 
 const DEFAULT_TAB: Record<SpaceSceneKind, SpaceObjectCategory> = {
@@ -240,6 +241,21 @@ export function InspectorPanel({
               {def.variants.map((v) => (
                 <option key={v.key} value={v.key} style={{ color: '#0f172a' }}>{v.label}</option>
               ))}
+            </select>
+          </label>
+        )}
+
+        {SEATABLE_KINDS.has(object.kind) && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10.5, color: '#94a3b8' }}>
+            Ai được ngồi
+            <select
+              value={object.seatAccess ?? 'auto'}
+              onChange={(e) => onChange({ seatAccess: e.target.value === 'auto' ? undefined : (e.target.value as 'staff' | 'all') })}
+              style={field}
+            >
+              <option value="auto" style={{ color: '#0f172a' }}>Tự động (ghế sau quầy → nhân viên)</option>
+              <option value="staff" style={{ color: '#0f172a' }}>Chỉ nhân viên</option>
+              <option value="all" style={{ color: '#0f172a' }}>Mọi người</option>
             </select>
           </label>
         )}

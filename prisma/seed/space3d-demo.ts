@@ -43,7 +43,13 @@ async function main() {
   for (const def of SCENES) {
     if (only && !only.has(def.code)) continue;
     const existing = await prisma.spaceScene.findUnique({ where: { code: def.code }, include: { placements: true } });
-    const size = existing ? { widthM: existing.widthM, depthM: existing.depthM } : DEFAULT_SCENE_SIZE[def.kind];
+    const base = DEFAULT_SCENE_SIZE[def.kind];
+    // Áp lại mẫu: quán cà phê sân vườn cần mặt bằng tối thiểu theo mẫu (giữ nếu đang rộng hơn)
+    const size = existing
+      ? reset && def.kind === 'CAFE'
+        ? { widthM: Math.max(existing.widthM, base.widthM), depthM: Math.max(existing.depthM, base.depthM) }
+        : { widthM: existing.widthM, depthM: existing.depthM }
+      : base;
     const objects = templateFor(def.kind, { ...size, departments });
     if (!existing) {
       await prisma.spaceScene.create({
@@ -53,7 +59,7 @@ async function main() {
     } else if (reset) {
       const file = backupScene(def.code, existing);
       await prisma.$transaction([
-        prisma.spaceScene.update({ where: { id: existing.id }, data: { structuresJson: objects as never } }),
+        prisma.spaceScene.update({ where: { id: existing.id }, data: { structuresJson: objects as never, widthM: size.widthM, depthM: size.depthM } }),
         prisma.spacePlacement.deleteMany({ where: { sceneId: existing.id } }),
       ]);
       console.log(`↻ Áp lại mẫu ${def.code} (${objects.length} vật thể, gỡ ${existing.placements.length} sản phẩm đặt rời) — sao lưu: ${file}`);

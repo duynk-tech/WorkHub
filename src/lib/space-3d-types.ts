@@ -131,6 +131,8 @@ export interface SpaceStructure {
   variant?: string;
   merch?: SpaceMerch;
   locked?: boolean;
+  /** Ai được ngồi (ghế): auto = tự nhận diện (ghế sau quầy → nhân viên), staff = chỉ nhân viên, all = mọi người */
+  seatAccess?: 'auto' | 'staff' | 'all';
 }
 export type SpaceObject = SpaceStructure;
 
@@ -181,6 +183,7 @@ export function normalizeSpaceObject(raw: unknown): SpaceObject | null {
     variant: def.variants?.some((v) => v.key === r.variant) ? (r.variant as string) : def.variants?.[0]?.key,
     merch,
     locked: Boolean(r.locked),
+    seatAccess: r.seatAccess === 'staff' || r.seatAccess === 'all' ? r.seatAccess : undefined,
   };
 }
 

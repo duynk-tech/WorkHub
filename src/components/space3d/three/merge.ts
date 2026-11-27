@@ -18,8 +18,15 @@ export function mergeStaticGroup(root: THREE.Object3D): THREE.Group {
       return;
     }
     const mesh = o as THREE.Mesh;
+    // Nhóm động (cánh cửa…) đánh dấu noMerge → giữ nguyên cả cây con để còn chuyển động quanh bản lề
+    if (!mesh.isMesh && o.userData.noMerge) {
+      keep.push(o);
+      skip.add(o);
+      return;
+    }
     if (!mesh.isMesh || Array.isArray(mesh.material)) {
-      if ((o as THREE.Sprite).isSprite || (o as THREE.Points).isPoints) {
+      // Sprite / Points / mesh nhiều vật liệu (vd. tấm gỗ mặt vân + cạnh vỏ cây): không gộp được → giữ nguyên
+      if ((o as THREE.Sprite).isSprite || (o as THREE.Points).isPoints || (mesh.isMesh && Array.isArray(mesh.material))) {
         keep.push(o);
         skip.add(o);
       }
@@ -90,8 +97,14 @@ export function mergeStaticGroup(root: THREE.Object3D): THREE.Group {
  */
 export function freezeStaticDescendants(root: THREE.Object3D): void {
   root.updateMatrixWorld(true);
+  const isDynamic = (o: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = o; p && p !== root; p = p.parent) if (p.userData.dynamic) return true;
+    return false;
+  };
   root.traverse((o) => {
     if (o === root || (o as { isCSS2DObject?: boolean }).isCSS2DObject) return;
+    // Bộ phận chuyển động (cánh cửa) giữ cập nhật ma trận tự động
+    if (isDynamic(o)) return;
     o.updateMatrix();
     o.matrixAutoUpdate = false;
   });

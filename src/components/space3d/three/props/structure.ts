@@ -63,13 +63,29 @@ export function buildDoor(o: SpaceObject): THREE.Group {
   g.add(box(0.06, h, d, frame, -w / 2 - 0.03, h / 2, 0));
   g.add(box(0.06, h, d, frame, w / 2 + 0.03, h / 2, 0));
   g.add(box(w + 0.12, 0.06, d, frame, 0, h + 0.03, 0));
-  // Cánh cửa hé mở 25°
-  const leaf = new THREE.Group();
-  leaf.add(box(w - 0.02, h - 0.02, 0.045, M.woodGloss(o.color ?? '#a47148'), w / 2, h / 2, 0, 0.006));
-  leaf.add(box(0.03, 0.18, 0.05, M.chrome(), w - 0.1, 1.0, 0.04, 0.01));
-  leaf.position.x = -w / 2;
-  leaf.rotation.y = -0.45;
-  g.add(leaf);
+  // Cánh cửa động: tự mở khi có người tới gần (canvas điều khiển userData.doorLeaf.open 0..1)
+  if (o.variant === 'slide') {
+    // Cửa kính trượt 2 cánh: mỗi cánh trượt sang 1 bên
+    const glass = M.glass();
+    const frameMat = M.metal('#1f2937', 0.4);
+    for (const s of [-1, 1]) {
+      const panel = new THREE.Group();
+      panel.add(box(w / 2 - 0.02, h - 0.04, 0.03, glass, 0, h / 2, 0));
+      panel.add(box(w / 2, 0.05, 0.05, frameMat, 0, h - 0.03, 0), box(w / 2, 0.05, 0.05, frameMat, 0, 0.03, 0));
+      panel.add(box(0.04, h, 0.05, frameMat, -s * (w / 4 - 0.02), h / 2, 0), box(0.04, h, 0.05, frameMat, s * (w / 4 - 0.02), h / 2, 0));
+      panel.position.x = s * (w / 4);
+      panel.userData = { noMerge: true, dynamic: true, doorLeaf: { kind: 'slide', side: s, closedX: s * (w / 4), travel: w / 2 - 0.05 } };
+      g.add(panel);
+    }
+  } else {
+    const leaf = new THREE.Group();
+    leaf.add(box(w - 0.02, h - 0.02, 0.045, M.woodGloss(o.color ?? '#a47148'), w / 2, h / 2, 0, 0.006));
+    leaf.add(box(0.03, 0.18, 0.05, M.chrome(), w - 0.1, 1.0, 0.04, 0.01));
+    leaf.position.x = -w / 2;
+    // Mở vào trong (−Z cục bộ) ~85°
+    leaf.userData = { noMerge: true, dynamic: true, doorLeaf: { kind: 'swing', angle: 1.48 } };
+    g.add(leaf);
+  }
   return g;
 }
 
@@ -111,5 +127,35 @@ export function buildWallArt(o: SpaceObject): THREE.Group {
   ctx.globalAlpha = 1;
   tex.needsUpdate = true;
   g.add(plane(w - 0.08, h - 0.08, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }), 0, y, d / 2 + 0.002));
+  return g;
+}
+
+/**
+ * Vùng phòng (ROOM_ZONE): chỉ hiện trong chế độ thiết kế (sàn xanh mờ + viền đứt + tên phòng).
+ * Khi chơi bị ẩn; nhân vật bước vào → camera chuyển vào góc phòng (canvas).
+ */
+export function buildRoomZone(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const { widthM: w, depthM: d } = o;
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.12, depthWrite: false }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.04;
+  floor.userData.noMerge = true;
+  g.add(floor);
+  const pts = [
+    new THREE.Vector3(-w / 2, 0.05, -d / 2),
+    new THREE.Vector3(w / 2, 0.05, -d / 2),
+    new THREE.Vector3(w / 2, 0.05, d / 2),
+    new THREE.Vector3(-w / 2, 0.05, d / 2),
+    new THREE.Vector3(-w / 2, 0.05, -d / 2),
+  ];
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: '#0ea5e9', dashSize: 0.3, gapSize: 0.18 }));
+  line.computeLineDistances();
+  line.userData.noMerge = true;
+  g.add(line);
+  g.userData.roomZone = true;
   return g;
 }

@@ -36,12 +36,15 @@ export function SpaceCafeMenu({
   myOrders,
   onClose,
   onPlace,
+  onClear,
   glassStyle,
 }: {
   menu: CafeMenuItem[];
   myOrders: DrinkOrderView[];
   onClose: () => void;
   onPlace: (lines: OrderLine[], note: string) => Promise<boolean>;
+  /** Dọn ly của mình trên bàn (null = tất cả ly của mình) */
+  onClear?: (orderId: number | null) => void;
   glassStyle: React.CSSProperties;
 }) {
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -94,8 +97,18 @@ export function SpaceCafeMenu({
                 {o.lines.map((l) => `${l.qty} ${byCode.get(l.code)?.name ?? l.code}`).join(', ')}
               </span>
               <strong style={{ whiteSpace: 'nowrap' }}>{STATUS_TEXT[o.status]}</strong>
+              {o.status === 'SERVED' && onClear && (
+                <button type="button" onClick={() => onClear(o.id)} style={{ background: 'none', border: 0, color: '#fde68a', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>
+                  Dọn
+                </button>
+              )}
             </div>
           ))}
+          {onClear && myOrders.filter((o) => o.status === 'SERVED').length > 1 && (
+            <button type="button" onClick={() => onClear(null)} style={{ alignSelf: 'flex-end', background: 'none', border: 0, color: '#fde68a', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>
+              🧹 Dọn tất cả ly của tôi
+            </button>
+          )}
         </div>
       )}
 

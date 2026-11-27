@@ -23,7 +23,7 @@ export function clipBubbleText(text: string, max = BUBBLE_MAX_CHARS): string {
   return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
 }
 
-export type SpaceEmote = 'wave' | 'nod' | 'bow' | 'clap';
+export type SpaceEmote = 'wave' | 'nod' | 'bow' | 'clap' | 'brew';
 export const SPACE_EMOTES: { key: SpaceEmote; label: string; icon: string }[] = [
   { key: 'wave', label: 'Vẫy tay', icon: '👋' },
   { key: 'nod', label: 'Gật đầu', icon: '🙂' },
@@ -32,5 +32,5 @@ export const SPACE_EMOTES: { key: SpaceEmote; label: string; icon: string }[] = 
 ];
 export const EMOTE_DURATION_MS = 1600;
 export function isSpaceEmote(v: unknown): v is SpaceEmote {
-  return v === 'wave' || v === 'nod' || v === 'bow' || v === 'clap';
+  return v === 'wave' || v === 'nod' || v === 'bow' || v === 'clap' || v === 'brew';
 }

@@ -16,6 +16,7 @@ export function SpaceCafeOrders({
   onClose,
   onUpdate,
   onGoTo,
+  onClear,
   glassStyle,
 }: {
   menu: CafeMenuItem[];
@@ -24,11 +25,14 @@ export function SpaceCafeOrders({
   onClose: () => void;
   onUpdate: (o: DrinkOrderView, status: 'PREPARING' | 'SERVED' | 'CANCELLED') => void;
   onGoTo: (o: DrinkOrderView) => void;
+  /** Dọn ly đã phục vụ: 1 đơn (orderId) hoặc tất cả (null) */
+  onClear: (orderId: number | null) => void;
   glassStyle: React.CSSProperties;
 }) {
   const byCode = new Map(menu.map((m) => [m.code, m]));
   const open = orders.filter((o) => o.status === 'NEW' || o.status === 'PREPARING');
-  const served = orders.filter((o) => o.status === 'SERVED').slice(-4).reverse();
+  const servedAll = orders.filter((o) => o.status === 'SERVED');
+  const served = servedAll.slice(-6).reverse();
   return (
     <div
       style={{
@@ -92,11 +96,21 @@ export function SpaceCafeOrders({
       ))}
       {served.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>VỪA PHỤC VỤ</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>LY ĐANG TRÊN BÀN ({servedAll.length})</span>
+            <button type="button" onClick={() => onClear(null)} style={{ ...btn('rgba(255,255,255,0.12)'), padding: '4px 10px', fontSize: 11 }}>
+              🧹 Dọn tất cả
+            </button>
+          </div>
           {served.map((o) => (
-            <div key={o.id} style={{ fontSize: 11.5, color: '#94a3b8' }}>
-              ✓ {o.customerName}: {o.lines.map((l) => `${l.qty} ${byCode.get(l.code)?.name ?? l.code}`).join(', ')}
-              {o.servedByName ? ` · ${o.servedByName}` : ''}
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#94a3b8' }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                ✓ {o.customerName}: {o.lines.map((l) => `${l.qty} ${byCode.get(l.code)?.name ?? l.code}`).join(', ')}
+                {o.servedByName ? ` · ${o.servedByName}` : ''}
+              </span>
+              <button type="button" onClick={() => onClear(o.id)} style={{ ...btn('rgba(255,255,255,0.1)'), padding: '3px 9px', fontSize: 11 }}>
+                Dọn
+              </button>
             </div>
           ))}
         </div>

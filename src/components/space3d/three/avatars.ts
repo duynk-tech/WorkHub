@@ -108,6 +108,8 @@ export interface AnimatedAvatar {
   skirt: THREE.Object3D | null;
   /** Góc gập chân váy khi ngồi (phủ lên đùi) */
   skirtSitX: number;
+  /** Váy lúc ngồi: tấm vải phủ lên đùi rồi rủ xuống qua gối (thay cho chân váy hình chuông khi đứng) */
+  skirtSit: THREE.Object3D | null;
   /** Khoang miệng — phóng theo trục y để nhép miệng khi nói */
   mouth: THREE.Object3D | null;
   /** Nhãn cầu (liếc mắt) + đốm sáng long lanh (ẩn khi chớp) */
@@ -115,6 +117,59 @@ export interface AnimatedAvatar {
   sparkles: THREE.Object3D[];
   /** Hướng liếc mắt hiện tại/đích + thời điểm đổi hướng kế tiếp */
   gaze: { x: number; y: number; tx: number; ty: number; at: number };
+}
+
+/**
+ * Mặt vải váy lúc ngồi (toạ độ nhân vật, hông y = 0.9): vòm phủ trên 2 đùi nằm ngang từ sau hông tới gối,
+ * rồi rủ xuống như rèm trước đầu gối. Hở phía trong không lộ vì 2 mép vòm buông thấp dưới đùi.
+ */
+function seatedSkirtGeo(halfW: number, archH: number, zTo: number, drop: number): THREE.BufferGeometry {
+  const N = 14; // dọc đùi
+  const M = 6; // phần rủ trước gối
+  const K = 16; // quanh vòm
+  const zFrom = -0.13;
+  const sideDrop = 0.075;
+  const pos: number[] = [];
+  const rows = N + M + 1;
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j <= K; j++) {
+      const th = (j / K) * Math.PI; // 0 → π: mép phải → đỉnh → mép trái
+      const sn = Math.sin(th);
+      const xArch = halfW * Math.cos(th);
+      const yArch = archH * sn - sideDrop * (1 - sn);
+      if (i <= N) {
+        const t = i / N;
+        // Hông đầy hơn, thon dần về gối
+        const k = 1.08 - 0.12 * t;
+        pos.push(xArch * k, yArch * (0.95 + 0.1 * (1 - t)), zFrom + (zTo - zFrom) * t);
+      } else {
+        const t = (i - N) / M;
+        const ease = Math.sin((t * Math.PI) / 2);
+        pos.push(xArch * (0.96 + 0.08 * t), yArch * (1 - ease) - drop * ease, zTo + 0.05 * Math.sin(t * Math.PI) + 0.01 * t);
+      }
+    }
+  }
+  const idx: number[] = [];
+  for (let i = 0; i < rows - 1; i++) {
+    for (let j = 0; j < K; j++) {
+      const a = i * (K + 1) + j;
+      const b = a + K + 1;
+      idx.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Ngồi (đùi nằm ngang) → hiện váy phủ đùi, ẩn chân váy chuông; đứng/đi → ngược lại. */
+function syncSkirt(av: AnimatedAvatar) {
+  if (!av.skirt || !av.skirtSit) return;
+  const seated = av.leftLeg.rotation.x < -1.05;
+  av.skirtSit.visible = seated;
+  av.skirt.visible = !seated;
 }
 
 /** Trả góc dang tay (z) & độ nghiêng người về mặc định sau biểu cảm. */
@@ -127,6 +182,7 @@ function settleArms(av: AnimatedAvatar) {
 /** Dáng đi: sải hông, gập gối ở pha nhấc chân, đánh tay có gập khuỷu, nhún nhẹ. */
 export function poseWalk(av: AnimatedAvatar, phase: number): void {
   settleArms(av);
+  if (av.skirtSit?.visible) syncSkirt(av);
   const k = av.stride;
   const sn = Math.sin(phase);
   const hip = sn * 0.5 * k;
@@ -148,26 +204,67 @@ export function poseWalk(av: AnimatedAvatar, phase: number): void {
 
 /** Tư thế ngồi: đùi nằm ngang ra trước, cẳng chân thả xuống, tay đặt lên đùi; hông đặt đúng độ cao mặt ghế. */
 export function poseSit(av: AnimatedAvatar, seatY: number): void {
-  settleArms(av);
+  av.group.rotation.x *= 0.8;
   const k = 0.18; // nội suy để hạ người ngồi xuống từ từ
   const lerp = (cur: number, to: number) => cur + (to - cur) * k;
-  // Chiều dài cẳng chân + giày ≈ 0.46m: ghế thấp → gối gập ~90° chân chạm sàn; ghế bar cao → chân thả
-  const hipY = seatY + 0.04;
+  // Đùi nằm ngang ra trước (-1.48 rad). Gối gập ~1.48 rad → cẳng chân thẳng đứng, bàn chân đặt trên sàn.
+  // Ghế thấp (hông thấp hơn chiều dài cẳng chân 0.46m) → cẳng chân chéo ra trước thêm góc φ để bàn chân vẫn chạm sàn.
+  // Ghế bar cao → chân co lên gác thanh ghế.
+  const hipY = seatY + 0.02;
   const shin = 0.46;
-  const kneeBend = hipY > shin + 0.08 ? 1.1 : Math.min(1.62, Math.acos(Math.min(1, Math.max(-1, (hipY - 0.02) / shin))) + 1.5 - Math.PI / 2 + 0.05);
-  for (const leg of [av.leftLeg, av.rightLeg]) leg.rotation.x = lerp(leg.rotation.x, -1.48);
+  const thighX = -1.48;
+  const reach = (hipY - 0.03) / shin;
+  const kneeBend =
+    hipY > shin + 0.12 ? 1.05 : -thighX - (reach < 1 ? Math.acos(Math.max(0.2, reach)) : 0) + 0.04;
+  for (const leg of [av.leftLeg, av.rightLeg]) leg.rotation.x = lerp(leg.rotation.x, thighX);
   for (const knee of [av.leftKnee, av.rightKnee]) knee.rotation.x = lerp(knee.rotation.x, kneeBend);
-  // Hai đầu gối hơi mở, tay đặt lên đùi, lưng hơi ngả
   // Mặc váy → khép gối; mặc quần → hai gối hơi mở
   const spread = av.skirt ? 0 : 0.06;
   av.leftLeg.rotation.z = lerp(av.leftLeg.rotation.z, spread);
   av.rightLeg.rotation.z = lerp(av.rightLeg.rotation.z, -spread);
-  for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = lerp(arm.rotation.x, -0.42);
-  for (const el of [av.leftElbow, av.rightElbow]) el.rotation.x = lerp(el.rotation.x, -0.95);
+  // Tay khép vào trong, cẳng tay đặt lên đùi (không buông thõng ra hai bên chạm ghế bên cạnh)
+  for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = lerp(arm.rotation.x, -0.25);
+  av.leftArm.rotation.z = lerp(av.leftArm.rotation.z, 0.2);
+  av.rightArm.rotation.z = lerp(av.rightArm.rotation.z, -0.2);
+  for (const el of [av.leftElbow, av.rightElbow]) el.rotation.x = lerp(el.rotation.x, -1.05);
   av.headGroup.rotation.x = lerp(av.headGroup.rotation.x, -0.06);
-  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, av.skirtSitX);
+  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, av.skirtSit ? 0 : av.skirtSitX);
   // Pivot hông ở y = 0.9 trong nhân vật → hạ cả người cho hông chạm đệm
   av.group.position.y = lerp(av.group.position.y, hipY - 0.9);
+  syncSkirt(av);
+}
+
+/**
+ * Hoạt động khi đang ngồi (gọi SAU poseSit): gõ phím tại bàn làm việc, hoặc đặt tay lên bàn họp.
+ * Bàn cao ~0.75m, vai người ngồi ~1.0m → cánh tay chếch trước, cẳng tay nằm ngang trên mặt bàn.
+ */
+export function poseSeatActivity(av: AnimatedAvatar, activity: 'type' | 'meeting' | 'rest', time: number): void {
+  if (activity === 'rest') return;
+  const k = 0.2;
+  const lerp = (cur: number, to: number) => cur + (to - cur) * k;
+  if (activity === 'type') {
+    const tap = Math.sin(time * 17);
+    av.leftArm.rotation.x = lerp(av.leftArm.rotation.x, -0.55);
+    av.rightArm.rotation.x = lerp(av.rightArm.rotation.x, -0.55);
+    av.leftArm.rotation.z = lerp(av.leftArm.rotation.z, 0.12);
+    av.rightArm.rotation.z = lerp(av.rightArm.rotation.z, -0.12);
+    // Gõ phím: 2 tay nhấp xen kẽ rất nhẹ; thỉnh thoảng 1 tay sang chuột
+    const mouse = Math.sin(time * 0.6) > 0.55;
+    av.leftElbow.rotation.x = lerp(av.leftElbow.rotation.x, -1.02 + tap * 0.035);
+    av.rightElbow.rotation.x = lerp(av.rightElbow.rotation.x, mouse ? -0.9 : -1.02 - tap * 0.035);
+    if (mouse) av.rightArm.rotation.z = lerp(av.rightArm.rotation.z, 0.05);
+    av.headGroup.rotation.x = lerp(av.headGroup.rotation.x, 0.08);
+  } else {
+    // Họp: tay đặt lên bàn, đầu thỉnh thoảng gật / nghiêng như đang nghe
+    av.leftArm.rotation.x = lerp(av.leftArm.rotation.x, -0.48);
+    av.rightArm.rotation.x = lerp(av.rightArm.rotation.x, -0.48);
+    av.leftArm.rotation.z = lerp(av.leftArm.rotation.z, 0.18);
+    av.rightArm.rotation.z = lerp(av.rightArm.rotation.z, -0.18);
+    av.leftElbow.rotation.x = lerp(av.leftElbow.rotation.x, -1.1);
+    av.rightElbow.rotation.x = lerp(av.rightElbow.rotation.x, -1.1);
+    av.headGroup.rotation.x = lerp(av.headGroup.rotation.x, Math.max(0, Math.sin(time * 0.9)) * 0.08);
+    av.headGroup.rotation.z = lerp(av.headGroup.rotation.z, Math.sin(time * 0.37) * 0.06);
+  }
 }
 
 /** Trả dáng về đứng thẳng mượt mà khi dừng. */
@@ -192,6 +289,7 @@ export function relaxPose(av: AnimatedAvatar): void {
   }
   // Đứng dậy từ ghế: nâng người lên dần (không bật thẳng)
   av.group.position.y = Math.abs(av.group.position.y) < 0.002 ? 0 : av.group.position.y * 0.8;
+  if (av.skirtSit?.visible) syncSkirt(av);
 }
 
 /** Nhãn nổi gọn dạng viên thuốc, rộng theo nội dung (dùng cho sản phẩm & nhãn chung). */
@@ -207,8 +305,9 @@ export type NameTagStatus = 'self' | 'duty' | 'staff' | 'guest';
  * không bị tone mapping, bloom hay mipmap làm mờ như texture.
  */
 export function createNameTag(name: string, status: NameTagStatus): CSS2DObject {
-  // Bản thân: viền xanh để phân biệt; đang trực: chip xanh lá; còn lại: viên tối gọn
-  const border = status === 'self' ? '1.5px solid #3b82f6' : '1px solid rgba(255,255,255,0.16)';
+  // Bản thân: viền xanh dương; đang trực: viền xanh lá (không chữ); còn lại: viên tối gọn
+  const ring = status === 'self' ? '#3b82f6' : status === 'duty' ? '#22c55e' : null;
+  const border = ring ? `1.5px solid ${ring}` : '1px solid rgba(255,255,255,0.16)';
   const el = document.createElement('div');
   el.style.cssText = [
     'display:flex',
@@ -218,7 +317,7 @@ export function createNameTag(name: string, status: NameTagStatus): CSS2DObject 
     'border-radius:999px',
     'background:rgba(15,23,42,0.78)',
     `border:${border}`,
-    status === 'self' ? 'box-shadow:0 0 0 2px rgba(59,130,246,0.25),0 2px 8px rgba(0,0,0,0.28)' : 'box-shadow:0 2px 8px rgba(0,0,0,0.28)',
+    ring ? `box-shadow:0 0 0 2px ${ring}40,0 2px 8px rgba(0,0,0,0.28)` : 'box-shadow:0 2px 8px rgba(0,0,0,0.28)',
     `font:600 12px/1.25 ${LABEL_FONT}`,
     'color:#fff',
     'white-space:nowrap',
@@ -230,12 +329,6 @@ export function createNameTag(name: string, status: NameTagStatus): CSS2DObject 
   const t = document.createElement('span');
   t.textContent = name.slice(0, 28);
   el.append(t);
-  if (status === 'duty') {
-    const c = document.createElement('span');
-    c.textContent = 'Đang trực';
-    c.style.cssText = `font:700 10px/1 ${LABEL_FONT};padding:3px 6px;border-radius:99px;background:#16a34a;color:#fff`;
-    el.append(c);
-  }
   return htmlLabel(el, 1.88);
 }
 
@@ -718,6 +811,19 @@ export function createChibiAvatar(opts: {
   const pencilSkirt = (isUniform || style === 'shirt') && config.bottomStyle === 'skirt';
   const bareLegs = isDress || pencilSkirt;
   let skirtGroup: THREE.Group | null = null;
+  let skirtSit: THREE.Object3D | null = null;
+  /** Váy ngồi + phần hông (đầm không có thân dưới eo) — ẩn khi đứng */
+  const makeSeatedSkirt = (mat: THREE.Material, halfW: number, archH: number, zTo: number, drop: number, withHips: boolean) => {
+    const sm = (mat as THREE.MeshStandardMaterial).clone();
+    sm.side = THREE.DoubleSide;
+    const grp = new THREE.Group();
+    const cloth = new THREE.Mesh(seatedSkirtGeo(halfW, archH, zTo, drop), sm);
+    cloth.position.y = 0.9;
+    grp.add(cloth);
+    if (withHips) grp.add(lathe([[0.0, 0.84], [0.15, 0.84], [0.165, 0.9], [0.15, 0.98], [0.137, 1.0], [0.0, 1.0]], sm, 0.72));
+    grp.visible = false;
+    return grp;
+  };
   const knees: THREE.Group[] = [];
   const makeLeg = (offsetX: number) => {
     const pivot = new THREE.Group();
@@ -776,7 +882,9 @@ export function createChibiAvatar(opts: {
     skirtGroup.add(skirtMesh);
     const skirt = skirtGroup;
     const belt = lathe([[0.137, 0.985], [0.137, 1.03]], new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.4 }), 0.68);
-    group.add(bodice, skirt, belt);
+    // Đầm chữ A khi ngồi: phủ đùi, rủ qua gối xuống giữa ống chân
+    skirtSit = makeSeatedSkirt(fabric, 0.2, 0.085, 0.47, 0.22, true);
+    group.add(bodice, skirt, belt, skirtSit);
   } else {
         const torso = lathe(
       [[0.0, 0.86], [0.15, 0.86], [0.158, 0.95], [0.145, 1.05], [0.155, 1.18], [0.175, 1.3], [0.17, 1.38], [0.08, 1.44], [0.0, 1.44]],
@@ -797,7 +905,9 @@ export function createChibiAvatar(opts: {
       skirtGroup.position.y = 0.995;
       skirtGroup.add(skirtMesh);
       const waistband = lathe([[0.161, 0.965], [0.161, 0.998]], pantsMat, 0.74);
-      group.add(skirtGroup, waistband);
+      // Chân váy bút chì khi ngồi: ôm đùi, mép váy ngay trên gối
+      skirtSit = makeSeatedSkirt(pantsMat, 0.168, 0.078, 0.38, 0.05, false);
+      group.add(skirtGroup, waistband, skirtSit);
     } else {
       // Hông quần
       const hips = lathe([[0.0, 0.8], [0.15, 0.8], [0.158, 0.9], [0.0, 0.9]], pantsMat, 0.68);
@@ -968,14 +1078,18 @@ export function createChibiAvatar(opts: {
   const feminine = isDress || pencilSkirt || ['long', 'bob', 'ponytail', 'bun'].includes(config.hairStyle);
   jawTaper = feminine ? 0.33 : 0.18;
   // Mắt anime pha thật: to, tròn, hơi thấp trên mặt (trán cao) → nét "xinh"
-  const eyeR = feminine ? 0.0232 : 0.0196;
-  const eyeY = feminine ? 0.004 : 0.008;
-  const eyeX = feminine ? 0.045 : 0.043;
+  // Tỉ lệ chuẩn: mắt ngang giữa đầu, mỗi mắt ≈ 1/5 bề ngang mặt, khoảng cách 2 mắt = 1 mắt
+  const eyeR = feminine ? 0.0238 : 0.0205;
+  const eyeY = feminine ? 0.003 : 0.006;
+  const eyeX = feminine ? 0.047 : 0.044;
   eyeSocket = { x: eyeX, y: eyeY, r: feminine ? 0.016 : 0.0135 };
   const faceSkin = skin.clone();
   faceSkin.userData = {}; // để viền rim được gắn lại cho bản clone
   faceSkin.map = createSkinDetailTexture(feminine);
   faceSkin.sheen = feminine ? 0.55 : 0.3;
+  // Ánh sáng mềm phủ mặt: da sáng, mịn, không tối sạm khi đứng trong bóng → nét mặt "lung linh"
+  faceSkin.emissive = new THREE.Color(skinColor).multiplyScalar(feminine ? 0.09 : 0.06);
+  faceSkin.roughness = feminine ? 0.46 : 0.5;
   const head = new THREE.Mesh(createHeadGeometry(), faceSkin);
   headGroup.add(head);
 
@@ -992,7 +1106,7 @@ export function createChibiAvatar(opts: {
   const eyeMat = new THREE.MeshPhysicalMaterial({ map: createEyeTexture(feminine ? '#6b4528' : '#4a3020'), roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 });
   eyeMat.userData.noRim = true;
   const lidMat = skin;
-  const linerMat = new THREE.MeshStandardMaterial({ color: '#1b130f', roughness: 0.6 });
+  const linerMat = new THREE.MeshStandardMaterial({ color: '#120c09', roughness: 0.5 });
   linerMat.userData.noRim = true;
   const blinkers: THREE.Object3D[] = [];
   const eyes: THREE.Object3D[] = [];
@@ -1101,7 +1215,7 @@ export function createChibiAvatar(opts: {
   const lipMat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(skinColor).lerp(new THREE.Color(feminine ? '#d24b63' : '#a8544a'), feminine ? 0.75 : 0.45),
     roughness: feminine ? 0.3 : 0.45,
-    clearcoat: feminine ? 0.7 : 0.2,
+    clearcoat: feminine ? 0.95 : 0.25,
     clearcoatRoughness: 0.2,
   });
   const upperLip = capsule(feminine ? 0.0037 : 0.0032, feminine ? 0.02 : 0.023, lipMat);
@@ -1246,6 +1360,7 @@ export function createChibiAvatar(opts: {
     stride: isDress ? 0.42 : pencilSkirt ? 0.34 : 1,
     skirt: skirtGroup,
     skirtSitX: pencilSkirt ? -1.25 : -0.95,
+    skirtSit,
     mouth: mouthOpen,
     eyes,
     sparkles,

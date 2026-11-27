@@ -83,6 +83,8 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
   /** id → biểu cảm đang diễn */
   const emoteRef = useRef(new Map<number, { kind: SpaceEmote; at: number }>());
   const lastTypingSentRef = useRef(0);
+  /** id → đồ uống đang cầm trên tay (mã món trong menu) */
+  const holdRef = useRef(new Map<number, { code: string; at: number }>());
   const onOrderRef = useRef(onOrder);
   onOrderRef.current = onOrder;
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -108,6 +110,7 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
     const bubbles = bubbleRef.current;
     const typing = typingRef.current;
     const emotes = emoteRef.current;
+    const holds = holdRef.current;
 
     const sendMove = (force = false) => {
       const ch = channelRef.current;
@@ -154,6 +157,7 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
       for (const id of [...bubbles.keys()]) if (!ids.has(id)) bubbles.delete(id);
       for (const id of [...typing.keys()]) if (!ids.has(id)) typing.delete(id);
       for (const id of [...emotes.keys()]) if (!ids.has(id)) emotes.delete(id);
+      for (const id of [...holds.keys()]) if (!ids.has(id) && id !== selfRef.current?.employeeId) holds.delete(id);
       rosterIdsRef.current = ids;
       setRoster(next);
     };
@@ -230,6 +234,13 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
           const id = Number(payload?.id);
           if (!rosterIdsRef.current.has(id) || !isSpaceEmote(payload?.kind)) return;
           emotes.set(id, { kind: payload.kind, at: Date.now() });
+        })
+        .on('broadcast', { event: 'hold' }, ({ payload }) => {
+          const id = Number(payload?.id);
+          if (!rosterIdsRef.current.has(id)) return;
+          const code = typeof payload?.code === 'string' ? payload.code.slice(0, 24) : null;
+          if (code) holds.set(id, { code, at: Date.now() });
+          else holds.delete(id);
         })
         .on('broadcast', { event: 'order' }, () => {
           onOrderRef.current?.();
@@ -326,6 +337,16 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
     if (ch) void ch.send({ type: 'broadcast', event: 'emote', payload: { id: me.employeeId, kind } });
   }, []);
 
+  /** Cầm / đặt ly nước (pantry) — mọi người cùng thấy. code = null → đặt ly xuống */
+  const sendHold = useCallback((code: string | null) => {
+    const ch = channelRef.current;
+    const me = selfRef.current;
+    if (!me) return;
+    if (code) holdRef.current.set(me.employeeId, { code, at: Date.now() });
+    else holdRef.current.delete(me.employeeId);
+    if (ch) void ch.send({ type: 'broadcast', event: 'hold', payload: { id: me.employeeId, code } });
+  }, []);
+
   /** Bong bóng chỉ hiện ở máy mình (ví dụ câu trả lời AI trên đầu nhân viên được hỏi). */
   const setLocalBubble = useCallback((id: number, text: string | null) => {
     if (!text) {
@@ -343,5 +364,5 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
     }
   }, []);
 
-  return { status, roster, remoteStateRef, bubbleRef, typingRef, emoteRef, sendBubble, sendTyping, sendEmote, setLocalBubble };
+  return { status, roster, remoteStateRef, bubbleRef, typingRef, emoteRef, holdRef, sendBubble, sendTyping, sendEmote, sendHold, setLocalBubble };
 }

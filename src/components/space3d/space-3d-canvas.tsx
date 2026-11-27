@@ -32,13 +32,17 @@ import {
   syncBubble,
   poseTalk,
   poseEmote,
+  poseSeatActivity,
   type AnimatedAvatar,
   type BubbleSlot,
 } from './three/avatars';
 import { createExhibitionHallEnvironment } from './three/hall';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
-import { buildOrderDrinks } from './three/props/drinks';
+import { buildDrink, buildOrderDrinks } from './three/props/drinks';
+import { DEFAULT_CAFE_MENU } from '@/lib/space-3d-cafe-menu';
+import { PANTRY_KINDS } from './three/props/office-extras';
+import { setDeskScreenOn } from './three/props/office-extras';
 import { createCafeEnvironment, createOfficeEnvironment, createWarehouseEnvironment } from './three/environments';
 import { carpetTileTex, plankTex } from './three/props/textures';
 import { buildSpaceObject, objectSignature, applyTransform } from './three/props/registry';
@@ -46,7 +50,7 @@ import type { ShelfSlot } from './three/props/kit';
 import { buildMerchandise } from './three/props/packaging';
 import { resolveMerchItems } from '@/lib/space-3d-merch';
 import { SPACE_OBJECT_DEF_MAP } from '@/lib/space-3d-catalog';
-import { SEATABLE_KINDS, clampInside, findCollisions, pickSeat, seatsFor, snap, type Seat } from '@/lib/space-3d-layout';
+import { SEATABLE_KINDS, clampInside, findCollisions, isStaffSeat, pickSeat, seatActivity, seatsFor, snap, type Seat, type SeatActivity } from '@/lib/space-3d-layout';
 import { buildProductGroup } from './three/products';
 import { createEpoxyTextures, windUniform } from './three/materials';
 import { freezeStaticDescendants, mergeStaticGroup } from './three/merge';
@@ -139,16 +143,28 @@ interface Props {
   faceEmployeeId?: number | null;
   /** Bấm vào ghế → báo ghế được chọn (hiện nút "Ngồi ghế"); null = bỏ chọn */
   onSeatCandidate?: (info: { label: string } | null) => void;
+  /** Thông báo ngắn cho người dùng (vd. "Ghế dành cho nhân viên") */
+  onNotice?: (text: string) => void;
+  /** Nhân vật vào / ra một phòng (ROOM_ZONE) → tên phòng hoặc null */
+  onRoomChange?: (name: string | null) => void;
+  /** id → đồ uống đang cầm (pantry) */
+  holdRef?: React.MutableRefObject<Map<number, { code: string; at: number }>>;
+  /** Đứng gần pantry (quầy bếp / bình nước / tủ lạnh) */
+  onPantryNear?: (near: boolean) => void;
   /** Trạng thái ngồi thay đổi (hiện nút "Đứng dậy") */
   onSittingChange?: (sitting: boolean) => void;
   /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
-  seatCommand?: { kind: 'sit' | 'stand'; nonce: number } | null;
+  seatCommand?: { kind: 'sit' | 'stand' | 'dutySit'; nonce: number } | null;
+  /** Nhân vật mình tự làm biểu cảm (vd. nhân viên trực đứng dậy vẫy chào khách) → phát realtime */
+  onAutoEmote?: (kind: 'wave') => void;
 }
 
 interface RemoteAvatarEntry {
   av: AnimatedAvatar;
   sig: string;
   walkTime: number;
+  /** Hoạt động khi ngồi của người kia (tính lại thưa) */
+  seatAct?: { activity: SeatActivity; targetId: string | null; at: number };
   /** Nhân viên đang trực trong quán cà phê → đứng gần quầy bar thì làm động tác pha chế */
   barista?: boolean;
 }
@@ -158,12 +174,54 @@ interface RemoteAvatarEntry {
 /** Bán kính thân người (m) để tránh chồng nhân vật / đi xuyên đồ đạc */
 const BODY_RADIUS = 0.3;
 const MAX_REMOTE_AVATARS = 30;
-const PASS_THROUGH = new Set(['RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD', 'DOOR', 'BOOTH']); // gian hàng mở: được bước vào
+const PASS_THROUGH = new Set([
+  'RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD', 'DOOR', 'BOOTH',
+  // Sân vườn: đi dưới lưới/mái/dù, bước trên lối cỏ & sỏi, qua cổng
+  'SHADE_NET', 'METAL_ROOF', 'PATIO_UMBRELLA', 'STEPPING_PATH', 'GRAVEL_BED', 'HOI_AN_LANTERN', 'GARDEN_GATE', 'ROOM_ZONE', 'RED_CARPET', 'BALLOON_ARCH', 'LANTERN_STRING',
+]); // gian hàng mở: được bước vào
 
 /**
  * Đẩy vị trí `pos` ra khỏi các nhân vật khác (hình tròn) và vật thể (hộp xoay theo rotY).
  * Trả về true nếu có va chạm.
  */
+/** Điểm (x, z) có bị đồ đạc chắn không (tính cả bán kính thân người) */
+function pointBlocked(x: number, z: number, objects: SpaceStructure[]): boolean {
+  for (const o of objects) {
+    if (PASS_THROUGH.has(o.kind) || (o.posY ?? 0) > 0.3) continue;
+    const c = Math.cos(o.rotY);
+    const s = Math.sin(o.rotY);
+    const rx = x - o.posX;
+    const rz = z - o.posZ;
+    const lx = rx * c - rz * s;
+    const lz = rx * s + rz * c;
+    if (Math.abs(lx) < o.widthM / 2 + BODY_RADIUS && Math.abs(lz) < o.depthM / 2 + BODY_RADIUS) return true;
+  }
+  return false;
+}
+
+/** Chỗ đứng để vào ghế: thử trước → trái → phải → sau ghế, chọn chỗ không bị bàn/đồ đạc chắn. */
+function seatApproach(seatObj: SpaceStructure, seat: Seat, objects: SpaceStructure[]): THREE.Vector3 {
+  const c = Math.cos(seatObj.rotY);
+  const s = Math.sin(seatObj.rotY);
+  // Hướng cục bộ (lx, lz) → thế giới: x = lx*c + lz*s, z = -lx*s + lz*c (mặt trước ghế là +Z cục bộ)
+  const dirs: [number, number, number][] = [
+    [0, 1, seatObj.depthM / 2 + BODY_RADIUS + 0.1],
+    [-1, 0, seatObj.widthM / 2 + BODY_RADIUS + 0.1],
+    [1, 0, seatObj.widthM / 2 + BODY_RADIUS + 0.1],
+    [0, -1, seatObj.depthM / 2 + BODY_RADIUS + 0.12],
+  ];
+  const others = objects.filter((o) => o.id !== seatObj.id);
+  let first: THREE.Vector3 | null = null;
+  for (const [dx, dz, reach] of dirs) {
+    const ax = seat.x + (dx * c + dz * s) * reach;
+    const az = seat.z + (-dx * s + dz * c) * reach;
+    const p = new THREE.Vector3(ax, 0, az);
+    first ??= p;
+    if (!pointBlocked(ax, az, others)) return p;
+  }
+  return first!;
+}
+
 function resolveBodyCollisions(pos: THREE.Vector3, avatars: THREE.Object3D[], objects: SpaceStructure[] | null): boolean {
   let hit = false;
   for (const a of avatars) {
@@ -256,6 +314,11 @@ export function Space3DCanvas({
   onSelectMerchItem,
   faceEmployeeId = null,
   onSeatCandidate,
+  onNotice,
+  onRoomChange,
+  holdRef,
+  onPantryNear,
+  onAutoEmote,
   onSittingChange,
   seatCommand = null,
 }: Props) {
@@ -293,6 +356,13 @@ export function Space3DCanvas({
     onSelectMerchItem,
     faceEmployeeId,
     onSeatCandidate,
+    onNotice,
+    onRoomChange,
+    holdRef,
+    onPantryNear,
+    onAutoEmote,
+    isSelfOnDuty,
+    remoteRoster,
     onSittingChange,
   });
   stateRef.current = {
@@ -328,6 +398,13 @@ export function Space3DCanvas({
     onSelectMerchItem,
     faceEmployeeId,
     onSeatCandidate,
+    onNotice,
+    onRoomChange,
+    holdRef,
+    onPantryNear,
+    onAutoEmote,
+    isSelfOnDuty,
+    remoteRoster,
     onSittingChange,
   };
 
@@ -366,6 +443,12 @@ export function Space3DCanvas({
     sky: SkySystem;
     envOccluders: THREE.Object3D[];
     occluders: THREE.Object3D[];
+    /** Mesh làm mờ khi chắn giữa camera và nhân vật (bảng hiệu cổng…) */
+    fadeables: THREE.Mesh[];
+    /** Cánh cửa tự mở: nhóm cánh + tâm cửa (toạ độ thế giới) + độ mở hiện tại 0..1 */
+    doors: { leaf: THREE.Object3D; x: number; z: number; open: number }[];
+    /** Màn hình bàn làm việc theo id bàn (sáng khi có người ngồi gõ phím) */
+    deskScreens: Map<string, { mesh: THREE.Mesh; variant: number; on: boolean }>;
     quality: QualityLevel;
     applyQuality: (level: QualityLevel) => void;
   } | null>(null);
@@ -388,9 +471,12 @@ export function Space3DCanvas({
     // Đặt camera thấp hơn xà giàn mái gần lối vào để không bị che khi vừa vào
     // Điểm xuất phát gần lối vào (mặt trước +Z), co theo không gian nhỏ (quán cà phê / văn phòng)
     // Kho có tường mặt tiền kín (cửa cuốn) → xuất phát sâu hơn để camera nằm trong nhà
-    const spawnZ = sceneKind === 'WAREHOUSE' ? depthM / 2 - 6.5 : Math.min(11, depthM / 2 - 2.5);
+    // Quán cà phê sân vườn: xuất hiện ngay TRƯỚC cổng → bảng hiệu nằm phía trước, hiện rõ trên đầu nhân vật
+    const spawnZ = sceneKind === 'WAREHOUSE' ? depthM / 2 - 6.5 : sceneKind === 'CAFE' ? depthM / 2 - 0.15 : Math.min(11, depthM / 2 - 2.5);
     // Camera thấp & gần hơn: luồn dưới xà cổng chào (đáy xà ~4.3m), không bị cổng che
-    camera.position.set(0, 2.9, spawnZ + 5.4);
+    // Quán cà phê: mở đầu lùi xa, ngước nhẹ → thấy trọn bảng hiệu cổng; bấm đi thì camera thu lại gần
+    const cafeWide = sceneKind === 'CAFE';
+    camera.position.set(0, cafeWide ? 3.4 : 2.9, spawnZ + (cafeWide ? 9.5 : 5.4));
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -492,7 +578,7 @@ export function Space3DCanvas({
     const interior = isCafe
       ? createCafeEnvironment(widthM, depthM, branding.companyName)
       : isOffice
-        ? createOfficeEnvironment(widthM, depthM, branding.companyName)
+        ? createOfficeEnvironment(widthM, depthM, branding.companyName, branding.logoUrl)
         : isWarehouse
           ? createWarehouseEnvironment(widthM, depthM, branding.companyName)
           : null;
@@ -574,7 +660,8 @@ export function Space3DCanvas({
     orbit.maxPolarAngle = Math.PI / 2 - 0.05;
     orbit.minDistance = 2.8;
     orbit.maxDistance = 42;
-    orbit.target.set(0, 1.3, spawnZ);
+    orbit.target.set(0, cafeWide ? 2.3 : 1.3, cafeWide ? spawnZ - 0.6 : spawnZ);
+    let cafeZoomIn = !cafeWide; // true = đã thu camera về gần
     orbit.update();
 
     const transform = new TransformControls(camera, renderer.domElement);
@@ -674,6 +761,9 @@ export function Space3DCanvas({
       sky: skySys,
       envOccluders,
       occluders: envOccluders,
+      fadeables: [],
+      deskScreens: new Map(),
+      doors: [],
       quality: qualityLevel,
       applyQuality,
     };
@@ -866,6 +956,11 @@ export function Space3DCanvas({
       {
         const seatObjId = pickObject();
         const seatObj = seatObjId ? stateRef.current.structures.find((x) => x.id === seatObjId) : null;
+        if (seatObj && SEATABLE_KINDS.has(seatObj.kind) && sceneObjRef.current && !stateRef.current.currentEmployeeId && isStaffSeat(seatObj, stateRef.current.structures)) {
+          // Khách không được ngồi ghế nhân viên (sau quầy trưng bày / lễ tân / thu ngân / bar)
+          stateRef.current.onNotice?.('Ghế này dành cho nhân viên');
+          return;
+        }
         if (seatObj && SEATABLE_KINDS.has(seatObj.kind) && sceneObjRef.current) {
           const clickPt = raycaster.ray.intersectPlane(floorPlane, hitPoint) ? hitPoint : new THREE.Vector3(seatObj.posX, 0, seatObj.posZ);
           const occupied: { x: number; z: number }[] = [];
@@ -874,12 +969,36 @@ export function Space3DCanvas({
             if ((st.sit ?? 0) > 0) occupied.push({ x: st.tx, z: st.tz });
           });
           const seat = pickSeat(seatsFor(seatObj), clickPt.x, clickPt.z, occupied);
+          if (!seat) {
+            stateRef.current.onNotice?.('Ghế này đã có người ngồi');
+            return;
+          }
+          if (seat && seatObj.kind === 'BAR_STOOL') {
+            // Ghế bar tròn: ngồi quay mặt vào quầy bar / bàn gần nhất (như ngoài đời)
+            let best: { d: number; x: number; z: number } | null = null;
+            for (const o of stateRef.current.structures) {
+              if (!['BAR_COUNTER', 'LIVE_EDGE_TABLE', 'TABLE_RECT', 'TABLE_ROUND'].includes(o.kind)) continue;
+              const d = Math.hypot(o.posX - seat.x, o.posZ - seat.z) - Math.max(o.widthM, o.depthM) / 2;
+              if (d < 1.4 && (!best || d < best.d)) {
+                // Điểm gần nhất trên mặt quầy (theo hệ cục bộ của quầy)
+                const c = Math.cos(o.rotY);
+                const sn = Math.sin(o.rotY);
+                const dx = seat.x - o.posX;
+                const dz = seat.z - o.posZ;
+                const lx = Math.max(-o.widthM / 2, Math.min(o.widthM / 2, dx * c - dz * sn));
+                const lz = Math.max(-o.depthM / 2, Math.min(o.depthM / 2, dx * sn + dz * c));
+                best = { d, x: o.posX + lx * c + lz * sn, z: o.posZ - lx * sn + lz * c };
+              }
+            }
+            if (best) seat.rotY = Math.atan2(best.x - seat.x, best.z - seat.z);
+          }
           if (seat) {
+            const act = seatActivity(seat, stateRef.current.structures);
+            seat.activity = act.activity;
+            seat.targetId = act.targetId;
+            seat.staff = isStaffSeat(seatObj, stateRef.current.structures);
             // Chọn ghế → hiện nút "Ngồi ghế" (vòng sáng đánh dấu chỗ ngồi)
-            const reach = seatObj.depthM / 2 + BODY_RADIUS + 0.1;
-            const ax = seatObj.posX + Math.sin(seatObj.rotY) * reach + (seat.x - seatObj.posX);
-            const az = seatObj.posZ + Math.cos(seatObj.rotY) * reach + (seat.z - seatObj.posZ);
-            setCandidate({ seat, approach: new THREE.Vector3(ax, 0, az) }, seatObj.label || 'Ghế');
+            setCandidate({ seat, approach: seatApproach(seatObj, seat, stateRef.current.structures) }, seatObj.label || 'Ghế');
             walkRing.position.set(seat.x, 0.03, seat.z);
             walkRing.visible = true;
             return;
@@ -1013,6 +1132,17 @@ export function Space3DCanvas({
     const sitOnCandidate = () => {
       if (!seatCandidate || !sceneObjRef.current) return;
       standUp();
+      const pl = sceneObjRef.current.player;
+      const near = Math.hypot(pl.group.position.x - seatCandidate.seat.x, pl.group.position.z - seatCandidate.seat.z);
+      if (near < 0.9) {
+        // Đứng ngay cạnh ghế → ngồi luôn (trượt vào ghế)
+        sceneObjRef.current.walkTarget = null;
+        walkRing.visible = false;
+        pendingSeat = null;
+        setSitting(seatCandidate.seat);
+        setCandidate(null);
+        return;
+      }
       sceneObjRef.current.walkTarget = seatCandidate.approach.clone();
       walkRing.position.set(seatCandidate.approach.x, 0.03, seatCandidate.approach.z);
       walkRing.visible = true;
@@ -1022,10 +1152,74 @@ export function Space3DCanvas({
     const standUp = () => {
       if (!sitting) return;
       // Không dịch chuyển tức thời: nhổm lên rồi bước ra trước ghế ~0.6m
-      rising = { x: sitting.x + Math.sin(sitting.rotY) * 0.6, z: sitting.z + Math.cos(sitting.rotY) * 0.6, t: 0 };
+      // Phía trước bị quầy/bàn chắn (ghế bar quay vào quầy) → bước lùi ra sau
+      let dir = 1;
+      if (pointBlocked(sitting.x + Math.sin(sitting.rotY) * 0.6, sitting.z + Math.cos(sitting.rotY) * 0.6, stateRef.current.structures.filter((o) => !SEATABLE_KINDS.has(o.kind)))) dir = -1;
+      rising = { x: sitting.x + Math.sin(sitting.rotY) * 0.6 * dir, z: sitting.z + Math.cos(sitting.rotY) * 0.6 * dir, t: 0 };
       setSitting(null);
     };
-    (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void } }).seatApi = {
+    /** Nhân viên vào trực: tự đi tới ghế nhân viên trống gần nhất (≤ 4m) và ngồi */
+    const dutySit = () => {
+      const pl = sceneObjRef.current?.player ?? player;
+      const objs = stateRef.current.structures;
+      const occupied: { x: number; z: number }[] = [];
+      stateRef.current.remoteStateRef?.current.forEach((st) => {
+        if ((st.sit ?? 0) > 0) occupied.push({ x: st.tx, z: st.tz });
+      });
+      let best: { seat: Seat; obj: SpaceStructure; d: number } | null = null;
+      for (const o of objs) {
+        if (!SEATABLE_KINDS.has(o.kind) || !isStaffSeat(o, objs)) continue;
+        const seat = pickSeat(seatsFor(o), pl.group.position.x, pl.group.position.z, occupied);
+        if (!seat) continue;
+        const d = Math.hypot(seat.x - pl.group.position.x, seat.z - pl.group.position.z);
+        if (d <= 4 && (!best || d < best.d)) best = { seat, obj: o, d };
+      }
+      if (!best) return false;
+      const act = seatActivity(best.seat, objs);
+      best.seat.activity = act.activity;
+      best.seat.targetId = act.targetId;
+      best.seat.staff = true;
+      setCandidate({ seat: best.seat, approach: seatApproach(best.obj, best.seat, objs) }, best.obj.label || 'Ghế');
+      sitOnCandidate();
+      return true;
+    };
+    // Trực quầy: khách tới gần → đứng dậy chào; khách đi hết 20s → ngồi lại
+    let dutyGreet: { guestId: number; at: number } | null = null;
+    let dutyResitAfter = 0;
+    let faceTarget: { x: number; z: number; until: number } | null = null;
+    const updateDutyHost = (pl: AnimatedAvatar, nowS: number) => {
+      if (!stateRef.current.isSelfOnDuty || !stateRef.current.currentEmployeeId) {
+        dutyGreet = null;
+        return;
+      }
+      const so = sceneObjRef.current;
+      if (!so) return;
+      const guests = (stateRef.current.remoteRoster ?? []).filter((m) => m.isGuest);
+      let nearest: { id: number; x: number; z: number; d: number } | null = null;
+      for (const g of guests) {
+        const e = so.remoteAvatars.get(g.employeeId);
+        if (!e) continue;
+        const d = Math.hypot(e.av.group.position.x - pl.group.position.x, e.av.group.position.z - pl.group.position.z);
+        if (!nearest || d < nearest.d) nearest = { id: g.employeeId, x: e.av.group.position.x, z: e.av.group.position.z, d };
+      }
+      if (sitting?.staff && nearest && nearest.d < 2.8 && (!dutyGreet || dutyGreet.guestId !== nearest.id)) {
+        standUp();
+        pendingSeat = null;
+        dutyGreet = { guestId: nearest.id, at: nowS };
+        faceTarget = { x: nearest.x, z: nearest.z, until: nowS + 4 };
+        window.setTimeout(() => stateRef.current.onAutoEmote?.('wave'), 650);
+        dutyResitAfter = nowS + 20;
+      }
+      if (!sitting && dutyGreet) {
+        if (nearest && nearest.d < 6) dutyResitAfter = nowS + 20;
+        else if (nowS > dutyResitAfter && !sceneObjRef.current?.walkTarget) {
+          dutyGreet = null;
+          dutySit();
+        }
+      }
+    };
+    (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void; dutySit: () => boolean } }).seatApi = {
+      dutySit,
       sit: sitOnCandidate,
       stand: () => {
         standUp();
@@ -1042,6 +1236,196 @@ export function Space3DCanvas({
     const activityEvents = ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const;
     activityEvents.forEach((ev) => window.addEventListener(ev, markActive, { passive: true }));
     orbit.addEventListener('change', markActive);
+
+    // Bảng hiệu chắn giữa camera và nhân vật → mờ dần (không phải treo thật cao)
+    const fadeRay = new THREE.Raycaster();
+    const fadeHead = new THREE.Vector3();
+    const fadeDir = new THREE.Vector3();
+    const fadeHit = new Set<THREE.Object3D>();
+    const updateOcclusionFade = (pl: AnimatedAvatar, dtS: number) => {
+      const list = sceneObjRef.current?.fadeables;
+      if (!list || list.length === 0) return;
+      if (frameCount % 2 === 0) {
+        fadeHit.clear();
+        fadeHead.set(pl.group.position.x, pl.group.position.y + 1.65, pl.group.position.z);
+        fadeDir.subVectors(fadeHead, camera.position);
+        const dist = fadeDir.length();
+        fadeRay.set(camera.position, fadeDir.normalize());
+        fadeRay.far = Math.max(0, dist - 0.3);
+        for (const h of fadeRay.intersectObjects(list, false)) fadeHit.add(h.object);
+      }
+      const k = 1 - Math.exp(-dtS * 10);
+      for (const m of list) {
+        const target = fadeHit.has(m) ? 0.18 : 1;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+          if (!mat.transparent) mat.transparent = true;
+          const next = mat.opacity + (target - mat.opacity) * k;
+          if (Math.abs(next - mat.opacity) > 0.002) {
+            mat.opacity = next;
+            markActive();
+          }
+          mat.depthWrite = mat.opacity > 0.95;
+        }
+      }
+    };
+
+    // ── Cầm ly nước (pantry): gắn ly vào bàn tay phải, giữ ly luôn thẳng đứng ──
+    const heldCups = new Map<number, { code: string; cup: THREE.Group; av: AnimatedAvatar }>();
+    let pantryNear = false;
+    const syncHeld = (id: number, av: AnimatedAvatar, code: string | null) => {
+      const cur = heldCups.get(id);
+      if (cur && (cur.code !== code || cur.av !== av)) {
+        cur.cup.parent?.remove(cur.cup);
+        disposeObject(cur.cup);
+        heldCups.delete(id);
+      }
+      if (code && !heldCups.has(id)) {
+        const item = DEFAULT_CAFE_MENU.find((m) => m.code === code) ?? DEFAULT_CAFE_MENU[3];
+        const cup = buildDrink(item);
+        cup.scale.setScalar(0.9);
+        cup.position.set(0, -0.36, 0.05);
+        av.rightElbow.add(cup);
+        heldCups.set(id, { code, cup, av });
+      }
+    };
+    const poseHold = (av: AnimatedAvatar, cup: THREE.Group, busy: boolean) => {
+      if (!busy) {
+        // Tay cầm ly trước ngực
+        av.rightArm.rotation.x += (-0.3 - av.rightArm.rotation.x) * 0.2;
+        av.rightElbow.rotation.x += (-1.2 - av.rightElbow.rotation.x) * 0.2;
+      }
+      // Bù góc tay → ly luôn đứng thẳng
+      cup.rotation.x = -(av.rightArm.rotation.x + av.rightElbow.rotation.x);
+      cup.rotation.z = -av.rightArm.rotation.z;
+    };
+
+    // ── Camera vào phòng (ROOM_ZONE): bay tới góc phòng phía lối vào, nhìn bao quát phòng, ẩn mái trong vùng ──
+    type RoomCam = { id: string; zone: SpaceStructure; dirX: number; dirZ: number; pos: THREE.Vector3; look: THREE.Vector3; hidden: THREE.Object3D[] };
+    const ROOM_CAM_DIST = 3.6;
+    const ROOM_CAM_H = 2.5;
+    let room: RoomCam | null = null;
+    let roomCandidate: { id: string; since: number; entryX: number; entryZ: number } | null = null;
+    let roomExit: { pos: THREE.Vector3; look: THREE.Vector3; t: number } | null = null;
+    const inZone = (o: SpaceStructure, x: number, z: number, pad = 0) => {
+      const c = Math.cos(o.rotY);
+      const sn = Math.sin(o.rotY);
+      const dx = x - o.posX;
+      const dz = z - o.posZ;
+      const lx = dx * c - dz * sn;
+      const lz = dx * sn + dz * c;
+      return Math.abs(lx) <= o.widthM / 2 + pad && Math.abs(lz) <= o.depthM / 2 + pad;
+    };
+    const enterRoom = (zone: SpaceStructure, entryX: number, entryZ: number) => {
+      // Góc phòng gần lối vào nhất (thụt vào 0.35m), cao gần trần, nhìn chéo xuống giữa phòng
+      const c = Math.cos(zone.rotY);
+      const sn = Math.sin(zone.rotY);
+      let best: THREE.Vector3 | null = null;
+      let bestD = Infinity;
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const lx = sx * (zone.widthM / 2 - 0.35);
+          const lz = sz * (zone.depthM / 2 - 0.35);
+          const x = zone.posX + lx * c + lz * sn;
+          const z = zone.posZ - lx * sn + lz * c;
+          const d = Math.hypot(x - entryX, z - entryZ);
+          if (d < bestD) {
+            bestD = d;
+            best = new THREE.Vector3(x, Math.min(zone.heightM - 0.2, 2.7), z);
+          }
+        }
+      }
+      // Ẩn mái / trần của vật thể nằm trong phòng để nhìn rõ bên trong
+      const hidden: THREE.Object3D[] = [];
+      const so = sceneObjRef.current;
+      if (so) {
+        for (const [id, entry] of so.objectMap) {
+          const st = stateRef.current.structures.find((x) => x.id === id);
+          if (!st || !inZone(zone, st.posX, st.posZ, 0.5)) continue;
+          entry.root.traverse((ch) => {
+            if (ch.userData?.roof && ch.visible) {
+              ch.visible = false;
+              hidden.push(ch);
+            }
+          });
+        }
+      }
+      // Hướng từ tâm phòng về góc lối vào → camera đặt về phía đó, cách nhân vật ~3.6m (không lùi tận góc xa)
+      const dx = best!.x - zone.posX;
+      const dz = best!.z - zone.posZ;
+      const dl = Math.hypot(dx, dz) || 1;
+      room = { id: zone.id, zone, dirX: dx / dl, dirZ: dz / dl, pos: best!, look: new THREE.Vector3(zone.posX, 0.9, zone.posZ), hidden };
+      roomExit = null;
+      orbit.enabled = false;
+      stateRef.current.onRoomChange?.(zone.label || 'Phòng');
+    };
+    const leaveRoom = (pl: AnimatedAvatar) => {
+      if (!room) return;
+      for (const h of room.hidden) h.visible = true;
+      room = null;
+      // Trả camera về sau lưng nhân vật
+      const r = pl.group.rotation.y;
+      roomExit = {
+        pos: new THREE.Vector3(pl.group.position.x - Math.sin(r) * 5.2, 2.9, pl.group.position.z - Math.cos(r) * 5.2),
+        look: new THREE.Vector3(pl.group.position.x, 1.3, pl.group.position.z),
+        t: 0,
+      };
+      stateRef.current.onRoomChange?.(null);
+    };
+    const updateRoomCamera = (pl: AnimatedAvatar, dtS: number, nowS: number): boolean => {
+      const allow = stateRef.current.povMode !== 'FIRST' && !stateRef.current.planView && !stateRef.current.editMode && !camRig.introActive;
+      const px = pl.group.position.x;
+      const pz = pl.group.position.z;
+      const zones = allow ? stateRef.current.structures.filter((o) => o.kind === 'ROOM_ZONE') : [];
+      const cur = zones.find((z) => inZone(z, px, pz));
+      if (room) {
+        // Ra khỏi phòng (quá mép 0.3m — chống chập chờn ở cửa) hoặc vùng bị xoá / tắt chế độ → trả camera
+        const zoneNow = zones.find((z) => z.id === room!.id);
+        if (!zoneNow || !inZone(zoneNow, px, pz, 0.3)) leaveRoom(pl);
+      }
+      if (!room && cur) {
+        if (!roomCandidate || roomCandidate.id !== cur.id) roomCandidate = { id: cur.id, since: nowS, entryX: px, entryZ: pz };
+        else if (nowS - roomCandidate.since > 0.4) enterRoom(cur, roomCandidate.entryX, roomCandidate.entryZ);
+      } else if (!cur) {
+        roomCandidate = null;
+      }
+      const k = 1 - Math.exp(-dtS * 3.2);
+      if (room) {
+        // Camera theo nhân vật ở khoảng cách vừa phải, hướng về góc lối vào, luôn nằm trong phòng
+        const z0 = room.zone;
+        const c = Math.cos(z0.rotY);
+        const sn = Math.sin(z0.rotY);
+        let cx = px + room.dirX * ROOM_CAM_DIST;
+        let cz = pz + room.dirZ * ROOM_CAM_DIST;
+        const lx0 = (cx - z0.posX) * c - (cz - z0.posZ) * sn;
+        const lz0 = (cx - z0.posX) * sn + (cz - z0.posZ) * c;
+        const lx = Math.max(-(z0.widthM / 2 - 0.3), Math.min(z0.widthM / 2 - 0.3, lx0));
+        const lz = Math.max(-(z0.depthM / 2 - 0.3), Math.min(z0.depthM / 2 - 0.3, lz0));
+        cx = z0.posX + lx * c + lz * sn;
+        cz = z0.posZ - lx * sn + lz * c;
+        room.pos.set(cx, Math.min(z0.heightM - 0.25, ROOM_CAM_H), cz);
+        // Nhìn vào nhân vật, kéo nhẹ về tâm phòng để thấy bao quát
+        room.look.set(px * 0.75 + z0.posX * 0.25, 1.0, pz * 0.75 + z0.posZ * 0.25);
+        camera.position.lerp(room.pos, k);
+        orbit.target.lerp(room.look, k);
+        camera.lookAt(orbit.target);
+        markActive();
+        return true;
+      }
+      if (roomExit) {
+        roomExit.t += dtS;
+        camera.position.lerp(roomExit.pos, k);
+        orbit.target.lerp(roomExit.look, k);
+        camera.lookAt(orbit.target);
+        markActive();
+        if (roomExit.t > 0.9) {
+          roomExit = null;
+          orbit.enabled = true;
+        }
+        return true;
+      }
+      return false;
+    };
 
     const animate = () => {
       rafId = requestAnimationFrame(animate);
@@ -1098,6 +1482,7 @@ export function Space3DCanvas({
           currentPlayer.group.position.x += (sitting.x - currentPlayer.group.position.x) * k;
           currentPlayer.group.position.z += (sitting.z - currentPlayer.group.position.z) * k;
           poseSit(currentPlayer, sitting.y);
+          poseSeatActivity(currentPlayer, sitting.activity ?? 'rest', totalTime);
         }
         markActive();
       } else if (rising) {
@@ -1193,6 +1578,11 @@ export function Space3DCanvas({
               so.walkTarget = null;
               walkRing.visible = false;
               blockedTime = 0;
+              // Đang đi tới ghế mà bị bàn/người chắn ngay cạnh → vẫn ngồi (trượt vào ghế, bỏ qua va chạm)
+              if (pendingSeat && Math.hypot(currentPlayer.group.position.x - pendingSeat.x, currentPlayer.group.position.z - pendingSeat.z) < 1.6) {
+                setSitting(pendingSeat);
+              }
+              pendingSeat = null;
             }
           }
         } else {
@@ -1201,17 +1591,33 @@ export function Space3DCanvas({
       }
 
       if (isMoving || introLock || drag || fp.looking) markActive();
+      // Quán cà phê: lần đầu di chuyển → thu camera về khoảng cách thường, hạ tầm nhìn về nhân vật
+      if (!cafeZoomIn && (isMoving || sceneObjRef.current?.walkTarget || sitting)) {
+        cafeZoomIn = true;
+        camRig.easeDistance(5.6);
+      }
+      if (cafeZoomIn && cafeWide && orbit.target.y > 1.31 && !introLock) {
+        orbit.target.y += (1.3 - orbit.target.y) * (1 - Math.exp(-dt * 2.4));
+        orbit.target.z += (currentPlayer.group.position.z - orbit.target.z) * (1 - Math.exp(-dt * 2.4));
+      }
       if (isMoving) {
-        camera.position.x += actualDx;
-        camera.position.z += actualDz;
-        orbit.target.x += actualDx;
-        orbit.target.z += actualDz;
+        if (!room && !roomExit) {
+          camera.position.x += actualDx;
+          camera.position.z += actualDz;
+          orbit.target.x += actualDx;
+          orbit.target.z += actualDz;
+        }
 
         // Đầm công sở bước ngắn & nhanh hơn để chân luôn nằm trong váy
         walkTime += dt * (currentPlayer.stride < 1 ? 13 : 10);
         poseWalk(currentPlayer, walkTime);
       } else if (!sitting && !rising) {
         relaxPose(currentPlayer);
+        if (faceTarget && totalTime < faceTarget.until) {
+          const want = Math.atan2(faceTarget.x - currentPlayer.group.position.x, faceTarget.z - currentPlayer.group.position.z);
+          const dd = Math.atan2(Math.sin(want - currentPlayer.group.rotation.y), Math.cos(want - currentPlayer.group.rotation.y));
+          currentPlayer.group.rotation.y += dd * (1 - Math.exp(-dt * 6));
+        }
         // Đang trò chuyện → nhân vật mình quay mặt về phía người kia
         const faceId = stateRef.current.faceEmployeeId;
         const partner = faceId ? sceneObjRef.current?.remoteAvatars.get(faceId) : null;
@@ -1321,7 +1727,13 @@ export function Space3DCanvas({
             g.position.x += (st.tx - g.position.x) * posK * 0.6;
             g.position.z += (st.tz - g.position.z) * posK * 0.6;
             poseSit(entry.av, st.sit!);
+            if (!entry.seatAct || nowMs - entry.seatAct.at > 1500) {
+              const a = seatActivity({ x: st.tx, z: st.tz, y: st.sit!, rotY: st.tr }, stateRef.current.structures);
+              entry.seatAct = { activity: a.activity, targetId: a.targetId, at: nowMs };
+            }
+            poseSeatActivity(entry.av, entry.seatAct.activity, totalTime);
           } else if (walking) {
+            entry.seatAct = undefined;
             entry.walkTime += dt * (entry.av.stride < 1 ? 13 : 10);
             poseWalk(entry.av, entry.walkTime);
           } else {
@@ -1356,6 +1768,34 @@ export function Space3DCanvas({
         const b = stateRef.current.bubbleRef?.current.get(selfRid);
         const live = b && b.expiresAt > nowMsAll ? b : null;
         syncBubble(objNow.selfBubble, currentPlayer.group, live ? live.text : null, false, live?.prev);
+      }
+
+      if (frameCount % 10 === 0) updateDutyHost(currentPlayer, totalTime);
+      // Ly nước đang cầm (mình + người khác)
+      const holds = stateRef.current.holdRef?.current;
+      if (holds && sceneObjRef.current) {
+        if (frameCount % 10 === 0) {
+          if (selfRid) syncHeld(selfRid, currentPlayer, holds.get(selfRid)?.code ?? null);
+          for (const [rid, e] of sceneObjRef.current.remoteAvatars) syncHeld(rid, e.av, holds.get(rid)?.code ?? null);
+          for (const id of [...heldCups.keys()]) if (id !== selfRid && !sceneObjRef.current.remoteAvatars.has(id)) syncHeld(id, heldCups.get(id)!.av, null);
+        }
+        for (const [id, h] of heldCups) {
+          // Thỉnh thoảng nâng ly uống (chu kỳ ~25s, lệch pha theo id)
+          const cyc = (totalTime + Math.abs(id % 11) * 2.1) % 25;
+          const sipping = cyc < 2;
+          if (sipping) poseEmote(h.av, 'sip', cyc / 2, totalTime);
+          poseHold(h.av, h.cup, sipping);
+        }
+      }
+      // Gần pantry → hiện nút "Lấy nước"
+      if (frameCount % 15 === 0) {
+        const px = currentPlayer.group.position.x;
+        const pz = currentPlayer.group.position.z;
+        const near = !sitting && stateRef.current.structures.some((o) => PANTRY_KINDS.has(o.kind) && Math.hypot(o.posX - px, o.posZ - pz) < Math.max(o.widthM, o.depthM) / 2 + 1.1);
+        if (near !== pantryNear) {
+          pantryNear = near;
+          stateRef.current.onPantryNear?.(near);
+        }
       }
 
       const firstPerson = stateRef.current.povMode === 'FIRST' && !stateRef.current.planView;
@@ -1394,10 +1834,50 @@ export function Space3DCanvas({
         currentPlayer.group.visible = true;
       }
 
-      camRig.beforeOrbit();
-      if (!camRig.introActive && !firstPerson) orbit.update();
-      // Intro dùng thời gian thực (không bị kẹp 0.05s) để không "đứng hình" khi máy chậm
-      camRig.afterOrbit(Math.min(rawDt, 0.1), frameCount);
+      if (!firstPerson) updateOcclusionFade(currentPlayer, dt);
+      // Cửa tự mở khi có người trong 1.6m (mình hoặc người khác), tự đóng khi đi xa
+      const doorList = sceneObjRef.current?.doors;
+      if (doorList && doorList.length) {
+        const kd = 1 - Math.exp(-dt * 5);
+        for (const door of doorList) {
+          let near = Math.hypot(currentPlayer.group.position.x - door.x, currentPlayer.group.position.z - door.z) < 1.6;
+          if (!near) {
+            for (const e of sceneObjRef.current!.remoteAvatars.values()) {
+              if (Math.hypot(e.av.group.position.x - door.x, e.av.group.position.z - door.z) < 1.6) {
+                near = true;
+                break;
+              }
+            }
+          }
+          const target = near ? 1 : 0;
+          if (Math.abs(target - door.open) < 0.002) continue;
+          door.open += (target - door.open) * kd;
+          const info = door.leaf.userData.doorLeaf as { kind: 'swing' | 'slide'; angle?: number; side?: number; closedX?: number; travel?: number };
+          if (info.kind === 'swing') door.leaf.rotation.y = (info.angle ?? 1.48) * door.open;
+          else door.leaf.position.x = (info.closedX ?? 0) + (info.side ?? 1) * (info.travel ?? 0.5) * door.open;
+          markActive();
+        }
+      }
+      // Màn hình bàn làm việc: sáng khi có người ngồi gõ phím tại bàn đó
+      if (frameCount % 20 === 0 && sceneObjRef.current && sceneObjRef.current.deskScreens.size) {
+        const active = new Set<string>();
+        if (sitting?.activity === 'type' && sitting.targetId) active.add(sitting.targetId);
+        for (const e of sceneObjRef.current.remoteAvatars.values()) if (e.seatAct?.activity === 'type' && e.seatAct.targetId) active.add(e.seatAct.targetId);
+        for (const [id, sc] of sceneObjRef.current.deskScreens) {
+          const on = active.has(id);
+          if (on !== sc.on) {
+            sc.on = on;
+            setDeskScreenOn(sc.mesh.material as THREE.MeshStandardMaterial, on, sc.variant);
+          }
+        }
+      }
+      const roomCamActive = !firstPerson && updateRoomCamera(currentPlayer, dt, totalTime);
+      if (!roomCamActive) {
+        camRig.beforeOrbit();
+        if (!camRig.introActive && !firstPerson) orbit.update();
+        // Intro dùng thời gian thực (không bị kẹp 0.05s) để không "đứng hình" khi máy chậm
+        camRig.afterOrbit(Math.min(rawDt, 0.1), frameCount);
+      }
       skySys.update(dt, camera.position);
 
       // Cập nhật tọa độ nhân vật qua ref (KHÔNG gây React re-render 60fps!)
@@ -1585,6 +2065,7 @@ export function Space3DCanvas({
     if (!seatCommand) return;
     const api = (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void } } | null)?.seatApi;
     if (seatCommand.kind === 'sit') api?.sit();
+    else if (seatCommand.kind === 'dutySit') (api as { dutySit?: () => boolean } | undefined)?.dutySit?.();
     else api?.stand();
   }, [seatCommand]);
 
@@ -1603,7 +2084,9 @@ export function Space3DCanvas({
     const p = obj.player.group.position;
     const halfD = depthM * 0.5 + 2;
     obj.camRig.playIntro(
-      { target: new THREE.Vector3(p.x, 1.35, p.z), position: new THREE.Vector3(p.x, 2.9, p.z + 5.4) },
+      sceneKind === 'CAFE'
+        ? { target: new THREE.Vector3(p.x, 2.3, p.z - 0.6), position: new THREE.Vector3(p.x, 3.4, p.z + 9.5) }
+        : { target: new THREE.Vector3(p.x, 1.35, p.z), position: new THREE.Vector3(p.x, 2.9, p.z + 5.4) },
       sceneKind === 'WAREHOUSE'
         ? [
             // Nhà kho: bay qua sân, luồn vào cửa cuốn bên trái đang mở hé (cao ~2.7m)
@@ -1644,12 +2127,20 @@ export function Space3DCanvas({
         obj.objectsGroup.remove(existing.root);
         disposeObject(existing.root);
       }
-      const built = buildSpaceObject(o, ctx);
+      let built: ReturnType<typeof buildSpaceObject>;
+      try {
+        built = buildSpaceObject(o, ctx);
+      } catch (err) {
+        // 1 vật thể lỗi không được làm hỏng cả cảnh
+        console.error('[space3d] dựng vật thể lỗi', o.kind, o.id, err);
+        continue;
+      }
       if (built.shelves.length && merchItems.length) {
         const manualPick = o.merch?.mode === 'MANUAL' && o.merch.itemIds.length > 0;
         built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind), manualPick));
       }
       freezeStaticDescendants(built.root);
+      if (o.kind === 'ROOM_ZONE') built.root.visible = editMode;
       obj.objectsGroup.add(built.root);
       obj.objectMap.set(o.id, { sig, root: built.root, shelves: built.shelves });
       if (built.shelves.length) stateRef.current.onShelvesBuilt?.(o.id, built.root, built.shelves);
@@ -1671,6 +2162,37 @@ export function Space3DCanvas({
       });
     }
     obj.occluders = [...obj.envOccluders, ...objOccluders];
+    // Vùng phòng chỉ hiện khi đang thiết kế
+    for (const entry of obj.objectMap.values()) if (entry.root.userData.kind === 'ROOM_ZONE') entry.root.visible = editMode;
+    const fades: THREE.Mesh[] = [];
+    for (const entry of obj.objectMap.values()) {
+      entry.root.traverse((c) => {
+        if (c.userData?.fadeOnOcclude && (c as THREE.Mesh).isMesh) fades.push(c as THREE.Mesh);
+      });
+    }
+    obj.fadeables = fades;
+    const screens = new Map<string, { mesh: THREE.Mesh; variant: number; on: boolean }>();
+    for (const entry of obj.objectMap.values()) {
+      entry.root.traverse((c) => {
+        if (c.userData?.screenOf && (c as THREE.Mesh).isMesh) {
+          const prev = obj.deskScreens.get(c.userData.screenOf);
+          screens.set(c.userData.screenOf, { mesh: c as THREE.Mesh, variant: c.userData.screenVariant ?? 0, on: prev?.mesh === c ? prev.on : false });
+        }
+      });
+    }
+    obj.deskScreens = screens;
+    const doors: { leaf: THREE.Object3D; x: number; z: number; open: number }[] = [];
+    for (const [id, entry] of obj.objectMap) {
+      const src = structures.find((st) => st.id === id);
+      if (!src) continue;
+      entry.root.traverse((c) => {
+        if (c.userData?.doorLeaf) {
+          const prev = obj.doors.find((dd) => dd.leaf === c);
+          doors.push({ leaf: c, x: src.posX, z: src.posZ, open: prev?.open ?? 0 });
+        }
+      });
+    }
+    obj.doors = doors;
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
     const upd = (obj as unknown as { updateSelectionBox?: (id: string | null, c?: boolean) => void }).updateSelectionBox;
     upd?.(editMode ? selectedObjectId : null, selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false);

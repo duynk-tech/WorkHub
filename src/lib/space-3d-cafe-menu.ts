@@ -93,7 +93,7 @@ export function orderTotal(lines: OrderLine[], menu: CafeMenuItem[]): number {
   return lines.reduce((s, l) => s + (byCode.get(l.code)?.price ?? 0) * l.qty, 0);
 }
 
-const SERVE_SURFACES = new Set(['TABLE_ROUND', 'TABLE_RECT', 'COFFEE_TABLE', 'BAR_COUNTER', 'DESK', 'MEETING_TABLE']);
+const SERVE_SURFACES = new Set(['TABLE_ROUND', 'TABLE_RECT', 'COFFEE_TABLE', 'BAR_COUNTER', 'DESK', 'MEETING_TABLE', 'LIVE_EDGE_TABLE']);
 
 export interface ServeSpot {
   objectId: string;
@@ -143,7 +143,7 @@ export function findServeSpot(
   };
 }
 
-export type DrinkOrderStatus = 'NEW' | 'PREPARING' | 'SERVED' | 'CANCELLED';
+export type DrinkOrderStatus = 'NEW' | 'PREPARING' | 'SERVED' | 'CANCELLED' | 'CLEARED';
 
 export interface DrinkOrderView {
   id: number;

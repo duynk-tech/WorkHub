@@ -4,13 +4,15 @@
  * Phần dựng hình nằm ở `src/components/space3d/three/props/registry.ts`.
  */
 
-export type SpaceObjectCategory = 'RETAIL' | 'FURNITURE' | 'PLANT' | 'CAFE' | 'OFFICE' | 'WAREHOUSE' | 'DECOR' | 'STRUCTURE';
+export type SpaceObjectCategory = 'RETAIL' | 'FURNITURE' | 'PLANT' | 'CAFE' | 'GARDEN' | 'FESTIVE' | 'OFFICE' | 'WAREHOUSE' | 'DECOR' | 'STRUCTURE';
 
 export const SPACE_OBJECT_CATEGORIES: { key: SpaceObjectCategory; label: string }[] = [
   { key: 'RETAIL', label: 'Quầy kệ' },
   { key: 'FURNITURE', label: 'Bàn ghế' },
   { key: 'PLANT', label: 'Cây cảnh' },
   { key: 'CAFE', label: 'Quán cà phê' },
+  { key: 'GARDEN', label: 'Sân vườn miền Tây' },
+  { key: 'FESTIVE', label: 'Lễ hội & sự kiện' },
   { key: 'OFFICE', label: 'Văn phòng' },
   { key: 'WAREHOUSE', label: 'Kho' },
   { key: 'DECOR', label: 'Trang trí' },
@@ -79,10 +81,53 @@ export const SPACE_OBJECT_DEFS: SpaceObjectDef[] = [
   { kind: 'MENU_BOARD', label: 'Bảng menu', category: 'CAFE', size: [1.6, 0.06, 0.9], limits: L([0.8, 3], [0.04, 0.1], [0.5, 1.6]), color: '#111827', labeled: true },
   { kind: 'PENDANT_LIGHT', label: 'Đèn thả', category: 'CAFE', size: [0.38, 0.38, 0.4], limits: L([0.2, 0.8], [0.2, 0.8], [0.2, 0.8]), color: '#111827', palette: ['#111827', '#b45309', '#e7e5e4', '#166534'] },
 
+  // ── Sân vườn miền Tây (quán cà phê sân vườn) ──
+  { kind: 'GARDEN_GATE', label: 'Cổng gỗ bảng hiệu', category: 'GARDEN', size: [5.4, 0.9, 4.5], limits: L([3, 9], [0.6, 1.2], [3.6, 6]), color: '#7d6c5a', labeled: true },
+  { kind: 'LIVE_EDGE_TABLE', label: 'Bàn gỗ nguyên tấm (bàn dài)', category: 'GARDEN', size: [7, 1.2, 0.78], limits: L([1.6, 12], [0.7, 1.8], [0.7, 0.85]), color: '#c46a2e' },
+  { kind: 'STACK_CHAIR', label: 'Ghế nhựa đen', category: 'GARDEN', size: [0.48, 0.5, 0.84], limits: L([0.42, 0.55], [0.42, 0.55], [0.78, 0.92]), color: '#1f2022', palette: ['#1f2022', '#6b4226', '#e7e5e4', '#166534'] },
+  { kind: 'BANYAN_TREE', label: 'Cây đa cổ thụ', category: 'GARDEN', size: [2.2, 2.2, 8.5], limits: L([1.4, 3.6], [1.4, 3.6], [6, 12]), color: '#6b5a48' },
+  { kind: 'SHADE_NET', label: 'Lưới che + đèn dây', category: 'GARDEN', size: [12, 9, 4.6], limits: L([4, 24], [4, 20], [3, 7]), color: '#f5f5f0' },
+  { kind: 'SAMPAN_BOAT', label: 'Xuồng ba lá', category: 'GARDEN', size: [3.4, 0.95, 0.95], limits: L([2, 5], [0.7, 1.4], [0.7, 1.3]), color: '#b8693a' },
+  { kind: 'BANANA_PLANT', label: 'Bụi chuối', category: 'GARDEN', size: [1.8, 1.8, 3.4], limits: L([0.8, 3], [0.8, 3], [2, 4.5]), color: '#6cbf45' },
+  { kind: 'BOULDER', label: 'Đá cuội lớn', category: 'GARDEN', size: [0.9, 0.8, 0.6], limits: L([0.3, 2], [0.3, 2], [0.25, 1.2]), color: '#8d8f8a' },
+  { kind: 'STEPPING_PATH', label: 'Lối cỏ đá bước', category: 'GARDEN', size: [1.6, 8, 0.05], limits: L([0.8, 4], [2, 30], [0.05, 0.05]), color: '#5c8f34' },
+  { kind: 'GRAVEL_BED', label: 'Nền sỏi', category: 'GARDEN', size: [4, 3, 0.03], limits: L([1, 30], [1, 30], [0.03, 0.03]), color: '#8b8d90', variants: [{ key: 'gravel', label: 'Sỏi xám' }, { key: 'pebble', label: 'Sỏi đen bó vỉa' }] },
+  { kind: 'PATIO_UMBRELLA', label: 'Dù che vuông', category: 'GARDEN', size: [3, 3, 2.7], limits: L([2, 4], [2, 4], [2.2, 3.2]), color: '#8a6a55', palette: ['#8a6a55', '#f5f5f0', '#166534', '#7f1d1d'] },
+  { kind: 'HOI_AN_LANTERN', label: 'Đèn lồng Hội An', category: 'GARDEN', size: [0.32, 0.32, 3], limits: L([0.2, 0.6], [0.2, 0.6], [1.8, 4.5]), color: '#c2410c', palette: ['#c2410c', '#1d4ed8', '#be123c', '#ca8a04', '#15803d'] },
+  { kind: 'GABION_WALL', label: 'Rọ đá gabion', category: 'GARDEN', size: [1.2, 0.6, 1.1], limits: L([0.5, 6], [0.4, 1.2], [0.4, 2]), color: '#6b6a64' },
+  { kind: 'WOOD_FENCE', label: 'Hàng rào gỗ', category: 'GARDEN', size: [3, 0.08, 1.1], limits: L([0.6, 10], [0.05, 0.12], [0.6, 2]), color: '#8f8a80', palette: ['#8f8a80', '#14532d', '#6b4226'] },
+  { kind: 'METAL_ROOF', label: 'Mái tôn khung sắt', category: 'GARDEN', size: [8, 5, 3.4], limits: L([2, 24], [2, 16], [2.6, 5]), color: '#3a3d42' },
+  { kind: 'BANH_QUE_KIOSK', label: 'Quầy bánh quê', category: 'GARDEN', size: [4.2, 2.8, 3.2], limits: L([2.6, 7], [2, 4], [2.6, 4]), color: '#2b2420', labeled: true },
+  { kind: 'FOOD_VAN', label: 'Xe đò trang trí', category: 'GARDEN', size: [5.2, 2, 2.4], limits: L([4, 6.5], [1.7, 2.3], [2, 2.8]), color: '#efe6cf', labeled: true },
+  { kind: 'POND', label: 'Ao rau muống', category: 'GARDEN', size: [6, 4, 0.2], limits: L([2, 20], [2, 14], [0.15, 0.3]), color: '#3d4a2c' },
+  { kind: 'FOOD_CART', label: 'Xe đẩy bánh quê', category: 'GARDEN', size: [1.4, 0.7, 1.9], limits: L([1, 2], [0.5, 0.9], [1.6, 2.2]), color: '#f8fafc', labeled: true },
+  { kind: 'CLAY_JAR', label: 'Chum sành', category: 'GARDEN', size: [0.6, 0.6, 0.75], limits: L([0.3, 1], [0.3, 1], [0.4, 1.2]), color: '#b7791f', palette: ['#b7791f', '#7c2d12', '#57534e', '#1e3a8a'] },
+  { kind: 'VINE_RAILING', label: 'Lan can kính dây leo', category: 'GARDEN', size: [6, 0.5, 1.1], limits: L([1.2, 20], [0.3, 0.8], [0.9, 1.4]), color: '#4b5563' },
+  { kind: 'LOGO_STANDEE', label: 'Bảng logo quán', category: 'GARDEN', size: [0.9, 0.3, 1.9], limits: L([0.6, 1.4], [0.2, 0.4], [1.4, 2.4]), color: '#6b4226' },
+
+  // ── Lễ hội & sự kiện (Giáng sinh, Tết, khai trương…) ──
+  { kind: 'CHRISTMAS_TREE', label: 'Cây thông Noel', category: 'FESTIVE', size: [1.4, 1.4, 2.4], limits: L([0.8, 2.6], [0.8, 2.6], [1.4, 4.5]), color: '#1f5c32' },
+  { kind: 'GIFT_BOXES', label: 'Hộp quà Giáng sinh', category: 'FESTIVE', size: [1, 0.8, 0.45], limits: L([0.5, 2], [0.5, 2], [0.3, 0.8]), color: '#dc2626' },
+  { kind: 'SNOWMAN', label: 'Người tuyết', category: 'FESTIVE', size: [0.8, 0.8, 1.4], limits: L([0.5, 1.4], [0.5, 1.4], [0.8, 2.2]), color: '#f8fafc' },
+  { kind: 'MAI_TREE', label: 'Cây mai vàng', category: 'FESTIVE', size: [1.2, 1.2, 2], limits: L([0.6, 2.4], [0.6, 2.4], [1, 3.2]), color: '#facc15' },
+  { kind: 'DAO_TREE', label: 'Cây đào hồng', category: 'FESTIVE', size: [1.2, 1.2, 2], limits: L([0.6, 2.4], [0.6, 2.4], [1, 3.2]), color: '#f9a8d4' },
+  { kind: 'KUMQUAT_TREE', label: 'Cây quất', category: 'FESTIVE', size: [0.9, 0.9, 1.5], limits: L([0.5, 1.6], [0.5, 1.6], [0.9, 2.2]), color: '#f97316' },
+  { kind: 'LANTERN_STRING', label: 'Dây đèn lồng đỏ', category: 'FESTIVE', size: [4, 0.3, 3], limits: L([1.5, 12], [0.2, 0.5], [2.2, 4.5]), color: '#dc2626' },
+  { kind: 'TET_COUPLETS', label: 'Câu đối Tết', category: 'FESTIVE', size: [2.6, 0.3, 2.4], limits: L([1.6, 5], [0.2, 0.5], [1.6, 3.2]), color: '#b91c1c', labeled: true },
+  { kind: 'FRUIT_TRAY', label: 'Mâm ngũ quả', category: 'FESTIVE', size: [0.8, 0.5, 0.75], limits: L([0.5, 1.4], [0.4, 0.8], [0.5, 1]), color: '#7f1d1d' },
+  { kind: 'EVENT_BACKDROP', label: 'Backdrop sự kiện', category: 'FESTIVE', size: [5, 0.3, 3], limits: L([2.5, 10], [0.2, 0.5], [2, 4.5]), color: '#1d4ed8', labeled: true },
+  { kind: 'BALLOON_ARCH', label: 'Cổng bong bóng', category: 'FESTIVE', size: [3.6, 0.4, 3], limits: L([2, 8], [0.3, 0.6], [2, 4.5]), color: '#ef4444' },
+  { kind: 'FLOWER_STAND', label: 'Kệ hoa khai trương', category: 'FESTIVE', size: [0.9, 0.5, 2.2], limits: L([0.6, 1.4], [0.4, 0.8], [1.6, 2.8]), color: '#ef4444', palette: ['#ef4444', '#f472b6', '#facc15', '#f8fafc', '#a855f7'], labeled: true },
+  { kind: 'RED_CARPET', label: 'Thảm đỏ + cột chắn', category: 'FESTIVE', size: [1.6, 6, 0.02], limits: L([1, 4], [2, 20], [0.02, 0.02]), color: '#b91c1c' },
+
   // ── Văn phòng ──
   { kind: 'DESK', label: 'Bàn làm việc', category: 'OFFICE', size: [1.4, 0.7, 0.75], limits: L([1, 2.4], [0.6, 0.9], [0.7, 0.8]), color: '#e8d5b7', palette: WOOD },
   { kind: 'OFFICE_CHAIR', label: 'Ghế xoay', category: 'OFFICE', size: [0.6, 0.6, 1.1], limits: L([0.5, 0.7], [0.5, 0.7], [0.95, 1.25]), color: '#1f2937', palette: ['#1f2937', '#334155', '#1e3a8a', '#7f1d1d'] },
   { kind: 'MEETING_TABLE', label: 'Bàn họp', category: 'OFFICE', size: [3, 1.2, 0.75], limits: L([1.6, 6], [0.9, 1.8], [0.7, 0.8]), color: '#6b4226', palette: WOOD },
+  { kind: 'MEETING_TV', label: 'TV trình chiếu phòng họp', category: 'OFFICE', size: [1.6, 0.6, 1.9], limits: L([1, 2.6], [0.4, 0.8], [1.5, 2.4]), color: '#111827' },
+  { kind: 'PANTRY_COUNTER', label: 'Quầy pantry', category: 'OFFICE', size: [2.4, 0.62, 0.9], limits: L([1.2, 4], [0.5, 0.75], [0.85, 0.95]), color: '#e7e5e4', palette: ['#e7e5e4', '#1f2937', '#a47148', '#166534'] },
+  { kind: 'WATER_DISPENSER', label: 'Bình nước nóng lạnh', category: 'OFFICE', size: [0.34, 0.34, 1.35], limits: L([0.3, 0.45], [0.3, 0.45], [1.1, 1.5]), color: '#f8fafc' },
+  { kind: 'FRIDGE', label: 'Tủ lạnh', category: 'OFFICE', size: [0.7, 0.68, 1.8], limits: L([0.5, 1], [0.55, 0.8], [1.2, 2]), color: '#cbd5e1', palette: ['#cbd5e1', '#1f2937', '#f8fafc'] },
   { kind: 'FILE_CABINET', label: 'Tủ hồ sơ', category: 'OFFICE', size: [0.9, 0.45, 1.9], limits: L([0.4, 2], [0.4, 0.6], [0.7, 2.2]), color: '#e5e7eb', palette: ['#e5e7eb', '#1f2937', '#a47148'] },
   { kind: 'PARTITION', label: 'Vách ngăn nỉ', category: 'OFFICE', size: [1.6, 0.05, 1.2], limits: L([0.6, 3.2], [0.04, 0.08], [0.8, 1.8]), color: '#64748b', palette: FABRIC },
 
@@ -100,7 +145,8 @@ export const SPACE_OBJECT_DEFS: SpaceObjectDef[] = [
   // ── Tường & phòng ──
   { kind: 'WALL', label: 'Tường ngăn', category: 'STRUCTURE', size: [4, 0.12, 2.8], limits: L([0.5, 20], [0.08, 0.3], [1, 5]), color: '#f1f5f9', palette: ['#f1f5f9', '#e7e5e4', '#b45309', '#166534', '#1f2937'], variants: [{ key: 'paint', label: 'Sơn' }, { key: 'brick', label: 'Gạch thô' }, { key: 'wood', label: 'Ốp gỗ' }] },
   { kind: 'GLASS_WALL', label: 'Vách kính', category: 'STRUCTURE', size: [4, 0.08, 2.8], limits: L([0.5, 20], [0.05, 0.15], [1, 5]), color: '#cfe8fb' },
-  { kind: 'DOOR', label: 'Cửa đi', category: 'STRUCTURE', size: [0.95, 0.12, 2.15], limits: L([0.8, 2], [0.08, 0.3], [2, 2.6]), color: '#a47148', palette: WOOD },
+  { kind: 'ROOM_ZONE', label: 'Vùng phòng (camera vào phòng)', category: 'STRUCTURE', size: [6, 5, 2.8], limits: L([2, 30], [2, 30], [2.2, 6]), color: '#38bdf8', labeled: true },
+  { kind: 'DOOR', label: 'Cửa đi (tự mở)', category: 'STRUCTURE', size: [0.95, 0.12, 2.15], limits: L([0.8, 2.4], [0.08, 0.3], [2, 2.6]), color: '#a47148', palette: WOOD, variants: [{ key: 'swing', label: 'Cửa cánh mở' }, { key: 'slide', label: 'Cửa kính trượt 2 cánh' }] },
 ];
 
 export const SPACE_OBJECT_DEF_MAP: Record<string, SpaceObjectDef> = Object.fromEntries(SPACE_OBJECT_DEFS.map((d) => [d.kind, d]));

@@ -22,7 +22,33 @@ import { buildPlant, buildPlanterBox } from './plants';
 import { buildBooth, buildBrandWall, buildDisplayCounter, buildCheckout, buildDisplayCabinet, buildGondola, buildPodium, buildReception, buildWallShelf } from './retail';
 import { buildBarCounter, buildEspresso, buildMenuBoard, buildPastryCase, buildPendant } from './cafe';
 import { buildCartonStack, buildForklift, buildPalletStack, buildRack } from './warehouse';
-import { buildDoor, buildFloorLamp, buildGlassWall, buildWall, buildWallArt } from './structure';
+import { FESTIVE_BUILDERS } from './festive';
+import { buildFridge, buildMeetingTv, buildPantryCounter, buildWaterDispenser } from './office-extras';
+import { buildDoor, buildFloorLamp, buildGlassWall, buildRoomZone, buildWall, buildWallArt } from './structure';
+import {
+  buildBanana,
+  buildBanhQueKiosk,
+  buildBanyan,
+  buildBoulder,
+  buildFoodVan,
+  buildGabion,
+  buildGardenGate,
+  buildGravelBed,
+  buildLantern,
+  buildLiveEdgeTable,
+  buildMetalRoof,
+  buildPatioUmbrella,
+  buildPond,
+  buildSampan,
+  buildShadeNet,
+  buildStackChair,
+  buildSteppingPath,
+  buildWoodFence,
+  buildFoodCart,
+  buildClayJar,
+  buildVineRailing,
+  buildLogoStandee,
+} from './garden';
 
 type Builder = (o: SpaceObject, ctx: BuildContext) => THREE.Group;
 
@@ -68,6 +94,34 @@ const BUILDERS: Record<string, Builder> = {
   WALL: buildWall,
   GLASS_WALL: buildGlassWall,
   DOOR: buildDoor,
+  ROOM_ZONE: buildRoomZone,
+  GARDEN_GATE: buildGardenGate,
+  LIVE_EDGE_TABLE: buildLiveEdgeTable,
+  STACK_CHAIR: buildStackChair,
+  BANYAN_TREE: buildBanyan,
+  SHADE_NET: buildShadeNet,
+  SAMPAN_BOAT: buildSampan,
+  BANANA_PLANT: buildBanana,
+  BOULDER: buildBoulder,
+  STEPPING_PATH: buildSteppingPath,
+  GRAVEL_BED: buildGravelBed,
+  PATIO_UMBRELLA: buildPatioUmbrella,
+  HOI_AN_LANTERN: buildLantern,
+  GABION_WALL: buildGabion,
+  WOOD_FENCE: buildWoodFence,
+  METAL_ROOF: buildMetalRoof,
+  BANH_QUE_KIOSK: buildBanhQueKiosk,
+  FOOD_VAN: buildFoodVan,
+  POND: buildPond,
+  MEETING_TV: (o, ctx) => buildMeetingTv(o, ctx.companyName),
+  PANTRY_COUNTER: buildPantryCounter,
+  WATER_DISPENSER: buildWaterDispenser,
+  FRIDGE: buildFridge,
+  ...FESTIVE_BUILDERS,
+  FOOD_CART: buildFoodCart,
+  CLAY_JAR: buildClayJar,
+  VINE_RAILING: buildVineRailing,
+  LOGO_STANDEE: buildLogoStandee,
 };
 
 /** Chữ ký thay đổi — chỉ dựng lại vật thể khi chữ ký đổi (không dựng lại cả cảnh khi kéo 1 món). */

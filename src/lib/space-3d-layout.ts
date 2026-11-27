@@ -33,7 +33,10 @@ export function footprintOf(o: Pick<SpaceObject, 'posX' | 'posZ' | 'widthM' | 'd
 }
 
 /** Các loại được phép đặt chồng / sát nhau (thảm, đèn thả, tranh, cây trên bồn…) */
-const NON_BLOCKING = new Set(['RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD']);
+const NON_BLOCKING = new Set([
+  'RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD',
+  'SHADE_NET', 'METAL_ROOF', 'PATIO_UMBRELLA', 'STEPPING_PATH', 'GRAVEL_BED', 'HOI_AN_LANTERN', 'ROOM_ZONE', 'RED_CARPET', 'BALLOON_ARCH', 'LANTERN_STRING',
+]);
 
 export function overlaps(a: Footprint, b: Footprint, margin = 0.02): boolean {
   return a.minX < b.maxX - margin && a.maxX > b.minX + margin && a.minZ < b.maxZ - margin && a.maxZ > b.minZ + margin;
@@ -139,9 +142,14 @@ export interface Seat {
   y: number;
   /** Hướng mặt người ngồi (rad) */
   rotY: number;
+  /** Hoạt động khi ngồi (gõ phím / họp / nghỉ) + bàn đang dùng */
+  activity?: 'type' | 'meeting' | 'rest';
+  targetId?: string | null;
+  /** Ghế nhân viên (sau quầy) */
+  staff?: boolean;
 }
 
-export const SEATABLE_KINDS = new Set(['CHAIR', 'BAR_STOOL', 'SOFA', 'ARMCHAIR', 'OFFICE_CHAIR']);
+export const SEATABLE_KINDS = new Set(['CHAIR', 'BAR_STOOL', 'SOFA', 'ARMCHAIR', 'OFFICE_CHAIR', 'STACK_CHAIR']);
 
 /** Danh sách chỗ ngồi của 1 vật thể (sofa nhiều chỗ). Mặt trước vật thể là +Z cục bộ. */
 export function seatsFor(o: Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'rotY' | 'widthM' | 'depthM' | 'heightM'>): Seat[] {
@@ -150,6 +158,9 @@ export function seatsFor(o: Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'rotY' 
   switch (o.kind) {
     case 'CHAIR':
       local.push({ lx: 0, lz: -0.06, y: 0.48 }); // mặt ghế 0.48m, hông lùi về tựa lưng
+      break;
+    case 'STACK_CHAIR':
+      local.push({ lx: 0, lz: -0.04, y: 0.47 });
       break;
     case 'BAR_STOOL':
       local.push({ lx: 0, lz: 0, y: o.heightM - 0.02 });
@@ -182,4 +193,56 @@ export function pickSeat(seats: Seat[], clickX: number, clickZ: number, occupied
   const free = seats.filter((st) => !occupied.some((p) => Math.hypot(p.x - st.x, p.z - st.z) < 0.35));
   if (!free.length) return null;
   return free.reduce((best, st) => (Math.hypot(st.x - clickX, st.z - clickZ) < Math.hypot(best.x - clickX, best.z - clickZ) ? st : best));
+}
+
+// ───────────── Ghế nhân viên & hoạt động khi ngồi ─────────────
+
+type Placed = Pick<SpaceObject, 'id' | 'kind' | 'posX' | 'posZ' | 'rotY' | 'widthM' | 'depthM'>;
+
+/** Quầy có phía sau dành cho nhân viên (mặt trước = +Z cục bộ, khách đứng phía trước) */
+export const STAFF_COUNTER_KINDS = new Set(['DISPLAY_COUNTER', 'RECEPTION_DESK', 'CHECKOUT', 'BAR_COUNTER', 'BANH_QUE_KIOSK', 'PANTRY_COUNTER']);
+
+/** Toạ độ (x, z) trong hệ cục bộ của vật thể */
+function toLocal(o: Placed, x: number, z: number) {
+  const c = Math.cos(o.rotY);
+  const s = Math.sin(o.rotY);
+  const dx = x - o.posX;
+  const dz = z - o.posZ;
+  return { lx: dx * c - dz * s, lz: dx * s + dz * c };
+}
+
+/** Quầy mà ghế đang nằm PHÍA SAU (trong 1.2m tính từ mép sau, nằm trong bề ngang quầy) */
+export function counterBehind(seat: Pick<SpaceObject, 'posX' | 'posZ'>, objects: Placed[]): Placed | null {
+  for (const o of objects) {
+    if (!STAFF_COUNTER_KINDS.has(o.kind)) continue;
+    const { lx, lz } = toLocal(o, seat.posX, seat.posZ);
+    // Lễ tân chữ L: phía sau là vùng bên trong chữ L (z cục bộ âm) — dùng chung quy tắc
+    if (Math.abs(lx) <= o.widthM / 2 + 0.2 && lz < -o.depthM / 2 + 0.25 && lz > -o.depthM / 2 - 1.2) return o;
+  }
+  return null;
+}
+
+/** Ghế chỉ dành cho nhân viên? (seatAccess ghi đè; auto → ghế phía sau quầy) */
+export function isStaffSeat(seatObj: Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'seatAccess'>, objects: Placed[]): boolean {
+  if (!SEATABLE_KINDS.has(seatObj.kind)) return false;
+  if (seatObj.seatAccess === 'staff') return true;
+  if (seatObj.seatAccess === 'all') return false;
+  return counterBehind(seatObj, objects) !== null;
+}
+
+export type SeatActivity = 'type' | 'meeting' | 'rest';
+
+/** Hoạt động khi ngồi: ghế xoay trước bàn làm việc → gõ phím; quanh bàn họp → họp; còn lại → nghỉ */
+export function seatActivity(seat: Seat, objects: Placed[]): { activity: SeatActivity; targetId: string | null } {
+  // Điểm trước mặt người ngồi ~0.55m
+  const fx = seat.x + Math.sin(seat.rotY) * 0.55;
+  const fz = seat.z + Math.cos(seat.rotY) * 0.55;
+  for (const o of objects) {
+    if (o.kind !== 'DESK' && o.kind !== 'MEETING_TABLE') continue;
+    const { lx, lz } = toLocal(o, fx, fz);
+    if (Math.abs(lx) <= o.widthM / 2 + 0.15 && Math.abs(lz) <= o.depthM / 2 + 0.25) {
+      return { activity: o.kind === 'DESK' ? 'type' : 'meeting', targetId: o.id };
+    }
+  }
+  return { activity: 'rest', targetId: null };
 }

@@ -16,6 +16,8 @@ export interface CameraRig {
   skipIntro(): void;
   readonly introActive: boolean;
   notifyZoom(): void;
+  /** Đổi khoảng cách camera ↔ nhân vật mượt (vd. quán cà phê: mở đầu xa để thấy trọn bảng hiệu, đi thì thu gần) */
+  easeDistance(dist: number): void;
   dispose(): void;
 }
 
@@ -35,6 +37,7 @@ export function createCameraRig(
   let missStreak = 0;
   let distBefore = preferredDist;
   let lastZoomAt = 0;
+  let easeTarget: number | null = null;
 
   let intro: {
     curve: THREE.CatmullRomCurve3;
@@ -62,6 +65,10 @@ export function createCameraRig(
     },
     notifyZoom() {
       lastZoomAt = performance.now();
+      easeTarget = null;
+    },
+    easeDistance(dist: number) {
+      easeTarget = dist;
     },
     beforeOrbit() {
       distBefore = camera.position.distanceTo(orbit.target);
@@ -77,6 +84,15 @@ export function createCameraRig(
         return true;
       }
       if (!isThirdPerson()) return false;
+
+      if (easeTarget !== null) {
+        preferredDist += (easeTarget - preferredDist) * (1 - Math.exp(-dt * 2.4));
+        currentDist = Math.min(currentDist, preferredDist + 0.01);
+        if (Math.abs(easeTarget - preferredDist) < 0.02) {
+          preferredDist = easeTarget;
+          easeTarget = null;
+        }
+      }
 
       const distAfter = camera.position.distanceTo(orbit.target);
       // Người dùng vừa zoom → ghi nhận khoảng cách mong muốn mới
@@ -106,7 +122,7 @@ export function createCameraRig(
 
       const want = Math.min(preferredDist, hitDist);
       // Kéo vào nhanh (tránh nhìn xuyên), nhả ra chậm
-      const rate = want < currentDist - 0.05 ? 14 : 2.5;
+      const rate = easeTarget !== null ? 6 : want < currentDist - 0.05 ? 14 : 2.5;
       currentDist += (want - currentDist) * (1 - Math.exp(-dt * rate));
       camera.position.copy(orbit.target).addScaledVector(dir, currentDist);
       return false;
