@@ -37,6 +37,7 @@ import {
   type BubbleSlot,
 } from './three/avatars';
 import { createExhibitionHallEnvironment } from './three/hall';
+import { rebuildInstancing } from './three/instancing';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { buildDrink, buildOrderDrinks } from './three/props/drinks';
@@ -419,6 +420,8 @@ export function Space3DCanvas({
     placementMeshes: Map<string, THREE.Group>;
     boothMeshes: THREE.Group[];
     objectsGroup: THREE.Group;
+    /** Bản vẽ gộp instancing cho các vật thể giống hệt nhau (ghế, đá, cây…) — chỉ khi không ở chế độ thiết kế */
+    instancedGroup: THREE.Group;
     objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
     selectionBox: THREE.Box3Helper;
     ghost: THREE.Mesh;
@@ -624,6 +627,8 @@ export function Space3DCanvas({
     const dynamicGroup = new THREE.Group();
     const objectsGroup = new THREE.Group();
     scene.add(objectsGroup);
+    const instancedGroup = new THREE.Group();
+    scene.add(instancedGroup);
     // Khung chọn vật thể (xanh = hợp lệ, đỏ = chồng lấn)
     const selectionBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#38bdf8'));
     selectionBox.visible = false;
@@ -737,6 +742,7 @@ export function Space3DCanvas({
       placementMeshes,
       boothMeshes,
       objectsGroup,
+      instancedGroup,
       objectMap: new Map(),
       selectionBox,
       ghost,
@@ -2193,6 +2199,9 @@ export function Space3DCanvas({
       });
     }
     obj.doors = doors;
+    rebuildInstancing(obj.objectMap, obj.instancedGroup, editMode);
+    // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
+    obj.renderer.shadowMap.needsUpdate = true;
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
     const upd = (obj as unknown as { updateSelectionBox?: (id: string | null, c?: boolean) => void }).updateSelectionBox;
     upd?.(editMode ? selectedObjectId : null, selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false);
