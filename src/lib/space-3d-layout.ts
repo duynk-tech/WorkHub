@@ -35,7 +35,7 @@ export function footprintOf(o: Pick<SpaceObject, 'posX' | 'posZ' | 'widthM' | 'd
 /** Các loại được phép đặt chồng / sát nhau (thảm, đèn thả, tranh, cây trên bồn…) */
 const NON_BLOCKING = new Set([
   'RUG', 'PENDANT_LIGHT', 'WALL_ART', 'MENU_BOARD',
-  'SHADE_NET', 'METAL_ROOF', 'PATIO_UMBRELLA', 'STEPPING_PATH', 'GRAVEL_BED', 'HOI_AN_LANTERN', 'ROOM_ZONE', 'RED_CARPET', 'BALLOON_ARCH', 'LANTERN_STRING',
+  'SHADE_NET', 'METAL_ROOF', 'PATIO_UMBRELLA', 'STEPPING_PATH', 'GRAVEL_BED', 'HOI_AN_LANTERN', 'ROOM_ZONE', 'RED_CARPET', 'BALLOON_ARCH', 'LANTERN_STRING', 'STRING_LIGHTS', 'BAMBOO_PENDANT',
 ]);
 
 export function overlaps(a: Footprint, b: Footprint, margin = 0.02): boolean {

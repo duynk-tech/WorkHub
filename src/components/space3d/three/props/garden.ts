@@ -1086,6 +1086,37 @@ export function buildGravelBed(o: SpaceObject): THREE.Group {
   bed.rotation.x = -Math.PI / 2;
   bed.position.y = 0.01;
   g.add(bed);
+  // Sỏi 3D nổi trên nền (1 InstancedMesh / nền): ~45 viên/m², tối đa 3000
+  const rr = seeded(hashId(o.id) + 11);
+  const n = Math.min(3000, Math.round(o.widthM * o.depthM * (pebble ? 38 : 45)));
+  if (n > 0) {
+    const stoneGeo = new THREE.IcosahedronGeometry(1, 0);
+    const stones = new THREE.InstancedMesh(
+      stoneGeo,
+      sharedMat(`g:pebble3d:${pebble ? 'd' : 'g'}`, () => new THREE.MeshStandardMaterial({ color: pebble ? '#4a4642' : '#9a9b9c', roughness: 0.75, flatShading: true })),
+      n,
+    );
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const col = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const sz = (pebble ? 0.022 : 0.016) + rr() * (pebble ? 0.022 : 0.018);
+      e.set(rr() * 3, rr() * 3, rr() * 3);
+      q.setFromEuler(e);
+      m.compose(
+        new THREE.Vector3((rr() - 0.5) * o.widthM, 0.012 + sz * 0.35, (rr() - 0.5) * o.depthM),
+        q,
+        new THREE.Vector3(sz * (1 + rr() * 0.5), sz * 0.55, sz * (1 + rr() * 0.4)),
+      );
+      stones.setMatrixAt(i, m);
+      const v = pebble ? 0.22 + rr() * 0.25 : 0.5 + rr() * 0.3;
+      stones.setColorAt(i, col.setRGB(v, v * 0.98, v * 0.95));
+    }
+    stones.receiveShadow = true;
+    stones.userData.noMerge = true;
+    g.add(stones);
+  }
   if (pebble) {
     // Viền bó vỉa bê tông quanh ô sỏi đen (như dưới bàn gỗ cây đa)
     const curb = M.paint('#c9c5bc', 0.85);
@@ -1827,5 +1858,59 @@ export function buildMotorbike(o: SpaceObject): THREE.Group {
   g.add(sphere(0.06, M.glow('#fffbe6', 0.4, 1.6), 0, 0.95, L * 0.42)); // đèn pha
   // Chân chống nghiêng nhẹ
   g.rotation.z = 0.05;
+  return g;
+}
+
+
+// ───────────── Đèn treo: dây bóng Edison giăng ngang sân, đèn tre treo trên bàn ─────────────
+/** Dây bóng Edison giăng giữa 2 cột sắt (dài theo trục X cục bộ), võng tự nhiên; sáng vàng ấm ban đêm */
+export function buildStringLights(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const { widthM: w, heightM: h } = o;
+  const pole = M.metal('#2b2b2b', 0.5);
+  for (const sx of [-1, 1]) {
+    g.add(cyl(0.04, 0.05, h, pole, sx * (w / 2), h / 2, 0, 8));
+    g.add(box(0.3, 0.06, 0.3, M.paint('#6b6a64', 0.9), sx * (w / 2), 0.03, 0));
+  }
+  const a = new THREE.Vector3(-w / 2, h - 0.12, 0);
+  const b = new THREE.Vector3(w / 2, h - 0.12, 0);
+  const mid = new THREE.Vector3(0, h - 0.12 - Math.min(0.9, w * 0.06), 0);
+  const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(12, Math.round(w * 3)), 0.006, 4, false), M.black()));
+  const bulb = M.glow('#ffcf7a', 0.9, 4.5);
+  const n = Math.max(3, Math.floor(w / 0.55));
+  for (let i = 1; i < n; i++) {
+    const p = curve.getPoint(i / n);
+    g.add(cyl(0.004, 0.004, 0.07, M.black(), p.x, p.y - 0.035, p.z, 4));
+    g.add(cyl(0.018, 0.018, 0.03, M.metal('#3f3f46', 0.4), p.x, p.y - 0.08, p.z, 8));
+    const bl = sphere(0.04, bulb, p.x, p.y - 0.13, p.z);
+    bl.scale.y = 1.25;
+    g.add(bl);
+  }
+  g.userData.noShadowCast = true;
+  return g;
+}
+
+/** Đèn tre bầu dục treo trên bàn (dây thả từ trên cao xuống), phát sáng ấm */
+export function buildBambooPendant(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const top = o.heightM;
+  const r = o.widthM / 2;
+  const bamboo = sharedMat('g:bambooPendant', () => {
+    const m = new THREE.MeshStandardMaterial({ color: '#d8b27a', roughness: 0.8, emissive: '#ffb15c', emissiveIntensity: 0.12, side: THREE.DoubleSide });
+    registerEmissive({ mat: m, day: 0.12, night: 1.3, mode: 'emissive' });
+    return m;
+  });
+  const lampY = top - 1.0;
+  g.add(lathe([[0.01, 0], [r * 0.7, r * 0.25], [r, r * 0.9], [r * 0.75, r * 1.6], [r * 0.15, r * 1.9], [0.01, r * 1.95]], bamboo, 16)).children.at(-1)!.position.set(0, lampY, 0);
+  // Nan tre dọc
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const rib = cyl(0.004, 0.004, r * 1.9, M.wood('#a47148'), Math.cos(a) * r * 0.93, lampY + r * 0.95, Math.sin(a) * r * 0.93, 4);
+    g.add(rib);
+  }
+  g.add(sphere(0.05, M.glow('#ffd58a', 0.6, 3.2), 0, lampY + r * 0.6, 0));
+  g.add(cyl(0.004, 0.004, top - (lampY + r * 1.95), M.black(), 0, (top + lampY + r * 1.95) / 2, 0, 4));
+  g.userData.noShadowCast = true;
   return g;
 }

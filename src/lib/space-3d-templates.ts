@@ -220,13 +220,21 @@ export function cafeTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceObject
   s.push({ kind: 'CLAY_JAR', ...at(8.7, -10.9), color: '#b7791f' });
   s.push({ kind: 'PLANT_MONSTERA', ...at(14.3, -7.6), color: '#e7e5e4' });
   s.push({ kind: 'BANANA_PLANT', ...at(14.2, -5.9) });
-  s.push({ kind: 'BANANA_PLANT', ...at(14.1, -2.6) });
-  s.push({ kind: 'BANANA_PLANT', ...at(13.6, 0.4) });
+  // Khu bàn tròn gỗ trên nền sỏi dọc hàng rào phải, đèn tre treo trên từng bàn
+  s.push({ kind: 'GRAVEL_BED', ...at(12.2, -2.5), widthM: 4.6 * kx, depthM: 8 * kz, variant: 'gravel' });
+  for (const z of [0.4, -2.6, -5.4]) {
+    const p = at(12.2, z);
+    s.push(...tableSet(p.posX, p.posZ, 3, true, '#a47148'));
+    s.push({ kind: 'BAMBOO_PENDANT', ...p });
+  }
   s.push({ kind: 'POND', ...at(6.6, 0.2), widthM: 5 * kx, depthM: 3 * kz });
   s.push({ kind: 'VINE_RAILING', posX: 6.6 * kx, posZ: 0.2 * kz - (3 * kz) / 2 - 0.15, widthM: 5 * kx });
   s.push({ kind: 'BOULDER', ...at(3.6, 1.6), widthM: 1, depthM: 0.8, heightM: 0.6 });
   // Quạt phun sương cạnh khu bàn gỗ dài (quán sân vườn miền Nam)
   for (const [x, z] of [[-6.35, -8.2], [5.4, -4.6], [-6.35, -5.2]] as [number, number][]) s.push({ kind: 'MIST_FAN', ...at(x, z), rotY: x < 0 ? HALF_PI : -HALF_PI });
+  // Dây đèn Edison giăng ngang sân trước (cao 3.6m, trên dù che)
+  s.push({ kind: 'STRING_LIGHTS', ...at(4, 6), widthM: 18 * kx, heightM: 3.6 });
+  s.push({ kind: 'STRING_LIGHTS', ...at(7, 2.4), widthM: 12 * kx, heightM: 3.4 });
   // Bảng phấn menu chữ A ngay sau cổng
   s.push({ kind: 'CHALKBOARD_STAND', ...at(-1.6, 9.6), rotY: 0.25, label: 'Menu hôm nay' });
   // Bãi giữ xe máy góc trước phải, đậu song song vuông góc hàng rào

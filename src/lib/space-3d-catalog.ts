@@ -103,6 +103,8 @@ export const SPACE_OBJECT_DEFS: SpaceObjectDef[] = [
   { kind: 'BANH_QUE_KIOSK', label: 'Quầy bánh quê', category: 'GARDEN', size: [4.2, 2.8, 3.2], limits: L([2.6, 7], [2, 4], [2.6, 4]), color: '#2b2420', labeled: true },
   { kind: 'FOOD_VAN', label: 'Xe đò trang trí', category: 'GARDEN', size: [5.2, 2, 2.4], limits: L([4, 6.5], [1.7, 2.3], [2, 2.8]), color: '#efe6cf', labeled: true },
   { kind: 'POND', label: 'Ao rau muống', category: 'GARDEN', size: [6, 4, 0.2], limits: L([2, 20], [2, 14], [0.15, 0.3]), color: '#3d4a2c' },
+  { kind: 'STRING_LIGHTS', label: 'Dây đèn Edison giăng ngang', category: 'GARDEN', size: [10, 0.3, 3.6], limits: L([2, 30], [0.2, 0.5], [2.6, 5]), color: '#ffcf7a' },
+  { kind: 'BAMBOO_PENDANT', label: 'Đèn tre treo', category: 'GARDEN', size: [0.36, 0.36, 3.2], limits: L([0.2, 0.6], [0.2, 0.6], [2.4, 4.5]), color: '#d8b27a' },
   { kind: 'MIST_FAN', label: 'Quạt phun sương', category: 'GARDEN', size: [0.6, 0.6, 1.8], limits: L([0.5, 0.8], [0.5, 0.8], [1.4, 2.2]), color: '#e5e7eb', palette: ['#e5e7eb', '#1f2937', '#2563eb'] },
   { kind: 'CHALKBOARD_STAND', label: 'Bảng phấn chữ A (menu)', category: 'GARDEN', size: [0.65, 0.5, 1.1], limits: L([0.45, 1], [0.35, 0.7], [0.8, 1.4]), color: '#8a5a35', labeled: true },
   { kind: 'MOTORBIKE', label: 'Xe máy đậu', category: 'GARDEN', size: [0.7, 1.85, 1.15], limits: L([0.6, 0.8], [1.6, 2], [1, 1.3]), color: '#dc2626', palette: ['#dc2626', '#1f2937', '#f8fafc', '#2563eb', '#16a34a', '#f59e0b'] },
