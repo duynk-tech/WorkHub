@@ -1630,6 +1630,39 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 Tham quan trực tiếp không gian triển lãm máy móc, gặp nhân viên tư vấn tại quầy và xem thông số thiết bị ngay trong TIM Space.
               </p>
             </div>
+            {data.scenes.length > 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left' }}>
+                <span style={{ fontSize: 12, color: '#cbd5e1' }}>Chọn không gian muốn tham quan:</span>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(3, data.scenes.length)}, 1fr)`, gap: 8 }}>
+                  {data.scenes.map((sc) => {
+                    const active = sc.code === data.activeScene.code;
+                    const icon = sc.kind === 'CAFE' ? '☕' : sc.kind === 'OFFICE' ? '🏢' : sc.kind === 'WAREHOUSE' ? '📦' : '🏬';
+                    const hint = sc.kind === 'CAFE' ? 'Ngồi bàn, gọi nước' : sc.kind === 'OFFICE' ? 'Phòng họp, pantry' : sc.kind === 'WAREHOUSE' ? 'Kho hàng' : 'Xem máy, gặp tư vấn';
+                    return (
+                      <button
+                        key={sc.code}
+                        type="button"
+                        disabled={active || switching !== null}
+                        onClick={() => switchScene(sc.code, sc.name)}
+                        style={{
+                          padding: '9px 8px',
+                          borderRadius: 12,
+                          border: active ? '2px solid #60a5fa' : '1px solid rgba(255,255,255,0.18)',
+                          background: active ? 'rgba(37,99,235,0.35)' : 'rgba(255,255,255,0.06)',
+                          color: '#fff',
+                          cursor: active ? 'default' : 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ fontSize: 18 }}>{icon}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sc.name}</div>
+                        <div style={{ fontSize: 10.5, color: '#cbd5e1', marginTop: 1 }}>{active ? '✓ Đang chọn' : hint}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <input
               value={guestName}
               onChange={(e) => setGuestName(e.target.value)}
