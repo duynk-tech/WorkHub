@@ -25,6 +25,65 @@ const LABEL_FONT = 'Inter, "Segoe UI", system-ui, -apple-system, sans-serif';
 
 export const BUBBLE_VISIBLE_DIST = 8;
 
+const UNIFORM_LOGO_URL = '/brand/timcorp-logo-ngang.png';
+const uniformLogoMats = new Map<boolean, THREE.MeshStandardMaterial>();
+
+/** Logo thêu trên ngực áo đồng phục. Áo xanh đậm → logo trên miếng vải trắng để rõ nét. Dùng chung cho mọi nhân vật. */
+function getUniformLogoMaterial(onDark: boolean): THREE.MeshStandardMaterial {
+  const cached = uniformLogoMats.get(onDark);
+  if (cached) return cached;
+  const W = 352;
+  const H = 96;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d')!;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const draw = (img?: HTMLImageElement) => {
+    ctx.clearRect(0, 0, W, H);
+    if (onDark) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.roundRect(4, 4, W - 8, H - 8, 18);
+      ctx.fill();
+    }
+    if (img) {
+      const pad = onDark ? 16 : 6;
+      const s = Math.min((W - pad * 2) / img.width, (H - pad * 2) / img.height);
+      const w = img.width * s;
+      const h = img.height * s;
+      ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+    } else {
+      ctx.fillStyle = '#1d3f91';
+      ctx.font = `800 ${Math.round(H * 0.5)}px ${LABEL_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TIM CORP', W / 2, H / 2 + 2);
+    }
+    tex.needsUpdate = true;
+  };
+  draw();
+  if (typeof Image !== 'undefined') {
+    const img = new Image();
+    img.onload = () => draw(img);
+    img.src = UNIFORM_LOGO_URL;
+  }
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    alphaTest: 0.05,
+    roughness: 0.7,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+  mat.userData.noRim = true;
+  mat.userData.shared = true;
+  uniformLogoMats.set(onDark, mat);
+  return mat;
+}
+
 export interface AnimatedAvatar {
   group: THREE.Group;
   leftLeg: THREE.Group;
@@ -47,10 +106,27 @@ export interface AnimatedAvatar {
   stride: number;
   /** Chân váy (đung đưa theo bước) */
   skirt: THREE.Object3D | null;
+  /** Góc gập chân váy khi ngồi (phủ lên đùi) */
+  skirtSitX: number;
+  /** Khoang miệng — phóng theo trục y để nhép miệng khi nói */
+  mouth: THREE.Object3D | null;
+  /** Nhãn cầu (liếc mắt) + đốm sáng long lanh (ẩn khi chớp) */
+  eyes: THREE.Object3D[];
+  sparkles: THREE.Object3D[];
+  /** Hướng liếc mắt hiện tại/đích + thời điểm đổi hướng kế tiếp */
+  gaze: { x: number; y: number; tx: number; ty: number; at: number };
+}
+
+/** Trả góc dang tay (z) & độ nghiêng người về mặc định sau biểu cảm. */
+function settleArms(av: AnimatedAvatar) {
+  av.leftArm.rotation.z += (-0.07 - av.leftArm.rotation.z) * 0.2;
+  av.rightArm.rotation.z += (0.07 - av.rightArm.rotation.z) * 0.2;
+  av.group.rotation.x *= 0.8;
 }
 
 /** Dáng đi: sải hông, gập gối ở pha nhấc chân, đánh tay có gập khuỷu, nhún nhẹ. */
 export function poseWalk(av: AnimatedAvatar, phase: number): void {
+  settleArms(av);
   const k = av.stride;
   const sn = Math.sin(phase);
   const hip = sn * 0.5 * k;
@@ -72,6 +148,7 @@ export function poseWalk(av: AnimatedAvatar, phase: number): void {
 
 /** Tư thế ngồi: đùi nằm ngang ra trước, cẳng chân thả xuống, tay đặt lên đùi; hông đặt đúng độ cao mặt ghế. */
 export function poseSit(av: AnimatedAvatar, seatY: number): void {
+  settleArms(av);
   const k = 0.18; // nội suy để hạ người ngồi xuống từ từ
   const lerp = (cur: number, to: number) => cur + (to - cur) * k;
   // Chiều dài cẳng chân + giày ≈ 0.46m: ghế thấp → gối gập ~90° chân chạm sàn; ghế bar cao → chân thả
@@ -81,12 +158,14 @@ export function poseSit(av: AnimatedAvatar, seatY: number): void {
   for (const leg of [av.leftLeg, av.rightLeg]) leg.rotation.x = lerp(leg.rotation.x, -1.48);
   for (const knee of [av.leftKnee, av.rightKnee]) knee.rotation.x = lerp(knee.rotation.x, kneeBend);
   // Hai đầu gối hơi mở, tay đặt lên đùi, lưng hơi ngả
-  av.leftLeg.rotation.z = lerp(av.leftLeg.rotation.z, 0.06);
-  av.rightLeg.rotation.z = lerp(av.rightLeg.rotation.z, -0.06);
+  // Mặc váy → khép gối; mặc quần → hai gối hơi mở
+  const spread = av.skirt ? 0 : 0.06;
+  av.leftLeg.rotation.z = lerp(av.leftLeg.rotation.z, spread);
+  av.rightLeg.rotation.z = lerp(av.rightLeg.rotation.z, -spread);
   for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = lerp(arm.rotation.x, -0.42);
   for (const el of [av.leftElbow, av.rightElbow]) el.rotation.x = lerp(el.rotation.x, -0.95);
   av.headGroup.rotation.x = lerp(av.headGroup.rotation.x, -0.06);
-  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, -0.45);
+  if (av.skirt) av.skirt.rotation.x = lerp(av.skirt.rotation.x, av.skirtSitX);
   // Pivot hông ở y = 0.9 trong nhân vật → hạ cả người cho hông chạm đệm
   av.group.position.y = lerp(av.group.position.y, hipY - 0.9);
 }
@@ -97,19 +176,22 @@ export function relaxPose(av: AnimatedAvatar): void {
   av.leftLeg.rotation.z *= d;
   av.rightLeg.rotation.z *= d;
   av.headGroup.rotation.x *= d;
+  av.headGroup.rotation.z *= d;
   av.leftLeg.rotation.x *= d;
   av.rightLeg.rotation.x *= d;
   av.leftKnee.rotation.x = av.leftKnee.rotation.x * d + 0.02 * (1 - d);
   av.rightKnee.rotation.x = av.rightKnee.rotation.x * d + 0.02 * (1 - d);
   av.leftArm.rotation.x *= d;
   av.rightArm.rotation.x *= d;
+  settleArms(av);
   av.leftElbow.rotation.x = av.leftElbow.rotation.x * d - 0.12 * (1 - d);
   av.rightElbow.rotation.x = av.rightElbow.rotation.x * d - 0.12 * (1 - d);
   if (av.skirt) {
     av.skirt.rotation.z *= d;
     av.skirt.rotation.x *= d;
   }
-  av.group.position.y = 0;
+  // Đứng dậy từ ghế: nâng người lên dần (không bật thẳng)
+  av.group.position.y = Math.abs(av.group.position.y) < 0.002 ? 0 : av.group.position.y * 0.8;
 }
 
 /** Nhãn nổi gọn dạng viên thuốc, rộng theo nội dung (dùng cho sản phẩm & nhãn chung). */
@@ -243,6 +325,8 @@ const JAW_TAPER_Z = 0.1;
 /** Toạ độ z trên bề mặt khuôn mặt tại (x, y) — tính cả độ thon cằm. */
 /** Độ thon cằm hiện hành (V-line cho nữ, hàm vuông hơn cho nam) — đặt trước khi dựng mặt. */
 let jawTaper = JAW_TAPER_X;
+/** Vị trí hốc mắt hiện hành (mắt anime nữ to & thấp hơn) — đặt trước khi dựng đầu */
+let eyeSocket = { x: 0.042, y: 0.012, r: 0.0125 };
 
 function faceZ(x: number, y: number, lift = 0): number {
   const t = y < 0 ? Math.min(1, -y / HEAD.b) : 0;
@@ -294,7 +378,7 @@ function createSkinDetailTexture(feminine: boolean): THREE.CanvasTexture {
   };
   for (const s of [-1, 1]) {
     // Má hồng
-    blob(s * 0.056, -0.018, 40, 'rgba(255,125,135,A)', feminine ? 0.3 : 0.1, 1.2, 0.85);
+    blob(s * 0.058, -0.022, 44, 'rgba(255,120,135,A)', feminine ? 0.42 : 0.1, 1.25, 0.8);
     // Phấn mắt / bọng mí
     blob(s * 0.044, 0.026, 26, feminine ? 'rgba(190,110,120,A)' : 'rgba(150,110,95,A)', feminine ? 0.4 : 0.16, 1.5, 0.75);
     // Quầng nhẹ dưới mắt (tạo chiều sâu)
@@ -330,7 +414,7 @@ function createHeadGeometry(): THREE.BufferGeometry {
     // Gò má & trán nhô nhẹ
     if (z > 0) z *= 1 + 0.04 * Math.exp(-((y - 0.02) ** 2) / 0.002) * Math.exp(-((Math.abs(x) - 0.06) ** 2) / 0.0015);
     // Hốc mắt: lõm nhẹ để nhãn cầu nằm sâu tự nhiên dưới cung mày
-    if (z > 0) z -= 0.0075 * Math.exp(-((Math.abs(x) - 0.042) ** 2 + ((y - 0.012) * 1.2) ** 2) / (2 * 0.0125 ** 2));
+    if (z > 0) z -= 0.0075 * Math.exp(-((Math.abs(x) - eyeSocket.x) ** 2 + ((y - eyeSocket.y) * 1.2) ** 2) / (2 * eyeSocket.r ** 2));
     // Sống mũi nhô nhẹ giữa hai mắt
     if (z > 0) z += 0.004 * Math.exp(-(x ** 2) / (2 * 0.008 ** 2)) * Math.exp(-((y + 0.005) ** 2) / (2 * 0.025 ** 2));
     p.setXYZ(i, x, y, z);
@@ -354,37 +438,58 @@ function createEyeTexture(irisColor: string): THREE.CanvasTexture {
   ctx.fillRect(0, 0, W, H);
   const cx = W * 0.25;
   const cy = H * 0.5;
-  const R = H * 0.19;
-  const g = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R);
-  g.addColorStop(0, '#1a120d');
-  g.addColorStop(0.3, irisColor);
-  g.addColorStop(0.85, irisColor);
-  g.addColorStop(1, '#120c08');
-  ctx.fillStyle = g;
+  const R = H * 0.21;
+  // Mống mắt kiểu anime: hơi bầu dục dọc, trên sẫm (bóng mi) → dưới sáng trong
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, 1.12);
+  const base = new THREE.Color(irisColor);
+  const dark = '#' + base.clone().multiplyScalar(0.35).getHexString();
+  const light = '#' + base.clone().lerp(new THREE.Color('#f3c98b'), 0.45).getHexString();
+  const lin = ctx.createLinearGradient(0, -R, 0, R);
+  lin.addColorStop(0, dark);
+  lin.addColorStop(0.45, irisColor);
+  lin.addColorStop(1, light);
+  ctx.fillStyle = lin;
   ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,230,190,0.18)';
-  ctx.lineWidth = 1.2;
-  for (let i = 0; i < 40; i++) {
-    const a = (i / 40) * Math.PI * 2;
+  // Vân mống mắt mảnh
+  ctx.strokeStyle = 'rgba(255,236,200,0.16)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
     ctx.beginPath();
-    ctx.moveTo(cx + Math.cos(a) * R * 0.42, cy + Math.sin(a) * R * 0.42);
-    ctx.lineTo(cx + Math.cos(a) * R * 0.9, cy + Math.sin(a) * R * 0.9);
+    ctx.moveTo(Math.cos(a) * R * 0.45, Math.sin(a) * R * 0.45);
+    ctx.lineTo(Math.cos(a) * R * 0.88, Math.sin(a) * R * 0.88);
     ctx.stroke();
   }
-  ctx.fillStyle = '#050403';
+  // Vòng viền mống mắt sẫm (limbal ring)
+  ctx.strokeStyle = 'rgba(20,12,8,0.85)';
+  ctx.lineWidth = R * 0.12;
   ctx.beginPath();
-  ctx.arc(cx, cy, R * 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.arc(0, 0, R * 0.95, 0, Math.PI * 2);
+  ctx.stroke();
+  // Đồng tử to
+  ctx.fillStyle = '#060403';
   ctx.beginPath();
-  ctx.arc(cx - R * 0.32, cy - R * 0.34, R * 0.17, 0, Math.PI * 2);
+  ctx.arc(0, R * 0.04, R * 0.42, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  // Đốm sáng long lanh: 1 lớn trên-trái, 1 nhỏ dưới-phải + ánh phản quang nhạt dưới đáy
+  ctx.fillStyle = 'rgba(255,255,255,0.98)';
   ctx.beginPath();
-  ctx.arc(cx + R * 0.3, cy + R * 0.28, R * 0.07, 0, Math.PI * 2);
+  ctx.ellipse(-R * 0.34, -R * 0.38, R * 0.24, R * 0.2, -0.4, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  ctx.arc(R * 0.36, R * 0.3, R * 0.09, 0, Math.PI * 2);
+  ctx.fill();
+  const glow = ctx.createRadialGradient(0, R * 0.62, 0, 0, R * 0.62, R * 0.5);
+  glow.addColorStop(0, 'rgba(255,240,210,0.35)');
+  glow.addColorStop(1, 'rgba(255,240,210,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(-R, 0, R * 2, R);
+  ctx.restore();
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 16;
@@ -608,23 +713,27 @@ export function createChibiAvatar(opts: {
 
   // ── Chân: hông → đùi → ống chân → giày ──
   const isDress = style === 'dress';
+  const isUniform = style === 'uniform';
+  // Chân váy bút chì (đồng phục / sơ mi công sở nữ)
+  const pencilSkirt = (isUniform || style === 'shirt') && config.bottomStyle === 'skirt';
+  const bareLegs = isDress || pencilSkirt;
   let skirtGroup: THREE.Group | null = null;
   const knees: THREE.Group[] = [];
   const makeLeg = (offsetX: number) => {
     const pivot = new THREE.Group();
     pivot.position.set(offsetX, 0.9, 0);
-    const legMat = isDress ? skin : pantsMat;
+    const legMat = bareLegs ? skin : pantsMat;
     // Đùi (thon dần về gối)
-    const thigh = limb(isDress ? 0.058 : 0.078, isDress ? 0.043 : 0.057, 0.36, legMat, 0.06);
+    const thigh = limb(bareLegs ? 0.058 : 0.078, bareLegs ? 0.043 : 0.057, 0.36, legMat, 0.06);
     thigh.position.y = -0.21;
     pivot.add(thigh);
     // Gối → ống chân (bắp chân nở nhẹ) → giày
     const knee = new THREE.Group();
     knee.position.y = -0.43;
-    const shin = limb(isDress ? 0.042 : 0.054, isDress ? 0.03 : 0.045, 0.34, legMat, isDress ? 0.16 : 0.08);
+    const shin = limb(bareLegs ? 0.042 : 0.054, bareLegs ? 0.03 : 0.045, 0.34, legMat, bareLegs ? 0.16 : 0.08);
     shin.position.y = -0.2;
     // Khớp gối liền mạch khi gập
-    const kneeCap = new THREE.Mesh(new THREE.SphereGeometry(isDress ? 0.043 : 0.057, 16, 12), legMat);
+    const kneeCap = new THREE.Mesh(new THREE.SphereGeometry(bareLegs ? 0.043 : 0.057, 16, 12), legMat);
     knee.add(shin, kneeCap);
     const shoe = capsule(0.046, 0.13, shoeMat);
     shoe.rotation.x = Math.PI / 2;
@@ -633,7 +742,7 @@ export function createChibiAvatar(opts: {
     const sole = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.016, 0.24), new THREE.MeshStandardMaterial({ color: '#0b0b0b', roughness: 0.8 }));
     sole.position.set(0, -0.462, 0.045);
     knee.add(shoe, sole);
-    if (isDress) {
+    if (bareLegs) {
       // Giày cao gót công sở: mũi thon, gót mảnh, không đế bệt
       sole.visible = false;
       shoe.scale.set(0.82, 0.92, 0.62);
@@ -675,11 +784,32 @@ export function createChibiAvatar(opts: {
       0.66,
     );
     group.add(torso);
-    // Hông quần
-    const hips = lathe([[0.0, 0.8], [0.15, 0.8], [0.158, 0.9], [0.0, 0.9]], pantsMat, 0.68);
-    group.add(hips);
-    const belt = lathe([[0.159, 0.88], [0.159, 0.915]], new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.4 }), 0.68);
-    group.add(belt);
+    if (pencilSkirt) {
+      // Chân váy bút chì ôm hông, dài tới gối, có xẻ sau → bước ngắn
+      const skirtMesh = lathe(
+        [[0.0, 0.5], [0.163, 0.5], [0.167, 0.53], [0.174, 0.7], [0.173, 0.84], [0.166, 0.95], [0.16, 0.995], [0.0, 0.995]],
+        pantsMat,
+        0.74,
+        40,
+      );
+      skirtMesh.position.y = -0.995;
+      skirtGroup = new THREE.Group();
+      skirtGroup.position.y = 0.995;
+      skirtGroup.add(skirtMesh);
+      const waistband = lathe([[0.161, 0.965], [0.161, 0.998]], pantsMat, 0.74);
+      group.add(skirtGroup, waistband);
+    } else {
+      // Hông quần
+      const hips = lathe([[0.0, 0.8], [0.15, 0.8], [0.158, 0.9], [0.0, 0.9]], pantsMat, 0.68);
+      group.add(hips);
+      const belt = lathe([[0.159, 0.88], [0.159, 0.915]], new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.4 }), 0.68);
+      group.add(belt);
+      if (isUniform) {
+        const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.022, 0.006), new THREE.MeshStandardMaterial({ color: '#c0c6cf', metalness: 0.9, roughness: 0.25 }));
+        buckle.position.set(0, 0.897, 0.159 * 0.68 + 0.003);
+        group.add(buckle);
+      }
+    }
   }
 
   // Vai bo tròn
@@ -727,29 +857,49 @@ export function createChibiAvatar(opts: {
       group.add(btn);
     }
   }
-  if (style === 'shirt' || style === 'polo' || style === 'suit') {
+  if (style === 'shirt' || style === 'polo' || style === 'suit' || isUniform) {
     // Cổ áo
     const collar = lathe([[0.058, 1.42], [0.07, 1.455], [0.062, 1.47]], style === 'suit' ? whiteShirt : fabric, 1, 20);
     group.add(collar);
   }
-  if (style === 'shirt' || style === 'polo') {
+  if (style === 'shirt' || style === 'polo' || isUniform) {
     const placketLen = style === 'polo' ? 0.1 : 0.48;
-    const placket = new THREE.Mesh(new THREE.BoxGeometry(0.022, placketLen, 0.006), new THREE.MeshStandardMaterial({ color: new THREE.Color(outfitColor).multiplyScalar(0.85), roughness: 0.6 }));
+    const light = new THREE.Color(outfitColor).getHSL({ h: 0, s: 0, l: 0 }).l > 0.8;
+    const placket = new THREE.Mesh(
+      new THREE.BoxGeometry(0.022, placketLen, 0.006),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(outfitColor).multiplyScalar(light ? 0.94 : 0.85), roughness: 0.6 }),
+    );
     placket.position.set(0, 1.42 - placketLen / 2, 0.118);
     group.add(placket);
+    if (isUniform) {
+      // Hàng cúc áo + logo TIM Corp thêu ngực trái
+      const btnMat = new THREE.MeshStandardMaterial({ color: light ? '#e2e8f0' : '#cbd5e1', roughness: 0.3 });
+      for (const by of [1.37, 1.27, 1.17, 1.07]) {
+        const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.003, 10), btnMat);
+        btn.rotation.x = Math.PI / 2;
+        btn.position.set(0, by, 0.1225);
+        group.add(btn);
+      }
+      const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.088, 0.024), getUniformLogoMaterial(!light));
+      logo.position.set(0.078, 1.275, 0.1045);
+      logo.rotation.y = 0.31;
+      logo.userData.noRim = true;
+      group.add(logo);
+    }
   }
 
   // Thẻ nhân viên khi đang trực
   if (isOnDuty) {
     const card = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.08, 0.006), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3 }));
-    card.position.set(0.085, 1.22, frontZ(1.22, 0.162) + 0.006);
+    const cx = isUniform ? -0.085 : 0.085;
+    card.position.set(cx, 1.22, frontZ(1.22, 0.162) + 0.006);
     const cardTop = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.02, 0.007), new THREE.MeshStandardMaterial({ color: '#2563eb' }));
-    cardTop.position.set(0.085, 1.25, frontZ(1.25, 0.162) + 0.007);
+    cardTop.position.set(cx, 1.25, frontZ(1.25, 0.162) + 0.007);
     group.add(card, cardTop);
   }
 
   // ── Tay: vai → cánh tay → cẳng tay → bàn tay ──
-  const longSleeve = style === 'suit' || style === 'shirt';
+  const longSleeve = style === 'suit' || style === 'shirt' || isUniform;
   const elbows: THREE.Group[] = [];
   const makeArm = (offsetX: number) => {
     const pivot = new THREE.Group();
@@ -784,7 +934,7 @@ export function createChibiAvatar(opts: {
     const elbowCap = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), longSleeve ? fabric : skin);
     elbow.add(fore, elbowCap);
     if (longSleeve) {
-      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.028, 16), whiteShirt);
+      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.028, 16), style === 'suit' ? whiteShirt : fabric);
       cuff.position.y = -0.255;
       elbow.add(cuff);
     }
@@ -815,8 +965,13 @@ export function createChibiAvatar(opts: {
 
   // Nét mặt theo phong cách: nữ (đầm / tóc dài, bob, đuôi ngựa, búi) → mặt V-line, mắt to có mi, môi hồng;
   // nam → hàm vuông hơn, mày đậm thẳng, mũi cao.
-  const feminine = isDress || ['long', 'bob', 'ponytail', 'bun'].includes(config.hairStyle);
-  jawTaper = feminine ? 0.32 : 0.17;
+  const feminine = isDress || pencilSkirt || ['long', 'bob', 'ponytail', 'bun'].includes(config.hairStyle);
+  jawTaper = feminine ? 0.33 : 0.18;
+  // Mắt anime pha thật: to, tròn, hơi thấp trên mặt (trán cao) → nét "xinh"
+  const eyeR = feminine ? 0.0232 : 0.0196;
+  const eyeY = feminine ? 0.004 : 0.008;
+  const eyeX = feminine ? 0.045 : 0.043;
+  eyeSocket = { x: eyeX, y: eyeY, r: feminine ? 0.016 : 0.0135 };
   const faceSkin = skin.clone();
   faceSkin.userData = {}; // để viền rim được gắn lại cho bản clone
   faceSkin.map = createSkinDetailTexture(feminine);
@@ -833,22 +988,33 @@ export function createChibiAvatar(opts: {
     headGroup.add(ear);
   }
 
-  // Mắt: nhãn cầu + mí trên (chớp được) + viền mi
-  const eyeR = feminine ? 0.0186 : 0.0172;
-  const eyeY = 0.012;
-  const eyeX = feminine ? 0.043 : 0.042;
+  // Mắt: nhãn cầu + mí trên (chớp được) + viền mi + đốm sáng
   const eyeMat = new THREE.MeshPhysicalMaterial({ map: createEyeTexture(feminine ? '#6b4528' : '#4a3020'), roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 });
   eyeMat.userData.noRim = true;
   const lidMat = skin;
   const linerMat = new THREE.MeshStandardMaterial({ color: '#1b130f', roughness: 0.6 });
   linerMat.userData.noRim = true;
   const blinkers: THREE.Object3D[] = [];
+  const eyes: THREE.Object3D[] = [];
+  const sparkles: THREE.Object3D[] = [];
+  const sparkleMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false });
+  sparkleMat.userData.noRim = true;
   for (const s of [-1, 1]) {
     const ez = faceZ(s * eyeX, eyeY) - eyeR * 0.95;
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 24, 16), eyeMat);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 28, 18), eyeMat);
     eye.position.set(s * eyeX, eyeY, ez);
+    eye.scale.y = feminine ? 1.1 : 1.04; // mắt hơi tròn dọc
     eye.rotation.y = -s * 0.06; // hơi hướng vào giữa cho ánh nhìn tự nhiên
+    eye.userData.baseRotY = eye.rotation.y;
     headGroup.add(eye);
+    eyes.push(eye);
+    // Đốm sáng cố định theo đầu (như phản chiếu đèn) → mắt luôn long lanh
+    const sp = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.13, 10, 8), sparkleMat);
+    sp.position.set(s * eyeX - eyeR * 0.32, eyeY + eyeR * 0.36, ez + eyeR * 0.92);
+    const sp2 = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.06, 8, 6), sparkleMat);
+    sp2.position.set(s * eyeX + eyeR * 0.3, eyeY - eyeR * 0.28, ez + eyeR * 0.95);
+    headGroup.add(sp, sp2);
+    sparkles.push(sp, sp2);
 
     const lidPivot = new THREE.Group();
     lidPivot.position.copy(eye.position);
@@ -859,9 +1025,26 @@ export function createChibiAvatar(opts: {
     lidPivot.add(lid, liner);
     if (feminine) {
       // Kẻ mắt kéo dài nhẹ ở khoé ngoài (hiệu ứng mi cong) — bám theo mí nên chớp mắt vẫn khớp
-      liner.scale.set(1.08, 1, 1);
-      liner.position.x = s * 0.0012;
+      liner.scale.set(1.1, 1, 1);
+      liner.position.x = s * 0.0014;
+      // 3 sợi mi cong vểnh ở khoé ngoài (gắn vào mí → chớp cùng)
+      for (let k = 0; k < 3; k++) {
+        const lash = capsule(0.0011, 0.0075 - k * 0.0012, linerMat);
+        const ang = 0.55 + k * 0.32;
+        lash.position.set(s * eyeR * (0.72 + k * 0.1), eyeR * (0.62 - k * 0.2), eyeR * 0.55);
+        lash.rotation.z = -s * ang;
+        lash.rotation.x = -0.5;
+        lidPivot.add(lash);
+      }
     }
+    // Mí đôi: đường mảnh phía trên mí (nét đặc trưng mắt anime)
+    const crease = new THREE.Mesh(new THREE.TorusGeometry(eyeR * 1.02, 0.0007, 4, 20, Math.PI * 0.62), linerMat);
+    crease.position.set(s * eyeX, eyeY + eyeR * 0.42, ez + eyeR * 0.62);
+    crease.rotation.z = Math.PI * 0.19;
+    crease.rotation.x = -0.35;
+    crease.scale.set(1.05, 0.55, 1);
+    (crease.material as THREE.Material).transparent = false;
+    headGroup.add(crease);
     lidPivot.userData.open = 0;
     headGroup.add(lidPivot);
     blinkers.push(lidPivot);
@@ -878,8 +1061,8 @@ export function createChibiAvatar(opts: {
       roughness: 0.8,
     });
     browMat.userData.noRim = true;
-    const bw = feminine ? 0.0019 : 0.0042;
-    const by = feminine ? 0.048 : 0.044;
+    const bw = feminine ? 0.0016 : 0.0038;
+    const by = feminine ? 0.05 : 0.047;
     const inner = capsule(bw, 0.022, browMat);
     inner.rotation.z = Math.PI / 2 + s * (feminine ? 0.18 : 0.06);
     inner.position.set(s * 0.03, by, faceZ(s * 0.03, by) + 0.001);
@@ -901,11 +1084,17 @@ export function createChibiAvatar(opts: {
   bridge.position.set(0, -0.028, faceZ(0, -0.028) - 0.002);
   const tip = new THREE.Mesh(new THREE.SphereGeometry(feminine ? 0.0054 : 0.0074, 16, 12), noseMat);
   tip.position.set(0, -0.045, faceZ(0, -0.045) + 0.0028);
-  headGroup.add(bridge, tip);
-  for (const s of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.SphereGeometry(feminine ? 0.0038 : 0.005, 12, 10), noseMat);
-    wing.position.set(s * 0.0092, -0.049, faceZ(s * 0.0092, -0.049) - 0.001);
-    headGroup.add(wing);
+  // Mũi kiểu anime: nữ chỉ còn đầu mũi nhỏ xinh; nam giữ sống mũi nhẹ
+  if (feminine) {
+    tip.scale.setScalar(0.85);
+    headGroup.add(tip);
+  } else {
+    headGroup.add(bridge, tip);
+    for (const s of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.SphereGeometry(0.005, 12, 10), noseMat);
+      wing.position.set(s * 0.0092, -0.049, faceZ(s * 0.0092, -0.049) - 0.001);
+      headGroup.add(wing);
+    }
   }
 
   // Môi: môi trên + môi dưới đầy đặn hơn
@@ -928,17 +1117,51 @@ export function createChibiAvatar(opts: {
   const mouthLine = capsule(0.0013, 0.026, mouthMat);
   mouthLine.rotation.z = Math.PI / 2;
   mouthLine.position.set(0, -0.0843, faceZ(0, -0.0843) - 0.0008);
+  if (feminine) {
+    upperLip.scale.x = 0.82;
+    lowerLip.scale.x = 0.85;
+    mouthLine.scale.y = 0.8;
+  }
   headGroup.add(upperLip, lowerLip, mouthLine);
-  // Khoé miệng cười nhẹ
+  // Khoé miệng cong lên (cười mỉm)
   for (const s of [-1, 1]) {
-    const corner = new THREE.Mesh(new THREE.SphereGeometry(0.0022, 8, 6), mouthMat);
-    corner.position.set(s * 0.0155, -0.0825, faceZ(s * 0.0155, -0.0825) - 0.0012);
+    const cx = s * (feminine ? 0.0135 : 0.0155);
+    const corner = new THREE.Mesh(new THREE.SphereGeometry(0.0021, 8, 6), mouthMat);
+    corner.position.set(cx, -0.0815, faceZ(cx, -0.0815) - 0.0012);
     headGroup.add(corner);
   }
+  // Khoang miệng: bình thường dẹt bằng 0 (ẩn), khi nói phóng theo y → nhép miệng
+  const mouthOpen = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshStandardMaterial({ color: '#4a1a1c', roughness: 0.8 }));
+  (mouthOpen.material as THREE.Material).userData.noRim = true;
+  mouthOpen.scale.set(feminine ? 0.0105 : 0.012, 0.0001, 0.004);
+  mouthOpen.position.set(0, -0.0855, faceZ(0, -0.0855) - 0.0015);
+  mouthOpen.userData.maxY = feminine ? 0.0058 : 0.0065;
+  mouthOpen.visible = false;
+  headGroup.add(mouthOpen);
 
   // Tóc
   const hair = new THREE.Mesh(createHairGeometry(config.hairStyle), hairMat);
   headGroup.add(hair);
+  // Mái kiểu anime: các lọn thon nhọn rủ xuống trán, rẽ lệch (không che mắt)
+  if (config.hairStyle !== 'slick') {
+    const n = feminine ? 7 : 6;
+    const tipY = feminine ? 0.058 : 0.072;
+    const sweep = feminine ? 0.016 : 0.01;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const x = THREE.MathUtils.lerp(-0.074, 0.074, t);
+      const edge = Math.abs(t - 0.5) * 2; // 0 giữa → 1 rìa
+      const ty = tipY + edge * edge * (feminine ? -0.03 : 0.012) + (i % 2) * 0.006; // rìa dài hơn (nữ) tạo khung mặt
+      const top = new THREE.Vector3(x * 0.6, 0.118, faceZ(x * 0.6, 0.118, 0.016));
+      const mid = new THREE.Vector3(x * 0.95, (0.118 + ty) / 2 + 0.01, faceZ(x * 0.95, (0.118 + ty) / 2, 0.015));
+      const tx = x + sweep * (1 - edge * 0.5);
+      const tip = new THREE.Vector3(tx, ty, faceZ(tx, ty, 0.009));
+      const strand = tube([top, mid, tip], feminine ? 0.012 : 0.013, 0.0012, hairMat);
+      strand.scale.z = 0.7;
+      strand.position.z = 0.002;
+      headGroup.add(strand);
+    }
+  }
   if (config.hairStyle === 'long') {
     const curtainMat = hairMat.clone();
     curtainMat.side = THREE.DoubleSide;
@@ -986,6 +1209,7 @@ export function createChibiAvatar(opts: {
     headGroup.add(nb);
   }
 
+  headGroup.scale.setScalar(1.05); // đầu to hơn chút cho tỉ lệ "xinh"
   group.add(headGroup);
 
   // Nhãn tên nổi
@@ -1019,8 +1243,13 @@ export function createChibiAvatar(opts: {
     rightKnee: knees[1],
     leftElbow: elbows[0],
     rightElbow: elbows[1],
-    stride: isDress ? 0.42 : 1,
+    stride: isDress ? 0.42 : pencilSkirt ? 0.34 : 1,
     skirt: skirtGroup,
+    skirtSitX: pencilSkirt ? -1.25 : -0.95,
+    mouth: mouthOpen,
+    eyes,
+    sparkles,
+    gaze: { x: 0, y: 0, tx: 0, ty: 0, at: 1 + Math.random() * 2 },
   };
 }
 
@@ -1031,6 +1260,90 @@ export function animateAvatarIdle(av: AnimatedAvatar, time: number): void {
   const k = time >= av.blinkAt ? Math.sin(((time - av.blinkAt) / 0.16) * Math.PI) : 0;
   const close = Math.max(0, k) * 1.55;
   for (const b of av.blinkers) b.rotation.x = close;
+  const showSpark = close < 0.7;
+  for (const sp of av.sparkles) sp.visible = showSpark;
+  // Ánh mắt đảo nhẹ tự nhiên (mỗi 1.5–4s), phần lớn thời gian nhìn thẳng
+  const g = av.gaze;
+  if (time > g.at) {
+    const center = Math.random() < 0.55;
+    g.tx = center ? 0 : (Math.random() - 0.5) * 0.36;
+    g.ty = center ? 0 : (Math.random() - 0.5) * 0.14;
+    g.at = time + 1.5 + Math.random() * 2.5;
+  }
+  g.x += (g.tx - g.x) * 0.25;
+  g.y += (g.ty - g.y) * 0.25;
+  for (const e of av.eyes) {
+    e.rotation.y = (e.userData.baseRotY ?? 0) + g.x;
+    e.rotation.x = -g.y;
+  }
+}
+
+/**
+ * Biểu cảm nhanh, t = 0..1 trong suốt thời lượng. Gọi SAU các tư thế khác (ghi đè có trộn mượt theo e).
+ * Tay "rightArm" nằm ở +x của nhân vật.
+ */
+export function poseEmote(av: AnimatedAvatar, kind: 'wave' | 'nod' | 'bow' | 'clap' | 'sip' | 'brew', t: number, time: number): void {
+  const e = Math.sin(Math.PI * Math.min(1, Math.max(0, t))); // vào – ra mềm
+  const mix = (cur: number, to: number) => cur + (to - cur) * e;
+  switch (kind) {
+    case 'wave':
+      av.rightArm.rotation.z = mix(av.rightArm.rotation.z, 2.55 + Math.sin(time * 12) * 0.22);
+      av.rightArm.rotation.x = mix(av.rightArm.rotation.x, -0.15);
+      av.rightElbow.rotation.x = mix(av.rightElbow.rotation.x, -0.35);
+      av.headGroup.rotation.z = mix(av.headGroup.rotation.z, 0.08);
+      break;
+    case 'nod':
+      av.headGroup.rotation.x = mix(av.headGroup.rotation.x, 0.06 + Math.abs(Math.sin(time * 9)) * 0.24);
+      break;
+    case 'bow':
+      av.group.rotation.x = 0.32 * e; // cúi người về trước
+      av.headGroup.rotation.x = mix(av.headGroup.rotation.x, 0.25);
+      for (const arm of [av.leftArm, av.rightArm]) arm.rotation.x = mix(arm.rotation.x, 0.1);
+      break;
+    case 'sip':
+      // Nâng ly lên miệng (tay +x), đầu hơi ngửa
+      av.rightArm.rotation.x = mix(av.rightArm.rotation.x, -1.05);
+      av.rightArm.rotation.z = mix(av.rightArm.rotation.z, -0.32);
+      av.rightElbow.rotation.x = mix(av.rightElbow.rotation.x, -1.95);
+      av.headGroup.rotation.x = mix(av.headGroup.rotation.x, -0.12);
+      break;
+    case 'brew':
+      // Pha chế ở quầy: hai tay đưa ra trước thao tác, nhìn xuống mặt quầy
+      av.leftArm.rotation.x = mix(av.leftArm.rotation.x, -0.75 + Math.sin(time * 3.2) * 0.12);
+      av.rightArm.rotation.x = mix(av.rightArm.rotation.x, -0.8 + Math.sin(time * 2.1 + 1) * 0.18);
+      av.leftElbow.rotation.x = mix(av.leftElbow.rotation.x, -1.0);
+      av.rightElbow.rotation.x = mix(av.rightElbow.rotation.x, -1.1 + Math.sin(time * 4) * 0.15);
+      av.headGroup.rotation.x = mix(av.headGroup.rotation.x, 0.22);
+      break;
+    case 'clap': {
+      const c = Math.sin(time * 22) * 0.1;
+      av.leftArm.rotation.x = mix(av.leftArm.rotation.x, -1.0);
+      av.rightArm.rotation.x = mix(av.rightArm.rotation.x, -1.0);
+      av.leftArm.rotation.z = mix(av.leftArm.rotation.z, 0.32 + c);
+      av.rightArm.rotation.z = mix(av.rightArm.rotation.z, -0.32 - c);
+      av.leftElbow.rotation.x = mix(av.leftElbow.rotation.x, -1.15);
+      av.rightElbow.rotation.x = mix(av.rightElbow.rotation.x, -1.15);
+      break;
+    }
+  }
+}
+
+/** Đang nói: nhép miệng theo nhịp, gật đầu & tay phải khẽ đưa lên. talking=false → khép miệng dần. */
+export function poseTalk(av: AnimatedAvatar, time: number, talking: boolean, gesture = true): void {
+  const m = av.mouth;
+  if (m) {
+    const maxY = (m.userData.maxY as number) ?? 0.006;
+    const target = talking ? maxY * (0.25 + 0.75 * Math.abs(Math.sin(time * 13) * Math.sin(time * 4.7 + 1))) : 0.0001;
+    m.scale.y += (target - m.scale.y) * 0.45;
+    m.visible = m.scale.y > 0.0004;
+  }
+  if (!talking) return;
+  av.headGroup.rotation.x += Math.sin(time * 3.1) * 0.0035;
+  av.headGroup.rotation.z = Math.sin(time * 1.7) * 0.035;
+  if (gesture) {
+    av.rightElbow.rotation.x = -0.35 - (0.35 + 0.25 * Math.sin(time * 2.3)) * 0.8;
+    av.rightArm.rotation.x = -0.18 - 0.1 * Math.sin(time * 2.3);
+  }
 }
 
 let blobGeo: THREE.PlaneGeometry | null = null;
@@ -1086,47 +1399,102 @@ export function disposeObject(root: THREE.Object3D) {
   });
 }
 
-/** Bong bóng chat (HTML) nằm ngay trên nhãn tên — chữ sắc nét, tự xuống dòng. */
-export function createBubbleSprite(text: string): CSS2DObject {
-  const el = document.createElement('div');
-  el.style.cssText = [
-    'position:relative',
-    'max-width:220px',
-    'padding:7px 11px',
-    'margin-bottom:30px',
-    'border-radius:14px',
-    'background:#ffffff',
-    'color:#0f172a',
-    `font:500 13px/1.35 ${LABEL_FONT}`,
-    'box-shadow:0 6px 18px rgba(15,23,42,0.25)',
-    'pointer-events:none',
-    'word-wrap:break-word',
-    '-webkit-font-smoothing:antialiased',
-  ].join(';');
-  el.textContent = text;
-  const tail = document.createElement('span');
-  tail.style.cssText = 'position:absolute;left:50%;bottom:-6px;width:12px;height:12px;background:#fff;transform:translateX(-50%) rotate(45deg);border-radius:2px';
-  el.append(tail);
-  return htmlLabel(el, 1.88);
+let bubbleCssReady = false;
+function ensureBubbleCss() {
+  if (bubbleCssReady || typeof document === 'undefined') return;
+  const st = document.createElement('style');
+  st.textContent = [
+    '@keyframes wh3dPop{0%{transform:scale(.55) translateY(10px);opacity:0}65%{transform:scale(1.05) translateY(0);opacity:1}100%{transform:scale(1)}}',
+    '@keyframes wh3dDot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}',
+    '.wh3d-pop{animation:wh3dPop .34s cubic-bezier(.2,.9,.3,1.25) both;transform-origin:50% 100%}',
+    '.wh3d-dot{display:inline-block;width:6px;height:6px;margin:0 2px;border-radius:99px;background:#64748b;animation:wh3dDot 1.2s infinite}',
+    '.wh3d-dot:nth-child(2){animation-delay:.15s}.wh3d-dot:nth-child(3){animation-delay:.3s}',
+  ].join('');
+  document.head.append(st);
+  bubbleCssReady = true;
 }
 
-/** Hiện / ẩn / thay bong bóng theo nội dung hiện tại (chỉ tạo texture khi text đổi). */
-export function syncBubble(slot: BubbleSlot, parent: THREE.Object3D, text: string | null) {
-  if (!text) {
+/** Bong bóng hội thoại (HTML) trên đầu nhân vật: câu trước nhỏ & mờ phía trên, câu mới nảy lên, có trạng thái "đang nhập…". */
+export function createBubbleSprite(): CSS2DObject {
+  ensureBubbleCss();
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:30px;pointer-events:none;-webkit-font-smoothing:antialiased';
+  const prev = document.createElement('div');
+  prev.style.cssText = [
+    'max-width:190px',
+    'padding:4px 9px',
+    'border-radius:11px',
+    'background:rgba(255,255,255,0.78)',
+    'color:#334155',
+    `font:500 11.5px/1.3 ${LABEL_FONT}`,
+    'opacity:0.75',
+    'display:none',
+    'word-wrap:break-word',
+    'box-shadow:0 3px 10px rgba(15,23,42,0.15)',
+  ].join(';');
+  const main = document.createElement('div');
+  main.style.cssText = [
+    'position:relative',
+    'max-width:230px',
+    'padding:7px 12px',
+    'border-radius:15px',
+    'background:#ffffff',
+    'color:#0f172a',
+    `font:500 13px/1.38 ${LABEL_FONT}`,
+    'box-shadow:0 6px 18px rgba(15,23,42,0.25)',
+    'word-wrap:break-word',
+    'text-align:left',
+  ].join(';');
+  wrap.append(prev, main);
+  const obj = htmlLabel(wrap, 1.9);
+  obj.userData.bubble = { prev, main, key: '' };
+  return obj;
+}
+
+/**
+ * Đồng bộ bong bóng của 1 nhân vật. text = câu đang nói (null = không), typing = đang nhập.
+ * Phần tử DOM được dùng lại; chỉ khi nội dung đổi mới chạy hiệu ứng nảy.
+ */
+export function syncBubble(slot: BubbleSlot, parent: THREE.Object3D, text: string | null, typing = false, prevText?: string | null) {
+  if (!text && !typing) {
     if (slot.sprite) slot.sprite.visible = false;
+    slot.text = '';
     return;
   }
-  if (slot.text !== text || !slot.sprite) {
-    if (slot.sprite) slot.sprite.parent?.remove(slot.sprite);
-    slot.sprite = createBubbleSprite(text);
-    slot.text = text;
+  if (!slot.sprite) slot.sprite = createBubbleSprite();
+  const ui = slot.sprite.userData.bubble as { prev: HTMLDivElement; main: HTMLDivElement; key: string };
+  const key = text ? `t:${text}` : 'typing';
+  if (ui.key !== key) {
+    ui.key = key;
+    ui.main.textContent = '';
+    if (text) {
+      ui.main.append(document.createTextNode(text));
+    } else {
+      for (let i = 0; i < 3; i++) {
+        const d = document.createElement('span');
+        d.className = 'wh3d-dot';
+        ui.main.append(d);
+      }
+    }
+    const tail = document.createElement('span');
+    tail.style.cssText = 'position:absolute;left:50%;bottom:-6px;width:12px;height:12px;background:#fff;transform:translateX(-50%) rotate(45deg);border-radius:2px';
+    ui.main.append(tail);
+    ui.main.style.padding = text ? '7px 12px' : '9px 12px';
+    // Chạy lại hiệu ứng nảy
+    ui.main.classList.remove('wh3d-pop');
+    void ui.main.offsetWidth;
+    ui.main.classList.add('wh3d-pop');
   }
+  const pv = text && prevText ? prevText : '';
+  if (ui.prev.textContent !== pv) ui.prev.textContent = pv;
+  ui.prev.style.display = pv ? '' : 'none';
+  slot.text = text ?? '';
   if (slot.sprite.parent !== parent) parent.add(slot.sprite);
   slot.sprite.visible = true;
 }
 
 export function remoteSig(m: RemotePlayerMeta) {
   const a = m.avatar;
-  return `${m.employeeName}|${m.onDuty}|${a.outfitStyle}|${a.outfitColor}|${a.pantsColor}|${a.hairStyle}|${a.hairColor}|${a.skinTone}|${a.hasGlasses}`;
+  return `${m.employeeName}|${m.onDuty}|${a.outfitStyle}|${a.outfitColor}|${a.pantsColor}|${a.bottomStyle}|${a.hairStyle}|${a.hairColor}|${a.skinTone}|${a.hasGlasses}`;
 }
 

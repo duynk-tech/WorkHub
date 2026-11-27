@@ -83,3 +83,16 @@ export function mergeStaticGroup(root: THREE.Object3D): THREE.Group {
   }
   return out;
 }
+
+/**
+ * Đóng băng ma trận cục bộ của mọi node con (đồ đạc tĩnh) → mỗi khung hình three.js không phải
+ * compose lại hàng nghìn ma trận. Gốc vẫn tự cập nhật nên kéo thả/xoay vật thể vẫn đúng.
+ */
+export function freezeStaticDescendants(root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (o === root || (o as { isCSS2DObject?: boolean }).isCSS2DObject) return;
+    o.updateMatrix();
+    o.matrixAutoUpdate = false;
+  });
+}

@@ -33,6 +33,12 @@ interface Props {
   guestName: string;
   onClose: () => void;
   glassStyle: React.CSSProperties;
+  /** Câu mình vừa nói → hiện bong bóng trên đầu mình (mọi người xung quanh cùng thấy) */
+  onSpeak?: (text: string) => void;
+  /** Đang gõ phím → báo "đang nhập…" */
+  onTyping?: () => void;
+  /** Câu trả lời AI đang chạy chữ → bong bóng trên đầu nhân viên được hỏi (chỉ mình thấy) */
+  onAssistantText?: (text: string | null) => void;
 }
 
 type Msg = { id: string; role: 'user' | 'assistant' | 'staff'; text: string; streaming?: boolean };
@@ -100,7 +106,7 @@ function AssistantBubble({ msg }: { msg: Msg }) {
   );
 }
 
-export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, glassStyle }: Props) {
+export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, glassStyle, onSpeak, onTyping, onAssistantText }: Props) {
   // Nhân viên bật AI, hoặc không online → trợ lý AI trả lời thay
   const useAi = askerIsStaff || target.chatMode === 'AI' || !target.online;
   const [aiMode, setAiMode] = useState(useAi);
@@ -211,6 +217,7 @@ export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, gla
         acc += decoder.decode(value, { stream: true });
         const snapshot = acc;
         setMsgs((prev) => prev.map((m) => (m.id === assistantId ? { ...m, text: snapshot } : m)));
+        onAssistantText?.(snapshot);
       }
       setMsgs((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false, text: m.text || '⚠️ Trợ lý AI chưa phản hồi, vui lòng thử lại sau giây lát.' } : m)));
     } catch (e) {
@@ -238,6 +245,7 @@ export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, gla
     if (!text || busy) return;
     setDraft('');
     setError(null);
+    onSpeak?.(text);
     if (aiMode) void sendAi(text);
     else void sendLive(text);
   };
@@ -314,7 +322,10 @@ export function SpaceVisitorChat({ target, askerIsStaff, guestName, onClose, gla
       >
         <input
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (e.target.value) onTyping?.();
+          }}
           maxLength={1000}
           autoFocus
           placeholder={aiMode ? 'Hỏi về máy, thiết bị, giá…' : `Nhắn cho ${target.name}…`}

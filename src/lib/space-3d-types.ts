@@ -2,13 +2,21 @@ import { SPACE_OBJECT_DEF_MAP } from './space-3d-catalog';
 
 export type SpaceKind = 'SHOWROOM' | 'WAREHOUSE' | 'CAFE' | 'OFFICE';
 export type Product3DType = 'BOX_PRESET' | 'PROCEDURAL_JSON' | 'GLB';
-export type AvatarOutfitStyle = 'suit' | 'dress' | 'shirt' | 'polo';
+export type AvatarOutfitStyle = 'uniform' | 'suit' | 'dress' | 'shirt' | 'polo';
+/** Phần dưới của đồng phục / sơ mi: quần tây hoặc chân váy bút chì */
+export type AvatarBottomStyle = 'pants' | 'skirt';
+
+/** Đồng phục TIM Corp: áo sơ mi có logo (trắng hoặc xanh đậm) + quần tây / chân váy xanh đậm */
+export const UNIFORM_WHITE = '#f8fafc';
+export const UNIFORM_NAVY = '#1f2f57';
+export const UNIFORM_BOTTOM_NAVY = '#1b2540';
 export type AvatarHairStyle = 'slick' | 'short' | 'bob' | 'ponytail' | 'long' | 'bun';
 
 export interface Avatar3DConfig {
   outfitStyle: AvatarOutfitStyle;
   outfitColor: string;
   pantsColor: string;
+  bottomStyle: AvatarBottomStyle;
   hairStyle: AvatarHairStyle;
   hairColor: string;
   skinTone: string;
@@ -16,9 +24,10 @@ export interface Avatar3DConfig {
 }
 
 export const DEFAULT_AVATAR_3D_CONFIG: Avatar3DConfig = {
-  outfitStyle: 'suit',
-  outfitColor: '#1e3a8a',
-  pantsColor: '#1e293b',
+  outfitStyle: 'uniform',
+  outfitColor: UNIFORM_WHITE,
+  pantsColor: UNIFORM_BOTTOM_NAVY,
+  bottomStyle: 'pants',
   hairStyle: 'slick',
   hairColor: '#1c1917',
   skinTone: '#fce2c4',
@@ -29,7 +38,7 @@ export function normalizeAvatar3DConfig(raw: unknown): Avatar3DConfig {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_AVATAR_3D_CONFIG };
   const r = raw as Record<string, unknown>;
   const outfitStyle: AvatarOutfitStyle =
-    r.outfitStyle === 'suit' || r.outfitStyle === 'dress' || r.outfitStyle === 'shirt' || r.outfitStyle === 'polo'
+    r.outfitStyle === 'uniform' || r.outfitStyle === 'suit' || r.outfitStyle === 'dress' || r.outfitStyle === 'shirt' || r.outfitStyle === 'polo'
       ? r.outfitStyle
       : DEFAULT_AVATAR_3D_CONFIG.outfitStyle;
   const hairStyle: AvatarHairStyle =
@@ -40,6 +49,7 @@ export function normalizeAvatar3DConfig(raw: unknown): Avatar3DConfig {
     outfitStyle,
     outfitColor: typeof r.outfitColor === 'string' && r.outfitColor.startsWith('#') ? r.outfitColor : DEFAULT_AVATAR_3D_CONFIG.outfitColor,
     pantsColor: typeof r.pantsColor === 'string' && r.pantsColor.startsWith('#') ? r.pantsColor : DEFAULT_AVATAR_3D_CONFIG.pantsColor,
+    bottomStyle: r.bottomStyle === 'skirt' ? 'skirt' : 'pants',
     hairStyle,
     hairColor: typeof r.hairColor === 'string' && r.hairColor.startsWith('#') ? r.hairColor : DEFAULT_AVATAR_3D_CONFIG.hairColor,
     skinTone: typeof r.skinTone === 'string' && r.skinTone.startsWith('#') ? r.skinTone : DEFAULT_AVATAR_3D_CONFIG.skinTone,
@@ -253,6 +263,10 @@ export interface RemotePlayerState {
 export interface RemoteBubble {
   text: string;
   expiresAt: number;
+  /** Lúc bắt đầu nói (để nhép miệng trong talkDurationMs) */
+  startedAt?: number;
+  /** Câu trước đó (hiện nhỏ, mờ phía trên) */
+  prev?: string;
 }
 
 export interface SpaceDmMessage {

@@ -17,7 +17,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/dashboard', label: 'Tổng quan', icon: 'LayoutDashboard', permission: 'MENU_DASHBOARD' },
       { href: '/approvals', label: 'Chờ duyệt', icon: 'CheckSquare', permission: 'MENU_APPROVALS', badgeKey: 'pendingApprovals' },
-      { href: '/3d', label: 'Không gian 3D (Beta)', icon: 'Boxes' },
+      { href: '/3d', label: 'TIM Space (Beta)', icon: 'Boxes' },
     ],
   },
   {

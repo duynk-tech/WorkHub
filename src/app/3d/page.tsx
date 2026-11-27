@@ -3,8 +3,8 @@ import { loadSpace3DData } from '@/server/modules/space3d/service';
 import { Space3DExperience } from '@/components/space3d/space-3d-experience';
 
 export const metadata = {
-  title: 'Không gian 3D & Showroom (Beta)',
-  description: 'Tham quan Showroom 3D, Văn phòng ảo và Kho hàng Digital Twin',
+  title: 'TIM Space — Showroom & Café ảo (Beta)',
+  description: 'TIM Space: tham quan showroom thiết bị, quán cà phê, văn phòng và kho hàng ảo của TIM Corp',
 };
 
 export const dynamic = 'force-dynamic';

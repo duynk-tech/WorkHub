@@ -10,6 +10,16 @@ import {
   type RemotePlayerState,
   type SpaceDmMessage,
 } from '@/lib/space-3d-types';
+import { bubbleTtlMs, clipBubbleText, isSpaceEmote, TYPING_THROTTLE_MS, TYPING_TTL_MS, type SpaceEmote } from '@/lib/space-3d-chat';
+
+/** Ghi 1 câu mới vào bản đồ bong bóng (giữ câu trước để hiện nhỏ phía trên). */
+export function pushBubble(map: Map<number, RemoteBubble>, id: number, raw: string, now = Date.now()) {
+  const text = clipBubbleText(raw);
+  if (!text) return;
+  const old = map.get(id);
+  const prev = old && old.expiresAt > now && old.text !== text ? old.text : undefined;
+  map.set(id, { text, expiresAt: now + bubbleTtlMs(text), startedAt: now, prev });
+}
 
 export interface IncomingDm {
   message: SpaceDmMessage;
@@ -25,6 +35,8 @@ interface Options {
   guestKey?: string | null;
   playerPosRef: React.MutableRefObject<{ x: number; z: number; rotY: number; sit?: number }>;
   onDm?: (dm: IncomingDm) => void;
+  /** Có đơn gọi món mới / đổi trạng thái (server phát) → tải lại danh sách đơn */
+  onOrder?: () => void;
   /** Khách tham quan nhắn cho nhân viên này (chế độ trả lời trực tiếp) */
   onGuest?: (evt: { guestKey: string; message: { id: number; fromGuest: boolean; body: string; createdAt: string; guestName: string } }) => void;
 }
@@ -34,7 +46,6 @@ export type RealtimeStatus = 'off' | 'connecting' | 'live' | 'error';
 const MOVE_INTERVAL_MS = 100;
 const MOVE_EPS = 0.02;
 const ROT_EPS = (2 * Math.PI) / 180;
-const BUBBLE_TTL_MS = 5000;
 
 function sanitizeMeta(raw: Record<string, unknown>): RemotePlayerMeta | null {
   const id = Number(raw.employeeId);
@@ -62,11 +73,18 @@ function sanitizeMeta(raw: Record<string, unknown>): RemotePlayerMeta | null {
  * - Bong bóng chat gần (Broadcast `bubble`) → `bubbleRef`
  * - Tin nhắn 1-1 (kênh `dm:<id>`, server gửi) → callback `onDm`
  */
-export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRef, onDm, onGuest }: Options) {
+export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRef, onDm, onGuest, onOrder }: Options) {
   const [status, setStatus] = useState<RealtimeStatus>('off');
   const [roster, setRoster] = useState<RemotePlayerMeta[]>([]);
   const remoteStateRef = useRef(new Map<number, RemotePlayerState>());
   const bubbleRef = useRef(new Map<number, RemoteBubble>());
+  /** id → hạn hiển thị "đang nhập…" */
+  const typingRef = useRef(new Map<number, number>());
+  /** id → biểu cảm đang diễn */
+  const emoteRef = useRef(new Map<number, { kind: SpaceEmote; at: number }>());
+  const lastTypingSentRef = useRef(0);
+  const onOrderRef = useRef(onOrder);
+  onOrderRef.current = onOrder;
   const channelRef = useRef<RealtimeChannel | null>(null);
   const rosterIdsRef = useRef(new Set<number>());
   const selfRef = useRef(self);
@@ -88,6 +106,8 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
     const lastSent = { x: NaN, z: NaN, r: NaN, moving: false, sit: 0 };
     const remoteState = remoteStateRef.current;
     const bubbles = bubbleRef.current;
+    const typing = typingRef.current;
+    const emotes = emoteRef.current;
 
     const sendMove = (force = false) => {
       const ch = channelRef.current;
@@ -132,6 +152,8 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
       }
       for (const id of [...remoteState.keys()]) if (!ids.has(id)) remoteState.delete(id);
       for (const id of [...bubbles.keys()]) if (!ids.has(id)) bubbles.delete(id);
+      for (const id of [...typing.keys()]) if (!ids.has(id)) typing.delete(id);
+      for (const id of [...emotes.keys()]) if (!ids.has(id)) emotes.delete(id);
       rosterIdsRef.current = ids;
       setRoster(next);
     };
@@ -192,8 +214,25 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
         .on('broadcast', { event: 'bubble' }, ({ payload }) => {
           const id = Number(payload?.id);
           if (!rosterIdsRef.current.has(id)) return;
-          const text = String(payload?.text ?? '').trim().slice(0, 140);
-          if (text) bubbles.set(id, { text, expiresAt: Date.now() + BUBBLE_TTL_MS });
+          const text = String(payload?.text ?? '').trim().slice(0, 400);
+          if (text) {
+            pushBubble(bubbles, id, text);
+            typing.delete(id);
+          }
+        })
+        .on('broadcast', { event: 'typing' }, ({ payload }) => {
+          const id = Number(payload?.id);
+          if (!rosterIdsRef.current.has(id)) return;
+          if (payload?.on === false) typing.delete(id);
+          else typing.set(id, Date.now() + TYPING_TTL_MS);
+        })
+        .on('broadcast', { event: 'emote' }, ({ payload }) => {
+          const id = Number(payload?.id);
+          if (!rosterIdsRef.current.has(id) || !isSpaceEmote(payload?.kind)) return;
+          emotes.set(id, { kind: payload.kind, at: Date.now() });
+        })
+        .on('broadcast', { event: 'order' }, () => {
+          onOrderRef.current?.();
         })
         .subscribe(async (st) => {
           if (cancelled) return;
@@ -239,6 +278,8 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
       }
       remoteState.clear();
       bubbles.clear();
+      typing.clear();
+      emotes.clear();
       rosterIdsRef.current = new Set();
       setRoster([]);
       setStatus('off');
@@ -257,12 +298,50 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
   const sendBubble = useCallback((text: string) => {
     const ch = channelRef.current;
     const me = selfRef.current;
-    const clean = text.trim().slice(0, 140);
+    const clean = text.trim().slice(0, 400);
     if (!ch || !me || !clean) return false;
     void ch.send({ type: 'broadcast', event: 'bubble', payload: { id: me.employeeId, text: clean } });
-    bubbleRef.current.set(me.employeeId, { text: clean, expiresAt: Date.now() + BUBBLE_TTL_MS });
+    pushBubble(bubbleRef.current, me.employeeId, clean);
+    lastTypingSentRef.current = 0;
     return true;
   }, []);
 
-  return { status, roster, remoteStateRef, bubbleRef, sendBubble };
+  /** Báo "đang nhập…" cho người xung quanh (tối đa 1 lần / 2 giây). on=false → tắt ngay. */
+  const sendTyping = useCallback((on = true) => {
+    const ch = channelRef.current;
+    const me = selfRef.current;
+    if (!ch || !me) return;
+    const now = Date.now();
+    if (on && now - lastTypingSentRef.current < TYPING_THROTTLE_MS) return;
+    lastTypingSentRef.current = on ? now : 0;
+    void ch.send({ type: 'broadcast', event: 'typing', payload: { id: me.employeeId, on } });
+  }, []);
+
+  /** Biểu cảm nhanh (vẫy tay, gật đầu, cúi chào, vỗ tay) — mọi người cùng thấy. */
+  const sendEmote = useCallback((kind: SpaceEmote) => {
+    const ch = channelRef.current;
+    const me = selfRef.current;
+    if (!me) return;
+    emoteRef.current.set(me.employeeId, { kind, at: Date.now() });
+    if (ch) void ch.send({ type: 'broadcast', event: 'emote', payload: { id: me.employeeId, kind } });
+  }, []);
+
+  /** Bong bóng chỉ hiện ở máy mình (ví dụ câu trả lời AI trên đầu nhân viên được hỏi). */
+  const setLocalBubble = useCallback((id: number, text: string | null) => {
+    if (!text) {
+      bubbleRef.current.delete(id);
+      return;
+    }
+    const clip = clipBubbleText(text);
+    const cur = bubbleRef.current.get(id);
+    const now = Date.now();
+    // Đang chạy chữ: giữ nguyên lúc bắt đầu, chỉ cập nhật nội dung & gia hạn
+    if (cur && cur.expiresAt > now && clip.startsWith(cur.text.replace(/…$/, '').slice(0, 20))) {
+      bubbleRef.current.set(id, { ...cur, text: clip, expiresAt: now + bubbleTtlMs(clip) });
+    } else {
+      pushBubble(bubbleRef.current, id, text, now);
+    }
+  }, []);
+
+  return { status, roster, remoteStateRef, bubbleRef, typingRef, emoteRef, sendBubble, sendTyping, sendEmote, setLocalBubble };
 }

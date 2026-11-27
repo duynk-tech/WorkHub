@@ -215,3 +215,21 @@ describe('chỗ ngồi', () => {
     expect(seatsFor(createObject('TABLE_ROUND', 0, 0, [])!)).toHaveLength(0);
   });
 });
+
+describe('đồng phục nhân viên', () => {
+  it('mặc định là đồng phục áo trắng + quần tây xanh đậm', async () => {
+    const { normalizeAvatar3DConfig, UNIFORM_WHITE, UNIFORM_BOTTOM_NAVY } = await import('@/lib/space-3d-types');
+    const c = normalizeAvatar3DConfig(null);
+    expect(c.outfitStyle).toBe('uniform');
+    expect(c.outfitColor).toBe(UNIFORM_WHITE);
+    expect(c.pantsColor).toBe(UNIFORM_BOTTOM_NAVY);
+    expect(c.bottomStyle).toBe('pants');
+  });
+  it('giữ chân váy, cấu hình cũ không có bottomStyle → quần tây', async () => {
+    const { normalizeAvatar3DConfig } = await import('@/lib/space-3d-types');
+    expect(normalizeAvatar3DConfig({ outfitStyle: 'uniform', bottomStyle: 'skirt' }).bottomStyle).toBe('skirt');
+    const old = normalizeAvatar3DConfig({ outfitStyle: 'dress', outfitColor: '#1e3a8a' });
+    expect(old.outfitStyle).toBe('dress');
+    expect(old.bottomStyle).toBe('pants');
+  });
+});

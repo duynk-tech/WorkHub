@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import {
   Eye, Sun, Moon, Map as MapIcon, Package, Building2, Wrench, Sparkles, Upload,
   Save, RotateCw, Move, Trash2, Plus, X, ArrowLeft, UserCheck, LogIn, Search, Compass, Shirt,
-  MessageCircle, Settings2, ChevronDown, Users,
+  MessageCircle, Settings2, ChevronDown, Users, Smile, Coffee, ClipboardList, Volume2, VolumeX,
 } from 'lucide-react';
 import {
   DEFAULT_AVATAR_3D_CONFIG,
@@ -22,6 +22,10 @@ import {
   type SpacePresenceView,
   type SpaceStructure,
   normalizeSpaceObject,
+  UNIFORM_BOTTOM_NAVY,
+  UNIFORM_NAVY,
+  UNIFORM_WHITE,
+  type AvatarBottomStyle,
 } from '@/lib/space-3d-types';
 import {
   generateProduct3DAction,
@@ -34,6 +38,11 @@ import {
 } from '@/server/modules/space3d/actions';
 import type { TeleportTarget } from './space-3d-canvas';
 import { useSpaceRealtime, type IncomingDm } from './use-space-realtime';
+import { SpaceCafeMenu } from './space-cafe-menu';
+import { SpaceCafeOrders } from './space-cafe-orders';
+import { playChime, startCafeAmbience } from './space-sound';
+import { getCafeStateAction, placeDrinkOrderAction, updateDrinkOrderAction } from '@/server/modules/space3d/cafe-actions';
+import { DEFAULT_CAFE_MENU, orderSummary, type CafeMenuItem, type DrinkOrderView, type OrderLine } from '@/lib/space-3d-cafe-menu';
 import { SpaceChatPanel, type ChatPeer } from './space-chat-panel';
 import { SpaceVisitorChat, type VisitorChatTarget } from './space-visitor-chat';
 import { SpaceGuestInbox, type GuestEvent } from './space-guest-inbox';
@@ -47,6 +56,7 @@ import { templateFor } from '@/lib/space-3d-templates';
 import { resolveMerchItems } from '@/lib/space-3d-merch';
 import { DEMO_PRODUCT_MAP } from '@/lib/space-3d-demo-products';
 import { getOrCreateGuestKey, guestNumericId } from '@/lib/space-3d-guest';
+import { SPACE_EMOTES } from '@/lib/space-3d-chat';
 import {
   ROTATE_STEP,
   clampInside,
@@ -69,7 +79,7 @@ const Space3DCanvas = dynamic(
     ssr: false,
     loading: () => (
       <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: '#0f172a', color: '#e2e8f0', fontSize: 14 }}>
-        Đang khởi tạo không gian 3D…
+        Đang khởi tạo TIM Space…
       </div>
     ),
   },
@@ -80,9 +90,17 @@ type DockTab = 'none' | 'departments' | 'products' | 'design' | 'map';
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(Math.round(n))} ₫`;
 
 /** Phong cách đẹp nhất mặc định cho khách theo giới tính */
+/** Đồng phục nhân viên TIM Corp: áo trắng / xanh đậm có logo, quần tây (nam) hoặc chân váy (nữ) xanh đậm */
+const UNIFORM_PRESETS: { key: string; label: string; outfitColor: string; bottomStyle: AvatarBottomStyle }[] = [
+  { key: 'w-pants', label: 'Áo trắng · Quần tây', outfitColor: UNIFORM_WHITE, bottomStyle: 'pants' },
+  { key: 'w-skirt', label: 'Áo trắng · Chân váy', outfitColor: UNIFORM_WHITE, bottomStyle: 'skirt' },
+  { key: 'n-pants', label: 'Áo xanh · Quần tây', outfitColor: UNIFORM_NAVY, bottomStyle: 'pants' },
+  { key: 'n-skirt', label: 'Áo xanh · Chân váy', outfitColor: UNIFORM_NAVY, bottomStyle: 'skirt' },
+];
+
 const GUEST_PRESETS: Record<'male' | 'female', Avatar3DConfig> = {
-  male: { outfitStyle: 'suit', outfitColor: '#1e3a8a', pantsColor: '#1e293b', hairStyle: 'slick', hairColor: '#1c1917', skinTone: '#f1c9a5', hasGlasses: false },
-  female: { outfitStyle: 'dress', outfitColor: '#1e3a8a', pantsColor: '#1e293b', hairStyle: 'long', hairColor: '#2b1b14', skinTone: '#f6d5bd', hasGlasses: false },
+  male: { outfitStyle: 'suit', outfitColor: '#1e3a8a', pantsColor: '#1e293b', bottomStyle: 'pants', hairStyle: 'slick', hairColor: '#1c1917', skinTone: '#f1c9a5', hasGlasses: false },
+  female: { outfitStyle: 'dress', outfitColor: '#1e3a8a', pantsColor: '#1e293b', bottomStyle: 'pants', hairStyle: 'long', hairColor: '#2b1b14', skinTone: '#f6d5bd', hasGlasses: false },
 };
 
 /** Khách tham quan nhàn rỗi quá 30 phút → thoát về màn hình chào */
@@ -298,6 +316,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const [chatUnread, setChatUnread] = useState(0);
   const [selectedRemoteId, setSelectedRemoteId] = useState<number | null>(null);
   const [bubbleOpen, setBubbleOpen] = useState(false);
+  const [emoteOpen, setEmoteOpen] = useState(false);
   const [bubbleDraft, setBubbleDraft] = useState('');
   const dmHandlerRef = useRef<((dm: IncomingDm) => void) | null>(null);
   // Chế độ trả lời khách của nhân viên + khung hỏi đáp khách ↔ nhân viên / AI
@@ -354,7 +373,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     }
   }, [cu]);
 
+  const cafeRefreshRef = useRef<(() => void) | null>(null);
   const realtime = useSpaceRealtime({
+    onOrder: () => cafeRefreshRef.current?.(),
     sceneCode: data.activeScene.code,
     self: realtimeSelf,
     guestKey: cu ? null : guestKey,
@@ -393,6 +414,130 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   }, [realtimeLive, realtime.roster, realtime.remoteStateRef, data.presences, dockTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const onDutyCount = livePresences.filter((p) => p.status === 'ON_DUTY').length;
   const guestOnlineCount = realtime.roster.filter((r) => r.isGuest).length;
+
+  // ───── Khách mới vào → báo ngay cho nhân viên đang online (realtime) ─────
+  const [guestArrivals, setGuestArrivals] = useState<{ id: number; name: string; at: number }[]>([]);
+  const knownGuestsRef = useRef<Set<number> | null>(null);
+  const guestSeenAtRef = useRef(new Map<number, number>());
+  const liveSinceRef = useRef(0);
+  useEffect(() => {
+    if (realtimeLive) liveSinceRef.current = Date.now();
+    else knownGuestsRef.current = null;
+  }, [realtimeLive]);
+  useEffect(() => {
+    if (!realtimeLive) return;
+    const now = Date.now();
+    const guests = realtime.roster.filter((r) => r.isGuest);
+    const ids = new Set(guests.map((g) => g.employeeId));
+    const prev = knownGuestsRef.current;
+    knownGuestsRef.current = ids;
+    // Khách rời đi → gỡ thẻ thông báo của họ
+    setGuestArrivals((a) => (a.some((x) => !ids.has(x.id)) ? a.filter((x) => ids.has(x.id)) : a));
+    const seen = guestSeenAtRef.current;
+    // Lần đồng bộ đầu tiên (những khách đã có sẵn) không báo; khách tải lại trang trong 2 phút cũng không báo lại
+    const fresh = !cu || !prev || now - liveSinceRef.current < 2500 ? [] : guests.filter((g) => !prev.has(g.employeeId) && now - (seen.get(g.employeeId) ?? 0) > 120_000);
+    for (const g of guests) seen.set(g.employeeId, now);
+    if (!fresh.length) return;
+    setGuestArrivals((a) => [...fresh.map((g) => ({ id: g.employeeId, name: g.employeeName, at: now })), ...a.filter((x) => !fresh.some((g) => g.employeeId === x.id))].slice(0, 3));
+  }, [realtime.roster, realtimeLive, cu]);
+  useEffect(() => {
+    if (!guestArrivals.length) return;
+    const t = window.setTimeout(() => setGuestArrivals((a) => a.filter((x) => Date.now() - x.at < 15_000)), 15_500);
+    return () => window.clearTimeout(t);
+  }, [guestArrivals]);
+  // ───── Quán cà phê: gọi món ↔ nhân viên phục vụ ─────
+  const isCafe = data.activeScene.kind === 'CAFE';
+  const [cafeMenu, setCafeMenu] = useState<CafeMenuItem[]>(DEFAULT_CAFE_MENU);
+  const [drinkOrders, setDrinkOrders] = useState<DrinkOrderView[]>([]);
+  const [cafeMenuOpen, setCafeMenuOpen] = useState(false);
+  const [cafeOrdersOpen, setCafeOrdersOpen] = useState(false);
+  const [cafeBusyId, setCafeBusyId] = useState<number | null>(null);
+  const [ambienceOn, setAmbienceOn] = useState(false);
+  const orderStatusRef = useRef<Map<number, string> | null>(null);
+  const myRid = realtimeSelf?.employeeId ?? null;
+  const myRidRef = useRef(myRid);
+  myRidRef.current = myRid;
+  const sceneCode = data.activeScene.code;
+  const refreshCafe = useCallback(async () => {
+    if (!isCafe) return;
+    const st = await getCafeStateAction(sceneCode).catch(() => null);
+    if (!st) return;
+    setCafeMenu(st.menu);
+    setDrinkOrders(st.orders);
+    const prev = orderStatusRef.current;
+    const next = new Map(st.orders.map((o) => [o.id, o.status as string]));
+    orderStatusRef.current = next;
+    if (!prev) return; // lần tải đầu: không báo
+    const byCode = st.menu;
+    for (const o of st.orders) {
+      const before = prev.get(o.id);
+      if (before === o.status) continue;
+      const mine = o.customerRid === myRidRef.current;
+      if (!before && o.status === 'NEW' && cu && !mine) {
+        setToastMsg({ ok: true, text: `☕ ${o.customerName} gọi: ${orderSummary(o.lines, byCode)}` });
+        window.setTimeout(() => setToastMsg((p) => (p?.text.startsWith('☕') ? null : p)), 5000);
+        playChime();
+      } else if (mine && o.status === 'PREPARING') {
+        setToastMsg({ ok: true, text: `👨‍🍳 ${o.servedByName ?? 'Quầy'} đang pha đồ uống cho bạn…` });
+      } else if (mine && o.status === 'SERVED') {
+        setToastMsg({ ok: true, text: `✅ Đồ uống của bạn đã được phục vụ${o.spot ? ' tại bàn' : ''}!` });
+        playChime(0.08);
+      }
+    }
+  }, [isCafe, sceneCode, cu]);
+  cafeRefreshRef.current = () => void refreshCafe();
+  useEffect(() => {
+    orderStatusRef.current = null;
+    setDrinkOrders([]);
+    void refreshCafe();
+    if (!isCafe) return;
+    // Dự phòng khi mất realtime + để ly hết hạn (30 phút) tự biến mất
+    const t = window.setInterval(() => void refreshCafe(), 60_000);
+    return () => window.clearInterval(t);
+  }, [refreshCafe, isCafe]);
+  useEffect(() => {
+    if (!ambienceOn || !isCafe) return;
+    return startCafeAmbience();
+  }, [ambienceOn, isCafe]);
+  const myDrinkOrders = drinkOrders.filter((o) => myRid != null && o.customerRid === myRid);
+  const newOrderCount = drinkOrders.filter((o) => o.status === 'NEW').length;
+  const placeOrder = async (lines: OrderLine[], note: string) => {
+    const p = playerPosRef.current;
+    const res = await placeDrinkOrderAction({ sceneCode, guestKey: cu ? null : guestKey, name: playerName, lines, note, x: p.x, z: p.z });
+    showToast(res.ok, res.message);
+    if (!res.ok) return false;
+    realtime.sendBubble(`Cho mình ${orderSummary(lines, cafeMenu).toLowerCase()} nhé!`);
+    await refreshCafe();
+    return true;
+  };
+  const goToOrder = (o: DrinkOrderView) => {
+    const tx = o.spot?.x ?? o.posX;
+    const tz = o.spot?.z ?? o.posZ;
+    const dx = o.posX - tx;
+    const dz = o.posZ - tz;
+    const len = Math.hypot(dx, dz) || 1;
+    // Đứng cạnh bàn, lệch sang bên khách ~0.8m
+    teleportTo(tx - (dz / len) * 0.8, tz + (dx / len) * 0.8, o.posX, o.posZ);
+  };
+  const updateOrder = async (o: DrinkOrderView, status: 'PREPARING' | 'SERVED' | 'CANCELLED') => {
+    setCafeBusyId(o.id);
+    const res = await updateDrinkOrderAction(o.id, status);
+    setCafeBusyId(null);
+    showToast(res.ok, res.message);
+    if (!res.ok) return;
+    if (status === 'SERVED') {
+      goToOrder(o);
+      realtime.sendBubble(`Đồ uống của ${o.customerName} đây ạ, chúc quý khách ngon miệng!`);
+    }
+    await refreshCafe();
+  };
+
+  const goToGuest = (id: number) => {
+    const st = realtime.remoteStateRef.current.get(id);
+    if (st) teleportTo(st.tx + 1.1, st.tz + 1.1, st.tx, st.tz);
+    setSelectedRemoteId(id);
+    setGuestArrivals((a) => a.filter((x) => x.id !== id));
+  };
   const staffOnlineCount = realtime.roster.length - guestOnlineCount;
   const selectedRemote = selectedRemoteId ? realtime.roster.find((r) => r.employeeId === selectedRemoteId) ?? null : null;
 
@@ -556,7 +701,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     setSelectedPlacementId(newId);
     setDockTab('none');
     setDirty(true);
-    showToast(true, `Đã đặt "${item.name}" vào không gian 3D — kéo mũi tên để căn chỉnh`);
+    showToast(true, `Đã đặt "${item.name}" vào TIM Space — kéo mũi tên để căn chỉnh`);
   };
 
   /** Sản phẩm đang bày quanh 1 vị trí (quầy của nhân viên): hàng trên kệ/tủ/bục + máy đặt rời, gần nhất trước */
@@ -921,6 +1066,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         remoteRoster={realtime.roster}
         remoteStateRef={realtime.remoteStateRef}
         bubbleRef={realtime.bubbleRef}
+        typingRef={realtime.typingRef}
+        emoteRef={realtime.emoteRef}
+        selfRealtimeId={realtimeSelf?.employeeId ?? null}
+        drinkOrders={isCafe ? drinkOrders : undefined}
+        cafeMenu={cafeMenu}
         realtimeLive={realtimeLive}
         onSelectRemotePlayer={(id) => {
           setSelectedRemoteId(id);
@@ -1055,7 +1205,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               <div style={{ fontSize: 11.5, marginTop: 4, color: selectedRemote.onDuty ? '#34d399' : '#60a5fa' }}>
                 {selectedRemote.onDuty
                   ? `● Đang trực${selectedRemote.stationLabel ? ` · ${selectedRemote.stationLabel}` : ''}`
-                  : '● Đang trong không gian 3D'}
+                  : '● Đang trong TIM Space'}
               </div>
             </div>
             <button type="button" onClick={() => setSelectedRemoteId(null)} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
@@ -1121,6 +1271,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           guestName={playerName}
           onClose={() => setVisitorTarget(null)}
           glassStyle={glassStyle}
+          onSpeak={(t) => realtime.sendBubble(t)}
+          onTyping={() => realtime.sendTyping()}
+          onAssistantText={(t) => visitorTarget.employeeId > 0 && realtime.setLocalBubble(visitorTarget.employeeId, t)}
         />
       )}
       {data.currentUser && (
@@ -1131,6 +1284,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           onUnreadChange={setGuestUnread}
           eventRef={guestEventRef}
           glassStyle={glassStyle}
+          onSpeak={(t) => realtime.sendBubble(t)}
+          onTyping={() => realtime.sendTyping()}
         />
       )}
 
@@ -1173,8 +1328,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           <input
             autoFocus
             value={bubbleDraft}
-            maxLength={140}
-            onChange={(e) => setBubbleDraft(e.target.value)}
+            maxLength={200}
+            onChange={(e) => {
+              setBubbleDraft(e.target.value);
+              if (e.target.value) realtime.sendTyping();
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') setBubbleOpen(false);
             }}
@@ -1233,6 +1391,72 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       )}
 
       {/* Toast nổi */}
+      {isCafe && entered && realtimeSelf && !editMode && !cafeMenuOpen && (
+        <button
+          type="button"
+          onClick={() => setCafeMenuOpen(true)}
+          style={{
+            ...glassStyle,
+            position: 'fixed', right: 14, bottom: 92, zIndex: 30,
+            display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 16px', borderRadius: 999,
+            border: '1px solid rgba(251,191,36,0.5)', background: 'linear-gradient(135deg,rgba(245,158,11,0.9),rgba(180,83,9,0.9))',
+            color: '#fff', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
+          }}
+        >
+          <Coffee size={16} /> Gọi món
+          {myDrinkOrders.some((o) => o.status !== 'SERVED') && <span style={{ fontSize: 11, opacity: 0.9 }}>· đang chờ</span>}
+        </button>
+      )}
+      {isCafe && cafeMenuOpen && (
+        <SpaceCafeMenu menu={cafeMenu} myOrders={myDrinkOrders} onClose={() => setCafeMenuOpen(false)} onPlace={placeOrder} glassStyle={glassStyle} />
+      )}
+      {isCafe && cu && cafeOrdersOpen && (
+        <SpaceCafeOrders
+          menu={cafeMenu}
+          orders={drinkOrders}
+          busyId={cafeBusyId}
+          onClose={() => setCafeOrdersOpen(false)}
+          onUpdate={(o, st) => void updateOrder(o, st)}
+          onGoTo={goToOrder}
+          glassStyle={glassStyle}
+        />
+      )}
+      {guestArrivals.length > 0 && (
+        <div style={{ position: 'fixed', top: 112, left: '50%', transform: 'translateX(-50%)', zIndex: 59, display: 'flex', flexDirection: 'column', gap: 6, width: 'min(360px, calc(100vw - 32px))' }}>
+          {guestArrivals.map((g) => (
+            <div
+              key={g.id}
+              role="status"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px 8px 12px', borderRadius: 14,
+                background: 'rgba(15,23,42,0.92)', border: '1px solid rgba(96,165,250,0.45)', color: '#fff',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.35)', backdropFilter: 'blur(8px)', fontSize: 12.5,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>🙋</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</div>
+                <div style={{ fontSize: 11, color: '#93c5fd' }}>Khách tham quan vừa vào {data.activeScene.name}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => goToGuest(g.id)}
+                style={{ padding: '5px 10px', borderRadius: 99, border: 0, background: '#2563eb', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                Đến đón
+              </button>
+              <button
+                type="button"
+                aria-label="Đóng"
+                onClick={() => setGuestArrivals((a) => a.filter((x) => x.id !== g.id))}
+                style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer', padding: 2 }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {toastMsg && (
         <div
           style={{
@@ -1288,13 +1512,13 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             </div>
             <div>
               <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#60a5fa', fontWeight: 700 }}>
-                Showroom & Triển Lãm 3D · Beta
+                TIM Space · Beta
               </div>
               <h1 style={{ fontSize: 22, fontWeight: 700, marginTop: 6, color: '#ffffff', lineHeight: 1.25 }}>
                 {data.branding.companyName}
               </h1>
               <p style={{ fontSize: 13, color: '#cbd5e1', marginTop: 8, lineHeight: 1.5 }}>
-                Tham quan trực tiếp không gian triển lãm máy móc, gặp nhân viên tư vấn tại quầy và xem thông số thiết bị trong không gian 3D.
+                Tham quan trực tiếp không gian triển lãm máy móc, gặp nhân viên tư vấn tại quầy và xem thông số thiết bị ngay trong TIM Space.
               </p>
             </div>
             <input
@@ -1548,6 +1772,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 <HudButton title="Khách đang hỏi bạn" active={guestInboxOpen} activeBg="#16a34a" badge={guestUnread} onClick={() => setGuestInboxOpen((v) => !v)}>
                   <Users size={15} />
                 </HudButton>
+                {isCafe && (
+                  <HudButton title="Đơn gọi món của khách" active={cafeOrdersOpen} activeBg="#d97706" badge={newOrderCount} onClick={() => setCafeOrdersOpen((v) => !v)}>
+                    <ClipboardList size={15} />
+                  </HudButton>
+                )}
               </>
             )}
             {qualityMenuOpen && (
@@ -1599,7 +1828,36 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           <HudButton small title={nightMode ? 'Chuyển sang ban ngày' : 'Chuyển sang ban đêm'} active={nightMode} activeBg="#334155" onClick={() => setNightMode((n) => !n)}>
             {nightMode ? <Sun size={14} /> : <Moon size={14} />}
           </HudButton>
+          {realtimeSelf && (
+            <HudButton small title="Biểu cảm: vẫy tay, gật đầu, cúi chào, vỗ tay" active={emoteOpen} onClick={() => setEmoteOpen((v) => !v)}>
+              <Smile size={14} />
+            </HudButton>
+          )}
+          {isCafe && (
+            <HudButton small title={ambienceOn ? 'Tắt âm thanh quán' : 'Bật âm thanh quán cà phê'} active={ambienceOn} activeBg="#b45309" onClick={() => setAmbienceOn((v) => !v)}>
+              {ambienceOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            </HudButton>
+          )}
         </div>
+        {emoteOpen && realtimeSelf && (
+          <div style={{ ...glassStyle, borderRadius: 999, padding: 3, display: 'flex', gap: 2 }}>
+            {SPACE_EMOTES.map((em) => (
+              <button
+                key={em.key}
+                type="button"
+                title={em.label}
+                aria-label={em.label}
+                onClick={() => {
+                  realtime.sendEmote(em.key);
+                  setEmoteOpen(false);
+                }}
+                style={{ width: 30, height: 28, borderRadius: 999, border: 0, background: 'transparent', cursor: 'pointer', fontSize: 16, lineHeight: '28px' }}
+              >
+                {em.icon}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Bảng Tùy chỉnh Diện mạo & Phong cách nhân vật (xem trực tiếp 3D + Lưu DB cho nhân viên) */}
@@ -1632,9 +1890,41 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Đồng phục TIM Corp</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {UNIFORM_PRESETS.map((u) => {
+                const active =
+                  avatarConfig.outfitStyle === 'uniform' &&
+                  avatarConfig.outfitColor === u.outfitColor &&
+                  avatarConfig.bottomStyle === u.bottomStyle;
+                return (
+                  <button
+                    key={u.key}
+                    type="button"
+                    onClick={() => setAvatarConfig((a) => ({ ...a, outfitStyle: 'uniform', outfitColor: u.outfitColor, pantsColor: UNIFORM_BOTTOM_NAVY, bottomStyle: u.bottomStyle }))}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 7, padding: '6px 7px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                      border: active ? '1.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.18)',
+                      background: active ? 'rgba(37,99,235,0.35)' : 'rgba(255,255,255,0.07)',
+                      color: '#ffffff',
+                    }}
+                  >
+                    <span style={{ display: 'flex', flexDirection: 'column', width: 14, flexShrink: 0, borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.35)' }}>
+                      <span style={{ height: 10, background: u.outfitColor }} />
+                      <span style={{ height: 8, background: UNIFORM_BOTTOM_NAVY }} />
+                    </span>
+                    {u.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Kiểu trang phục</span>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {([
+                { key: 'uniform', label: 'Đồng phục logo' },
                 { key: 'suit', label: 'Vest công sở' },
                 { key: 'dress', label: 'Đầm công sở' },
                 { key: 'shirt', label: 'Sơ mi' },
@@ -1660,7 +1950,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Màu trang phục</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-              {['#1e3a8a', '#2563eb', '#0f766e', '#059669', '#334155', '#991b1b', '#7c3aed', '#f8fafc'].map((c) => (
+              {[UNIFORM_WHITE, UNIFORM_NAVY, '#1e3a8a', '#2563eb', '#0f766e', '#059669', '#334155', '#991b1b', '#7c3aed'].map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -1674,10 +1964,36 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             </div>
           </div>
 
+          {(avatarConfig.outfitStyle === 'uniform' || avatarConfig.outfitStyle === 'shirt') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Phần dưới</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {([
+                  { key: 'pants', label: 'Quần tây' },
+                  { key: 'skirt', label: 'Chân váy công sở' },
+                ] as const).map((b) => (
+                  <button
+                    key={b.key}
+                    type="button"
+                    onClick={() => setAvatarConfig((a) => ({ ...a, bottomStyle: b.key }))}
+                    style={{
+                      padding: '6px 6px', borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: avatarConfig.bottomStyle === b.key ? '#2563eb' : 'rgba(255,255,255,0.07)',
+                      color: '#ffffff',
+                    }}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>Màu quần</span>
+            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 600 }}>{avatarConfig.bottomStyle === 'skirt' && avatarConfig.outfitStyle !== 'dress' ? 'Màu váy' : 'Màu quần'}</span>
             <div style={{ display: 'flex', gap: 7 }}>
-              {['#0f172a', '#334155', '#1e3a8a', '#d6ccc2'].map((c) => (
+              {[UNIFORM_BOTTOM_NAVY, '#0f172a', '#334155', '#1e3a8a', '#d6ccc2'].map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -1982,7 +2298,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             <div style={{ fontSize: 14, fontWeight: 700 }}>
               {dockTab === 'departments' && 'Phòng ban & Khu trưng bày (Bấm để dịch chuyển)'}
               {dockTab === 'products' && 'Thiết bị trưng bày & Trình tạo 3D'}
-              {dockTab === 'design' && 'Thiết kế bố cục Kho & Showroom 3D'}
+              {dockTab === 'design' && 'Thiết kế bố cục TIM Space'}
               {dockTab === 'map' && 'Bản đồ 2D (Bấm vào điểm bất kỳ để Teleport)'}
             </div>
             <button type="button" onClick={() => setDockTab('none')} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>

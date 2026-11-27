@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { LiteLabelRenderer } from './three/html-labels';
 import type {
   Avatar3DConfig,
   SpaceKind,
@@ -30,10 +30,15 @@ import {
   prepareRemoteAvatar,
   remoteSig,
   syncBubble,
+  poseTalk,
+  poseEmote,
   type AnimatedAvatar,
   type BubbleSlot,
 } from './three/avatars';
 import { createExhibitionHallEnvironment } from './three/hall';
+import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
+import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
+import { buildOrderDrinks } from './three/props/drinks';
 import { createCafeEnvironment, createOfficeEnvironment, createWarehouseEnvironment } from './three/environments';
 import { carpetTileTex, plankTex } from './three/props/textures';
 import { buildSpaceObject, objectSignature, applyTransform } from './three/props/registry';
@@ -44,7 +49,7 @@ import { SPACE_OBJECT_DEF_MAP } from '@/lib/space-3d-catalog';
 import { SEATABLE_KINDS, clampInside, findCollisions, pickSeat, seatsFor, snap, type Seat } from '@/lib/space-3d-layout';
 import { buildProductGroup } from './three/products';
 import { createEpoxyTextures, windUniform } from './three/materials';
-import { mergeStaticGroup } from './three/merge';
+import { freezeStaticDescendants, mergeStaticGroup } from './three/merge';
 import { createRenderPipeline, type RenderPipeline } from './three/pipeline';
 import { createEnvironmentMap, createSkySystem, type SkySystem } from './three/sky';
 import { createDayNightRig, type DayNightRig } from './three/lighting';
@@ -95,6 +100,15 @@ interface Props {
   remoteStateRef?: React.MutableRefObject<Map<number, RemotePlayerState>>;
   /** Realtime: bong bóng chat gần (kể cả của chính mình) */
   bubbleRef?: React.MutableRefObject<Map<number, RemoteBubble>>;
+  /** id → hạn hiển thị "đang nhập…" */
+  typingRef?: React.MutableRefObject<Map<number, number>>;
+  /** id → biểu cảm đang diễn */
+  emoteRef?: React.MutableRefObject<Map<number, { kind: SpaceEmote; at: number }>>;
+  /** id realtime của bản thân (nhân viên: employeeId; khách: id âm) — để hiện bong bóng/biểu cảm của mình */
+  selfRealtimeId?: number | null;
+  /** Đơn gọi nước (quán cà phê) — đơn SERVED hiện ly trên bàn */
+  drinkOrders?: DrinkOrderView[];
+  cafeMenu?: CafeMenuItem[];
   /** Realtime đã kết nối → bỏ avatar tĩnh từ SpacePresence (tránh avatar "ma") */
   realtimeLive?: boolean;
   onSelectRemotePlayer?: (employeeId: number) => void;
@@ -135,6 +149,8 @@ interface RemoteAvatarEntry {
   av: AnimatedAvatar;
   sig: string;
   walkTime: number;
+  /** Nhân viên đang trực trong quán cà phê → đứng gần quầy bar thì làm động tác pha chế */
+  barista?: boolean;
 }
 
 
@@ -218,6 +234,11 @@ export function Space3DCanvas({
   remoteRoster,
   remoteStateRef,
   bubbleRef,
+  typingRef,
+  emoteRef,
+  selfRealtimeId = null,
+  drinkOrders,
+  cafeMenu,
   realtimeLive = false,
   onSelectRemotePlayer,
   qualityPref = 'auto',
@@ -252,6 +273,10 @@ export function Space3DCanvas({
     onNearbyChange,
     remoteStateRef,
     bubbleRef,
+    typingRef,
+    emoteRef,
+    selfRealtimeId,
+    drinkRids: new Set((drinkOrders ?? []).filter((o) => o.status === 'SERVED').map((o) => o.customerRid)) as Set<number>,
     onSelectRemotePlayer,
     currentEmployeeId,
     qualityPref,
@@ -283,6 +308,10 @@ export function Space3DCanvas({
     onNearbyChange,
     remoteStateRef,
     bubbleRef,
+    typingRef,
+    emoteRef,
+    selfRealtimeId,
+    drinkRids: new Set((drinkOrders ?? []).filter((o) => o.status === 'SERVED').map((o) => o.customerRid)) as Set<number>,
     onSelectRemotePlayer,
     currentEmployeeId,
     qualityPref,
@@ -322,6 +351,8 @@ export function Space3DCanvas({
     remoteAvatars: Map<number, RemoteAvatarEntry>;
     remoteBubbles: Map<number, BubbleSlot>;
     selfBubble: BubbleSlot;
+    drinksGroup: THREE.Group;
+    drinkMeshes: Map<number, THREE.Group>;
     highlightRing: THREE.Mesh;
     walkRing: THREE.Mesh;
     walkTarget: THREE.Vector3 | null;
@@ -381,7 +412,7 @@ export function Space3DCanvas({
     container.appendChild(renderer.domElement);
 
     // Lớp nhãn HTML (tên nhân vật, bong bóng chat) — chữ trình duyệt vẽ nên luôn sắc nét
-    const labelRenderer = new CSS2DRenderer();
+    const labelRenderer = new LiteLabelRenderer();
     labelRenderer.setSize(container.clientWidth, container.clientHeight);
     labelRenderer.domElement.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;user-select:none;caret-color:transparent';
     container.appendChild(labelRenderer.domElement);
@@ -470,6 +501,7 @@ export function Space3DCanvas({
     );
     // Đèn nội thất ấm (point light) không merge được → thêm riêng
     interior?.lights.forEach((l) => scene.add(l));
+    freezeStaticDescendants(hallEnv);
     scene.add(hallEnv);
     const envOccluders = hallEnv.children.filter((c) => c.userData.occluder);
 
@@ -523,7 +555,8 @@ export function Space3DCanvas({
     scene.add(ghost);
     const presenceGroup = new THREE.Group();
     const remoteGroup = new THREE.Group();
-    scene.add(dynamicGroup, presenceGroup, remoteGroup);
+    const drinksGroup = new THREE.Group();
+    scene.add(dynamicGroup, presenceGroup, remoteGroup, drinksGroup);
 
     // Nhân vật Chibi của người dùng
     const player = createChibiAvatar({
@@ -626,6 +659,8 @@ export function Space3DCanvas({
       remoteAvatars: new Map(),
       remoteBubbles: new Map(),
       selfBubble: { sprite: null, text: '' },
+      drinksGroup,
+      drinkMeshes: new Map(),
       highlightRing,
       walkRing,
       walkTarget: null,
@@ -955,6 +990,10 @@ export function Space3DCanvas({
     let blockedTime = 0;
     // Ngồi ghế: đi tới điểm đứng trước ghế rồi ngồi xuống; phím di chuyển / bấm chỗ khác thì đứng dậy
     let sitting: Seat | null = null;
+    /** Thời gian kể từ lúc bắt đầu ngồi: 0–0.35s xoay lưng về ghế, sau đó lùi & hạ người xuống */
+    let sitT = 0;
+    /** Đang đứng dậy: nhổm người lên rồi bước ra khỏi ghế tới điểm này */
+    let rising: { x: number; z: number; t: number } | null = null;
     let pendingSeat: Seat | null = null;
     let seatCandidate: { seat: Seat; approach: THREE.Vector3 } | null = null;
     const setCandidate = (c: typeof seatCandidate, label = '') => {
@@ -964,6 +1003,10 @@ export function Space3DCanvas({
     const setSitting = (sv: Seat | null) => {
       const changed = Boolean(sv) !== Boolean(sitting);
       sitting = sv;
+      if (sv) {
+        sitT = 0;
+        rising = null;
+      }
       if (playerPosRef) playerPosRef.current.sit = sv ? sv.y : 0;
       if (changed) stateRef.current.onSittingChange?.(Boolean(sv));
     };
@@ -978,10 +1021,8 @@ export function Space3DCanvas({
     };
     const standUp = () => {
       if (!sitting) return;
-      const pl = sceneObjRef.current?.player ?? player;
-      pl.group.position.x = sitting.x + Math.sin(sitting.rotY) * 0.75;
-      pl.group.position.z = sitting.z + Math.cos(sitting.rotY) * 0.75;
-      pl.group.position.y = 0;
+      // Không dịch chuyển tức thời: nhổm lên rồi bước ra trước ghế ~0.6m
+      rising = { x: sitting.x + Math.sin(sitting.rotY) * 0.6, z: sitting.z + Math.cos(sitting.rotY) * 0.6, t: 0 };
       setSitting(null);
     };
     (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void } }).seatApi = {
@@ -991,7 +1032,6 @@ export function Space3DCanvas({
         pendingSeat = null;
       },
     };
-    const tmpLabelPos = new THREE.Vector3();
 
     // Tiết kiệm tài nguyên: tối đa 60 FPS (kể cả màn 120Hz); khi cảnh đứng yên > 3s hạ còn 20 FPS
     let lastFrameAt = 0;
@@ -1006,8 +1046,11 @@ export function Space3DCanvas({
     const animate = () => {
       rafId = requestAnimationFrame(animate);
       const frameNow = performance.now();
-      const idle = frameNow - lastActivityAt > 3000;
-      const minInterval = idle ? 1000 / 20 : 1000 / 60;
+      const idleFor = frameNow - lastActivityAt;
+      const idle = idleFor > 3000;
+      // Rảnh > 3s: 20 FPS · rảnh > 20s hoặc cửa sổ không được focus: 8 FPS (chỉ còn thở/chớp mắt)
+      const deepIdle = idle && (idleFor > 20000 || !document.hasFocus());
+      const minInterval = deepIdle ? 1000 / 8 : idle ? 1000 / 20 : 1000 / 60;
       if (frameNow - lastFrameAt < minInterval - 1.5) return;
       lastFrameAt = frameNow;
       renderer.info.reset();
@@ -1044,13 +1087,40 @@ export function Space3DCanvas({
         if (seatCandidate) setCandidate(null);
       }
       if (sitting) {
-        // Đang ngồi: giữ đúng chỗ & hướng ghế, tư thế ngồi
-        // Trượt dần từ chỗ đứng vào ghế (không giật)
-        currentPlayer.group.position.x += (sitting.x - currentPlayer.group.position.x) * 0.2;
-        currentPlayer.group.position.z += (sitting.z - currentPlayer.group.position.z) * 0.2;
+        // Ngồi xuống như thật: (1) đứng trước ghế xoay lưng lại, (2) lùi nửa bước & hạ hông xuống đệm
+        sitT += dt;
         const dr = Math.atan2(Math.sin(sitting.rotY - currentPlayer.group.rotation.y), Math.cos(sitting.rotY - currentPlayer.group.rotation.y));
-        currentPlayer.group.rotation.y += dr * 0.3;
-        poseSit(currentPlayer, sitting.y);
+        currentPlayer.group.rotation.y += dr * (1 - Math.exp(-dt * 12));
+        if (sitT < 0.35 && Math.abs(dr) > 0.15) {
+          relaxPose(currentPlayer);
+        } else {
+          const k = 1 - Math.exp(-dt * 6);
+          currentPlayer.group.position.x += (sitting.x - currentPlayer.group.position.x) * k;
+          currentPlayer.group.position.z += (sitting.z - currentPlayer.group.position.z) * k;
+          poseSit(currentPlayer, sitting.y);
+        }
+        markActive();
+      } else if (rising) {
+        // Đứng dậy: thân nhổm lên trước, rồi bước ra khỏi ghế
+        rising.t += dt;
+        relaxPose(currentPlayer);
+        if (rising.t > 0.18) {
+          const k = 1 - Math.exp(-dt * 7);
+          const rdx = (rising.x - currentPlayer.group.position.x) * k;
+          const rdz = (rising.z - currentPlayer.group.position.z) * k;
+          currentPlayer.group.position.x += rdx;
+          currentPlayer.group.position.z += rdz;
+          // Camera đi theo nhịp bước ra
+          camera.position.x += rdx;
+          camera.position.z += rdz;
+          orbit.target.x += rdx;
+          orbit.target.z += rdz;
+        }
+        if (rising.t > 0.6 || (Math.hypot(rising.x - currentPlayer.group.position.x, rising.z - currentPlayer.group.position.z) < 0.03 && currentPlayer.group.position.y === 0)) {
+          currentPlayer.group.position.y = 0;
+          rising = null;
+        }
+        markActive();
       } else if (move.lengthSq() > 0) {
         pendingSeat = null;
         move.normalize();
@@ -1140,7 +1210,7 @@ export function Space3DCanvas({
         // Đầm công sở bước ngắn & nhanh hơn để chân luôn nằm trong váy
         walkTime += dt * (currentPlayer.stride < 1 ? 13 : 10);
         poseWalk(currentPlayer, walkTime);
-      } else if (!sitting) {
+      } else if (!sitting && !rising) {
         relaxPose(currentPlayer);
         // Đang trò chuyện → nhân vật mình quay mặt về phía người kia
         const faceId = stateRef.current.faceEmployeeId;
@@ -1172,10 +1242,38 @@ export function Space3DCanvas({
 
       // Người chơi realtime: nội suy mượt tới vị trí mục tiêu (đọc ref, không React re-render)
       const objNow = sceneObjRef.current;
+      const typingMap = stateRef.current.typingRef?.current;
+      const emoteMap = stateRef.current.emoteRef?.current;
+      /** Nói (nhép miệng, cử chỉ) + biểu cảm cho 1 nhân vật — gọi sau khi đã đặt tư thế đi/đứng/ngồi */
+      const applyTalkAndEmote = (av: AnimatedAvatar, id: number, b: RemoteBubble | undefined, nowMs: number, busy: boolean) => {
+        const talking = Boolean(b && b.expiresAt > nowMs && nowMs - (b.startedAt ?? 0) < talkDurationMs(b.text));
+        poseTalk(av, totalTime, talking, !busy);
+        if (talking) markActive();
+        // Có ly nước đã phục vụ → thỉnh thoảng nâng ly uống (chu kỳ ~30s, lệch pha theo id)
+        if (!talking && stateRef.current.drinkRids?.has(id)) {
+          const cyc = (totalTime + Math.abs(id % 17) * 1.9) % 30;
+          if (cyc < 2.2) poseEmote(av, 'sip', cyc / 2.2, totalTime);
+        }
+        const em = emoteMap?.get(id);
+        if (em) {
+          const t = (nowMs - em.at) / EMOTE_DURATION_MS;
+          if (t >= 1) emoteMap!.delete(id);
+          else {
+            poseEmote(av, em.kind, t, totalTime);
+            markActive();
+          }
+        }
+      };
+      const nowMsAll = Date.now();
+      const selfRid = stateRef.current.selfRealtimeId ?? stateRef.current.currentEmployeeId ?? null;
+      if (selfRid) {
+        const sb = stateRef.current.bubbleRef?.current.get(selfRid);
+        applyTalkAndEmote(currentPlayer, selfRid, sb, nowMsAll, isMoving || Boolean(sitting));
+      }
       if (objNow && objNow.remoteAvatars.size + (stateRef.current.bubbleRef?.current.size ?? 0) > 0) {
         const rs = stateRef.current.remoteStateRef?.current;
         const bubbles = stateRef.current.bubbleRef?.current;
-        const nowMs = Date.now();
+        const nowMs = nowMsAll;
         const posK = 1 - Math.exp(-dt * 12);
         const rotK = 1 - Math.exp(-dt * 14);
         const px = currentPlayer.group.position.x;
@@ -1219,9 +1317,9 @@ export function Space3DCanvas({
           }
           animateAvatarIdle(entry.av, totalTime);
           if (st && (st.sit ?? 0) > 0) {
-            // Người kia đang ngồi ghế → tư thế ngồi đúng chỗ
-            g.position.x = st.tx;
-            g.position.z = st.tz;
+            // Người kia đang ngồi ghế → trượt dần vào chỗ & hạ người xuống (không nhảy cóc)
+            g.position.x += (st.tx - g.position.x) * posK * 0.6;
+            g.position.z += (st.tz - g.position.z) * posK * 0.6;
             poseSit(entry.av, st.sit!);
           } else if (walking) {
             entry.walkTime += dt * (entry.av.stride < 1 ? 13 : 10);
@@ -1230,23 +1328,34 @@ export function Space3DCanvas({
             relaxPose(entry.av);
             entry.av.headGroup.position.y = entry.av.headBaseY + Math.sin(totalTime * 2 + rid) * 0.01;
           }
+          const rb = bubbles?.get(rid);
+          applyTalkAndEmote(entry.av, rid, rb, nowMs, walking || Boolean(st && (st.sit ?? 0) > 0));
+          // Barista: đứng yên gần quầy bar → thỉnh thoảng pha chế (~6s mỗi 20s)
+          if (entry.barista && !walking && !(rb && rb.expiresAt > nowMs)) {
+            const nearBar = stateRef.current.structures.some(
+              (o) => o.kind === 'BAR_COUNTER' && Math.hypot(o.posX - g.position.x, o.posZ - g.position.z) < Math.max(o.widthM, o.depthM) / 2 + 1.2,
+            );
+            const cyc = (totalTime + Math.abs(rid % 13)) % 20;
+            if (nearBar && cyc < 6) poseEmote(entry.av, 'brew', cyc / 6, totalTime);
+          }
 
           if (frameCount % 6 === 0) {
-            const b = bubbles?.get(rid);
             const near = Math.hypot(g.position.x - px, g.position.z - pz) <= BUBBLE_VISIBLE_DIST;
             let slot = objNow.remoteBubbles.get(rid);
             if (!slot) {
               slot = { sprite: null, text: '' };
               objNow.remoteBubbles.set(rid, slot);
             }
-            syncBubble(slot, g, b && b.expiresAt > nowMs && near ? b.text : null);
+            const live = rb && rb.expiresAt > nowMs && near ? rb : null;
+            const typing = !live && near && (typingMap?.get(rid) ?? 0) > nowMs;
+            syncBubble(slot, g, live ? live.text : null, typing, live?.prev);
           }
         }
-        const selfId = stateRef.current.currentEmployeeId;
-        if (selfId && frameCount % 6 === 0) {
-          const b = bubbles?.get(selfId);
-          syncBubble(objNow.selfBubble, currentPlayer.group, b && b.expiresAt > nowMs ? b.text : null);
-        }
+      }
+      if (objNow && selfRid && frameCount % 6 === 0) {
+        const b = stateRef.current.bubbleRef?.current.get(selfRid);
+        const live = b && b.expiresAt > nowMsAll ? b : null;
+        syncBubble(objNow.selfBubble, currentPlayer.group, live ? live.text : null, false, live?.prev);
       }
 
       const firstPerson = stateRef.current.povMode === 'FIRST' && !stateRef.current.planView;
@@ -1336,26 +1445,8 @@ export function Space3DCanvas({
       }
 
       (sceneObjRef.current?.pipeline ?? pipeline).render();
-      // Nhãn HTML: mờ dần khi xa (> 18m), ẩn khi > 30m để không rối mắt
-      if (frameCount % 6 === 0) {
-        for (const lbl of htmlLabels) {
-          // Nhãn của nhân vật đã bị gỡ khỏi cảnh (đổi diện mạo, người chơi rời đi) → xoá phần tử DOM
-          let root: THREE.Object3D = lbl;
-          while (root.parent) root = root.parent;
-          if (root !== scene) {
-            (lbl.element as HTMLElement).remove();
-            htmlLabels.delete(lbl);
-            continue;
-          }
-          lbl.getWorldPosition(tmpLabelPos);
-          const dist = tmpLabelPos.distanceTo(camera.position);
-          const op = dist > 30 ? 0 : dist > 18 ? 1 - (dist - 18) / 12 : 1;
-          const el = lbl.element as HTMLElement;
-          const v = op.toFixed(2);
-          if (el.style.opacity !== v) el.style.opacity = v;
-        }
-      }
-      labelRenderer.render(scene, camera);
+      // Nhãn HTML (tên, bong bóng chat): chỉ cập nhật DOM khi đổi; mờ dần khi xa
+      labelRenderer.render(htmlLabels, scene, camera);
 
       if (stateRef.current.debug) {
         debugFrames += 1;
@@ -1413,7 +1504,7 @@ export function Space3DCanvas({
   }, [sceneKind, widthM, depthM, branding.companyName, branding.logoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cập nhật nóng diện mạo & trạng thái trực của chính nhân vật (không reload scene)
-  const avatarSig = `${playerName}|${isSelfOnDuty}|${playerAvatar.outfitStyle}|${playerAvatar.outfitColor}|${playerAvatar.pantsColor}|${playerAvatar.hairStyle}|${playerAvatar.hairColor}|${playerAvatar.skinTone}|${playerAvatar.hasGlasses}`;
+  const avatarSig = `${playerName}|${isSelfOnDuty}|${playerAvatar.outfitStyle}|${playerAvatar.outfitColor}|${playerAvatar.pantsColor}|${playerAvatar.bottomStyle}|${playerAvatar.hairStyle}|${playerAvatar.hairColor}|${playerAvatar.skinTone}|${playerAvatar.hasGlasses}`;
   useEffect(() => {
     const obj = sceneObjRef.current;
     if (!obj) return;
@@ -1558,6 +1649,7 @@ export function Space3DCanvas({
         const manualPick = o.merch?.mode === 'MANUAL' && o.merch.itemIds.length > 0;
         built.root.add(buildMerchandise(o.id, built.shelves, resolveMerchItems(o.merch, merchItems, o.kind), manualPick));
       }
+      freezeStaticDescendants(built.root);
       obj.objectsGroup.add(built.root);
       obj.objectMap.set(o.id, { sig, root: built.root, shelves: built.shelves });
       if (built.shelves.length) stateRef.current.onShelvesBuilt?.(o.id, built.root, built.shelves);
@@ -1583,6 +1675,27 @@ export function Space3DCanvas({
     const upd = (obj as unknown as { updateSelectionBox?: (id: string | null, c?: boolean) => void }).updateSelectionBox;
     upd?.(editMode ? selectedObjectId : null, selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false);
   }, [structures, sceneKind, widthM, depthM, editMode, selectedObjectId, branding.companyName, merchItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ly nước đã phục vụ trên bàn (quán cà phê) — dựng lại khi danh sách đơn đổi
+  useEffect(() => {
+    const obj = sceneObjRef.current;
+    if (!obj) return;
+    const served = (drinkOrders ?? []).filter((o) => o.status === 'SERVED' && o.spot);
+    const keep = new Set(served.map((o) => o.id));
+    for (const [id, g] of obj.drinkMeshes) {
+      if (keep.has(id)) continue;
+      obj.drinksGroup.remove(g);
+      disposeObject(g);
+      obj.drinkMeshes.delete(id);
+    }
+    for (const o of served) {
+      if (obj.drinkMeshes.has(o.id)) continue;
+      const g = buildOrderDrinks(o, cafeMenu ?? []);
+      if (!g) continue;
+      obj.drinksGroup.add(g);
+      obj.drinkMeshes.set(o.id, g);
+    }
+  }, [drinkOrders, cafeMenu]);
 
   // Sản phẩm đặt rời (SpacePlacement)
   useEffect(() => {
@@ -1676,7 +1789,7 @@ export function Space3DCanvas({
       av.group.position.set(x, 0, z);
       av.group.rotation.y = r;
       obj.remoteGroup.add(av.group);
-      obj.remoteAvatars.set(m.employeeId, { av, sig, walkTime: Math.random() * 6 });
+      obj.remoteAvatars.set(m.employeeId, { av, sig, walkTime: Math.random() * 6, barista: m.onDuty && !m.isGuest && sceneKind === 'CAFE' });
     }
     for (const [id, entry] of obj.remoteAvatars) {
       if (seen.has(id)) continue;

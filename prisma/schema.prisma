@@ -1923,6 +1923,34 @@ model SpaceGuestMessage {
   @@index([guestKey, createdAt])
 }
 
+/// Đơn gọi nước trong quán cà phê 3D (trải nghiệm phục vụ tại bàn, không thanh toán)
+model SpaceDrinkOrder {
+  id            Int       @id @default(autoincrement())
+  sceneCode     String    @db.VarChar(64)
+  /// Khách tham quan (guestKey bí mật) hoặc nhân viên gọi
+  guestKey      String?   @db.VarChar(64)
+  employeeId    Int?
+  customerName  String    @db.VarChar(80)
+  /// [{ code, qty }]
+  itemsJson     Json
+  note          String?   @db.VarChar(200)
+  posX          Float
+  posZ          Float
+  tableObjectId String?   @db.VarChar(64)
+  spotX         Float?
+  spotY         Float?
+  spotZ         Float?
+  /// NEW | PREPARING | SERVED | CANCELLED
+  status        String    @default("NEW") @db.VarChar(16)
+  servedById    Int?
+  servedByName  String?   @db.VarChar(120)
+  createdAt     DateTime  @default(now())
+  servedAt      DateTime?
+
+  @@index([sceneCode, createdAt])
+  @@index([guestKey, createdAt])
+}
+
 model SpaceChatMessage {
   id             Int       @id @default(autoincrement())
   fromEmployeeId Int

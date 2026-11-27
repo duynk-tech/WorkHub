@@ -32,6 +32,8 @@ export function SpaceGuestInbox({
   eventRef,
   onActiveGuest,
   glassStyle,
+  onSpeak,
+  onTyping,
 }: {
   myEmployeeId: number;
   open: boolean;
@@ -40,6 +42,9 @@ export function SpaceGuestInbox({
   eventRef: React.MutableRefObject<((e: GuestEvent) => void) | null>;
   onActiveGuest?: (guestKey: string | null) => void;
   glassStyle: React.CSSProperties;
+  /** Câu trả lời của mình → bong bóng trên đầu mình */
+  onSpeak?: (text: string) => void;
+  onTyping?: () => void;
 }) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -101,6 +106,7 @@ export function SpaceGuestInbox({
     if (!active || !text) return;
     setDraft('');
     setErr(null);
+    onSpeak?.(text);
     const res = await replyGuestAction(active, text);
     if (!res.ok || !res.data) setErr(res.message);
     else setMsgs((prev) => (prev.some((m) => m.id === res.data!.id) ? prev : [...prev, res.data!]));
@@ -183,7 +189,10 @@ export function SpaceGuestInbox({
           >
             <input
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                if (e.target.value) onTyping?.();
+              }}
               maxLength={1000}
               autoFocus
               placeholder="Trả lời khách…"

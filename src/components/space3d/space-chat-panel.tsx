@@ -247,7 +247,7 @@ export function SpaceChatPanel({
           </div>
           {peer && (
             <div style={{ fontSize: 11, color: onlineIds.has(peer.employeeId) ? '#34d399' : '#94a3b8' }}>
-              {onlineIds.has(peer.employeeId) ? '● Đang trong không gian 3D' : peer.department || 'Ngoại tuyến'}
+              {onlineIds.has(peer.employeeId) ? '● Đang trong TIM Space' : peer.department || 'Ngoại tuyến'}
             </div>
           )}
         </div>
