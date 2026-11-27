@@ -1,6 +1,6 @@
 'use client';
 
-import { X, ChefHat, Check, Ban, Footprints } from 'lucide-react';
+import { X, Ban, Footprints } from 'lucide-react';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 
 const ago = (iso: string) => {
@@ -54,13 +54,13 @@ export function SpaceCafeOrders({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: 10.5, color: '#fbbf24', fontWeight: 700 }}>QUẦY PHA CHẾ</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Đơn gọi món ({open.length})</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Đơn đang phục vụ ({open.length})</div>
         </div>
         <button type="button" aria-label="Đóng" onClick={onClose} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }}>
           <X size={16} />
         </button>
       </div>
-      {open.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8' }}>Chưa có đơn mới. Khách gọi món sẽ hiện ở đây kèm tiếng báo.</div>}
+      {open.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8' }}>Chưa có đơn. Nhân viên quán (anh Tư, Bé Na) tự pha và bưng ra cho khách.</div>}
       {open.map((o) => (
         <div key={o.id} style={{ padding: 10, borderRadius: 12, background: o.status === 'NEW' ? 'rgba(245,158,11,0.16)' : 'rgba(37,99,235,0.16)', border: `1px solid ${o.status === 'NEW' ? 'rgba(245,158,11,0.4)' : 'rgba(96,165,250,0.4)'}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5 }}>
@@ -77,14 +77,9 @@ export function SpaceCafeOrders({
           {o.note && <div style={{ fontSize: 11.5, color: '#fde68a', marginBottom: 6 }}>Ghi chú: {o.note}</div>}
           {!o.spot && <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Khách không ngồi gần bàn — giao tận tay.</div>}
           <div style={{ display: 'flex', gap: 6 }}>
-            {o.status === 'NEW' && (
-              <button type="button" disabled={busyId === o.id} onClick={() => onUpdate(o, 'PREPARING')} style={btn('#2563eb')}>
-                <ChefHat size={13} /> Nhận làm
-              </button>
-            )}
-            <button type="button" disabled={busyId === o.id} onClick={() => onUpdate(o, 'SERVED')} style={btn('#059669')}>
-              <Check size={13} /> Phục vụ
-            </button>
+            <span style={{ fontSize: 11.5, color: '#fde68a', alignSelf: 'center', marginRight: 'auto' }}>
+              {o.status === 'NEW' ? 'Chờ pha…' : 'Đang pha · Bé Na sẽ mang ra'}
+            </span>
             <button type="button" title="Đi tới chỗ khách" onClick={() => onGoTo(o)} style={btn('rgba(255,255,255,0.12)')}>
               <Footprints size={13} />
             </button>

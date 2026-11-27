@@ -51,6 +51,31 @@ function friendlyError(e: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * NEW quá 3s → PREPARING (anh Tư pha); PREPARING quá 40s → SERVED (dự phòng nếu Bé Na chưa bưng tới);
+ * đơn NEW treo quá 60s → SERVED luôn. Có thay đổi thì phát realtime cho mọi máy.
+ */
+async function autoAdvanceOrders(sceneCode: string): Promise<number> {
+  const now = Date.now();
+  const [a, b, c] = await prisma.$transaction([
+    prisma.spaceDrinkOrder.updateMany({
+      where: { sceneCode, status: 'NEW', createdAt: { lt: new Date(now - 60_000) } },
+      data: { status: 'SERVED', servedByName: 'Bé Na (phục vụ)', servedAt: new Date() },
+    }),
+    prisma.spaceDrinkOrder.updateMany({
+      where: { sceneCode, status: 'NEW', createdAt: { lt: new Date(now - 3_000) } },
+      data: { status: 'PREPARING', servedByName: 'Anh Tư (pha chế)' },
+    }),
+    prisma.spaceDrinkOrder.updateMany({
+      where: { sceneCode, status: 'PREPARING', createdAt: { lt: new Date(now - 40_000) } },
+      data: { status: 'SERVED', servedByName: 'Bé Na (phục vụ)', servedAt: new Date() },
+    }),
+  ]);
+  const changed = a.count + b.count + c.count;
+  if (changed > 0) await broadcastServer(`space:${sceneCode}`, 'order', { auto: changed });
+  return changed;
+}
+
 async function getMenu(): Promise<CafeMenuItem[]> {
   return normalizeCafeMenu(await getSetting<unknown>('space.cafeMenu', null));
 }
@@ -70,6 +95,9 @@ export async function getCafeStateAction(sceneCode: string): Promise<{ menu: Caf
   const scene = await findScene(sceneCode, Boolean(ctx));
   const menu = await getMenu();
   if (!scene) return { menu, orders: [] };
+  // Nhân viên quán tự động: đẩy đơn theo thời gian ở phía server → không bao giờ treo
+  // (kể cả khi người gọi đã rời quán hay lần gọi trước bị lỗi)
+  await autoAdvanceOrders(scene.code).catch(() => 0);
   const since = new Date(Date.now() - DRINK_ORDER_TTL_MS);
   const rows = await prisma.spaceDrinkOrder
     .findMany({

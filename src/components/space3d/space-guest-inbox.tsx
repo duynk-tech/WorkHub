@@ -6,6 +6,7 @@ import {
   listGuestMessagesAction,
   listMyGuestThreadsAction,
   replyGuestAction,
+  startGuestChatAction,
   type GuestChatMessage,
 } from '@/server/modules/space3d/actions';
 
@@ -34,6 +35,7 @@ export function SpaceGuestInbox({
   glassStyle,
   onSpeak,
   onTyping,
+  startWith,
 }: {
   myEmployeeId: number;
   open: boolean;
@@ -45,12 +47,23 @@ export function SpaceGuestInbox({
   /** Câu trả lời của mình → bong bóng trên đầu mình */
   onSpeak?: (text: string) => void;
   onTyping?: () => void;
+  /** Nhân viên chủ động nhắn cho 1 khách (mã nhắn tin mã hoá + tên); key đổi mỗi lần bấm */
+  startWith?: { handle: string; name: string; key: number } | null;
 }) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<GuestChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  /** Đang soạn tin đầu tiên cho khách chưa có cuộc trò chuyện */
+  const [pending, setPending] = useState<{ handle: string; name: string } | null>(null);
+  useEffect(() => {
+    if (!startWith) return;
+    setPending({ handle: startWith.handle, name: startWith.name });
+    setActive(null);
+    setMsgs([]);
+    setErr(null);
+  }, [startWith?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const listRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -103,7 +116,27 @@ export function SpaceGuestInbox({
 
   const send = async () => {
     const text = draft.trim();
-    if (!active || !text) return;
+    if (!text) return;
+    if (pending && !active) {
+      // Tin đầu tiên: server giải mã mã nhắn tin → mở cuộc trò chuyện với khách
+      setDraft('');
+      setErr(null);
+      onSpeak?.(text);
+      const res = await startGuestChatAction(pending.handle, pending.name, text);
+      if (!res.ok || !res.data) {
+        setErr(res.message);
+        return;
+      }
+      const { guestKey, message } = res.data;
+      setPending(null);
+      setThreads((prev) => [
+        { guestKey, guestName: message.guestName, lastBody: message.body, lastAt: message.createdAt, lastFromGuest: false, unread: 0 },
+        ...prev.filter((t) => t.guestKey !== guestKey),
+      ]);
+      setActive(guestKey);
+      return;
+    }
+    if (!active) return;
     setDraft('');
     setErr(null);
     onSpeak?.(text);
@@ -118,19 +151,19 @@ export function SpaceGuestInbox({
       onKeyDown={(e) => e.stopPropagation()}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-        {active ? (
-          <button type="button" onClick={() => setActive(null)} style={{ background: 'none', border: 0, color: '#cbd5e1', cursor: 'pointer' }} aria-label="Quay lại">
+        {active || pending ? (
+          <button type="button" onClick={() => { setActive(null); setPending(null); }} style={{ background: 'none', border: 0, color: '#cbd5e1', cursor: 'pointer' }} aria-label="Quay lại">
             <ArrowLeft size={16} />
           </button>
         ) : (
           <Users size={16} color="#34d399" />
         )}
-        <div style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{thread ? thread.guestName : 'Khách đang hỏi'}</div>
+        <div style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{thread ? thread.guestName : pending ? `Nhắn cho ${pending.name}` : 'Khách đang hỏi'}</div>
         <button type="button" onClick={onClose} style={{ background: 'none', border: 0, color: '#94a3b8', cursor: 'pointer' }} aria-label="Đóng">
           <X size={16} />
         </button>
       </div>
-      {!active ? (
+      {!active && !pending ? (
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {threads.length === 0 && (
             <div style={{ padding: 24, textAlign: 'center', fontSize: 12.5, color: '#94a3b8', lineHeight: 1.6 }}>
@@ -160,6 +193,11 @@ export function SpaceGuestInbox({
       ) : (
         <>
           <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {pending && !active && (
+              <div style={{ margin: 'auto 0', textAlign: 'center', fontSize: 12.5, color: '#94a3b8', lineHeight: 1.6 }}>
+                Gửi lời chào để bắt đầu trò chuyện với <b>{pending.name}</b>.<br />Khách sẽ nhận thông báo và trả lời ngay trong khung chat.
+              </div>
+            )}
             {msgs.map((m) => (
               <div
                 key={m.id}
@@ -195,7 +233,7 @@ export function SpaceGuestInbox({
               }}
               maxLength={1000}
               autoFocus
-              placeholder="Trả lời khách…"
+              placeholder={pending && !active ? `Chào ${pending.name}, mình có thể giúp gì?` : 'Trả lời khách…'}
               style={{ flex: 1, minWidth: 0, padding: '8px 12px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#f8fafc', fontSize: 13, outline: 'none' }}
             />
             <button type="submit" disabled={!draft.trim()} aria-label="Gửi" style={{ width: 36, height: 36, borderRadius: 99, border: 0, display: 'grid', placeItems: 'center', background: draft.trim() ? '#16a34a' : 'rgba(255,255,255,0.08)', color: '#fff', cursor: 'pointer' }}>

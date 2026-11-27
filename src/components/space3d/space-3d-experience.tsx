@@ -35,6 +35,7 @@ import {
   setSpaceChatModeAction,
   heartbeatPresenceAction,
   toggleStaffDutyAction,
+  getGuestChatHandleAction,
 } from '@/server/modules/space3d/actions';
 import type { TeleportTarget } from './space-3d-canvas';
 import { useSpaceRealtime, type IncomingDm } from './use-space-realtime';
@@ -359,6 +360,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const [chatMode, setChatMode] = useState<'LIVE' | 'AI'>(data.currentUser?.chatMode ?? 'LIVE');
   const [visitorTarget, setVisitorTarget] = useState<VisitorChatTarget | null>(null);
   const [guestInboxOpen, setGuestInboxOpen] = useState(false);
+  /** Nhân viên bấm "Nhắn tin" trên thẻ khách → mở hộp thư soạn tin cho khách đó */
+  const [inboxStart, setInboxStart] = useState<{ handle: string; name: string; key: number } | null>(null);
   const [guestUnread, setGuestUnread] = useState(0);
   const guestEventRef = useRef<((e: GuestEvent) => void) | null>(null);
   const chatStateRef = useRef({ chatOpen, chatPeer });
@@ -370,6 +373,12 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   useEffect(() => {
     if (!cu && entered) setGuestKey(getOrCreateGuestKey());
   }, [cu, entered]);
+  // Mã nhắn tin (guestKey đã mã hoá) → nhân viên chủ động nhắn cho khách được mà không lộ guestKey
+  const [guestChatHandle, setGuestChatHandle] = useState<string | null>(null);
+  useEffect(() => {
+    if (cu || !guestKey) return;
+    getGuestChatHandleAction(guestKey).then(setGuestChatHandle).catch(() => undefined);
+  }, [cu, guestKey]);
   const realtimeSelf = useMemo(
     () =>
       cu
@@ -393,9 +402,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               stationLabel: null,
               chatMode: 'LIVE' as const,
               isGuest: true,
+              chatHandle: guestChatHandle ?? undefined,
             }
           : null,
-    [cu, chatMode, guestKey, guestName, avatarConfig],
+    [cu, chatMode, guestKey, guestName, avatarConfig, guestChatHandle],
   );
 
   const handleIncomingDm = useCallback((dm: IncomingDm) => {
@@ -411,8 +421,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   }, [cu]);
 
   const cafeRefreshRef = useRef<(() => void) | null>(null);
+  const guestReplyRef = useRef<((p: { staffName: string; staffEmployeeId: number; body: string }) => void) | null>(null);
   const realtime = useSpaceRealtime({
     onOrder: () => cafeRefreshRef.current?.(),
+    onGuestReply: (p) => guestReplyRef.current?.(p),
     sceneCode: data.activeScene.code,
     self: realtimeSelf,
     guestKey: cu ? null : guestKey,
@@ -534,11 +546,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       const before = prev.get(o.id);
       if (before === o.status) continue;
       const mine = o.customerRid === myRidRef.current;
-      if (!before && o.status === 'NEW' && cu && !mine && data.canEdit) {
-        setToastMsg({ ok: true, text: `☕ ${o.customerName} gọi: ${orderSummary(o.lines, byCode)}` });
-        window.setTimeout(() => setToastMsg((p) => (p?.text.startsWith('☕') ? null : p)), 5000);
-        playChime();
-      } else if (mine && o.status === 'PREPARING') {
+      // Quán do nhân viên quán tự động phục vụ → nhân viên công ty không nhận thông báo đơn mới
+      if (mine && o.status === 'PREPARING') {
         flashToast(`👨‍🍳 ${o.servedByName ?? 'Quầy'} đang pha đồ uống cho bạn…`);
       } else if (mine && o.status === 'SERVED') {
         flashToast(`✅ Đồ uống của bạn đã được phục vụ${o.spot ? ' tại bàn' : ''}!`);
@@ -579,14 +588,27 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         const key = `${o.id}:PREPARING`;
         if (o.status !== 'NEW' || npcRequestedRef.current.has(key)) continue;
         npcRequestedRef.current.add(key);
-        timers.push(window.setTimeout(() => void npcAdvanceOrderAction(o.id, 'PREPARING', cu ? null : guestKey).then(() => refreshCafe()), 3000));
+        timers.push(
+          window.setTimeout(
+            () =>
+              void npcAdvanceOrderAction(o.id, 'PREPARING', cu ? null : guestKey).then((res) => {
+                // Lỗi → cho phép thử lại ở lần cập nhật sau (server cũng tự đẩy đơn theo thời gian)
+                if (!res.ok) npcRequestedRef.current.delete(key);
+                void refreshCafe();
+              }),
+            3200,
+          ),
+        );
       }
     }
     // Có đơn đang pha → nhịp 1 giây để đơn "pha xong" chuyển cho người phục vụ
     const t = drinkOrders.some((o) => o.status === 'PREPARING') ? window.setInterval(() => setNpcTick((x) => x + 1), 1000) : null;
+    // Còn đơn chưa xong → tải lại mỗi 4 giây (server tự đẩy trạng thái, mọi máy cùng thấy)
+    const poll = drinkOrders.some((o) => o.status === 'NEW' || o.status === 'PREPARING') ? window.setInterval(() => void refreshCafe(), 4000) : null;
     return () => {
       timers.forEach((x) => window.clearTimeout(x));
       if (t) window.clearInterval(t);
+      if (poll) window.clearInterval(poll);
     };
   }, [drinkOrders, staffOnDuty, isCafe]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Đơn pha xong (≥ 8 giây) → người phục vụ NPC bưng ra bàn */
@@ -615,7 +637,6 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       });
     tryServe(3);
   };
-  const newOrderCount = drinkOrders.filter((o) => o.status === 'NEW').length;
   const placeOrder = async (lines: OrderLine[], note: string) => {
     const p = playerPosRef.current;
     // Đang ngồi → đặt ly ngay trước mặt (điểm cách ghế ~45cm theo hướng nhìn), không lệch sang chỗ khác trên bàn
@@ -653,6 +674,17 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       realtime.sendBubble(`Đồ uống của ${o.customerName} đây ạ, chúc quý khách ngon miệng!`);
     }
     await refreshCafe();
+  };
+
+  // Khách nhận tin nhân viên (kể cả nhân viên chủ động nhắn trước) → thông báo + mở khung chat với nhân viên đó
+  guestReplyRef.current = (p) => {
+    if (cu) return;
+    const preview = p.body.length > 60 ? `${p.body.slice(0, 60)}…` : p.body;
+    if (visitorTarget?.employeeId !== p.staffEmployeeId) {
+      flashToast(`💬 ${p.staffName}: ${preview}`, 5000);
+      playChime(0.08);
+      setVisitorTarget({ employeeId: p.staffEmployeeId, name: p.staffName, department: null, chatMode: 'LIVE', online: true });
+    }
   };
 
   const goToGuest = (id: number) => {
@@ -1408,6 +1440,23 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             {data.currentUser ? 'Hỏi trợ lý AI về sản phẩm' : selectedRemote.chatMode === 'AI' ? 'Hỏi (Trợ lý AI trả lời)' : 'Hỏi nhân viên'}
           </button>
           )}
+          {data.currentUser && selectedRemote.isGuest && selectedRemote.chatHandle && (
+            <button
+              type="button"
+              onClick={() => {
+                setInboxStart({ handle: selectedRemote.chatHandle!, name: selectedRemote.employeeName, key: Date.now() });
+                setGuestInboxOpen(true);
+                setSelectedRemoteId(null);
+              }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '8px 12px', borderRadius: 10, border: 0, cursor: 'pointer',
+                background: '#16a34a', color: '#fff', fontSize: 13, fontWeight: 600,
+              }}
+            >
+              <MessageCircle size={15} /> Nhắn tin cho khách
+            </button>
+          )}
           {data.currentUser && !selectedRemote.isGuest && (
             <button
               type="button"
@@ -1454,6 +1503,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           glassStyle={glassStyle}
           onSpeak={(t) => realtime.sendBubble(t)}
           onTyping={() => realtime.sendTyping()}
+          startWith={inboxStart}
         />
       )}
 
@@ -2025,7 +2075,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                   <Users size={15} />
                 </HudButton>
                 {isCafe && data.canEdit && (
-                  <HudButton title="Quản lý đơn gọi món (quán do nhân viên quán tự động phục vụ)" active={cafeOrdersOpen} activeBg="#d97706" badge={newOrderCount} onClick={() => setCafeOrdersOpen((v) => !v)}>
+                  <HudButton title="Theo dõi đơn & dọn bàn (nhân viên quán tự động phục vụ)" active={cafeOrdersOpen} activeBg="#d97706" onClick={() => setCafeOrdersOpen((v) => !v)}>
                     <ClipboardList size={15} />
                   </HudButton>
                 )}

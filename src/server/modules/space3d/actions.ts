@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { getAuthContext, requireAuth } from '@/server/auth/context';
+import { decryptSecret, encryptSecret } from '@/lib/crypto';
 import { canDesignSpace } from './permissions';
 import {
   broadcastServer,
@@ -547,11 +548,51 @@ export async function replyGuestAction(guestKey: string, body: string): Promise<
       data: { staffEmployeeId: ctx.employeeId, guestKey, guestName: last.guestName, fromGuest: false, body: text },
     });
     const view: GuestChatMessage = { id: row.id, fromGuest: false, body: row.body, createdAt: row.createdAt.toISOString(), guestName: last.guestName };
-    await broadcastServer(`gchat:${guestKey}`, 'reply', { message: view, staffName: ctx.fullName });
+    await broadcastServer(`gchat:${guestKey}`, 'reply', { message: view, staffName: ctx.fullName, staffEmployeeId: ctx.employeeId });
     await broadcastServer(`dm:${ctx.employeeId}`, 'guest', { guestKey, message: view });
     return { ok: true, message: 'Đã gửi', data: view };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Gửi trả lời thất bại' };
+  }
+}
+
+/**
+ * Mã nhắn tin của khách: guestKey bí mật đã MÃ HOÁ (AES-GCM) — khách gửi kèm presence để nhân viên
+ * chủ động nhắn trước mà không lộ guestKey (chỉ server giải mã được).
+ */
+export async function getGuestChatHandleAction(guestKey: string): Promise<string | null> {
+  if (!GUEST_KEY_RE.test(guestKey || '')) return null;
+  return encryptSecret(`gk:${guestKey}`);
+}
+
+/** Nhân viên chủ động nhắn cho khách (từ mã nhắn tin). Trả guestKey để tiếp tục cuộc trò chuyện trong hộp thư. */
+export async function startGuestChatAction(
+  handle: string,
+  guestName: string,
+  body: string,
+): Promise<{ ok: boolean; message: string; data?: { guestKey: string; message: GuestChatMessage } }> {
+  try {
+    const ctx = await requireAuth();
+    const text = (body || '').trim().slice(0, 1000);
+    if (!text) return { ok: false, message: 'Tin nhắn trống' };
+    if (typeof handle !== 'string' || !handle.startsWith('v1.')) return { ok: false, message: 'Không nhắn được cho khách này' };
+    const plain = decryptSecret(handle);
+    const guestKey = plain.startsWith('gk:') ? plain.slice(3) : '';
+    if (!GUEST_KEY_RE.test(guestKey)) return { ok: false, message: 'Không nhắn được cho khách này' };
+    const recent = await prisma.spaceGuestMessage.count({
+      where: { staffEmployeeId: ctx.employeeId, fromGuest: false, createdAt: { gte: new Date(Date.now() - 10_000) } },
+    });
+    if (recent >= 10) return { ok: false, message: 'Bạn gửi hơi nhanh, vui lòng chờ vài giây' };
+    const name = (guestName || 'Khách tham quan').trim().slice(0, 40) || 'Khách tham quan';
+    const row = await prisma.spaceGuestMessage.create({
+      data: { staffEmployeeId: ctx.employeeId, guestKey, guestName: name, fromGuest: false, body: text },
+    });
+    const view: GuestChatMessage = { id: row.id, fromGuest: false, body: row.body, createdAt: row.createdAt.toISOString(), guestName: name };
+    await broadcastServer(`gchat:${guestKey}`, 'reply', { message: view, staffName: ctx.fullName, staffEmployeeId: ctx.employeeId });
+    await broadcastServer(`dm:${ctx.employeeId}`, 'guest', { guestKey, message: view });
+    return { ok: true, message: 'Đã gửi', data: { guestKey, message: view } };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Gửi tin nhắn thất bại' };
   }
 }
 

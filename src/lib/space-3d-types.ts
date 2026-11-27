@@ -250,6 +250,8 @@ export interface RemotePlayerMeta {
   x: number;
   z: number;
   r: number;
+  /** Khách: mã nhắn tin đã mã hoá (nhân viên dùng để chủ động nhắn trước) */
+  chatHandle?: string;
 }
 
 /** Trạng thái vị trí realtime — mutate qua ref, KHÔNG setState */

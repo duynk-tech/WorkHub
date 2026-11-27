@@ -857,13 +857,24 @@ export function Space3DCanvas({
       raycaster.setFromCamera(pointer, camera);
     };
     /** Vật thể (theo id) dưới con trỏ, ưu tiên trước sản phẩm khi đang ở chế độ thiết kế */
+    /**
+     * Vật thể dưới con trỏ. Lớp "đi xuyên" (lưới che, mái tôn, vùng phòng, thảm, sỏi…) không chặn click khi chơi
+     * → bấm được ghế / sản phẩm nằm dưới lưới cây đa. Chế độ thiết kế vẫn chọn được chúng (ưu tiên vật thể thường).
+     */
+    const kindOf = (id: string) => stateRef.current.structures.find((x) => x.id === id)?.kind ?? '';
     const pickObject = (): string | null => {
       const hits = raycaster.intersectObjects(objectsGroup.children, true);
+      let passFallback: string | null = null;
       for (const h of hits) {
         const id = h.object.userData?.objectId as string | undefined;
-        if (id) return id;
+        if (!id) continue;
+        if (PASS_THROUGH.has(kindOf(id))) {
+          passFallback ??= id;
+          continue;
+        }
+        return id;
       }
-      return null;
+      return stateRef.current.editMode ? passFallback : null;
     };
     let drag: { id: string; offX: number; offZ: number; moved: boolean } | null = null;
     // Góc nhìn thứ nhất: kéo chuột để quay đầu (yaw/pitch có giảm chấn)
@@ -1057,7 +1068,8 @@ export function Space3DCanvas({
       // 2b. Click vào hàng hoá trên kệ / máy trưng bày → thông tin sản phẩm & giá
       if (stateRef.current.onSelectMerchItem) {
         const merchHits = raycaster.intersectObjects(objectsGroup.children, true);
-        const first = merchHits[0];
+        // Bỏ qua lớp đi xuyên (lưới, mái…) phía trên hàng hoá
+        const first = merchHits.find((h) => !PASS_THROUGH.has(kindOf((h.object.userData?.objectId as string) ?? '')));
         const merchId = first?.object.userData?.merchItemId as number | undefined;
         if (merchId) {
           stateRef.current.onSelectMerchItem(merchId);
@@ -1413,8 +1425,15 @@ export function Space3DCanvas({
       room = null;
       // Trả camera về sau lưng nhân vật
       const r = pl.group.rotation.y;
+      const hw = widthM / 2 - 0.4;
+      const hd = depthM / 2 - 0.4;
       roomExit = {
-        pos: new THREE.Vector3(pl.group.position.x - Math.sin(r) * 5.2, 2.9, pl.group.position.z - Math.cos(r) * 5.2),
+        // Kẹp trong mặt bằng → không văng camera ra ngoài hàng rào
+        pos: new THREE.Vector3(
+          THREE.MathUtils.clamp(pl.group.position.x - Math.sin(r) * 5.2, -hw, hw),
+          2.9,
+          THREE.MathUtils.clamp(pl.group.position.z - Math.cos(r) * 5.2, -hd, hd),
+        ),
         look: new THREE.Vector3(pl.group.position.x, 1.3, pl.group.position.z),
         t: 0,
       };
@@ -1957,6 +1976,26 @@ export function Space3DCanvas({
         if (!camRig.introActive && !firstPerson) orbit.update();
         // Intro dùng thời gian thực (không bị kẹp 0.05s) để không "đứng hình" khi máy chậm
         camRig.afterOrbit(Math.min(rawDt, 0.1), frameCount);
+      }
+      // Chốt an toàn camera: toạ độ lỗi (NaN) hoặc văng quá xa nhân vật → đưa về sau lưng, bật lại xoay
+      {
+        const pp = currentPlayer.group.position;
+        const far = camera.position.distanceTo(pp) > Math.max(widthM, depthM) + 25;
+        const bad = !Number.isFinite(camera.position.x + camera.position.y + camera.position.z + orbit.target.x + orbit.target.y + orbit.target.z);
+        if ((bad || far) && !camRig.introActive && !firstPerson) {
+          const rr = currentPlayer.group.rotation.y;
+          orbit.target.set(pp.x, 1.3, pp.z);
+          camera.position.set(pp.x - Math.sin(rr) * 5.2, 2.9, pp.z - Math.cos(rr) * 5.2);
+          if (room) {
+            for (const h of room.hidden) h.visible = true;
+            stateRef.current.onRoomChange?.(null);
+          }
+          room = null;
+          roomExit = null;
+          orbit.enabled = true;
+        }
+        // Không ở phòng / intro / góc thứ nhất / đang kéo vật thể mà orbit bị tắt → bật lại (tránh kẹt không xoay được)
+        if (!room && !roomExit && !camRig.introActive && !firstPerson && !drag && !orbit.enabled) orbit.enabled = true;
       }
       skySys.update(dt, camera.position);
 

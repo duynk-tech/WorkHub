@@ -37,6 +37,8 @@ interface Options {
   onDm?: (dm: IncomingDm) => void;
   /** Có đơn gọi món mới / đổi trạng thái (server phát) → tải lại danh sách đơn */
   onOrder?: () => void;
+  /** Khách: nhân viên nhắn tới (kể cả nhân viên chủ động nhắn trước) */
+  onGuestReply?: (p: { staffName: string; staffEmployeeId: number; body: string }) => void;
   /** Khách tham quan nhắn cho nhân viên này (chế độ trả lời trực tiếp) */
   onGuest?: (evt: { guestKey: string; message: { id: number; fromGuest: boolean; body: string; createdAt: string; guestName: string } }) => void;
 }
@@ -60,6 +62,7 @@ function sanitizeMeta(raw: Record<string, unknown>): RemotePlayerMeta | null {
     onDuty: Boolean(raw.onDuty),
     stationLabel: raw.stationLabel ? String(raw.stationLabel).slice(0, 120) : null,
     chatMode: raw.chatMode === 'AI' ? 'AI' : 'LIVE',
+    chatHandle: typeof raw.chatHandle === 'string' && raw.chatHandle.startsWith('v1.') ? raw.chatHandle.slice(0, 400) : undefined,
     x: Number(raw.x) || 0,
     z: Number(raw.z) || 0,
     r: Number(raw.r) || 0,
@@ -73,7 +76,7 @@ function sanitizeMeta(raw: Record<string, unknown>): RemotePlayerMeta | null {
  * - Bong bóng chat gần (Broadcast `bubble`) → `bubbleRef`
  * - Tin nhắn 1-1 (kênh `dm:<id>`, server gửi) → callback `onDm`
  */
-export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRef, onDm, onGuest, onOrder }: Options) {
+export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRef, onDm, onGuest, onOrder, onGuestReply }: Options) {
   const [status, setStatus] = useState<RealtimeStatus>('off');
   const [roster, setRoster] = useState<RemotePlayerMeta[]>([]);
   const remoteStateRef = useRef(new Map<number, RemotePlayerState>());
@@ -87,6 +90,8 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
   const holdRef = useRef(new Map<number, { code: string; at: number }>());
   const onOrderRef = useRef(onOrder);
   onOrderRef.current = onOrder;
+  const onGuestReplyRef = useRef(onGuestReply);
+  onGuestReplyRef.current = onGuestReply;
   const channelRef = useRef<RealtimeChannel | null>(null);
   const rosterIdsRef = useRef(new Set<number>());
   const selfRef = useRef(self);
@@ -103,6 +108,7 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
     let client: SupabaseClient | null = null;
     let sceneChannel: RealtimeChannel | null = null;
     let dmChannel: RealtimeChannel | null = null;
+    let guestChannel: RealtimeChannel | null = null;
     let moveTimer: ReturnType<typeof setInterval> | null = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const lastSent = { x: NaN, z: NaN, r: NaN, moving: false, sit: 0 };
@@ -264,6 +270,17 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
           }
         });
 
+      if (!isEmployee && guestKey) {
+        // Khách nghe kênh riêng: nhân viên trả lời / chủ động nhắn trước
+        guestChannel = client.channel(`gchat:${guestKey}`, { config: { private: true } });
+        guestChannel
+          .on('broadcast', { event: 'reply' }, ({ payload }) => {
+            const id = Number(payload?.staffEmployeeId);
+            const body = String(payload?.message?.body ?? '');
+            if (Number.isInteger(id) && id > 0 && body) onGuestReplyRef.current?.({ staffName: String(payload?.staffName ?? 'Nhân viên'), staffEmployeeId: id, body });
+          })
+          .subscribe();
+      }
       if (isEmployee) {
         dmChannel = client.channel(`dm:${selfRef.current!.employeeId}`, { config: { private: true } });
         dmChannel
@@ -285,6 +302,7 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
       if (client) {
         if (sceneChannel) void client.removeChannel(sceneChannel);
         if (dmChannel) void client.removeChannel(dmChannel);
+        if (guestChannel) void client.removeChannel(guestChannel);
         void client.realtime.disconnect();
       }
       remoteState.clear();
