@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SpaceObject } from '@/lib/space-3d-types';
+import { SPACE_OBJECT_DEF_MAP } from '@/lib/space-3d-catalog';
 import { sharedMat } from '../materials';
 import { M, box, cyl, lathe, plane, tubePath } from './kit';
 import { brickBumpTex, brickTex, labelTex, woodTex } from './textures';
@@ -54,7 +55,8 @@ export function buildGlassWall(o: SpaceObject): THREE.Group {
   decal.castShadow = false;
   g.add(decal);
   // Tên phòng in trên dải kính mờ (đọc được cả 2 mặt) — vd. "R&D LAB · KEM & SOCOLA"
-  if (o.label) {
+  // Chỉ in khi người thiết kế đặt tên riêng (bỏ qua tên mặc định "Vách kính" do hệ thống tự gán)
+  if (o.label && o.label !== SPACE_OBJECT_DEF_MAP.GLASS_WALL?.label) {
     const bw = Math.min(w - 0.2, 3.6);
     const t = labelTex([{ text: o.label.toUpperCase().slice(0, 34), size: 92, color: '#0f172a', weight: 700, y: 128 }], 'rgba(241,245,249,0.92)', 1400, 256);
     const mat = sharedMat(`gw:label:${o.label}`, () => new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 0.6 }));
