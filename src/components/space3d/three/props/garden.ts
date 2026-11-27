@@ -591,6 +591,27 @@ export function buildLiveEdgeTable(o: SpaceObject): THREE.Group {
     g.add(box(0.06, 0.06, d - 0.4, steel, sx * legX, 0.12, 0));
   }
   g.add(box(2 * legX, 0.07, 0.07, steel, 0, h - thick - 0.06, 0));
+  // Đồ trên bàn như quán thật: hộp khăn giấy, kệ menu mica, hũ đường — mỗi ~2.3m một bộ (tránh chỗ chậu hoa)
+  const tissue = M.paint('#f5f5f4', 0.6);
+  const acrylic = sharedMat('g:acrylic', () => new THREE.MeshPhysicalMaterial({ color: '#f8fafc', transparent: true, opacity: 0.5, roughness: 0.05, clearcoat: 1, depthWrite: false }));
+  const menuCard = M.paint('#7c2d12', 0.7);
+  const jar = M.glass();
+  const sugar = M.paint('#fafaf9', 0.9);
+  const sets = Math.max(1, Math.floor(w / 2.3));
+  for (let i = 0; i < sets; i++) {
+    const x = -w / 2 + (w / sets) * (i + 0.5) + 0.35;
+    g.add(box(0.13, 0.06, 0.09, tissue, x, h + 0.03, -0.05, 0.008));
+    g.add(box(0.02, 0.005, 0.05, M.paint('#d6d3d1', 0.6), x, h + 0.062, -0.05)); // khe rút khăn
+    const stand = box(0.09, 0.13, 0.008, acrylic, x + 0.15, h + 0.065, 0.02);
+    stand.rotation.x = -0.18;
+    g.add(stand);
+    const card = box(0.08, 0.11, 0.004, menuCard, x + 0.15, h + 0.065, 0.026);
+    card.rotation.x = -0.18;
+    g.add(card);
+    g.add(cyl(0.028, 0.028, 0.07, jar, x - 0.14, h + 0.035, 0.03, 12));
+    g.add(cyl(0.025, 0.025, 0.04, sugar, x - 0.14, h + 0.022, 0.03, 12));
+    g.add(cyl(0.03, 0.03, 0.012, M.metal('#a8a29e', 0.3), x - 0.14, h + 0.074, 0.03, 12));
+  }
   // Chậu hoa hồng môn trang trí giữa bàn (bàn dài ≥ 3m)
   if (w >= 3) {
     const vase = M.ceramic('#e7e2d8');

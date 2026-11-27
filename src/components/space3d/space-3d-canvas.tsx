@@ -39,7 +39,8 @@ import {
 import { createExhibitionHallEnvironment } from './three/hall';
 import { rebuildInstancing } from './three/instancing';
 import { NpcSystem } from './three/npc';
-import { FallingLeaves } from './three/ambient';
+import { Birds, FallingLeaves, SteamSystem, buildGroundLeaves } from './three/ambient';
+import { localToWorld } from '@/lib/space-3d-npc';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { buildDrink, buildOrderDrinks } from './three/props/drinks';
@@ -440,6 +441,14 @@ export function Space3DCanvas({
     npcs: NpcSystem;
     /** Lá rơi quanh cây đa (quán cà phê) */
     leaves: FallingLeaves | null;
+    /** Lá khô rải trên nền quanh gốc đa */
+    groundLeaves: THREE.InstancedMesh | null;
+    /** Hơi nóng bốc lên từ ly nóng / chảo bánh / máy pha */
+    steam: SteamSystem;
+    /** Đàn chim bay ngang trời (quán cà phê) */
+    birds: Birds | null;
+    steamFixed?: { x: number; y: number; z: number; size?: number }[];
+    steamCups?: { x: number; y: number; z: number; size?: number }[];
     objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
     selectionBox: THREE.Box3Helper;
     ghost: THREE.Mesh;
@@ -649,6 +658,10 @@ export function Space3DCanvas({
     scene.add(instancedGroup);
     const npcs = new NpcSystem((orderId) => stateRef.current.onNpcArrive?.(orderId));
     scene.add(npcs.group);
+    const steam = new SteamSystem();
+    scene.add(steam.group);
+    const birds = sceneKind === 'CAFE' ? new Birds(Math.max(widthM, depthM) * 0.9) : null;
+    if (birds) scene.add(birds.group);
     // Khung chọn vật thể (xanh = hợp lệ, đỏ = chồng lấn)
     const selectionBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color('#38bdf8'));
     selectionBox.visible = false;
@@ -765,6 +778,9 @@ export function Space3DCanvas({
       instancedGroup,
       npcs,
       leaves: null,
+      groundLeaves: null,
+      steam,
+      birds,
       objectMap: new Map(),
       selectionBox,
       ghost,
@@ -1801,6 +1817,8 @@ export function Space3DCanvas({
 
       if (frameCount % 10 === 0) updateDutyHost(currentPlayer, totalTime);
       sceneObjRef.current?.leaves?.update(dt, totalTime);
+      sceneObjRef.current?.steam.update(dt);
+      sceneObjRef.current?.birds?.update(dt, totalTime);
       // NPC quán cà phê: làm việc, chào khách, bưng nước
       if (sceneObjRef.current?.npcs.avatars.length) {
         const people: { id: string; x: number; z: number }[] = [{ id: 'self', x: currentPlayer.group.position.x, z: currentPlayer.group.position.z }];
@@ -2022,6 +2040,8 @@ export function Space3DCanvas({
       skySys.dispose();
       sceneObjRef.current?.npcs.dispose();
       sceneObjRef.current?.leaves?.dispose();
+      sceneObjRef.current?.groundLeaves?.dispose();
+      sceneObjRef.current?.steam.dispose();
       envRT.dispose();
       floorTex.map.dispose();
       floorTex.roughnessMap.dispose();
@@ -2256,11 +2276,31 @@ export function Space3DCanvas({
       obj.leaves.dispose();
       obj.leaves = null;
     }
+    if (obj.groundLeaves) {
+      obj.scene.remove(obj.groundLeaves);
+      obj.groundLeaves.dispose();
+      obj.groundLeaves = null;
+    }
     const banyan = structures.find((o) => o.kind === 'BANYAN_TREE');
     if (banyan && !editMode) {
       obj.leaves = new FallingLeaves(banyan.posX, banyan.posZ, banyan.widthM * 2.2, Math.min(7, banyan.heightM * 0.7));
       obj.scene.add(obj.leaves.mesh);
+      obj.groundLeaves = buildGroundLeaves(banyan.posX, banyan.posZ, banyan.widthM * 2.6);
+      obj.scene.add(obj.groundLeaves);
     }
+    // Hơi nóng cố định: chảo bánh quê + máy pha trên quầy bar
+    const fixedSteam: { x: number; y: number; z: number; size?: number }[] = [];
+    if (sceneKind === 'CAFE' && !editMode) {
+      for (const o of structures) {
+        if (o.kind === 'BANH_QUE_KIOSK') {
+          const p = localToWorld(o, -o.widthM * 0.25, o.depthM / 2 - 0.45);
+          fixedSteam.push({ x: p.x, y: 1.18, z: p.z, size: 0.14 });
+        }
+        if (o.kind === 'ESPRESSO_MACHINE') fixedSteam.push({ x: o.posX + 0.2, y: (o.posY ?? 0) + 0.55, z: o.posZ + 0.1, size: 0.08 });
+      }
+    }
+    obj.steamFixed = fixedSteam;
+    obj.steam.setEmitters([...fixedSteam, ...(obj.steamCups ?? [])]);
     // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
     obj.renderer.shadowMap.needsUpdate = true;
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
@@ -2280,6 +2320,12 @@ export function Space3DCanvas({
       disposeObject(g);
       obj.drinkMeshes.delete(id);
     }
+    // Ly nóng (espresso, latte, cappuccino, trà) trên bàn → hơi nóng bốc lên
+    const hot = new Set((cafeMenu ?? []).filter((m) => m.cupKind === 'espresso' || m.cupKind === 'mug' || m.cupKind === 'tea').map((m) => m.code));
+    obj.steamCups = served
+      .filter((o) => o.lines.some((l) => hot.has(l.code)) && o.spot)
+      .map((o) => ({ x: o.spot!.x, y: o.spot!.y + 0.1, z: o.spot!.z, size: 0.06 }));
+    obj.steam.setEmitters([...(obj.steamFixed ?? []), ...obj.steamCups]);
     for (const o of served) {
       if (obj.drinkMeshes.has(o.id)) continue;
       const g = buildOrderDrinks(o, cafeMenu ?? []);

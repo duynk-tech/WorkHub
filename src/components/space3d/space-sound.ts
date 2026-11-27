@@ -78,9 +78,33 @@ export function startCafeAmbience(volume = 0.05): () => void {
     timer = window.setTimeout(clink, 4000 + Math.random() * 9000);
   };
   let timer = window.setTimeout(clink, 3000);
+  // Tiếng chim hót líu lo (chuỗi 2–4 tiếng quét tần số) — không gian sân vườn
+  const chirp = () => {
+    if (!alive) return;
+    const n = 2 + Math.floor(Math.random() * 3);
+    const base = 2600 + Math.random() * 1400;
+    for (let i = 0; i < n; i++) {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = 'sine';
+      const t = ac.currentTime + i * 0.13;
+      o.frequency.setValueAtTime(base, t);
+      o.frequency.exponentialRampToValueAtTime(base * (1.35 + Math.random() * 0.3), t + 0.07);
+      o.frequency.exponentialRampToValueAtTime(base * 0.9, t + 0.11);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(volume * 0.35, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(g).connect(ac.destination);
+      o.start(t);
+      o.stop(t + 0.13);
+    }
+    birdTimer = window.setTimeout(chirp, 5000 + Math.random() * 12000);
+  };
+  let birdTimer = window.setTimeout(chirp, 2000);
   return () => {
     alive = false;
     window.clearTimeout(timer);
+    window.clearTimeout(birdTimer);
     const t = ac.currentTime;
     gain.gain.cancelScheduledValues(t);
     gain.gain.setValueAtTime(gain.gain.value, t);
