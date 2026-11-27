@@ -150,6 +150,43 @@ export function buildPortal(p: ScenePortal): THREE.Group {
     );
     brand.position.set(0, 4.9, fx + 0.17);
     g.add(brand);
+    // Logo tam giác TIM Corp cạnh biển tên (texture tải nền, không chặn dựng cảnh)
+    const logoMat = sharedMat('portal:logo', () => {
+      const tex = new THREE.TextureLoader().load('/logo-3d.png');
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.4 });
+    });
+    const logo = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), logoMat);
+    logo.position.set(-3.4, 4.9, fx + 0.18);
+    g.add(logo);
+    // Mái hiên kính khung thép trên lối vào + cửa kính đôi + thảm chùi chân
+    const steelDark = M.paint('#2a2f36', 0.45);
+    g.add(box(5.2, 0.08, 1.6, steelDark, 0, 3.75, fx + 0.95));
+    const canopyGlass = sharedMat('portal:canopy', () => new THREE.MeshStandardMaterial({ color: '#cfe3f3', transparent: true, opacity: 0.45, roughness: 0.05, metalness: 0.2, depthWrite: false }));
+    g.add(box(5.0, 0.02, 1.5, canopyGlass, 0, 3.8, fx + 0.95));
+    for (const sx of [-2.4, 2.4]) {
+      const rod = box(0.04, 0.04, 1.9, steelDark, sx, 4.3, fx + 0.75);
+      rod.rotation.x = -0.55;
+      g.add(rod);
+    }
+    for (const sx of [-0.62, 0.62]) {
+      g.add(box(1.2, 2.5, 0.05, glass, sx, 1.27, fx + 0.22));
+      g.add(box(0.05, 0.5, 0.06, M.chrome(), sx > 0 ? 0.1 : -0.1, 1.2, fx + 0.28));
+    }
+    g.add(box(2.6, 0.08, 0.1, alu(), 0, 2.55, fx + 0.22));
+    g.add(box(2.4, 0.015, 1.2, M.paint('#3a3a3a', 0.95), 0, 0.01, fx + 0.9));
+    // Chậu cây cao hai bên cửa + đèn hắt tường
+    const pot = M.paint('#1f2937', 0.6);
+    const leaf = sharedMat('portal:leaf', () => new THREE.MeshStandardMaterial({ color: '#2f6b3a', roughness: 0.6 }));
+    for (const sx of [-1.9, 1.9]) {
+      g.add(cyl(0.28, 0.22, 0.7, pot, sx, 0.35, fx + 0.6, 16));
+      for (let k = 0; k < 3; k++) {
+        const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32 - k * 0.07, 1), leaf);
+        bush.position.set(sx + (k - 1) * 0.08, 0.95 + k * 0.38, fx + 0.6);
+        g.add(bush);
+      }
+    }
+    for (const x of [-6.6, 6.6]) g.add(box(0.18, 0.1, 0.12, M.glow('#fff2d6', 0.6, 2.6), x, 3.4, fx + 0.22));
   } else {
     // Cửa kính khung nhôm trên tường kính + bảng chỉ dẫn gỗ kiểu quán
     for (const s of [-1, 1]) g.add(box(0.1, 2.6, 0.12, alu(), (s * w) / 2, 1.3, 0));
