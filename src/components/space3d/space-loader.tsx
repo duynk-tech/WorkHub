@@ -51,6 +51,12 @@ export function SpaceLoader({ stage, onHidden }: { stage: SpaceLoadStage; onHidd
   const onHiddenRef = useRef(onHidden);
   onHiddenRef.current = onHidden;
 
+  // Trong lúc máy chủ còn lấy dữ liệu: tải trước mã bộ dựng 3D (three.js) song song → bước "tải bộ dựng" gần như tức thì
+  useLayoutEffect(() => {
+    if (stage !== 'data') return;
+    void import('./space-3d-canvas').catch(() => undefined);
+  }, [stage]);
+
   useLayoutEffect(() => {
     // Lần tải mới (vd. đổi cảnh) sau khi đã xong → bắt đầu lại từ 0
     if (stage === 'data' && track().stage === 'done') resetSpaceLoad();
@@ -73,8 +79,8 @@ export function SpaceLoader({ stage, onHidden }: { stage: SpaceLoadStage; onHidd
     if (stage === 'done') {
       hideId = window.setTimeout(() => {
         setFade(true);
-        hideId = window.setTimeout(() => onHiddenRef.current?.(), 500);
-      }, 250);
+        hideId = window.setTimeout(() => onHiddenRef.current?.(), 380);
+      }, 90);
     }
     return () => {
       window.clearInterval(id);
@@ -100,7 +106,7 @@ export function SpaceLoader({ stage, onHidden }: { stage: SpaceLoadStage; onHidd
         color: '#e2e8f0',
         fontFamily: 'var(--font-sans), system-ui, sans-serif',
         opacity: fade ? 0 : 1,
-        transition: 'opacity 450ms ease',
+        transition: 'opacity 350ms ease',
         pointerEvents: fade ? 'none' : 'auto',
       }}
     >

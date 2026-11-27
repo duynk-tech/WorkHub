@@ -26,7 +26,9 @@ const leafGeo = new Map<LeafKind, THREE.BufferGeometry>();
 function getLeafGeo(kind: LeafKind): THREE.BufferGeometry {
   const hit = leafGeo.get(kind);
   if (hit) return hit;
-  const g = new THREE.PlaneGeometry(1, 1, 4, 6);
+  // Độ chia theo cỡ lá: lá chét cau nhỏ xíu chỉ cần 2×3 (12 tam giác thay vì 48, vẫn giữ gân gập giữa); lưỡi hổ 2×4; lá to bản 3×5
+  const [sx, sy] = kind === 'palm' ? [2, 3] : kind === 'snake' ? [2, 4] : [3, 5];
+  const g = new THREE.PlaneGeometry(1, 1, sx, sy);
   g.translate(0, 0.5, 0);
   const p = g.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {

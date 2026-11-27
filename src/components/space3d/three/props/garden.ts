@@ -1251,9 +1251,9 @@ export function buildGravelBed(o: SpaceObject): THREE.Group {
   bed.rotation.x = -Math.PI / 2;
   bed.position.y = 0.01;
   g.add(bed);
-  // Sỏi 3D nổi trên nền (1 InstancedMesh / nền): ~45 viên/m², tối đa 3000
+  // Sỏi 3D nổi trên nền (1 InstancedMesh / nền): ~30 viên/m², tối đa 2000 (texture nền đã có sỏi nhỏ, viên 3D chỉ tạo khối nổi)
   const rr = seeded(hashId(o.id) + 11);
-  const n = Math.min(3000, Math.round(o.widthM * o.depthM * (pebble ? 38 : 45)));
+  const n = Math.min(2000, Math.round(o.widthM * o.depthM * (pebble ? 26 : 30)));
   if (n > 0) {
     const stoneGeo = new THREE.IcosahedronGeometry(1, 0);
     const stones = new THREE.InstancedMesh(

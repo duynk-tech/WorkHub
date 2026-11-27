@@ -91,14 +91,31 @@ export function createRenderPipeline(
     gtao.blendIntensity = 0.85;
     // GTAO mặc định chỉ ẩn Points/Line khi render normal/depth → ẩn thêm sprite, vật liệu trong suốt và bầu trời,
     // nếu không các quad sprite (mây, nhãn tên) / kính sẽ bị tối thành mảng.
-    const g = gtao as unknown as { _overrideVisibility: () => void };
-    const origOverride = g._overrideVisibility.bind(gtao);
+    // Bản gốc duyệt TOÀN cảnh 2 lần mỗi khung hình + ghi Map cho mọi nút → thay bằng danh sách lưu sẵn, làm mới mỗi ~90 khung hình.
+    const g = gtao as unknown as { _overrideVisibility: () => void; _restoreVisibility: () => void };
+    let hideList: THREE.Object3D[] = [];
+    let age = Infinity;
+    const hidden: THREE.Object3D[] = [];
     g._overrideVisibility = () => {
-      origOverride();
-      scene.traverse((o) => {
-        const mat = (o as THREE.Mesh).material as THREE.Material | undefined;
-        if ((o as THREE.Sprite).isSprite || o.userData.noAO || (mat && !Array.isArray(mat) && mat.transparent)) o.visible = false;
-      });
+      if (age++ > 90) {
+        age = 0;
+        hideList = [];
+        scene.traverse((o) => {
+          const mat = (o as THREE.Mesh).material as THREE.Material | undefined;
+          if ((o as THREE.Points).isPoints || (o as THREE.Line).isLine || (o as THREE.Sprite).isSprite || o.userData.noAO || (mat && !Array.isArray(mat) && mat.transparent)) hideList.push(o);
+        });
+      }
+      hidden.length = 0;
+      for (const o of hideList) {
+        if (o.visible) {
+          o.visible = false;
+          hidden.push(o);
+        }
+      }
+    };
+    g._restoreVisibility = () => {
+      for (const o of hidden) o.visible = true;
+      hidden.length = 0;
     };
     composer.addPass(gtao);
   }

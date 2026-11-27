@@ -493,7 +493,7 @@ function createSkinDetailTexture(feminine: boolean): THREE.CanvasTexture {
 }
 
 function createHeadGeometry(): THREE.BufferGeometry {
-  const g = new THREE.SphereGeometry(1, 40, 30);
+  const g = new THREE.SphereGeometry(1, 32, 24);
   const p = g.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i) * HEAD.a;
@@ -616,7 +616,7 @@ function getHairStrandTexture(): THREE.CanvasTexture {
 
 /** Tóc dạng vỏ ellipsoid mượt: các đỉnh ngoài vùng phủ tóc được thu vào trong đầu → đường chân tóc tự nhiên. */
 function createHairGeometry(style: Avatar3DConfig['hairStyle']): THREE.BufferGeometry {
-  const g = new THREE.SphereGeometry(1, 80, 54);
+  const g = new THREE.SphereGeometry(1, 56, 38);
   const p = g.attributes.position as THREE.BufferAttribute;
   const longish = style === 'bob' || style === 'long';
   const front = style === 'bob' ? 0.38 : style === 'long' ? 0.52 : style === 'slick' ? 0.6 : 0.55; // ny chân tóc trán
@@ -665,8 +665,8 @@ function createHairGeometry(style: Avatar3DConfig['hairStyle']): THREE.BufferGeo
 
 /** Mảng tóc dài xõa sau lưng & hai bên vai (bề mặt tham số, có gợn sóng sợi, đuôi tóc so le). */
 function createLongHairCurtain(): THREE.BufferGeometry {
-  const U = 48;
-  const V = 34;
+  const U = 48; // giữ đủ mẫu cho gợn sóng sợi tóc theo chiều ngang
+  const V = 22;
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
@@ -705,10 +705,13 @@ function createLongHairCurtain(): THREE.BufferGeometry {
 
 function tube(points: THREE.Vector3[], r0: number, r1: number, mat: THREE.Material): THREE.Mesh {
   const curve = new THREE.CatmullRomCurve3(points);
-  const geo = new THREE.TubeGeometry(curve, 24, 1, 12, false);
+  // 14×8 phân đoạn: đủ mượt ở khoảng cách camera thường dùng (24×12 cũ tốn gấp ~2.5 lần tam giác)
+  const TUBE_SEGS = 14;
+  const TUBE_RADIAL = 8;
+  const geo = new THREE.TubeGeometry(curve, TUBE_SEGS, 1, TUBE_RADIAL, false);
   const pos = geo.attributes.position as THREE.BufferAttribute;
-  const segs = 25;
-  const ring = 13;
+  const segs = TUBE_SEGS + 1;
+  const ring = TUBE_RADIAL + 1;
   const center = new THREE.Vector3();
   const v = new THREE.Vector3();
   for (let i = 0; i < segs; i++) {
@@ -725,7 +728,7 @@ function tube(points: THREE.Vector3[], r0: number, r1: number, mat: THREE.Materi
   return new THREE.Mesh(geo, mat);
 }
 
-function lathe(profile: [number, number][], mat: THREE.Material, flattenZ = 0.7, segments = 32): THREE.Mesh {
+function lathe(profile: [number, number][], mat: THREE.Material, flattenZ = 0.7, segments = 24): THREE.Mesh {
   const geo = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments);
   const m = new THREE.Mesh(geo, mat);
   m.scale.z = flattenZ;
@@ -736,24 +739,24 @@ function lathe(profile: [number, number][], mat: THREE.Material, flattenZ = 0.7,
 function limb(rTop: number, rBottom: number, len: number, mat: THREE.Material, belly = 0.08): THREE.Mesh {
   const pts: THREE.Vector2[] = [];
   const half = len / 2;
-  for (let i = 0; i <= 6; i++) {
-    const a = -Math.PI / 2 + (i / 6) * (Math.PI / 2);
+  for (let i = 0; i <= 4; i++) {
+    const a = -Math.PI / 2 + (i / 4) * (Math.PI / 2);
     pts.push(new THREE.Vector2(Math.cos(a) * rBottom, -half + Math.sin(a) * rBottom));
   }
-  for (let i = 1; i < 10; i++) {
-    const t = i / 10;
+  for (let i = 1; i < 7; i++) {
+    const t = i / 7;
     const r = THREE.MathUtils.lerp(rBottom, rTop, t) * (1 + belly * Math.sin(t * Math.PI) * (t < 0.6 ? 1 : 0.6));
     pts.push(new THREE.Vector2(r, -half + t * len));
   }
-  for (let i = 0; i <= 6; i++) {
-    const a = (i / 6) * (Math.PI / 2);
+  for (let i = 0; i <= 4; i++) {
+    const a = (i / 4) * (Math.PI / 2);
     pts.push(new THREE.Vector2(Math.cos(a) * rTop, half + Math.sin(a) * rTop));
   }
-  return new THREE.Mesh(new THREE.LatheGeometry(pts, 20), mat);
+  return new THREE.Mesh(new THREE.LatheGeometry(pts, 14), mat);
 }
 
 function capsule(r: number, len: number, mat: THREE.Material): THREE.Mesh {
-  return new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 14), mat);
+  return new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 4, 10), mat);
 }
 
 
@@ -1120,7 +1123,7 @@ export function createChibiAvatar(opts: {
   sparkleMat.userData.noRim = true;
   for (const s of [-1, 1]) {
     const ez = faceZ(s * eyeX, eyeY) - eyeR * 0.95;
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 28, 18), eyeMat);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 20, 14), eyeMat);
     eye.position.set(s * eyeX, eyeY, ez);
     eye.scale.y = feminine ? 1.1 : 1.04; // mắt hơi tròn dọc
     eye.rotation.y = -s * 0.06; // hơi hướng vào giữa cho ánh nhìn tự nhiên
@@ -1347,8 +1350,13 @@ export function createChibiAvatar(opts: {
     });
   });
   addBlobShadow(group, 0.36);
+  // Không vẽ nhân vật trong lượt normal/depth của GTAO (bóng tiếp xúc): nhân đôi ~40 lượt vẽ/nhân vật mà gần như không thấy khác
+  group.userData.noAO = true;
   // Gộp các mảnh tĩnh cùng vật liệu trong từng khớp → ~70 mesh còn ~25 (giảm mạnh draw call)
-  mergeAvatarParts(group, new Set<THREE.Object3D>([...eyes, ...sparkles, mouthOpen]));
+  const keepParts = new Set<THREE.Object3D>([...eyes, ...sparkles, mouthOpen]);
+  if (skirtSit) keepParts.add(skirtSit);
+  if (skirtGroup) keepParts.add(skirtGroup);
+  skinAvatar(group, keepParts);
 
   return {
     group,
@@ -1376,49 +1384,116 @@ export function createChibiAvatar(opts: {
 }
 
 /**
- * Gộp mesh con trực tiếp của MỖI nút (thân, đầu, tay, chân, mí mắt…) theo vật liệu, giữ nguyên cây khớp
- * nên mọi chuyển động (xoay khớp, chớp mắt) vẫn đúng. Bỏ qua mesh cần điều khiển riêng (`keep`), vật liệu dùng chung,
- * mesh nhiều vật liệu và mesh có con.
+ * Gộp cả nhân vật thành vài LƯỚI CÓ XƯƠNG (SkinnedMesh): mỗi khớp hiện có (thân, đầu, vai, khuỷu, hông, gối, mí mắt…)
+ * trở thành 1 xương, mỗi mảnh gắn cứng 100% vào khớp cha → mọi tư thế/chuyển động giữ nguyên, nhưng GPU tự xoay đỉnh.
+ * - Mảnh vật liệu trơn (không texture, đục, không phát sáng) gộp theo MÀU ĐỈNH dùng chung vật liệu cho MỌI nhân vật.
+ * - Mảnh có texture / vật liệu đặc biệt gộp theo vật liệu.
+ * → ~40 lượt vẽ/nhân vật còn ~10. Bỏ qua mảnh cần điều khiển riêng (`keep`: nhãn cầu, đốm sáng, miệng, váy đổi dáng).
+ * Gọi khi nhân vật còn ở gốc toạ độ (chưa đặt vị trí).
  */
-function mergeAvatarParts(root: THREE.Object3D, keep: Set<THREE.Object3D>) {
-  const nodes: THREE.Object3D[] = [];
-  root.traverse((n) => nodes.push(n));
-  for (const node of nodes) {
-    const buckets = new Map<string, THREE.Mesh[]>();
-    for (const c of node.children) {
-      const m = c as THREE.Mesh;
-      if (!m.isMesh || keep.has(m) || m.children.length || Array.isArray(m.material) || m.userData.shared || !m.visible) continue;
-      if ((m as unknown as { isInstancedMesh?: boolean }).isInstancedMesh) continue;
-      const mat = m.material as THREE.Material;
-      if (mat.userData?.shared) continue;
-      const key = `${mat.uuid}|${m.castShadow}|${m.receiveShadow}`;
-      const list = buckets.get(key) ?? [];
-      list.push(m);
-      buckets.set(key, list);
+const vcMats = new Map<string, THREE.MeshStandardMaterial>();
+function plainKey(m: THREE.Mesh): string | null {
+  const mat = m.material as THREE.MeshStandardMaterial;
+  if (!mat.isMeshStandardMaterial || (mat as unknown as { isMeshPhysicalMaterial?: boolean }).isMeshPhysicalMaterial) return null;
+  if (mat.map || mat.emissiveMap || mat.alphaMap || mat.normalMap || mat.bumpMap || mat.transparent || mat.opacity < 1 || mat.vertexColors) return null;
+  if (mat.emissive.getHex() !== 0 && mat.emissiveIntensity > 0) return null;
+  if (mat.userData?.shared) return null;
+  return `${mat.side}|${Math.round(mat.roughness * 5)}|${Math.round(mat.metalness * 4)}|${mat.flatShading}|${Boolean(mat.userData.noRim)}`;
+}
+function skinAvatar(root: THREE.Group, keep: Set<THREE.Object3D>) {
+  root.updateMatrixWorld(true);
+  const rootInv = root.matrixWorld.clone().invert();
+  const isKept = (o: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = o; p && p !== root; p = p.parent) if (keep.has(p)) return true;
+    return false;
+  };
+  const buckets = new Map<string, { meshes: THREE.Mesh[]; vc: boolean }>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || m === (root as unknown) || m.children.length || !m.visible || Array.isArray(m.material)) return;
+    if ((m as unknown as { isInstancedMesh?: boolean }).isInstancedMesh || (m as unknown as { isSkinnedMesh?: boolean }).isSkinnedMesh) return;
+    if (m.userData.isBlobShadow || isKept(m) || !m.parent) return;
+    const vk = plainKey(m);
+    const key = vk ? `vc|${vk}` : `m|${(m.material as THREE.Material).uuid}`;
+    const b = buckets.get(key) ?? { meshes: [], vc: Boolean(vk) };
+    b.meshes.push(m);
+    buckets.set(key, b);
+  });
+  // Xương = các nút cha của mảnh được gộp (theo thứ tự gặp)
+  const bones: THREE.Object3D[] = [];
+  const boneIdx = new Map<THREE.Object3D, number>();
+  for (const b of buckets.values()) {
+    if (b.meshes.length < 2) continue;
+    for (const m of b.meshes) {
+      const p = m.parent!;
+      if (!boneIdx.has(p)) {
+        boneIdx.set(p, bones.length);
+        bones.push(p);
+      }
     }
-    for (const list of buckets.values()) {
-      if (list.length < 2) continue;
-      const geos: THREE.BufferGeometry[] = [];
-      for (const m of list) {
-        m.updateMatrix();
-        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
-        for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
-        if (!g.attributes.normal) g.computeVertexNormals();
-        if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-        g.applyMatrix4(m.matrix);
-        geos.push(g);
+  }
+  if (!bones.length) return;
+  const skeleton = new THREE.Skeleton(bones as THREE.Bone[]);
+  const tmp = new THREE.Matrix4();
+  for (const [key, b] of buckets) {
+    if (b.meshes.length < 2) continue;
+    const geos: THREE.BufferGeometry[] = [];
+    for (const m of b.meshes) {
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      const n = g.attributes.position.count;
+      if (b.vc) {
+        const c = (m.material as THREE.MeshStandardMaterial).color;
+        const col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+          col[i * 3] = c.r;
+          col[i * 3 + 1] = c.g;
+          col[i * 3 + 2] = c.b;
+        }
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       }
-      const merged = mergeGeometries(geos, false);
-      geos.forEach((g) => g.dispose());
-      if (!merged) continue;
-      const out = new THREE.Mesh(merged, list[0].material);
-      out.castShadow = list[0].castShadow;
-      out.receiveShadow = list[0].receiveShadow;
-      for (const m of list) {
-        node.remove(m);
-        m.geometry.dispose();
+      const bi = boneIdx.get(m.parent!)!;
+      const si = new Uint16Array(n * 4);
+      const sw = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) {
+        si[i * 4] = bi;
+        sw[i * 4] = 1;
       }
-      node.add(out);
+      g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+      g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+      g.applyMatrix4(tmp.multiplyMatrices(rootInv, m.matrixWorld));
+      geos.push(g);
+    }
+    const merged = mergeGeometries(geos, false);
+    geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    let mat: THREE.Material;
+    if (b.vc) {
+      const src = b.meshes[0].material as THREE.MeshStandardMaterial;
+      const vkey = key.slice(3);
+      let vm = vcMats.get(vkey);
+      if (!vm) {
+        vm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: src.roughness, metalness: src.metalness, side: src.side, flatShading: src.flatShading });
+        vm.userData.shared = true;
+        if (!src.userData.noRim) applyRimLight(vm);
+        else vm.userData.noRim = true;
+        vcMats.set(vkey, vm);
+      }
+      mat = vm;
+    } else mat = b.meshes[0].material as THREE.Material;
+    const sm = new THREE.SkinnedMesh(merged, mat);
+    sm.castShadow = false;
+    sm.receiveShadow = b.meshes[0].receiveShadow;
+    root.add(sm);
+    sm.updateMatrixWorld(true);
+    sm.bind(skeleton, sm.matrixWorld);
+    // Hộp bao cố định quanh người (khỏi tính lại theo xương mỗi lần lọc khung nhìn)
+    sm.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 1.3);
+    for (const m of b.meshes) {
+      m.parent!.remove(m);
+      m.geometry.dispose();
     }
   }
 }

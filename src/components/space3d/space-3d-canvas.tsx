@@ -345,6 +345,8 @@ export function Space3DCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  const compileSeqRef = useRef(0);
+  const shadersReadyRef = useRef(false);
   const onPortalRef = useRef(onPortal);
   onPortalRef.current = onPortal;
   const arriveRef = useRef(arriveViaPortal);
@@ -548,6 +550,9 @@ export function Space3DCanvas({
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.info.autoReset = false; // đếm draw call cả frame (composer render nhiều pass)
+    // Không đọc log biên dịch shader (getProgramInfoLog ép trình duyệt biên dịch ĐỒNG BỘ → khựng cả giây khi vật liệu mới xuất hiện).
+    // Bật lại khi ?debug=1 để xem lỗi shader.
+    renderer.debug.checkShaderErrors = Boolean(stateRef.current.debug);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
 
@@ -643,6 +648,15 @@ export function Space3DCanvas({
     interior?.lights.forEach((l) => scene.add(l));
     freezeStaticDescendants(hallEnv);
     scene.add(hallEnv);
+    // Kiến trúc tĩnh → tính ma trận 1 lần rồi bỏ qua mỗi khung hình (trừ khi có bộ phận chuyển động)
+    let envMoving = false;
+    hallEnv.traverse((c) => {
+      if (c.userData.dynamic || c.userData.doorLeaf || c.userData.spinner) envMoving = true;
+    });
+    if (!envMoving) {
+      hallEnv.updateMatrixWorld(true);
+      hallEnv.matrixWorldAutoUpdate = false;
+    }
     // Cổng đi bộ nối Quán cà phê ⇄ Showroom
     const portal = portalFor(sceneKind, widthM, depthM);
     let portalArrow: THREE.Mesh | null = null;
@@ -865,7 +879,8 @@ export function Space3DCanvas({
     };
     stateRef.current.onQualityChange?.(qualityLevel);
     // ?debug=1: lộ scene ra window để kiểm tra trực quan (không bật ở chế độ thường)
-    if (stateRef.current.debug) (window as unknown as { __space3d?: unknown }).__space3d = sceneObjRef.current;
+    // ?debug=1: lộ đối tượng cảnh ra window để đo hiệu năng (đọc URL trực tiếp vì prop debug bật sau lần dựng đầu)
+    if (stateRef.current.debug || new URLSearchParams(window.location.search).get('debug') === '1') (window as unknown as { __space3d?: unknown }).__space3d = sceneObjRef.current;
 
     // Bảng debug (?debug=1) cập nhật trực tiếp DOM, không qua React
     const debugEl = document.createElement('div');
@@ -2122,9 +2137,11 @@ export function Space3DCanvas({
         }
       }
 
-      (sceneObjRef.current?.pipeline ?? pipeline).render();
+      // Lần vào đầu tiên: chưa vẽ khi shader còn biên dịch song song (vẽ sớm sẽ ép trình duyệt chờ đồng bộ ~1s,
+      // đứng hình cả thanh tiến trình). Màn hình tải đang che nên không thấy khác biệt.
+      if (readyFrames >= 2 || shadersReadyRef.current) (sceneObjRef.current?.pipeline ?? pipeline).render();
       // Báo sẵn sàng sau 2 khung hình có đồ đạc (shader đã biên dịch xong)
-      if (readyFrames < 2 && (sceneObjRef.current?.objectMap.size ?? 0) > 0 && ++readyFrames === 2) onReadyRef.current?.();
+      if (readyFrames < 2 && shadersReadyRef.current && (sceneObjRef.current?.objectMap.size ?? 0) > 0 && ++readyFrames === 2) onReadyRef.current?.();
       // Nhãn HTML (tên, bong bóng chat): chỉ cập nhật DOM khi đổi; mờ dần khi xa
       labelRenderer.render(htmlLabels, scene, camera);
 
@@ -2323,6 +2340,7 @@ export function Space3DCanvas({
       if (existing && existing.sig === sig) {
         if (existing.root.position.x !== o.posX || existing.root.position.z !== o.posZ || existing.root.rotation.y !== o.rotY) {
           applyTransform(existing.root, o);
+          existing.root.updateMatrixWorld(true); // gốc có thể đang đóng băng ma trận
           changed = true;
         }
         continue;
@@ -2398,6 +2416,24 @@ export function Space3DCanvas({
     }
     obj.doors = doors;
     rebuildInstancing(obj.objectMap, obj.instancedGroup, editMode);
+    // Đóng băng ma trận thế giới của vật thể tĩnh khi đang chơi: three.js bỏ qua cả nhánh khi cập nhật ma trận mỗi khung hình
+    // (~1ms/khung hình với ~1000 nút). Vật có bộ phận chuyển động (cửa, quạt, cá koi, NPC…) vẫn cập nhật tự động.
+    // Chế độ thiết kế: mở lại để kéo thả.
+    for (const entry of obj.objectMap.values()) {
+      const r = entry.root;
+      let moving = false;
+      if (!editMode) {
+        r.traverse((c) => {
+          const u = c.userData;
+          if (u.dynamic || u.doorLeaf || u.spinner || u.koi) moving = true;
+        });
+      }
+      const freeze = !editMode && !moving;
+      if (freeze) r.updateMatrixWorld(true);
+      r.matrixWorldAutoUpdate = !freeze;
+    }
+    obj.instancedGroup.updateMatrixWorld(true);
+    obj.instancedGroup.matrixWorldAutoUpdate = editMode;
     // NPC quán cà phê theo bố cục (tắt khi đang thiết kế)
     obj.npcs.rebuild(structures, sceneKind === 'CAFE' && !editMode);
     // Lá đa rơi lả tả quanh cây đa
@@ -2458,6 +2494,16 @@ export function Space3DCanvas({
     obj.steam.setEmitters([...fixedSteam, ...(obj.steamCups ?? [])]);
     // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
     obj.renderer.shadowMap.needsUpdate = true;
+    // Biên dịch trước mọi shader của cảnh ở nền (song song, không chặn luồng chính) → vào chơi không khựng khi gặp vật liệu mới.
+    // Màn hình tải chờ bước này xong mới báo sẵn sàng.
+    const compileId = ++compileSeqRef.current;
+    shadersReadyRef.current = false;
+    obj.renderer
+      .compileAsync(obj.scene, obj.camera)
+      .catch(() => undefined)
+      .finally(() => {
+        if (compileSeqRef.current === compileId) shadersReadyRef.current = true;
+      });
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
     const upd = (obj as unknown as { updateSelectionBox?: (id: string | null, c?: boolean) => void }).updateSelectionBox;
     upd?.(editMode ? selectedObjectId : null, selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false);

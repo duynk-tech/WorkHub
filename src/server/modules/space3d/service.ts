@@ -226,16 +226,19 @@ async function ensureDefaultShowroomScene() {
 
 /** Tự tạo scene Kho hàng 3D cho từng Warehouse thật khi nhân viên mở kho. */
 async function ensureWarehouseScenes() {
-  const warehouses = await prisma.warehouse.findMany({
-    where: { status: 'ACTIVE' },
-    orderBy: { id: 'asc' },
-    select: { id: true, code: true, name: true },
-  });
+  const [warehouses, whScenes] = await Promise.all([
+    prisma.warehouse.findMany({
+      where: { status: 'ACTIVE' },
+      orderBy: { id: 'asc' },
+      select: { id: true, code: true, name: true },
+    }),
+    prisma.spaceScene.findMany({ where: { code: { startsWith: 'WH-' } }, select: { code: true } }),
+  ]);
+  const existingCodes = new Set(whScenes.map((x) => x.code));
 
   for (const wh of warehouses) {
     const code = `WH-${wh.id}`;
-    const exists = await prisma.spaceScene.findUnique({ where: { code } });
-    if (exists) continue;
+    if (existingCodes.has(code)) continue;
 
     const racks: SpaceStructure[] = [
       { id: 'rack-a1', kind: 'RACK', label: 'DÃY A · KỆ 01', aisleCode: 'A1', posX: -9, posZ: -6, rotY: 0, widthM: 6, depthM: 1.4, heightM: 3.6, levels: 3, accentColor: '#2563eb' },
@@ -283,6 +286,22 @@ async function ensureWarehouseScenes() {
   }
 }
 
+const ENSURE_TTL_MS = 10 * 60_000;
+let ensuredPublicAt = 0;
+let ensuredStaffAt = 0;
+async function ensureScenesCached(isStaff: boolean) {
+  const now = Date.now();
+  const needPublic = now - ensuredPublicAt > ENSURE_TTL_MS;
+  const needStaff = isStaff && now - ensuredStaffAt > ENSURE_TTL_MS;
+  if (!needPublic && !needStaff) return;
+  await Promise.all([
+    needPublic ? Promise.all([ensureDefaultShowroomScene(), ensureDesignScenes()]) : null,
+    needStaff ? ensureWarehouseScenes() : null,
+  ]);
+  if (needPublic) ensuredPublicAt = now;
+  if (needStaff) ensuredStaffAt = now;
+}
+
 export async function loadSpace3DData(
   ctx: AuthContext | null,
   requestedSceneCode?: string | null,
@@ -290,11 +309,9 @@ export async function loadSpace3DData(
   const isStaff = Boolean(ctx);
   const canEdit = canDesignSpace(ctx);
 
-  await ensureDefaultShowroomScene();
-  if (isStaff) {
-    await ensureWarehouseScenes();
-  }
-  await ensureDesignScenes();
+  // Các bước "đảm bảo cảnh mặc định tồn tại" chỉ cần chạy định kỳ (không phải mỗi lượt tải trang):
+  // mỗi tiến trình máy chủ kiểm tra lại sau 10 phút; các bước độc lập chạy song song.
+  await ensureScenesCached(isStaff);
 
   const [branding, companyCfg, allScenes, departments] = await Promise.all([
     getAppBranding(),
@@ -326,7 +343,8 @@ export async function loadSpace3DData(
   // Chỉ coi là "đang trực" khi trình duyệt của nhân viên còn gửi nhịp tim (mỗi 60s).
   // Quá 3 phút không có tín hiệu (đóng tab, mất mạng, bản ghi seed cũ) → không hiển thị & dọn khỏi DB.
   const activeSince = new Date(Date.now() - PRESENCE_TTL_MS);
-  await prisma.spacePresence.deleteMany({ where: { lastSeenAt: { lt: activeSince } } }).catch(() => undefined);
+  // Dọn bản ghi trực cũ chạy nền (truy vấn bên dưới đã lọc theo thời gian) → không chặn tải trang
+  void prisma.spacePresence.deleteMany({ where: { lastSeenAt: { lt: activeSince } } }).catch(() => undefined);
   const [placementRows, presenceRows, catalogRows, myAvatarRow] = await Promise.all([
     prisma.spacePlacement.findMany({
       where: {

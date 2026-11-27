@@ -80,7 +80,10 @@ export const M = {
 };
 
 export function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0, radius = 0): THREE.Mesh {
-  const geo = radius > 0 ? new RoundedBoxGeometry(w, h, d, 3, Math.min(radius, w / 2, h / 2, d / 2)) : new THREE.BoxGeometry(w, h, d);
+  // Số phân đoạn bo góc theo bán kính thật: bo ≤1.5cm nhìn như vát → 1 phân đoạn (ít hơn ~5 lần tam giác), ≤4cm → 2, lớn hơn → 3
+  const r = Math.min(radius, w / 2, h / 2, d / 2);
+  const segs = r <= 0.015 ? 1 : r <= 0.04 ? 2 : 3;
+  const geo = radius > 0 ? new RoundedBoxGeometry(w, h, d, segs, r) : new THREE.BoxGeometry(w, h, d);
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
   m.castShadow = true;
@@ -97,7 +100,8 @@ export function cyl(rTop: number, rBottom: number, h: number, mat: THREE.Materia
 }
 
 export function sphere(r: number, mat: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), mat);
+  // Hạt nhỏ (bóng đèn, nụ hoa, núm) không cần 560 tam giác
+  const m = new THREE.Mesh(r < 0.03 ? new THREE.SphereGeometry(r, 10, 7) : r < 0.1 ? new THREE.SphereGeometry(r, 14, 10) : new THREE.SphereGeometry(r, 20, 14), mat);
   m.position.set(x, y, z);
   m.castShadow = true;
   return m;
