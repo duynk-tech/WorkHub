@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createOutdoorTree } from './hall';
 import { createGrassTexture, lightboxMat, registerEmissive, sharedMat } from './materials';
 import { M, box, cyl } from './props/kit';
+import { buildTreeRow } from './props/garden';
 import { brickBumpTex, brickTex, labelTex } from './props/textures';
 
 /**
@@ -9,7 +10,7 @@ import { brickBumpTex, brickTex, labelTex } from './props/textures';
  * Mặt trước (lối vào) ở phía +Z. Trả về group + đèn nội thất ấm (không đổ bóng, rẻ).
  */
 
-function outdoor(w: number, d: number, env: THREE.Group) {
+function outdoor(w: number, d: number, env: THREE.Group, lowPolyTrees = true) {
   const lawn = new THREE.Mesh(
     new THREE.PlaneGeometry(600, 600),
     sharedMat('lawn', () => new THREE.MeshStandardMaterial({ map: createGrassTexture(), roughness: 0.95 })),
@@ -29,7 +30,7 @@ function outdoor(w: number, d: number, env: THREE.Group) {
   const trees: [number, number, number][] = [
     [-w / 2 - 4, d / 2 + 4, 1.2], [w / 2 + 4, d / 2 + 4, 1.3], [-w / 2 - 5, -d / 4, 1.25], [w / 2 + 5, -d / 4, 1.15], [0, -d / 2 - 6, 1.4],
   ];
-  for (const [x, z, s] of trees) {
+  if (lowPolyTrees) for (const [x, z, s] of trees) {
     const t = createOutdoorTree(s);
     t.position.set(x, 0, z);
     env.add(t);
@@ -80,7 +81,7 @@ export function createCafeEnvironment(widthM: number, depthM: number, companyNam
   const lights: THREE.Light[] = [];
   const w = widthM;
   const d = depthM;
-  outdoor(w, d, env);
+  outdoor(w, d, env, false); // quán vườn dùng hàng cây lá thật bên dưới
   // Nền bê tông mài loang nhẹ
   const yard = sharedMat(`gardenYard:${w}x${d}`, () => {
     const c = document.createElement('canvas');
@@ -145,19 +146,13 @@ export function createCafeEnvironment(widthM: number, depthM: number, companyNam
   const seg = box(len, 1.0, 0.55, gabion, gap / 2 + len / 2, 0.5, d / 2 - 0.27);
   seg.userData.occluder = true;
   env.add(seg);
-  // Hàng cây cao rợp bóng bao quanh (bàng, sa kê, me tây)
-  for (let x = -w / 2 - 1.5; x <= w / 2 + 1.5; x += 4.2) {
-    const t = createOutdoorTree(1.5 + Math.abs(Math.sin(x)) * 0.5);
-    t.position.set(x, 0, -d / 2 - 2.2);
-    env.add(t);
-  }
-  for (const sgn of [-1, 1]) {
-    for (let z = -d / 2; z <= d / 2 - 2; z += 4.6) {
-      const t = createOutdoorTree(1.4 + Math.abs(Math.cos(z)) * 0.5);
-      t.position.set(sgn * (w / 2 + 2.2), 0, z);
-      env.add(t);
-    }
-  }
+  // Hàng cây cao rợp bóng bao quanh (bàng, sa kê, me tây) — tán lá thật, đung đưa theo gió
+  const treePts: { x: number; z: number; scale: number }[] = [];
+  for (let x = -w / 2 - 1.5; x <= w / 2 + 1.5; x += 4.6) treePts.push({ x, z: -d / 2 - 2.4, scale: 1.25 + Math.abs(Math.sin(x)) * 0.35 });
+  for (const sgn of [-1, 1]) for (let z = -d / 2 + 1; z <= d / 2 - 2; z += 5) treePts.push({ x: sgn * (w / 2 + 2.4), z, scale: 1.15 + Math.abs(Math.cos(z)) * 0.35 });
+  // 2 cây lớn rợp hai bên cổng (như ảnh thật: cổng nằm dưới tán cây)
+  for (const sgn of [-1, 1]) treePts.push({ x: sgn * (gap / 2 + 2.6), z: d / 2 + 1.6, scale: 1.45 });
+  env.add(buildTreeRow(treePts, Math.round(w * 13 + d)));
   // Ánh vàng ấm dưới tán (đêm nổi bật nhờ dây đèn phát sáng)
   for (const [x, z] of [[0, -d * 0.15], [-w * 0.25, d * 0.1], [w * 0.25, -d * 0.3]] as [number, number][]) warmLight(env, lights, x, 3.4, z, 3.2, '#ffcf8a', 13);
   return { group: env, lights };

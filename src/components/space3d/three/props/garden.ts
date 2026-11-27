@@ -711,7 +711,7 @@ function netMat() {
         (ctx, w, h) => {
           ctx.clearRect(0, 0, w, h);
           ctx.strokeStyle = 'rgba(240,240,235,0.9)';
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = 1;
           for (let x = 0; x <= w; x += 8) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
@@ -725,11 +725,11 @@ function netMat() {
             ctx.stroke();
           }
         },
-        [30, 30],
+        [90, 90],
       ),
       color: '#f5f5f0',
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.38,
       side: THREE.DoubleSide,
       depthWrite: false,
       roughness: 0.9,
@@ -1586,5 +1586,53 @@ export function buildLogoStandee(o: SpaceObject): THREE.Group {
   face.position.set(0, board + w / 2, 0.022);
   face.userData.noMerge = true;
   g.add(face);
+  return g;
+}
+
+/**
+ * Hàng cây lớn (bàng, sa kê, me tây) quanh quán: thân + cành ống cong, tán gồm nhiều chùm thẻ lá đung đưa theo gió.
+ * Mọi tán lá trong hàng gom vào 1 InstancedMesh (1 draw call) — thay cho cây khối đa giác.
+ */
+export function buildTreeRow(points: { x: number; z: number; scale: number }[], seed = 7): THREE.Group {
+  const g = new THREE.Group();
+  const r = seeded(seed);
+  const bark = sharedMat('g:treeBark', () => new THREE.MeshStandardMaterial({ color: '#5b4a3a', roughness: 0.95 }));
+  const list: Card[] = [];
+  for (const p of points) {
+    const s = p.scale;
+    const H = 4.2 * s;
+    // Thân hơi nghiêng & cong
+    const lean = new THREE.Vector3((r() - 0.5) * 0.5, 0, (r() - 0.5) * 0.5);
+    const top = new THREE.Vector3(p.x + lean.x, H * 0.62, p.z + lean.z);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(p.x, 0, p.z), new THREE.Vector3(p.x + lean.x * 0.4, H * 0.3, p.z + lean.z * 0.4), top]), 8, 0.16 * s, 7, false), bark));
+    // Cành chính tỏa ra → mỗi cành mang 1 chùm lá
+    const branches = 5 + Math.floor(r() * 3);
+    for (let b = 0; b < branches; b++) {
+      const a = (b / branches) * Math.PI * 2 + r() * 0.6;
+      const len = (1.4 + r() * 1.2) * s;
+      const tip = new THREE.Vector3(top.x + Math.cos(a) * len, top.y + (0.5 + r() * 1.3) * s, top.z + Math.sin(a) * len);
+      g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([top, top.clone().lerp(tip, 0.5).add(new THREE.Vector3(0, 0.3 * s, 0)), tip]), 5, 0.06 * s, 5, false), bark));
+      const rad = (1.0 + r() * 0.6) * s;
+      for (let k = 0; k < 24; k++) {
+        const u = r() * Math.PI * 2;
+        const v = Math.acos(2 * r() - 1);
+        list.push({
+          pos: new THREE.Vector3(tip.x + Math.sin(v) * Math.cos(u) * rad, tip.y + Math.cos(v) * rad * 0.6, tip.z + Math.sin(v) * Math.sin(u) * rad),
+          yaw: r() * Math.PI * 2,
+          pitch: -0.3 - r() * 1.2,
+          roll: r() - 0.5,
+          sx: (1.1 + r() * 0.7) * s,
+          sy: (1.1 + r() * 0.7) * s,
+        });
+      }
+    }
+    // Chùm lá đỉnh
+    for (let k = 0; k < 30; k++) {
+      const u = r() * Math.PI * 2;
+      const rr = r() * 1.6 * s;
+      list.push({ pos: new THREE.Vector3(top.x + Math.cos(u) * rr, top.y + (1.4 + r() * 1.2) * s, top.z + Math.sin(u) * rr), yaw: r() * 6.28, pitch: -0.5 - r(), roll: r() - 0.5, sx: 1.3 * s, sy: 1.3 * s });
+    }
+  }
+  g.add(cards('ficus', list));
   return g;
 }

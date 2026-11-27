@@ -1700,26 +1700,35 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             zIndex: 50,
             background: 'rgba(2, 6, 23, 0.65)',
             backdropFilter: 'blur(8px)',
-            display: 'grid',
-            placeItems: 'center',
-            padding: 16,
+            // Màn hình thấp (laptop 13") → cuộn được, khung vẫn căn giữa khi đủ chỗ
+            display: 'flex',
+            overflowY: 'auto',
+            padding: 'clamp(8px, 2vh, 16px)',
           }}
         >
+          <style>{`
+            @media (max-height: 760px) {
+              .wh3d-entry-logo { width: 46px !important; height: 46px !important; padding: 6px !important; }
+              .wh3d-entry-card { padding: 16px 20px !important; gap: 10px !important; }
+            }
+          `}</style>
           <div
+            className="wh3d-entry-card"
             style={{
               ...glassStyle,
               width: '100%',
               maxWidth: 420,
+              margin: 'auto',
               borderRadius: 18,
-              padding: 28,
+              padding: 'clamp(16px, 3vh, 28px)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 16,
+              gap: 'clamp(10px, 1.8vh, 16px)',
               textAlign: 'center',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div style={{ width: 68, height: 68, borderRadius: 16, background: '#ffffff', padding: 10, display: 'grid', placeItems: 'center' }}>
+              <div className="wh3d-entry-logo" style={{ width: 68, height: 68, borderRadius: 16, background: '#ffffff', padding: 10, display: 'grid', placeItems: 'center' }}>
                 <img src={data.branding.logoUrl} alt={data.branding.appName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               </div>
             </div>
@@ -1730,9 +1739,6 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               <h1 style={{ fontSize: 22, fontWeight: 700, marginTop: 6, color: '#ffffff', lineHeight: 1.25 }}>
                 {data.branding.companyName}
               </h1>
-              <p style={{ fontSize: 13, color: '#cbd5e1', marginTop: 8, lineHeight: 1.5 }}>
-                Tham quan trực tiếp không gian triển lãm máy móc, gặp nhân viên tư vấn tại quầy và xem thông số thiết bị ngay trong TIM Space.
-              </p>
             </div>
             {data.scenes.length > 1 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left' }}>

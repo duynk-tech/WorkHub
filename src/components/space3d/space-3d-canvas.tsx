@@ -39,6 +39,7 @@ import {
 import { createExhibitionHallEnvironment } from './three/hall';
 import { rebuildInstancing } from './three/instancing';
 import { NpcSystem } from './three/npc';
+import { FallingLeaves } from './three/ambient';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { buildDrink, buildOrderDrinks } from './three/props/drinks';
@@ -437,6 +438,8 @@ export function Space3DCanvas({
     instancedGroup: THREE.Group;
     /** Nhân vật tự động quán cà phê */
     npcs: NpcSystem;
+    /** Lá rơi quanh cây đa (quán cà phê) */
+    leaves: FallingLeaves | null;
     objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
     selectionBox: THREE.Box3Helper;
     ghost: THREE.Mesh;
@@ -761,6 +764,7 @@ export function Space3DCanvas({
       objectsGroup,
       instancedGroup,
       npcs,
+      leaves: null,
       objectMap: new Map(),
       selectionBox,
       ghost,
@@ -1796,6 +1800,7 @@ export function Space3DCanvas({
       }
 
       if (frameCount % 10 === 0) updateDutyHost(currentPlayer, totalTime);
+      sceneObjRef.current?.leaves?.update(dt, totalTime);
       // NPC quán cà phê: làm việc, chào khách, bưng nước
       if (sceneObjRef.current?.npcs.avatars.length) {
         const people: { id: string; x: number; z: number }[] = [{ id: 'self', x: currentPlayer.group.position.x, z: currentPlayer.group.position.z }];
@@ -2016,6 +2021,7 @@ export function Space3DCanvas({
       (sceneObjRef.current?.pipeline ?? pipeline).dispose();
       skySys.dispose();
       sceneObjRef.current?.npcs.dispose();
+      sceneObjRef.current?.leaves?.dispose();
       envRT.dispose();
       floorTex.map.dispose();
       floorTex.roughnessMap.dispose();
@@ -2244,6 +2250,17 @@ export function Space3DCanvas({
     rebuildInstancing(obj.objectMap, obj.instancedGroup, editMode);
     // NPC quán cà phê theo bố cục (tắt khi đang thiết kế)
     obj.npcs.rebuild(structures, sceneKind === 'CAFE' && !editMode);
+    // Lá đa rơi lả tả quanh cây đa
+    if (obj.leaves) {
+      obj.scene.remove(obj.leaves.mesh);
+      obj.leaves.dispose();
+      obj.leaves = null;
+    }
+    const banyan = structures.find((o) => o.kind === 'BANYAN_TREE');
+    if (banyan && !editMode) {
+      obj.leaves = new FallingLeaves(banyan.posX, banyan.posZ, banyan.widthM * 2.2, Math.min(7, banyan.heightM * 0.7));
+      obj.scene.add(obj.leaves.mesh);
+    }
     // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
     obj.renderer.shadowMap.needsUpdate = true;
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
