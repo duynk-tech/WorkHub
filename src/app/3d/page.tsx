@@ -5,6 +5,11 @@ import { Space3DExperience } from '@/components/space3d/space-3d-experience';
 export const metadata = {
   title: 'TIM Space — Showroom & Café ảo (Beta)',
   description: 'TIM Space: tham quan showroom thiết bị, quán cà phê, văn phòng và kho hàng ảo của TIM Corp',
+  // Icon tab trình duyệt / màn hình chính: biểu tượng tam giác TIM Corp
+  icons: {
+    icon: [{ url: '/logo-3d.png', type: 'image/png', sizes: '150x150' }],
+    apple: [{ url: '/logo-3d.png', sizes: '150x150' }],
+  },
 };
 
 export const dynamic = 'force-dynamic';

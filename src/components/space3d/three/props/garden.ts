@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { SpaceObject } from '@/lib/space-3d-types';
 import { applyWindSway, registerEmissive, sharedMat } from '../materials';
 import { M, box, cyl, hashId, lathe, seeded, sphere } from './kit';
@@ -614,21 +615,112 @@ export function buildLiveEdgeTable(o: SpaceObject): THREE.Group {
   }
   // Chậu hoa hồng môn trang trí giữa bàn (bàn dài ≥ 3m)
   if (w >= 3) {
-    const vase = M.ceramic('#e7e2d8');
-    const petal = sharedMat('g:anthurium', () => new THREE.MeshPhysicalMaterial({ color: '#e11d48', roughness: 0.25, clearcoat: 0.8 }));
-    const leaf = sharedMat('g:anthLeaf', () => new THREE.MeshStandardMaterial({ color: '#2f6b2f', roughness: 0.5 }));
     const spots = w >= 6 ? [-w * 0.25, w * 0.25] : [0];
-    for (const x of spots) {
-      g.add(cyl(0.07, 0.055, 0.14, vase, x, h + 0.07, 0, 14));
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const f = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 6), i % 2 ? petal : leaf);
-        f.scale.set(1, 0.25, i % 2 ? 0.8 : 1.4);
-        f.position.set(x + Math.cos(a) * 0.09, h + 0.2 + (i % 3) * 0.05, Math.sin(a) * 0.09);
-        f.rotation.set(0.6, a, 0);
-        g.add(f);
-      }
+    for (const [i, x] of spots.entries()) {
+      const pot = buildAnthuriumPot(hashId(o.id) + i);
+      pot.position.set(x, h, 0);
+      g.add(pot);
     }
+  }
+  return g;
+}
+
+// ───────────── Chậu hồng môn để bàn ─────────────
+/** Phiến hình tim (lá / mo hoa): khía ở gốc toạ độ, phiến kéo dài theo +Y, cong lòng máng hai mép & rủ đầu chóp */
+function heartBlade(len: number, wid: number, cup: number, droop: number): THREE.BufferGeometry {
+  const sh = new THREE.Shape();
+  const hw = wid / 2;
+  sh.moveTo(0, 0);
+  sh.bezierCurveTo(-hw * 0.5, -len * 0.12, -hw * 1.05, len * 0.05, -hw, len * 0.3);
+  sh.bezierCurveTo(-hw * 0.9, len * 0.62, -hw * 0.35, len * 0.88, 0, len);
+  sh.bezierCurveTo(hw * 0.35, len * 0.88, hw * 0.9, len * 0.62, hw, len * 0.3);
+  sh.bezierCurveTo(hw * 1.05, len * 0.05, hw * 0.5, len * 0.12, 0, 0);
+  const geo = new THREE.ShapeGeometry(sh, 10);
+  const p = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const y = p.getY(i);
+    p.setZ(i, -cup * (x / hw) ** 2 * wid + droop * (y / len) ** 2 * len);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+let anthGeo: { leaf: THREE.BufferGeometry; spathe: THREE.BufferGeometry; spadix: THREE.BufferGeometry; stem: THREE.BufferGeometry } | null = null;
+function anthuriumGeo() {
+  anthGeo ??= {
+    leaf: heartBlade(0.12, 0.075, 0.12, 0.18),
+    spathe: heartBlade(0.075, 0.062, 0.05, 0.06),
+    spadix: new THREE.ConeGeometry(0.006, 0.05, 8).translate(0, 0.025, 0),
+    stem: new THREE.CylinderGeometry(0.0028, 0.0035, 1, 5).translate(0, 0.5, 0),
+  };
+  return anthGeo;
+}
+/** Chậu sứ hồng môn: vành chậu, đất, lá tim xanh bóng trên cuống, hoa mo đỏ + nhụy vàng. Gốc = đáy chậu. */
+function buildAnthuriumPot(seed: number): THREE.Group {
+  const g = new THREE.Group();
+  const r = seeded(seed);
+  const G = anthuriumGeo();
+  const potH = 0.12;
+  // Chậu sứ men trắng ngà, thành hơi loe, gờ miệng tròn
+  const pot = lathe(
+    [
+      [0.001, 0],
+      [0.05, 0],
+      [0.054, 0.006],
+      [0.064, potH - 0.012],
+      [0.07, potH - 0.006],
+      [0.071, potH],
+      [0.066, potH + 0.004],
+      [0.062, potH - 0.004],
+    ],
+    M.ceramic('#ece6da'),
+    28,
+  );
+  g.add(pot);
+  const soil = cyl(0.061, 0.061, 0.006, sharedMat('g:potSoil', () => new THREE.MeshStandardMaterial({ color: '#3b2a1e', roughness: 1 })), 0, potH - 0.01, 0, 20);
+  soil.castShadow = false;
+  g.add(soil);
+  const leafMat = sharedMat('g:anthLeaf2', () => new THREE.MeshPhysicalMaterial({ color: '#1f5a26', roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.4, side: THREE.DoubleSide }));
+  const spatheMat = sharedMat('g:anthSpathe', () => new THREE.MeshPhysicalMaterial({ color: '#d0102f', roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.1, side: THREE.DoubleSide }));
+  const spadixMat = sharedMat('g:anthSpadix', () => new THREE.MeshStandardMaterial({ color: '#f1d88a', roughness: 0.7 }));
+  const stemMat = sharedMat('g:anthStem', () => new THREE.MeshStandardMaterial({ color: '#3f7a35', roughness: 0.6 }));
+  const up = new THREE.Vector3(0, 1, 0);
+  /** Cuống từ đất tới điểm gắn phiến + phiến hướng ra ngoài theo góc a, ngửa pitch */
+  const add = (blade: THREE.BufferGeometry, mat: THREE.Material, a: number, out: number, height: number, pitch: number, flower: boolean) => {
+    const base = new THREE.Vector3(Math.cos(a) * 0.012, potH - 0.007, Math.sin(a) * 0.012);
+    const tip = new THREE.Vector3(Math.cos(a) * out, potH + height, Math.sin(a) * out);
+    const dir = tip.clone().sub(base);
+    const stem = new THREE.Mesh(G.stem, stemMat);
+    stem.position.copy(base);
+    stem.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+    stem.scale.set(1, dir.length(), 1);
+    g.add(stem);
+    const holder = new THREE.Group();
+    holder.position.copy(tip);
+    holder.rotation.order = 'YXZ';
+    holder.rotation.y = Math.atan2(Math.cos(a), Math.sin(a));
+    holder.rotation.x = pitch;
+    const m = new THREE.Mesh(blade, mat);
+    m.castShadow = true;
+    holder.add(m);
+    if (flower) {
+      const sp = new THREE.Mesh(G.spadix, spadixMat);
+      sp.position.set(0, 0.006, 0.003);
+      sp.rotation.x = 0.55;
+      holder.add(sp);
+    }
+    g.add(holder);
+  };
+  const off = r() * Math.PI * 2;
+  // 7 lá xoè quanh chậu, cao thấp so le
+  for (let i = 0; i < 7; i++) {
+    const a = off + (i / 7) * Math.PI * 2 + (r() - 0.5) * 0.4;
+    add(G.leaf, leafMat, a, 0.05 + r() * 0.025, 0.07 + r() * 0.07, 0.75 + r() * 0.45, false);
+  }
+  // 3 hoa vươn cao hơn lá
+  for (let i = 0; i < 3; i++) {
+    const a = off + 0.45 + (i / 3) * Math.PI * 2 + (r() - 0.5) * 0.5;
+    add(G.spathe, spatheMat, a, 0.035 + r() * 0.02, 0.17 + r() * 0.06, 0.5 + r() * 0.35, true);
   }
   return g;
 }
@@ -950,26 +1042,99 @@ export function buildBanana(o: SpaceObject): THREE.Group {
   return g;
 }
 
-const stoneMat = (tone: number) => sharedMat(`g:stone:${tone}`, () => new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.1, 0.04, 0.38 + tone * 0.08), roughness: 0.9 }));
-function rock(r: () => number, size: number, flat = 1): THREE.Mesh {
-  const geo = new THREE.IcosahedronGeometry(size, 1);
+const stoneMat = (tone: number) =>
+  sharedMat(`g:stone2:${tone}`, () => new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.09, 0.05, 0.5 + tone * 0.06), roughness: 0.92, vertexColors: true }));
+/**
+ * Tảng đá LIỀN KHỐI: đỉnh dùng chung (mergeVertices) nên bóp méo không làm hở mặt;
+ * nhấp nhô bằng tổng sóng mượt theo hướng (cùng đỉnh → cùng độ lệch), đáy cắt phẳng để đặt lún xuống đất,
+ * màu loang: kẽ lõm tối hơn, mặt trên ngả rêu xanh, lốm đốm hạt khoáng.
+ * Gốc toạ độ = mặt đất; đỉnh đá cao ≈ 0.75·size·flat.
+ */
+function rock(r: () => number, size: number, flat = 1, moss = 0.5): THREE.Mesh {
+  let geo: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, 3);
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
+  geo = mergeVertices(geo, 1e-4);
   const p = geo.attributes.position as THREE.BufferAttribute;
+  const a = r() * 10, b = r() * 10, c = r() * 10, e = r() * 10;
+  const sx = 0.85 + r() * 0.35;
+  const sz = 0.8 + r() * 0.35;
+  const sy = (0.62 + r() * 0.2) * flat;
+  const lump = new Float32Array(p.count);
+  const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
-    const k = 0.82 + r() * 0.3;
-    p.setXYZ(i, p.getX(i) * k, p.getY(i) * k * 0.7 * flat, p.getZ(i) * k);
+    v.fromBufferAttribute(p, i).normalize();
+    // Khối lớn (mặt vát) + gờ vừa + sần nhỏ
+    const n =
+      0.16 * Math.sin(2.1 * v.x + a) * Math.sin(1.9 * v.z + b) +
+      0.1 * Math.sin(3.7 * v.y + c + 2.3 * v.x) +
+      0.06 * Math.sin(6.3 * v.z + e) * Math.sin(5.1 * v.x + a) +
+      0.025 * Math.sin(13 * v.x + 11 * v.y + b) * Math.sin(12 * v.z + c);
+    lump[i] = n;
+    const k = 1 + n;
+    let y = v.y * k * sy;
+    const floor = -0.18 * sy;
+    if (y < floor) y = floor + (y - floor) * 0.12; // đáy gần phẳng
+    p.setXYZ(i, v.x * k * sx * size, (y + 0.18 * sy) * size, v.z * k * sz * size);
   }
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, stoneMat(Math.floor(r() * 3)));
+  const nrm = geo.attributes.normal as THREE.BufferAttribute;
+  const col = new Float32Array(p.count * 3);
+  const mossOn = r() < moss;
+  for (let i = 0; i < p.count; i++) {
+    // Kẽ lõm (lump âm) tối, gờ lồi sáng; hạt khoáng lốm đốm
+    const speck = Math.sin(i * 12.9898 + a * 78.233) * 43758.5453;
+    const grain = (speck - Math.floor(speck) - 0.5) * 0.12;
+    const l = 0.82 + lump[i] * 1.1 + grain;
+    const ny = nrm.getY(i);
+    let rr = l, gg = l * 0.99, bb = l * 0.95;
+    // Chân đá ẩm, sẫm màu đất
+    const h = p.getY(i) / (size * 0.75 * flat + 1e-6);
+    if (h < 0.18) {
+      const t = 1 - h / 0.18;
+      rr *= 1 - 0.3 * t;
+      gg *= 1 - 0.32 * t;
+      bb *= 1 - 0.36 * t;
+    }
+    if (mossOn && ny > 0.55) {
+      const t = Math.min(1, (ny - 0.55) * 2.6) * (0.55 + grain * 3);
+      rr = rr * (1 - t) + 0.36 * t;
+      gg = gg * (1 - t) + 0.46 * t;
+      bb = bb * (1 - t) + 0.22 * t;
+    }
+    col[i * 3] = rr;
+    col[i * 3 + 1] = gg;
+    col[i * 3 + 2] = bb;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Mesh(geo, stoneMat(Math.floor(r() * 3)));
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
 }
 export function buildBoulder(o: SpaceObject): THREE.Group {
   const g = new THREE.Group();
   const r = seeded(hashId(o.id));
   const n = o.widthM > 0.9 ? 3 : 1;
+  // Đá chính + 2 tảng nhỏ tựa sát chân (chồng mép lên nhau, lún nhẹ xuống đất) → cụm đá liền khối
+  const main = o.heightM / 0.75;
   for (let i = 0; i < n; i++) {
-    const s = (o.heightM * (i === 0 ? 1 : 0.6)) / 1.4;
-    const m = rock(r, s);
-    m.position.set(i === 0 ? 0 : (r() - 0.5) * o.widthM * 0.7, s * 0.55, i === 0 ? 0 : (r() - 0.5) * o.depthM * 0.7);
+    const s = i === 0 ? main : main * (0.42 + r() * 0.16);
+    const m = rock(r, Math.min(s, o.widthM * 0.55), i === 0 ? 1 : 0.85);
+    if (i > 0) {
+      const ang = r() * Math.PI * 2;
+      const dist = main * 0.62 + s * 0.35;
+      m.position.set(Math.cos(ang) * Math.min(dist, o.widthM * 0.5), -0.02, Math.sin(ang) * Math.min(dist, o.depthM * 0.5));
+    } else m.position.y = -0.03;
     m.rotation.y = r() * 6;
+    g.add(m);
+  }
+  // Sỏi vụn rải quanh chân đá
+  for (let i = 0; i < 6; i++) {
+    const ang = r() * Math.PI * 2;
+    const m = rock(r, 0.035 + r() * 0.04, 0.7, 0);
+    m.castShadow = false;
+    m.position.set(Math.cos(ang) * (main * 0.75 + r() * 0.25), -0.005, Math.sin(ang) * (main * 0.7 + r() * 0.25));
     g.add(m);
   }
   return g;
@@ -1048,8 +1213,8 @@ export function buildSteppingPath(o: SpaceObject): THREE.Group {
   }
   for (const sx of [-1, 1]) {
     for (let z = -d / 2 + 0.3; z < d / 2; z += 0.9 + r() * 0.8) {
-      const m = rock(r, 0.12 + r() * 0.12);
-      m.position.set(sx * (w / 2 - 0.05), 0.06, z);
+      const m = rock(r, 0.1 + r() * 0.1, 0.8);
+      m.position.set(sx * (w / 2 - 0.05), -0.01, z);
       g.add(m);
     }
   }
@@ -1843,18 +2008,25 @@ export function buildChalkboard(o: SpaceObject): THREE.Group {
   const wood = M.wood('#8a5a35');
   const lines = ['Cà phê sữa đá · 39k', 'Bạc xỉu · 42k', 'Trà đào cam sả · 45k', 'Matcha latte · 52k', 'Bánh quê nóng · 25k', 'Nước cam ép · 45k'];
   const face = sharedMat(`g:chalk:${o.label}`, () => new THREE.MeshStandardMaterial({ map: chalkTex(o.label || 'Menu hôm nay', lines), roughness: 0.95 }));
-  const tilt = 0.18;
+  // Bảng chữ A: 2 mặt chụm ở bản lề trên đỉnh, chân xoè ra trước/sau (hình Λ khi nhìn ngang).
+  // Mỗi mặt treo từ bản lề → không bao giờ cắt xuyên qua nhau.
+  const tilt = 0.2;
+  const top = h * Math.cos(tilt);
   for (const s of [1, -1]) {
+    const hinge = new THREE.Group();
+    hinge.position.set(0, top, 0);
+    if (s < 0) hinge.rotation.y = Math.PI; // mặt sau quay ra phía sau
     const panel = new THREE.Group();
-    panel.add(box(w, h, 0.03, wood, 0, h / 2, 0));
+    panel.rotation.x = -tilt; // chân đá ra phía +Z cục bộ (mặt chữ hướng ra ngoài, hơi ngửa lên)
+    panel.add(box(w, h, 0.03, wood, 0, -h / 2, 0.015));
     const board = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.1, h - 0.12), face);
-    board.position.set(0, h / 2, 0.016);
+    board.position.set(0, -h / 2, 0.032);
     panel.add(board);
-    panel.position.z = s * Math.sin(tilt) * h * 0.5;
-    panel.rotation.x = -s * tilt;
-    if (s < 0) panel.rotation.y = Math.PI;
-    g.add(panel);
+    hinge.add(panel);
+    g.add(hinge);
   }
+  // Bản lề kim loại trên đỉnh
+  g.add(box(w * 0.7, 0.025, 0.05, M.metal('#3a3d42', 0.5), 0, top + 0.005, 0));
   return g;
 }
 

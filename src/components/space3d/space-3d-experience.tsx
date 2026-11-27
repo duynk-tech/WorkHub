@@ -1,9 +1,10 @@
 'use client';
 
+import { SpaceLoader, markSpaceCodeLoaded, isSpaceCodeLoaded } from './space-loader';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Eye, Sun, Moon, Map as MapIcon, Package, Building2, Wrench, Sparkles, Upload,
   Save, RotateCw, Move, Trash2, Plus, X, ArrowLeft, UserCheck, LogIn, Search, Compass, Shirt,
@@ -78,15 +79,13 @@ import {
 } from './three/quality';
 
 const Space3DCanvas = dynamic(
-  () => import('./space-3d-canvas').then((m) => m.Space3DCanvas),
-  {
-    ssr: false,
-    loading: () => (
-      <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: '#0f172a', color: '#e2e8f0', fontSize: 14 }}>
-        Đang khởi tạo TIM Space…
-      </div>
-    ),
-  },
+  () =>
+    import('./space-3d-canvas').then((m) => {
+      markSpaceCodeLoaded();
+      return m.Space3DCanvas;
+    }),
+  // Màn hình tải % do SpaceLoader (bên dưới) đảm nhận
+  { ssr: false, loading: () => <div style={{ position: 'fixed', inset: 0, background: '#0f172a' }} /> },
 );
 
 type DockTab = 'none' | 'departments' | 'products' | 'design' | 'map';
@@ -234,10 +233,28 @@ function HudButton({
 
 export function Space3DExperience({ data }: { data: SpacePayload }) {
   const router = useRouter();
+  // Vừa đi bộ qua cổng nối sang cảnh này (?via=portal) → nhân vật xuất hiện ngay cổng đối diện
+  const arriveViaPortal = useSearchParams().get('via') === 'portal';
   const [pending, startTransition] = useTransition();
 
   // Guest entry overlay + Persistent Staff Avatar customizer
   const [entered, setEntered] = useState(data.isStaff);
+  // Màn hình tải %: tải mã 3D → dựng cảnh → khung hình đầu
+  const [codeLoaded, setCodeLoaded] = useState(isSpaceCodeLoaded);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [loaderGone, setLoaderGone] = useState(false);
+  useEffect(() => {
+    if (codeLoaded) return;
+    const on = () => setCodeLoaded(true);
+    window.addEventListener('timspace:code', on);
+    if (isSpaceCodeLoaded()) on();
+    return () => window.removeEventListener('timspace:code', on);
+  }, [codeLoaded]);
+  // Phòng hờ: không bao giờ kẹt màn hình tải quá 25 giây
+  useEffect(() => {
+    const id = window.setTimeout(() => setSceneReady(true), 25000);
+    return () => window.clearTimeout(id);
+  }, []);
   const [guestName, setGuestName] = useState('Khách tham quan');
   const [guestGender, setGuestGender] = useState<'male' | 'female'>('male');
   /** Chỉ bay intro khi khách vừa bấm vào (không bay lại khi khôi phục phiên sau reload) */
@@ -955,25 +972,52 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   }, [data.merchItems, data.catalog]);
 
   // ───── Chuyển không gian (Showroom / Café / Văn phòng / Kho) có màn hình chờ ─────
-  const [switching, setSwitching] = useState<{ code: string; name: string } | null>(null);
+  const [switching, setSwitching] = useState<{ code: string; name: string; walk?: boolean } | null>(null);
   const [, startSceneTransition] = useTransition();
-  const switchScene = (code: string, name: string) => {
+  const switchScene = (code: string, name: string, walk = false) => {
     if (code === data.activeScene.code || switching) return;
     if ((layoutDirty || dirty) && !window.confirm('Bố cục chưa lưu sẽ bị bỏ. Vẫn chuyển không gian?')) return;
-    setSwitching({ code, name });
+    setSwitching({ code, name, walk });
     setEditMode(false);
-    startSceneTransition(() => router.push(`/3d?scene=${encodeURIComponent(code)}`));
+    const go = () => startSceneTransition(() => router.push(`/3d?scene=${encodeURIComponent(code)}${walk ? '&via=portal' : ''}`));
+    // Đi bộ qua cổng: chờ màn tối dần xong rồi mới đổi cảnh (không giật)
+    if (walk) window.setTimeout(go, 420);
+    else go();
+  };
+  const [walkFadeOut, setWalkFadeOut] = useState(false);
+  /** Đi bộ vào cổng nối → sang cảnh tương ứng (Quán cà phê ⇄ Showroom) */
+  const walkThroughPortal = (target: 'SHOWROOM' | 'CAFE') => {
+    if (!entered) return;
+    const sc = data.scenes.find((x) => x.kind === target);
+    if (!sc) {
+      flashToast(target === 'CAFE' ? 'Quán cà phê đang tạm đóng' : 'Showroom đang tạm đóng');
+      return;
+    }
+    switchScene(sc.code, sc.name, true);
   };
   useEffect(() => {
     if (!switching || data.activeScene.code !== switching.code) return;
     // Dữ liệu mới đã tới → chờ canvas dựng xong 2 khung hình rồi tắt màn chờ
     let r2 = 0;
+    let t = 0;
     const r1 = requestAnimationFrame(() => {
-      r2 = requestAnimationFrame(() => setSwitching(null));
+      r2 = requestAnimationFrame(() => {
+        if (!switching.walk) {
+          setSwitching(null);
+          return;
+        }
+        // Đi bộ sang: sáng dần lên trong lúc nhân vật bước vào
+        setWalkFadeOut(true);
+        t = window.setTimeout(() => {
+          setSwitching(null);
+          setWalkFadeOut(false);
+        }, 900);
+      });
     });
     return () => {
       cancelAnimationFrame(r1);
       cancelAnimationFrame(r2);
+      window.clearTimeout(t);
     };
   }, [data.activeScene.code, switching]);
 
@@ -1230,7 +1274,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
+      {!loaderGone && <SpaceLoader stage={sceneReady ? 'done' : codeLoaded ? 'scene' : 'code'} onHidden={() => setLoaderGone(true)} />}
       <Space3DCanvas
+        onReady={() => setSceneReady(true)}
+        onPortal={walkThroughPortal}
+        arriveViaPortal={arriveViaPortal}
         sceneKind={data.activeScene.kind}
         widthM={data.activeScene.widthM}
         depthM={data.activeScene.depthM}
@@ -1628,7 +1676,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       )}
 
       {/* Màn chờ khi chuyển không gian */}
-      {switching && (
+      {switching?.walk && <WalkFade name={switching.name} out={walkFadeOut} />}
+      {switching && !switching.walk && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'grid', placeItems: 'center', background: 'rgba(2,6,23,0.62)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
           <style>{`@keyframes space3dSpin{to{transform:rotate(360deg)}}@keyframes space3dBar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}`}</style>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, color: '#f8fafc', textAlign: 'center', padding: 24 }}>
@@ -1637,7 +1686,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               <img src={data.branding.logoUrl} alt="" style={{ position: 'absolute', inset: 14, width: 36, height: 36, objectFit: 'contain', borderRadius: 8, background: '#fff', padding: 4 }} />
             </div>
             <div>
-              <div style={{ fontSize: 11, letterSpacing: '0.12em', color: '#93c5fd', fontWeight: 700 }}>ĐANG CHUYỂN KHÔNG GIAN</div>
+              <div style={{ fontSize: 11, letterSpacing: '0.12em', color: '#93c5fd', fontWeight: 700 }}>{switching.walk ? 'ĐANG ĐI BỘ SANG' : 'ĐANG CHUYỂN KHÔNG GIAN'}</div>
               <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{switching.name}</div>
               <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 4 }}>Đang dựng kiến trúc, nội thất và hàng hoá…</div>
             </div>
@@ -3164,6 +3213,49 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Chuyển cảnh khi đi bộ qua cổng: tối dần (0.4s) → tên không gian hiện nhẹ → sáng dần (0.8s) khi cảnh mới đã dựng,
+ * nhân vật tự bước vào. Không spinner, không khung hộp — như cắt cảnh phim.
+ */
+function WalkFade({ name, out }: { name: string; out: boolean }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const r = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(r);
+  }, []);
+  const visible = shown && !out;
+  return (
+    <div
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 70,
+        display: 'grid',
+        placeItems: 'center',
+        background: 'radial-gradient(ellipse at 50% 45%, rgba(15,23,42,0.96) 0%, rgba(2,6,23,1) 70%)',
+        opacity: visible ? 1 : 0,
+        transition: out ? 'opacity 800ms cubic-bezier(.4,0,.2,1)' : 'opacity 400ms cubic-bezier(.4,0,.2,1)',
+        pointerEvents: out ? 'none' : 'auto',
+      }}
+    >
+      <div
+        style={{
+          textAlign: 'center',
+          color: '#f8fafc',
+          opacity: visible ? 1 : 0,
+          transform: visible ? 'translateY(0)' : 'translateY(8px)',
+          transition: 'opacity 500ms ease 150ms, transform 700ms cubic-bezier(.2,.8,.2,1) 150ms',
+        }}
+      >
+        <div style={{ fontSize: 11, letterSpacing: '0.32em', color: '#93c5fd', fontWeight: 600 }}>ĐANG ĐI BỘ SANG</div>
+        <div style={{ fontSize: 'clamp(22px, 4vw, 34px)', fontWeight: 300, letterSpacing: '0.02em', marginTop: 10 }}>{name}</div>
+        <div style={{ width: 120, height: 1, margin: '16px auto 0', background: 'linear-gradient(90deg, transparent, rgba(147,197,253,0.9), transparent)' }} />
+      </div>
     </div>
   );
 }

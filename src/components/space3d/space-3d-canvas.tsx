@@ -59,6 +59,7 @@ import { buildProductGroup } from './three/products';
 import { createEpoxyTextures, windUniform } from './three/materials';
 import { freezeStaticDescendants, mergeStaticGroup } from './three/merge';
 import { createRenderPipeline, type RenderPipeline } from './three/pipeline';
+import { buildPortal, inPortalZone, portalFor, portalSpawn, type PortalTarget } from './three/portals';
 import { createEnvironmentMap, createSkySystem, type SkySystem } from './three/sky';
 import { createDayNightRig, type DayNightRig } from './three/lighting';
 import { createCameraRig, type CameraRig } from './three/camera-rig';
@@ -163,6 +164,12 @@ interface Props {
   onSittingChange?: (sitting: boolean) => void;
   /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
   seatCommand?: { kind: 'sit' | 'stand' | 'dutySit'; nonce: number } | null;
+  /** Khung hình đầu tiên đã vẽ xong cảnh (ẩn màn hình tải) */
+  onReady?: () => void;
+  /** Nhân vật đi vào cổng nối sang cảnh khác (Quán cà phê ⇄ Showroom) */
+  onPortal?: (target: PortalTarget) => void;
+  /** Vừa đi bộ qua cổng sang cảnh này → xuất hiện ngay cổng đối diện */
+  arriveViaPortal?: boolean;
   /** Nhân vật mình tự làm biểu cảm (vd. nhân viên trực đứng dậy vẫy chào khách) → phát realtime */
   onAutoEmote?: (kind: 'wave') => void;
 }
@@ -331,8 +338,17 @@ export function Space3DCanvas({
   onNpcArrive,
   onSittingChange,
   seatCommand = null,
+  onReady,
+  onPortal,
+  arriveViaPortal = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const onPortalRef = useRef(onPortal);
+  onPortalRef.current = onPortal;
+  const arriveRef = useRef(arriveViaPortal);
+  arriveRef.current = arriveViaPortal;
   const stateRef = useRef({
     editMode,
     povMode,
@@ -450,6 +466,8 @@ export function Space3DCanvas({
     steamFixed?: { x: number; y: number; z: number; size?: number }[];
     /** Bộ phận quay liên tục (cánh quạt phun sương) */
     spinners?: { obj: THREE.Object3D; speed: number }[];
+    /** Texture dòng chảy (socola) trượt theo thời gian */
+    flows?: { map: THREE.Texture; speed: number }[];
     /** Vệt nắng xuyên lá dưới lưới (trượt texture chậm) */
     dapples?: THREE.Mesh[];
     /** Đàn cá koi trong ao */
@@ -625,6 +643,17 @@ export function Space3DCanvas({
     interior?.lights.forEach((l) => scene.add(l));
     freezeStaticDescendants(hallEnv);
     scene.add(hallEnv);
+    // Cổng đi bộ nối Quán cà phê ⇄ Showroom
+    const portal = portalFor(sceneKind, widthM, depthM);
+    let portalArrow: THREE.Mesh | null = null;
+    if (portal) {
+      const pg = buildPortal(portal);
+      pg.traverse((c) => {
+        if (c.userData.portalArrow) portalArrow = c as THREE.Mesh;
+      });
+      scene.add(pg);
+    }
+    const arriving = Boolean(portal && arriveRef.current);
     const envOccluders = hallEnv.children.filter((c) => c.userData.occluder);
 
     // Pipeline hậu kỳ + rig Ngày/Đêm
@@ -696,6 +725,11 @@ export function Space3DCanvas({
       isOnDuty: isSelfOnDuty,
     });
     player.group.position.set(0, 0, spawnZ);
+    if (arriving && portal) {
+      const sp = portalSpawn(portal);
+      player.group.position.set(sp.x, 0, sp.z);
+      player.group.rotation.y = sp.rotY;
+    }
     scene.add(player.group);
 
     const orbit = new OrbitControls(camera, renderer.domElement);
@@ -706,6 +740,14 @@ export function Space3DCanvas({
     orbit.maxDistance = 42;
     orbit.target.set(0, cafeWide ? 2.3 : 1.3, cafeWide ? spawnZ - 0.6 : spawnZ);
     let cafeZoomIn = !cafeWide; // true = đã thu camera về gần
+    if (arriving) {
+      // Đi bộ qua cổng: camera đứng sau lưng nhân vật, nhìn vào trong cảnh
+      const pp = player.group.position;
+      const ry = player.group.rotation.y;
+      camera.position.set(pp.x - Math.sin(ry) * 5.4, 2.9, pp.z - Math.cos(ry) * 5.4);
+      orbit.target.set(pp.x, 1.3, pp.z);
+      cafeZoomIn = true;
+    }
     orbit.update();
 
     const transform = new TransformControls(camera, renderer.domElement);
@@ -800,7 +842,11 @@ export function Space3DCanvas({
       drinkMeshes: new Map(),
       highlightRing,
       walkRing,
-      walkTarget: null,
+      // Vừa đi bộ qua cổng: tự bước tiếp vào trong ~2m (trong lúc màn hình sáng dần)
+      walkTarget:
+        arriving && portal
+          ? new THREE.Vector3(player.group.position.x + Math.sin(portal.inward) * 2, 0, player.group.position.z + Math.cos(portal.inward) * 2)
+          : null,
       gltfLoader,
       sunLight,
       hemiLight,
@@ -1024,7 +1070,7 @@ export function Space3DCanvas({
         }
         if (seatObj && SEATABLE_KINDS.has(seatObj.kind) && sceneObjRef.current) {
           const clickPt = raycaster.ray.intersectPlane(floorPlane, hitPoint) ? hitPoint : new THREE.Vector3(seatObj.posX, 0, seatObj.posZ);
-          const occupied: { x: number; z: number }[] = [];
+          const occupied: { x: number; z: number }[] = [...(sceneObjRef.current?.npcs.occupiedSeats ?? [])];
           const rs = stateRef.current.remoteStateRef?.current;
           rs?.forEach((st) => {
             if ((st.sit ?? 0) > 0) occupied.push({ x: st.tx, z: st.tz });
@@ -1224,7 +1270,7 @@ export function Space3DCanvas({
     const dutySit = () => {
       const pl = sceneObjRef.current?.player ?? player;
       const objs = stateRef.current.structures;
-      const occupied: { x: number; z: number }[] = [];
+      const occupied: { x: number; z: number }[] = [...(sceneObjRef.current?.npcs.occupiedSeats ?? [])];
       stateRef.current.remoteStateRef?.current.forEach((st) => {
         if ((st.sit ?? 0) > 0) occupied.push({ x: st.tx, z: st.tz });
       });
@@ -1496,6 +1542,9 @@ export function Space3DCanvas({
       return false;
     };
 
+    let readyFrames = 0;
+    // Cổng chỉ kích hoạt sau khi nhân vật đã ở ngoài vùng cổng ít nhất 1 lần (tránh bật lại ngay khi vừa tới)
+    let portalArmed = false;
     const animate = () => {
       rafId = requestAnimationFrame(animate);
       const frameNow = performance.now();
@@ -1841,10 +1890,22 @@ export function Space3DCanvas({
       }
 
       if (frameCount % 10 === 0) updateDutyHost(currentPlayer, totalTime);
+      // Cổng nối cảnh: mũi tên nhấp nháy; bước vào → chuyển cảnh (đi bộ sang)
+      if (portal) {
+        if (portalArrow) ((portalArrow as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(totalTime * 3.2));
+        const pp = currentPlayer.group.position;
+        const inZone = inPortalZone(portal, pp.x, pp.z);
+        if (!inZone) portalArmed = true;
+        else if (portalArmed && !stateRef.current.editMode && !sitting) {
+          portalArmed = false;
+          onPortalRef.current?.(portal.target);
+        }
+      }
       sceneObjRef.current?.leaves?.update(dt, totalTime);
       sceneObjRef.current?.steam.update(dt);
       // Cánh quạt quay; vệt nắng trôi chậm như lá đung đưa
       for (const sp of sceneObjRef.current?.spinners ?? []) sp.obj.rotation.z += sp.speed * dt;
+      for (const f of sceneObjRef.current?.flows ?? []) f.map.offset.y = (f.map.offset.y + f.speed * dt) % 1;
       // Cá koi lượn hình số 8 dưới mặt ao, vẫy đuôi
       for (const school of sceneObjRef.current?.kois ?? []) {
         const { w: kw, d: kd } = school.userData.koi as { w: number; d: number };
@@ -2062,6 +2123,8 @@ export function Space3DCanvas({
       }
 
       (sceneObjRef.current?.pipeline ?? pipeline).render();
+      // Báo sẵn sàng sau 2 khung hình có đồ đạc (shader đã biên dịch xong)
+      if (readyFrames < 2 && (sceneObjRef.current?.objectMap.size ?? 0) > 0 && ++readyFrames === 2) onReadyRef.current?.();
       // Nhãn HTML (tên, bong bóng chat): chỉ cập nhật DOM khi đổi; mờ dần khi xa
       labelRenderer.render(htmlLabels, scene, camera);
 
@@ -2373,16 +2436,23 @@ export function Space3DCanvas({
     }
     obj.steamFixed = fixedSteam;
     const spinners: { obj: THREE.Object3D; speed: number }[] = [];
+    const flows: { map: THREE.Texture; speed: number }[] = [];
     const dapples: THREE.Mesh[] = [];
     const kois: THREE.Object3D[] = [];
     for (const entry of obj.objectMap.values()) {
       entry.root.traverse((c) => {
         if (c.userData?.spinner) spinners.push({ obj: c, speed: c.userData.spinner.speed ?? 10 });
+        // Dòng socola chảy (phòng Lab): trượt texture — gom theo vật liệu dùng chung
+        if (c.userData?.flow) {
+          const fm = (c as THREE.Mesh).material as THREE.MeshStandardMaterial;
+          if (fm?.map && !flows.some((f) => f.map === fm.map)) flows.push({ map: fm.map, speed: c.userData.flow.speed ?? 0.6 });
+        }
         if (c.userData?.dapple) dapples.push(c as THREE.Mesh);
         if (c.userData?.koi) kois.push(c);
       });
     }
     obj.spinners = spinners;
+    obj.flows = flows;
     obj.dapples = dapples;
     obj.kois = kois;
     obj.steam.setEmitters([...fixedSteam, ...(obj.steamCups ?? [])]);

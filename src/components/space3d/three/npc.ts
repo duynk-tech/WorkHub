@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Avatar3DConfig, SpaceStructure } from '@/lib/space-3d-types';
-import { NPC_PROFILES, findNpcSpots, localToWorld, serveRoute, type NpcRole, type NpcSpot } from '@/lib/space-3d-npc';
+import { NPC_PROFILES, findNpcSpots, localToWorld, pickPatronSeats, serveRoute, type NpcRole, type NpcSpot, type PatronSeat } from '@/lib/space-3d-npc';
+import { DEFAULT_CAFE_MENU } from '@/lib/space-3d-cafe-menu';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { sharedMat } from './materials';
 import {
@@ -8,6 +9,8 @@ import {
   createChibiAvatar,
   disposeObject,
   poseEmote,
+  poseSit,
+  poseTalk,
   poseWalk,
   relaxPose,
   syncBubble,
@@ -94,6 +97,31 @@ function makeTray(): THREE.Group {
   return tray;
 }
 
+// ───────────── Khách quen ngồi quán ─────────────
+const PATRON_LOOKS: Avatar3DConfig[] = [
+  { outfitStyle: 'shirt', outfitColor: '#e0e7ef', pantsColor: '#334155', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#1c1917', skinTone: '#eac09c', hasGlasses: true },
+  { outfitStyle: 'dress', outfitColor: '#be7c8f', pantsColor: '#1f2937', bottomStyle: 'pants', hairStyle: 'long', hairColor: '#2b1b14', skinTone: '#f6d5bd', hasGlasses: false },
+  { outfitStyle: 'polo', outfitColor: '#3f6e57', pantsColor: '#6b5a45', bottomStyle: 'pants', hairStyle: 'slick', hairColor: '#111111', skinTone: '#d9a77f', hasGlasses: false },
+  { outfitStyle: 'shirt', outfitColor: '#f3e6cf', pantsColor: '#3b4a5e', bottomStyle: 'skirt', hairStyle: 'bob', hairColor: '#3a2418', skinTone: '#f3cfb3', hasGlasses: false },
+  { outfitStyle: 'polo', outfitColor: '#1e3a5f', pantsColor: '#cbbf9f', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#2b2118', skinTone: '#e4b48d', hasGlasses: false },
+  { outfitStyle: 'shirt', outfitColor: '#9a5b3a', pantsColor: '#1f2937', bottomStyle: 'pants', hairStyle: 'ponytail', hairColor: '#1c1310', skinTone: '#f1c9a5', hasGlasses: true },
+];
+const PATRON_DRINKS = ['CFSD', 'BACXIU', 'TRADAO', 'LATTE', 'MATCHA', 'CAPU'];
+
+interface Patron {
+  av: AnimatedAvatar;
+  seat: PatronSeat;
+  cupOnTable: THREE.Group;
+  cupInHand: THREE.Group;
+  /** Thời điểm bắt đầu nhấp ly kế tiếp */
+  nextSip: number;
+  sipStart: number;
+  /** Lượt nói (cặp đôi đổi lượt) */
+  talkUntil: number;
+  nextTalk: number;
+  phase: number;
+}
+
 // ───────────── Hệ thống NPC ─────────────
 interface Npc {
   role: NpcRole;
@@ -128,19 +156,106 @@ export interface NpcDelivery {
 export class NpcSystem {
   readonly group = new THREE.Group();
   private npcs: Npc[] = [];
+  private patrons: Patron[] = [];
   private delivered = new Set<number>();
   private doorPts: { a: { x: number; z: number }; b: { x: number; z: number } } | null = null;
 
   constructor(private onArrive: (orderId: number) => void) {}
 
   get avatars(): AnimatedAvatar[] {
-    return this.npcs.map((n) => n.av);
+    return [...this.npcs.map((n) => n.av), ...this.patrons.map((p) => p.av)];
+  }
+
+  /** Ghế khách NPC đang ngồi (người chơi không ngồi chồng lên) */
+  get occupiedSeats(): { x: number; z: number }[] {
+    return this.patrons.map((p) => ({ x: p.seat.seat.x, z: p.seat.seat.z }));
+  }
+
+  /** Khách quen: chọn bàn theo ngày (mọi máy cùng ngày thấy giống nhau), ngồi trò chuyện & nhâm nhi */
+  private buildPatrons(structures: SpaceStructure[]) {
+    const day = Math.floor(Date.now() / 86_400_000);
+    const seats = pickPatronSeats(structures, day * 7919 + structures.length);
+    const menu = new Map(DEFAULT_CAFE_MENU.map((m) => [m.code, m]));
+    seats.forEach((ps, i) => {
+      const look = PATRON_LOOKS[(i + day) % PATRON_LOOKS.length];
+      const av = createChibiAvatar({ name: 'Khách', config: look, npc: true });
+      // Khách thật ngoài đời không đeo bảng tên
+      const tags: THREE.Object3D[] = [];
+      av.group.traverse((c) => {
+        if ((c as unknown as { isCSS2DObject?: boolean }).isCSS2DObject) tags.push(c);
+      });
+      tags.forEach((t) => t.parent?.remove(t));
+      av.group.position.set(ps.seat.x, 0, ps.seat.z);
+      av.group.rotation.y = ps.seat.rotY;
+      const item = menu.get(PATRON_DRINKS[(i * 3 + day) % PATRON_DRINKS.length]) ?? DEFAULT_CAFE_MENU[1];
+      const cupOnTable = buildDrink(item);
+      cupOnTable.position.set(ps.cup.x, ps.cup.y, ps.cup.z);
+      cupOnTable.rotation.y = Math.random() * 6;
+      const cupInHand = buildDrink(item);
+      cupInHand.position.set(0, -0.34, 0.06);
+      cupInHand.visible = false;
+      av.rightElbow.add(cupInHand);
+      this.group.add(av.group, cupOnTable);
+      this.patrons.push({
+        av,
+        seat: ps,
+        cupOnTable,
+        cupInHand,
+        nextSip: 4 + Math.random() * 14,
+        sipStart: -10,
+        talkUntil: 0,
+        nextTalk: i % 2 === 0 ? 1 + Math.random() * 2 : 6 + Math.random() * 3,
+        phase: Math.random() * 10,
+      });
+    });
+  }
+
+  private updatePatrons(dt: number, now: number) {
+    for (const p of this.patrons) {
+      const av = p.av;
+      animateAvatarIdle(av, now + p.phase);
+      poseSit(av, p.seat.seat.y);
+      // Đang nhấp ly: 2.6s nâng – uống – đặt xuống
+      const st = (now - p.sipStart) / 2.6;
+      const sipping = st >= 0 && st <= 1;
+      if (!sipping && now > p.nextSip && now > p.talkUntil) {
+        p.sipStart = now;
+        p.nextSip = now + 12 + Math.random() * 16;
+      }
+      p.cupInHand.visible = sipping && st > 0.12 && st < 0.88;
+      p.cupOnTable.visible = !p.cupInHand.visible;
+      if (sipping) {
+        poseEmote(av, 'sip', st, now);
+        poseTalk(av, now, false);
+        continue;
+      }
+      // Cặp đôi: đổi lượt nói, người nghe quay đầu về phía người nói & thỉnh thoảng gật
+      const partner = p.seat.partner !== null ? this.patrons[p.seat.partner] : undefined;
+      if (partner) {
+        if (now > p.nextTalk && now > partner.talkUntil) {
+          p.talkUntil = now + 2.5 + Math.random() * 4;
+          p.nextTalk = p.talkUntil + 3 + Math.random() * 5;
+        }
+        const talking = now < p.talkUntil;
+        const want = Math.atan2(partner.av.group.position.x - av.group.position.x, partner.av.group.position.z - av.group.position.z) - av.group.rotation.y;
+        const yaw = Math.max(-0.5, Math.min(0.5, Math.atan2(Math.sin(want), Math.cos(want))));
+        av.headGroup.rotation.y += (yaw - av.headGroup.rotation.y) * Math.min(1, dt * 3);
+        poseTalk(av, now + p.phase, talking, Math.sin(now * 0.7 + p.phase) > -0.2);
+        if (!talking && now < partner.talkUntil) av.headGroup.rotation.x += Math.max(0, Math.sin(now * 2.2 + p.phase)) * 0.004;
+      } else {
+        // Ngồi một mình: nhìn ngắm xung quanh chậm rãi
+        const look = Math.sin(now * 0.23 + p.phase) * 0.45;
+        av.headGroup.rotation.y += (look - av.headGroup.rotation.y) * Math.min(1, dt * 1.5);
+        poseTalk(av, now, false);
+      }
+    }
   }
 
   /** Dựng lại NPC theo bố cục (chỉ quán cà phê) */
   rebuild(structures: SpaceStructure[], enabled: boolean) {
     this.dispose();
     if (!enabled) return;
+    this.buildPatrons(structures);
     const spots = findNpcSpots(structures);
     for (const role of ['barista', 'vendor', 'waiter', 'guard'] as NpcRole[]) {
       const home = spots[role];
@@ -240,6 +355,7 @@ export class NpcSystem {
    * @param push  đẩy khỏi đồ đạc (tránh xuyên bàn ghế)
    */
   update(dt: number, now: number, people: NpcPerson[], deliveries: DrinkOrderView[], menu: CafeMenuItem[], push: (pos: THREE.Vector3) => void, frame: number) {
+    this.updatePatrons(dt, now);
     for (const n of this.npcs) {
       const g = n.av.group.position;
       // NPC ở xa người chơi → cập nhật thưa cho nhẹ
@@ -399,5 +515,11 @@ export class NpcSystem {
       disposeObject(n.av.group);
     }
     this.npcs = [];
+    for (const p of this.patrons) {
+      this.group.remove(p.av.group, p.cupOnTable);
+      disposeObject(p.av.group);
+      p.cupOnTable.traverse((c) => (c as THREE.Mesh).geometry?.dispose());
+    }
+    this.patrons = [];
   }
 }

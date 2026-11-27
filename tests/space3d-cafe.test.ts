@@ -124,3 +124,24 @@ describe('NPC quán cà phê', () => {
     expect(Math.abs(end.x)).toBeGreaterThan(0.5); // đứng bên cạnh, không chắn trước mặt khách
   });
 });
+
+describe('khách NPC ngồi quán', () => {
+  it('chọn 2 cặp + 1 người lẻ ở ghế khách sát bàn, ổn định theo hạt giống', async () => {
+    const { cafeTemplate, DEFAULT_SCENE_SIZE } = await import('@/lib/space-3d-templates');
+    const { pickPatronSeats } = await import('@/lib/space-3d-npc');
+    const objs = cafeTemplate(DEFAULT_SCENE_SIZE.CAFE).map((o, i) => ({ ...o, id: o.id ?? `o${i}` }));
+    const a = pickPatronSeats(objs as never, 42);
+    const b = pickPatronSeats(objs as never, 42);
+    expect(a).toEqual(b);
+    expect(a.length).toBe(5);
+    expect(a.filter((p) => p.partner !== null).length).toBe(4);
+    for (const [i, p] of a.entries()) {
+      if (p.partner !== null) expect(a[p.partner].partner).toBe(i);
+      // ly đặt gần chỗ ngồi
+      expect(Math.hypot(p.cup.x - p.seat.x, p.cup.z - p.seat.z)).toBeLessThan(1.4);
+    }
+    // không có 2 khách cùng 1 ghế
+    const keys = new Set(a.map((p) => `${p.seat.x.toFixed(2)},${p.seat.z.toFixed(2)}`));
+    expect(keys.size).toBe(a.length);
+  });
+});

@@ -57,6 +57,9 @@ export const SPACE_OBJECT_DEFS: SpaceObjectDef[] = [
   { kind: 'DEMO_BAR', label: 'Quầy pha thử máy', category: 'RETAIL', size: [3.6, 0.9, 1.05], limits: L([2, 6], [0.7, 1.4], [0.95, 1.15]), color: '#6b4226', palette: WOOD, labeled: true },
   { kind: 'GELATO_CASE', label: 'Tủ kem gelato kính cong', category: 'RETAIL', size: [1.8, 1, 1.3], limits: L([1, 3.6], [0.8, 1.2], [1.1, 1.5]), color: '#f8fafc', palette: ['#f8fafc', '#111827', '#be185d', '#a47148'], labeled: true },
   { kind: 'DISPLAY_CHILLER', label: 'Tủ mát đứng cửa kính', category: 'RETAIL', size: [1.2, 0.72, 2], limits: L([0.6, 2], [0.6, 0.85], [1.7, 2.2]), color: '#111827', palette: ['#111827', '#f8fafc', '#1d4ed8', '#b91c1c'], labeled: true },
+  { kind: 'LAB_COUNTER', label: 'Quầy inox phòng Lab', category: 'RETAIL', size: [2.4, 0.9, 0.9], limits: L([1.2, 4], [0.6, 1.2], [0.85, 0.95]), color: '#d1d5db', variants: [{ key: 'prep', label: 'Sơ chế (cân, máy đánh)' }, { key: 'chocolate', label: 'Đảo socola (máy tôi + tháp)' }, { key: 'gelato', label: 'Khay kem gelato' }, { key: 'sink', label: 'Bồn rửa đôi' }] },
+  { kind: 'BATCH_FREEZER', label: 'Máy làm kem gelato (batch freezer)', category: 'RETAIL', size: [0.6, 0.8, 1.45], limits: L([0.5, 0.9], [0.6, 1], [1.2, 1.7]), color: '#d1d5db' },
+  { kind: 'BLAST_FREEZER', label: 'Tủ cấp đông nhanh', category: 'RETAIL', size: [0.8, 0.8, 1.9], limits: L([0.6, 1.4], [0.6, 1], [1.4, 2.2]), color: '#d1d5db' },
   { kind: 'CHECKOUT', label: 'Quầy thu ngân', category: 'RETAIL', size: [2, 0.7, 1.05], limits: L([1.2, 3.5], [0.5, 1], [0.9, 1.2]), color: '#f8fafc', palette: WOOD },
   { kind: 'RECEPTION_DESK', label: 'Quầy lễ tân chữ L', category: 'RETAIL', size: [3.2, 1.8, 1.1], limits: L([2, 5], [1, 3], [0.95, 1.25]), color: '#2563eb', palette: ACCENT, labeled: true },
 
@@ -155,7 +158,7 @@ export const SPACE_OBJECT_DEFS: SpaceObjectDef[] = [
 
   // ── Tường & phòng ──
   { kind: 'WALL', label: 'Tường ngăn', category: 'STRUCTURE', size: [4, 0.12, 2.8], limits: L([0.5, 20], [0.08, 0.3], [1, 5]), color: '#f1f5f9', palette: ['#f1f5f9', '#e7e5e4', '#b45309', '#166534', '#1f2937'], variants: [{ key: 'paint', label: 'Sơn' }, { key: 'brick', label: 'Gạch thô' }, { key: 'wood', label: 'Ốp gỗ' }] },
-  { kind: 'GLASS_WALL', label: 'Vách kính', category: 'STRUCTURE', size: [4, 0.08, 2.8], limits: L([0.5, 20], [0.05, 0.15], [1, 5]), color: '#cfe8fb' },
+  { kind: 'GLASS_WALL', label: 'Vách kính', category: 'STRUCTURE', size: [4, 0.08, 2.8], limits: L([0.5, 20], [0.05, 0.15], [1, 5]), color: '#cfe8fb', labeled: true },
   { kind: 'ROOM_ZONE', label: 'Vùng phòng (camera vào phòng)', category: 'STRUCTURE', size: [6, 5, 2.8], limits: L([2, 30], [2, 30], [2.2, 6]), color: '#38bdf8', labeled: true },
   { kind: 'DOOR', label: 'Cửa đi (tự mở)', category: 'STRUCTURE', size: [0.95, 0.12, 2.15], limits: L([0.8, 2.4], [0.08, 0.3], [2, 2.6]), color: '#a47148', palette: WOOD, variants: [{ key: 'swing', label: 'Cửa cánh mở' }, { key: 'slide', label: 'Cửa kính trượt 2 cánh' }] },
 ];

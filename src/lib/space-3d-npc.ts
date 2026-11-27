@@ -3,6 +3,8 @@
  * Mặt trước vật thể = +Z cục bộ.
  */
 import type { SpaceObject } from './space-3d-types';
+import { SEATABLE_KINDS, isStaffSeat, seatsFor, type Seat } from './space-3d-layout';
+import { findServeSpot } from './space-3d-cafe-menu';
 
 export type NpcRole = 'barista' | 'vendor' | 'waiter' | 'guard';
 
@@ -74,3 +76,83 @@ export const NPC_PROFILES: Record<NpcRole, { name: string; title: string }> = {
   waiter: { name: 'Bé Na', title: 'Phục vụ' },
   guard: { name: 'Chú Sáu', title: 'Bảo vệ' },
 };
+
+// ───────────── Khách quen ngồi quán (NPC) ─────────────
+
+const PATRON_TABLES = new Set(['TABLE_ROUND', 'TABLE_RECT', 'COFFEE_TABLE', 'LIVE_EDGE_TABLE', 'SAMPAN_TABLE']);
+
+export interface PatronSeat {
+  seat: Seat;
+  /** Chỉ số người ngồi cùng bàn (đang trò chuyện) — null nếu ngồi một mình */
+  partner: number | null;
+  /** Điểm đặt ly trên mặt bàn trước mặt */
+  cup: { x: number; y: number; z: number };
+}
+
+/** Xáo trộn ổn định theo hạt giống (mọi máy cùng ngày thấy giống nhau) */
+function seededRand(seed: number) {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * Chọn ghế cho khách NPC: 2 bàn có cặp đôi trò chuyện + 1 người ngồi một mình.
+ * Chỉ dùng ghế khách (không ghế nhân viên), ghế phải sát một bàn ăn uống (có chỗ đặt ly).
+ */
+export function pickPatronSeats(
+  objects: Pick<SpaceObject, 'id' | 'kind' | 'posX' | 'posZ' | 'rotY' | 'widthM' | 'depthM' | 'heightM' | 'seatAccess'>[],
+  seed: number,
+  pairs = 2,
+  solos = 1,
+): PatronSeat[] {
+  const tables = objects.filter((o) => PATRON_TABLES.has(o.kind));
+  const byTable = new Map<string, { seat: Seat; cup: { x: number; y: number; z: number } }[]>();
+  for (const o of objects) {
+    if (!SEATABLE_KINDS.has(o.kind) || isStaffSeat(o, objects)) continue;
+    for (const seat of seatsFor(o)) {
+      const spot = findServeSpot(tables, seat.x, seat.z, 0.7);
+      if (!spot) continue;
+      const list = byTable.get(spot.objectId) ?? [];
+      list.push({ seat, cup: { x: spot.x, y: spot.y, z: spot.z } });
+      byTable.set(spot.objectId, list);
+    }
+  }
+  const rand = seededRand(seed);
+  const ids = [...byTable.keys()].sort();
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  const out: PatronSeat[] = [];
+  let p = pairs;
+  let s = solos;
+  for (const id of ids) {
+    const list = byTable.get(id)!;
+    if (p > 0 && list.length >= 2) {
+      // Cặp ngồi đối diện nhau nếu có (xa nhau nhất), không thì cạnh nhau
+      let a = 0;
+      let b = 1;
+      let far = -1;
+      for (let i = 0; i < list.length; i++)
+        for (let j = i + 1; j < list.length; j++) {
+          const d = Math.hypot(list[i].seat.x - list[j].seat.x, list[i].seat.z - list[j].seat.z);
+          if (d > far && d < 2.4) {
+            far = d;
+            a = i;
+            b = j;
+          }
+        }
+      const base = out.length;
+      out.push({ ...list[a], partner: base + 1 }, { ...list[b], partner: base });
+      p--;
+    } else if (s > 0) {
+      out.push({ ...list[Math.floor(rand() * list.length)], partner: null });
+      s--;
+    }
+    if (p === 0 && s === 0) break;
+  }
+  return out;
+}

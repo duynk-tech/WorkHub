@@ -54,10 +54,13 @@ export function mergeStaticGroup(root: THREE.Object3D): THREE.Group {
   const out = new THREE.Group();
   for (const b of buckets.values()) {
     const anyNonIndexed = b.geos.some((g) => !g.index);
-    const attrs = ['position', 'normal', 'uv'];
+    // Vật liệu tô màu theo đỉnh (đá loang màu) → giữ thuộc tính color
+    const withColor = Boolean((b.mat as THREE.MeshStandardMaterial).vertexColors);
+    const attrs = withColor ? ['position', 'normal', 'uv', 'color'] : ['position', 'normal', 'uv'];
     const prepared = b.geos.map((g) => {
       let gg = anyNonIndexed && g.index ? g.toNonIndexed() : g;
       for (const name of Object.keys(gg.attributes)) if (!attrs.includes(name)) gg.deleteAttribute(name);
+      if (withColor && !gg.attributes.color) gg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(gg.attributes.position.count * 3).fill(1), 3));
       if (!gg.attributes.uv) {
         const count = gg.attributes.position.count;
         gg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));

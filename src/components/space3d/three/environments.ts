@@ -4,6 +4,7 @@ import { createGrassTexture, lightboxMat, registerEmissive, sharedMat } from './
 import { M, box, cyl } from './props/kit';
 import { buildFenceGreenery, buildTreeRow } from './props/garden';
 import { brickBumpTex, brickTex, labelTex } from './props/textures';
+import { portalFor } from './portals';
 
 /**
  * Môi trường kiến trúc cho Quán cà phê & Văn phòng (Showroom/Kho dùng hall.ts).
@@ -134,7 +135,12 @@ export function createCafeEnvironment(widthM: number, depthM: number, companyNam
   };
   addFence(w, 0, -d / 2, 0);
   addFence(d, -w / 2, 0, Math.PI / 2);
-  addFence(d, w / 2, 0, -Math.PI / 2);
+  // Hàng rào phải chừa lối đi bộ sang Showroom (xem three/portals.ts)
+  const portal = portalFor('CAFE', w, d)!;
+  const gap0 = portal.z - portal.width / 2 - 0.05;
+  const gap1 = portal.z + portal.width / 2 + 0.05;
+  addFence(gap0 + d / 2, w / 2, (gap0 - d / 2) / 2, -Math.PI / 2);
+  addFence(d / 2 - gap1, w / 2, (gap1 + d / 2) / 2, -Math.PI / 2);
   // Mặt tiền: trái là hàng rào gỗ thưa (cọc so le), phải là rọ đá gabion — chừa lối vào giữa cho cổng
   const gabion = M.paint('#77756d', 0.9);
   const gap = Math.min(6, w * 0.3);
@@ -149,14 +155,20 @@ export function createCafeEnvironment(widthM: number, depthM: number, companyNam
   // Hàng cây cao rợp bóng bao quanh (bàng, sa kê, me tây) — tán lá thật, đung đưa theo gió
   const treePts: { x: number; z: number; scale: number }[] = [];
   for (let x = -w / 2 - 1.5; x <= w / 2 + 1.5; x += 4.6) treePts.push({ x, z: -d / 2 - 2.4, scale: 1.25 + Math.abs(Math.sin(x)) * 0.35 });
-  for (const sgn of [-1, 1]) for (let z = -d / 2 + 1; z <= d / 2 - 2; z += 5) treePts.push({ x: sgn * (w / 2 + 2.4), z, scale: 1.15 + Math.abs(Math.cos(z)) * 0.35 });
+  for (const sgn of [-1, 1])
+    for (let z = -d / 2 + 1; z <= d / 2 - 2; z += 5) {
+      // Bên phải trước lối sang Showroom: bỏ cây để nhìn thấy mặt tiền showroom
+      if (sgn > 0 && z > portal.z - 8) continue;
+      treePts.push({ x: sgn * (w / 2 + 2.4), z, scale: 1.15 + Math.abs(Math.cos(z)) * 0.35 });
+    }
   // Dây leo bám hàng rào + chậu đất nung chân rào
   env.add(
     buildFenceGreenery(
       [
         [-w / 2 + 0.3, -d / 2 + 0.12, w / 2 - 0.3, -d / 2 + 0.12],
         [-w / 2 + 0.12, -d / 2 + 0.5, -w / 2 + 0.12, d / 2 - 0.6],
-        [w / 2 - 0.12, -d / 2 + 0.5, w / 2 - 0.12, d / 2 - 0.6],
+        [w / 2 - 0.12, -d / 2 + 0.5, w / 2 - 0.12, gap0 - 0.4],
+        [w / 2 - 0.12, gap1 + 0.4, w / 2 - 0.12, d / 2 - 0.6],
       ],
       fenceH,
       Math.round(w * 7 + d),

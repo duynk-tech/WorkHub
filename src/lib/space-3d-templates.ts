@@ -100,10 +100,18 @@ export function showroomTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceOb
   const zFrom = -halfD + 4;
   const zTo = halfD - 11;
   const perSide = Math.max(2, Math.min(4, Math.floor((zTo - zFrom) / 4.2) + 1));
+  // Phòng Lab Kem & Socola chiếm góc sau bên phải → dãy quầy phải bắt đầu sau phòng Lab
+  const labW = Math.min(10, halfW - 7.5);
+  const labD = Math.min(8, d * 0.28);
+  const labX0 = halfW - labW;
+  const labZ1 = -halfD + labD;
+  const zFromRight = labZ1 + 2;
   let idx = 0;
   for (const side of [-1, 1]) {
-    for (let i = 0; i < perSide; i++) {
-      const z = zFrom + ((zTo - zFrom) / Math.max(1, perSide - 1)) * i;
+    const zA = side > 0 ? zFromRight : zFrom;
+    const n = side > 0 ? Math.max(2, Math.min(perSide, Math.floor((zTo - zA) / 3.5) + 1)) : perSide;
+    for (let i = 0; i < n; i++) {
+      const z = zA + ((zTo - zA) / Math.max(1, n - 1)) * i;
       const counter: Seed = {
         kind: 'DISPLAY_COUNTER',
         posX: side * rowX,
@@ -132,12 +140,35 @@ export function showroomTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceOb
   const demoZ = -halfD + 5;
   s.push({ kind: 'DEMO_BAR', posX: 0, posZ: demoZ, widthM: 4, label: 'Quầy pha thử máy' });
   for (let i = 0; i < 4; i++) s.push({ kind: 'BAR_STOOL', posX: -1.5 + i, posZ: demoZ + 1.0, rotY: Math.PI, color: '#1f2937' });
-  // Góc sau phải: 2 tủ mát đứng (sữa, nước, topping) cạnh khu kem
-  s.push({ kind: 'DISPLAY_CHILLER', posX: Math.min(10.6, halfW - 7.4), posZ: -halfD + 0.45, label: 'Tủ mát' });
-  s.push({ kind: 'DISPLAY_CHILLER', posX: Math.min(9.25, halfW - 8.75), posZ: -halfD + 0.45, label: 'Sữa · Topping' });
-  // Kệ áp tường cuối sảnh hai góc
+  // Kệ áp tường cuối sảnh góc trái (góc phải là phòng Lab)
   s.push({ kind: 'WALL_SHELF', posX: -halfW + 4.2, posZ: -halfD + 0.4, widthM: 3, variant: 'wood', color: '#a47148' });
-  s.push({ kind: 'WALL_SHELF', posX: halfW - 4.2, posZ: -halfD + 0.4, widthM: 3, variant: 'wood', color: '#a47148' });
+
+  // ───── PHÒNG LAB R&D KEM & SOCOLA (góc sau phải, vách kính, cửa trượt) ─────
+  // Bố trí theo bếp lab chuẩn: dòng chảy sạch → sơ chế → làm kem → cấp đông; đảo socola ở giữa để khách xem qua kính.
+  const labCx = labX0 + labW / 2;
+  const labCz = -halfD + labD / 2;
+  const doorX = labX0 + 1.6;
+  s.push({ kind: 'ROOM_ZONE', posX: labCx, posZ: labCz, widthM: labW, depthM: labD, heightM: 3, label: 'Phòng Lab Kem & Socola' });
+  // Vách kính trái (dọc) + mặt trước có cửa kính trượt, in tên phòng
+  // Vách dọc ngắn hơn 12cm để góc tiếp giáp vách trước không chồng nhau
+  s.push({ kind: 'GLASS_WALL', posX: labX0, posZ: labCz - 0.06, rotY: HALF_PI, widthM: labD - 0.12, heightM: 2.8 });
+  s.push({ kind: 'GLASS_WALL', posX: (labX0 + doorX - 0.8) / 2, posZ: labZ1, widthM: doorX - 0.8 - labX0, heightM: 2.8 });
+  s.push({ kind: 'DOOR', posX: doorX, posZ: labZ1, widthM: 1.6, variant: 'slide' });
+  s.push({ kind: 'GLASS_WALL', posX: (doorX + 0.8 + halfW) / 2, posZ: labZ1, widthM: halfW - doorX - 0.8, heightM: 2.8, label: 'R&D LAB · KEM & SOCOLA' });
+  // Dãy sát tường sau: bồn rửa đôi → bàn sơ chế → tủ cấp đông nhanh → 2 tủ mát nguyên liệu
+  const backZ = -halfD + 0.5;
+  s.push({ kind: 'LAB_COUNTER', posX: labX0 + 1.2, posZ: backZ, widthM: 2, variant: 'sink' });
+  s.push({ kind: 'LAB_COUNTER', posX: labX0 + 3.5, posZ: backZ, widthM: 2.4, variant: 'prep' });
+  s.push({ kind: 'BLAST_FREEZER', posX: labX0 + 5.2, posZ: -halfD + 0.45 });
+  s.push({ kind: 'DISPLAY_CHILLER', posX: labX0 + 6.4, posZ: -halfD + 0.4, color: '#f8fafc', label: 'Sữa · Kem tươi' });
+  if (labW >= 9) s.push({ kind: 'DISPLAY_CHILLER', posX: labX0 + 7.7, posZ: -halfD + 0.4, color: '#f8fafc', label: 'Topping' });
+  // Sát tường phải: 2 máy làm kem gelato + quầy khay kem mẫu (quay vào trong phòng)
+  const eastX = halfW - 0.45;
+  s.push({ kind: 'BATCH_FREEZER', posX: eastX, posZ: -halfD + 2.2, rotY: -HALF_PI });
+  s.push({ kind: 'BATCH_FREEZER', posX: eastX, posZ: -halfD + 3.1, rotY: -HALF_PI });
+  s.push({ kind: 'LAB_COUNTER', posX: halfW - 0.5, posZ: -halfD + Math.min(5.3, labD - 1.6), rotY: -HALF_PI, widthM: 2.2, variant: 'gelato' });
+  // Đảo socola giữa phòng: máy tôi socola + tháp socola + bàn đá tôi, mặt quay ra cửa kính cho khách xem
+  s.push({ kind: 'LAB_COUNTER', posX: labCx - 0.6, posZ: labCz + 0.4, widthM: 3, depthM: 1, variant: 'chocolate' });
   return finalize(s);
 }
 

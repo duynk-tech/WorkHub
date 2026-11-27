@@ -314,6 +314,9 @@ export async function loadSpace3DData(
       },
     }),
   ]);
+  // Thứ tự hiển thị: Quán cà phê → Showroom & Văn phòng (ngay cạnh) → Văn phòng công ty → Kho
+  const KIND_ORDER: Record<string, number> = { CAFE: 0, SHOWROOM: 1, OFFICE: 2, WAREHOUSE: 3 };
+  allScenes.sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || a.id - b.id);
 
   const activeSceneRow =
     (requestedSceneCode ? allScenes.find((s) => s.code === requestedSceneCode) : null) ??

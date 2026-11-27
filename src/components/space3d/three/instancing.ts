@@ -117,9 +117,11 @@ export function rebuildInstancing(
   for (const b of buckets.values()) {
     if (b.meshes.length < 2) continue;
     const geos: THREE.BufferGeometry[] = [];
+    const withColor = Boolean((b.mat as THREE.MeshStandardMaterial).vertexColors);
     for (const m of b.meshes) {
       const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
-      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv' && !(withColor && name === 'color')) g.deleteAttribute(name);
+      if (withColor && !g.attributes.color) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
       if (!g.attributes.normal) g.computeVertexNormals();
       if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
       g.applyMatrix4(m.matrixWorld);

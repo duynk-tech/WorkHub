@@ -53,6 +53,18 @@ export function buildGlassWall(o: SpaceObject): THREE.Group {
   const decal = box(w, 0.08, d * 0.45, M.paint('#e2e8f0', 0.9), 0, 1.2, 0);
   decal.castShadow = false;
   g.add(decal);
+  // Tên phòng in trên dải kính mờ (đọc được cả 2 mặt) — vd. "R&D LAB · KEM & SOCOLA"
+  if (o.label) {
+    const bw = Math.min(w - 0.2, 3.6);
+    const t = labelTex([{ text: o.label.toUpperCase().slice(0, 34), size: 92, color: '#0f172a', weight: 700, y: 128 }], 'rgba(241,245,249,0.92)', 1400, 256);
+    const mat = sharedMat(`gw:label:${o.label}`, () => new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: 0.6 }));
+    for (const s of [1, -1]) {
+      const band = new THREE.Mesh(new THREE.PlaneGeometry(bw, bw * (256 / 1400)), mat);
+      band.position.set(0, 1.75, s * (d * 0.2 + 0.004));
+      if (s < 0) band.rotation.y = Math.PI;
+      g.add(band);
+    }
+  }
   return g;
 }
 
