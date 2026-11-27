@@ -1563,6 +1563,41 @@ export function buildPond(o: SpaceObject): THREE.Group {
     list.push({ pos: new THREE.Vector3(x, 0.05, z), yaw: r() * 6.28, pitch: -Math.PI / 2 + 0.2, sx: 0.4 + r() * 0.3, sy: 0.4 + r() * 0.3 });
   }
   if (list.length) g.add(cards('spinach', list));
+  // Lá súng nổi (đĩa xanh có khe) + vài bông súng hồng
+  const pad = sharedMat('g:lilyPad', () => new THREE.MeshStandardMaterial({ color: '#3f7d34', roughness: 0.5, side: THREE.DoubleSide }));
+  const lotus = M.paint('#f9a8d4', 0.5);
+  for (let i = 0; i < Math.round(w * d * 0.8); i++) {
+    const x = (r() - 0.5) * (w - 0.6);
+    const z = (r() - 0.5) * (d - 0.6);
+    const rad = 0.12 + r() * 0.1;
+    const lp = new THREE.Mesh(new THREE.CircleGeometry(rad, 14, 0.3, Math.PI * 2 - 0.3), pad);
+    lp.rotation.x = -Math.PI / 2;
+    lp.rotation.z = r() * 6.28;
+    lp.position.set(x, 0.036, z);
+    g.add(lp);
+    if (i % 5 === 0) g.add(sphere(0.045, lotus, x + 0.05, 0.07, z));
+  }
+  // Cá koi lượn dưới mặt nước (canvas cho bơi theo quỹ đạo)
+  const school = new THREE.Group();
+  const koiCols: [string, string][] = [['#f97316', '#fafaf9'], ['#fafaf9', '#dc2626'], ['#f59e0b', '#f97316'], ['#fafaf9', '#111827'], ['#ea580c', '#fafaf9']];
+  koiCols.forEach(([c1, c2], i) => {
+    const fish = new THREE.Group();
+    const body = sphere(0.06, sharedMat(`g:koi:${c1}`, () => new THREE.MeshStandardMaterial({ color: c1, roughness: 0.35 })), 0, 0, 0);
+    body.scale.set(0.8, 0.55, 2.4);
+    const patch = sphere(0.045, sharedMat(`g:koi:${c2}`, () => new THREE.MeshStandardMaterial({ color: c2, roughness: 0.35 })), 0, 0.018, 0.03);
+    patch.scale.set(0.8, 0.4, 1.4);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 4), body.material as THREE.Material);
+    tail.rotation.x = -Math.PI / 2;
+    tail.scale.set(1, 1, 0.25);
+    tail.position.z = -0.17;
+    tail.userData.tail = true;
+    fish.add(body, patch, tail);
+    fish.userData = { phase: i * 1.3 + r(), speed: 0.25 + r() * 0.2, rx: 0.25 + r() * 0.15, rz: 0.2 + r() * 0.15 };
+    school.add(fish);
+  });
+  school.position.y = 0.0;
+  school.userData = { noMerge: true, dynamic: true, koi: { w: w - 0.6, d: d - 0.6 } };
+  g.add(school);
   return g;
 }
 
@@ -1912,5 +1947,110 @@ export function buildBambooPendant(o: SpaceObject): THREE.Group {
   g.add(sphere(0.05, M.glow('#ffd58a', 0.6, 3.2), 0, lampY + r * 0.6, 0));
   g.add(cyl(0.004, 0.004, top - (lampY + r * 1.95), M.black(), 0, (top + lampY + r * 1.95) / 2, 0, 4));
   g.userData.noShadowCast = true;
+  return g;
+}
+
+/**
+ * Bàn xuồng: xuồng ba lá kê cao trên giá, mặt kính viền gỗ đặt ngang mạn xuồng làm mặt bàn (cao ~0.76m)
+ * — nhìn xuyên kính thấy lòng xuồng & đà ngang. Dài theo trục X cục bộ, ghế đặt dọc 2 bên mạn.
+ */
+export function buildSampanTable(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const L = o.widthM;
+  const W = o.depthM * 0.85;
+  const topY = o.heightM;
+  const standH = 0.42;
+  const hullH = topY - standH - 0.06;
+  const hull = new THREE.Mesh(hullGeo(L, W, hullH), plankMat());
+  hull.position.y = standH;
+  g.add(hull);
+  const wood = M.wood('#9a5428');
+  for (const u of [-0.4, 0, 0.4]) {
+    const halfW = (W / 2) * Math.pow(1 - Math.abs(u) ** 2.2, 0.6);
+    g.add(box(0.12, 0.03, halfW * 1.9, wood, u * (L / 2), standH + hullH * 0.7, 0));
+  }
+  const stand = M.wood('#b8753f');
+  for (const sx of [-1, 1]) g.add(box(0.26, standH + 0.05, W * 1.15, stand, sx * L * 0.26, (standH + 0.05) / 2, 0, 0.01));
+  // Mặt kính cường lực + viền gỗ, phủ phần giữa xuồng
+  const gl = L * 0.64;
+  const gw = W * 1.04;
+  const glass = sharedMat('g:tableGlass', () => new THREE.MeshPhysicalMaterial({ color: '#e0f2fe', transparent: true, opacity: 0.28, roughness: 0.04, clearcoat: 1, depthWrite: false }));
+  g.add(box(gl, 0.012, gw, glass, 0, topY - 0.006, 0));
+  const rim = M.wood('#6b3d1f');
+  g.add(box(gl + 0.06, 0.035, 0.03, rim, 0, topY - 0.017, gw / 2 + 0.015), box(gl + 0.06, 0.035, 0.03, rim, 0, topY - 0.017, -gw / 2 - 0.015));
+  g.add(box(0.03, 0.035, gw, rim, gl / 2 + 0.015, topY - 0.017, 0), box(0.03, 0.035, gw, rim, -gl / 2 - 0.015, topY - 0.017, 0));
+  // Bình hoa nhỏ giữa bàn
+  g.add(cyl(0.035, 0.03, 0.12, M.ceramic('#e7e2d8'), 0, topY + 0.06, 0, 12));
+  g.add(sphere(0.045, M.paint('#e11d48', 0.4), 0, topY + 0.15, 0));
+  return g;
+}
+
+
+/** Dây leo bám hàng rào + chậu đất nung chân rào (môi trường quán). lines: đoạn rào [x1,z1,x2,z2] */
+export function buildFenceGreenery(lines: [number, number, number, number][], height = 2, seed = 5): THREE.Group {
+  const g = new THREE.Group();
+  const r = seeded(seed);
+  const list: Card[] = [];
+  const terracotta = M.ceramic('#b45f3c');
+  for (const [x1, z1, x2, z2] of lines) {
+    const len = Math.hypot(x2 - x1, z2 - z1);
+    const nx = (x2 - x1) / len;
+    const nz = (z2 - z1) / len;
+    // Mảng dây leo từng cụm (không phủ kín → còn thấy gỗ)
+    for (let t = 0.5; t < len; t += 2.2 + r() * 1.5) {
+      const cx = x1 + nx * t;
+      const cz = z1 + nz * t;
+      const span = 0.8 + r() * 1.4;
+      const top = height * (0.5 + r() * 0.5);
+      for (let k = 0; k < 30; k++) {
+        const u = (r() - 0.5) * span;
+        const y = r() * top;
+        list.push({ pos: new THREE.Vector3(cx + nx * u, y, cz + nz * u), yaw: Math.atan2(-nz, nx) + Math.PI / 2 + (r() - 0.5) * 0.6, pitch: (r() - 0.5) * 0.6, roll: r() - 0.5, sx: 0.3 + r() * 0.2, sy: 0.3 + r() * 0.2 });
+      }
+      // Chậu đất nung + bụi cây ở chân rào
+      if (r() < 0.6) {
+        const px = cx + nx * (span / 2 + 0.4);
+        const pz = cz + nz * (span / 2 + 0.4);
+        g.add(lathe([[0, 0], [0.16, 0], [0.22, 0.34], [0.24, 0.36], [0, 0.36]], terracotta, 16)).children.at(-1)!.position.set(px, 0, pz);
+        for (let k = 0; k < 10; k++) list.push({ pos: new THREE.Vector3(px + (r() - 0.5) * 0.3, 0.36 + r() * 0.35, pz + (r() - 0.5) * 0.3), yaw: r() * 6.28, pitch: -0.3 - r() * 0.6, sx: 0.32, sy: 0.32 });
+      }
+    }
+  }
+  if (list.length) g.add(cards('ficus', list));
+  return g;
+}
+
+/** Bồn rửa tay đá mài + gương + vòi, khung gỗ (góc tiện ích quán) */
+export function buildOutdoorSink(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const { widthM: w, depthM: d } = o;
+  const wood = M.wood('#6b4226');
+  g.add(box(w, 0.8, d, wood, 0, 0.4, 0, 0.02));
+  const stone = M.paint('#a8a29e', 0.6);
+  g.add(box(w + 0.04, 0.06, d + 0.04, stone, 0, 0.83, 0));
+  g.add(lathe([[0, 0], [0.16, 0.0], [0.2, 0.12], [0.18, 0.12], [0, 0.03]], M.ceramic('#f5f5f4'), 20)).children.at(-1)!.position.set(0, 0.86, 0.02);
+  g.add(cyl(0.012, 0.012, 0.22, M.chrome(), 0, 1.0, -d / 2 + 0.08, 8));
+  const spout = cyl(0.01, 0.01, 0.14, M.chrome(), 0, 1.1, -d / 2 + 0.14, 8);
+  spout.rotation.x = Math.PI / 2;
+  g.add(spout);
+  // Gương tròn khung mây + hộp xà phòng
+  g.add(box(w * 0.9, 1.1, 0.04, wood, 0, 1.55, -d / 2 - 0.02));
+  const mirror = new THREE.Mesh(new THREE.CircleGeometry(0.26, 28), sharedMat('g:mirror', () => new THREE.MeshStandardMaterial({ color: '#dbeafe', metalness: 1, roughness: 0.05 })));
+  mirror.position.set(0, 1.55, -d / 2 + 0.002);
+  g.add(mirror);
+  g.add(cyl(0.035, 0.035, 0.12, M.ceramic('#16a34a'), w * 0.3, 0.92, -0.05, 12));
+  return g;
+}
+
+/** Thùng rác phân loại 2 ngăn (tái chế / thường) */
+export function buildTrashBins(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const cols = ['#2563eb', '#16a34a'];
+  for (let i = 0; i < 2; i++) {
+    const x = (i - 0.5) * o.widthM * 0.5;
+    g.add(box(o.widthM * 0.46, o.heightM, o.depthM, M.paint(cols[i], 0.5), x, o.heightM / 2, 0, 0.03));
+    g.add(box(o.widthM * 0.48, 0.05, o.depthM + 0.02, M.paint('#1f2937', 0.5), x, o.heightM + 0.02, 0, 0.02));
+    g.add(box(o.widthM * 0.2, 0.08, 0.01, M.paint('#f8fafc', 0.5), x, o.heightM * 0.7, o.depthM / 2 + 0.005));
+  }
   return g;
 }

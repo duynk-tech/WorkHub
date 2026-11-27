@@ -167,8 +167,14 @@ export function cafeTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceObject
   s.push({ kind: 'GRAVEL_BED', ...at(-10.6, 4.2), widthM: 8.4 * kx, depthM: 15 * kz, variant: 'gravel' });
   s.push({ kind: 'STEPPING_PATH', ...at(-7.8, 3.4), widthM: 1.7, depthM: 10 * kz });
   for (const z of [7.2, 3.8, 0.4, -3]) s.push({ kind: 'SAMPAN_BOAT', ...at(-13.2, z), rotY: HALF_PI });
+  // Bàn gỗ 4 ghế kê trên nền sỏi ngay cạnh hàng xuồng (giữa xuồng và lối cỏ), 2 bàn có dù che
+  for (const [z, umbrella] of [[7.6, false], [3.9, true], [0.3, false], [-3.2, true]] as [number, boolean][]) {
+    const p = at(-10.6, z);
+    s.push(...tableSet(p.posX, p.posZ, 4, false, '#8a5a35'));
+    if (umbrella) s.push({ kind: 'PATIO_UMBRELLA', ...p, color: '#8a6a55' });
+  }
   for (const z of [10.8, 7.6, 4.2, 0.8, -2.6]) s.push({ kind: 'BANANA_PLANT', ...at(-14.3, z) });
-  for (const [x, z, sz] of [[-6.2, 6.4, 0.9], [-9.3, 1.2, 0.6], [-6.6, 3.2, 0.75], [-9.3, 6.8, 0.5], [-6.5, -0.6, 0.55]] as [number, number, number][]) {
+  for (const [x, z, sz] of [[-6.2, 6.4, 0.9], [-9.3, 2.1, 0.5], [-6.6, 3.2, 0.75], [-9.3, 5.75, 0.45], [-6.5, -0.6, 0.55]] as [number, number, number][]) {
     s.push({ kind: 'BOULDER', ...at(x, z), widthM: sz * 1.3, depthM: sz * 1.1, heightM: sz });
   }
 
@@ -235,6 +241,10 @@ export function cafeTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceObject
   // Dây đèn Edison giăng ngang sân trước (cao 3.6m, trên dù che)
   s.push({ kind: 'STRING_LIGHTS', ...at(4, 6), widthM: 18 * kx, heightM: 3.6 });
   s.push({ kind: 'STRING_LIGHTS', ...at(7, 2.4), widthM: 12 * kx, heightM: 3.4 });
+  // Góc tiện ích: bồn rửa tay đá + gương cạnh nhà kính, thùng rác phân loại
+  s.push({ kind: 'OUTDOOR_SINK', ...at(-5.6, -11.6) });
+  s.push({ kind: 'TRASH_BINS', ...at(-4.4, -11.65) });
+  s.push({ kind: 'TRASH_BINS', ...at(8.9, -11.65) });
   // Bảng phấn menu chữ A ngay sau cổng
   s.push({ kind: 'CHALKBOARD_STAND', ...at(-1.6, 9.6), rotY: 0.25, label: 'Menu hôm nay' });
   // Bãi giữ xe máy góc trước phải, đậu song song vuông góc hàng rào

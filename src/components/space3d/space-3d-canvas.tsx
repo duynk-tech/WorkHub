@@ -452,6 +452,8 @@ export function Space3DCanvas({
     spinners?: { obj: THREE.Object3D; speed: number }[];
     /** Vệt nắng xuyên lá dưới lưới (trượt texture chậm) */
     dapples?: THREE.Mesh[];
+    /** Đàn cá koi trong ao */
+    kois?: THREE.Object3D[];
     steamCups?: { x: number; y: number; z: number; size?: number }[];
     objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
     selectionBox: THREE.Box3Helper;
@@ -1843,6 +1845,22 @@ export function Space3DCanvas({
       sceneObjRef.current?.steam.update(dt);
       // Cánh quạt quay; vệt nắng trôi chậm như lá đung đưa
       for (const sp of sceneObjRef.current?.spinners ?? []) sp.obj.rotation.z += sp.speed * dt;
+      // Cá koi lượn hình số 8 dưới mặt ao, vẫy đuôi
+      for (const school of sceneObjRef.current?.kois ?? []) {
+        const { w: kw, d: kd } = school.userData.koi as { w: number; d: number };
+        for (const fish of school.children) {
+          const u = fish.userData as { phase: number; speed: number; rx: number; rz: number };
+          const a = totalTime * u.speed + u.phase;
+          const x = Math.sin(a) * kw * u.rx;
+          const z = Math.sin(a * 2) * kd * u.rz;
+          const nx = Math.cos(a) * kw * u.rx;
+          const nz = Math.cos(a * 2) * 2 * kd * u.rz;
+          fish.position.set(x, 0.032 + Math.sin(a * 3) * 0.004, z); // sát mặt nước (nước không trong suốt)
+          fish.rotation.y = Math.atan2(nx, nz);
+          const tail = fish.children[2];
+          if (tail) tail.rotation.y = Math.sin(totalTime * 9 + u.phase) * 0.5;
+        }
+      }
       for (const dm of sceneObjRef.current?.dapples ?? []) {
         const map = (dm.material as THREE.MeshBasicMaterial).map;
         if (map) map.offset.set(Math.sin(totalTime * 0.15) * 0.04, Math.cos(totalTime * 0.11) * 0.03);
@@ -2356,14 +2374,17 @@ export function Space3DCanvas({
     obj.steamFixed = fixedSteam;
     const spinners: { obj: THREE.Object3D; speed: number }[] = [];
     const dapples: THREE.Mesh[] = [];
+    const kois: THREE.Object3D[] = [];
     for (const entry of obj.objectMap.values()) {
       entry.root.traverse((c) => {
         if (c.userData?.spinner) spinners.push({ obj: c, speed: c.userData.spinner.speed ?? 10 });
         if (c.userData?.dapple) dapples.push(c as THREE.Mesh);
+        if (c.userData?.koi) kois.push(c);
       });
     }
     obj.spinners = spinners;
     obj.dapples = dapples;
+    obj.kois = kois;
     obj.steam.setEmitters([...fixedSteam, ...(obj.steamCups ?? [])]);
     // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
     obj.renderer.shadowMap.needsUpdate = true;

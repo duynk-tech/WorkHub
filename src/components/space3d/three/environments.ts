@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createOutdoorTree } from './hall';
 import { createGrassTexture, lightboxMat, registerEmissive, sharedMat } from './materials';
 import { M, box, cyl } from './props/kit';
-import { buildTreeRow } from './props/garden';
+import { buildFenceGreenery, buildTreeRow } from './props/garden';
 import { brickBumpTex, brickTex, labelTex } from './props/textures';
 
 /**
@@ -150,6 +150,18 @@ export function createCafeEnvironment(widthM: number, depthM: number, companyNam
   const treePts: { x: number; z: number; scale: number }[] = [];
   for (let x = -w / 2 - 1.5; x <= w / 2 + 1.5; x += 4.6) treePts.push({ x, z: -d / 2 - 2.4, scale: 1.25 + Math.abs(Math.sin(x)) * 0.35 });
   for (const sgn of [-1, 1]) for (let z = -d / 2 + 1; z <= d / 2 - 2; z += 5) treePts.push({ x: sgn * (w / 2 + 2.4), z, scale: 1.15 + Math.abs(Math.cos(z)) * 0.35 });
+  // Dây leo bám hàng rào + chậu đất nung chân rào
+  env.add(
+    buildFenceGreenery(
+      [
+        [-w / 2 + 0.3, -d / 2 + 0.12, w / 2 - 0.3, -d / 2 + 0.12],
+        [-w / 2 + 0.12, -d / 2 + 0.5, -w / 2 + 0.12, d / 2 - 0.6],
+        [w / 2 - 0.12, -d / 2 + 0.5, w / 2 - 0.12, d / 2 - 0.6],
+      ],
+      fenceH,
+      Math.round(w * 7 + d),
+    ),
+  );
   // 2 cây lớn rợp hai bên cổng (như ảnh thật: cổng nằm dưới tán cây)
   for (const sgn of [-1, 1]) treePts.push({ x: sgn * (gap / 2 + 2.6), z: d / 2 + 1.6, scale: 1.45 });
   env.add(buildTreeRow(treePts, Math.round(w * 13 + d)));
