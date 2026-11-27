@@ -448,6 +448,10 @@ export function Space3DCanvas({
     /** Đàn chim bay ngang trời (quán cà phê) */
     birds: Birds | null;
     steamFixed?: { x: number; y: number; z: number; size?: number }[];
+    /** Bộ phận quay liên tục (cánh quạt phun sương) */
+    spinners?: { obj: THREE.Object3D; speed: number }[];
+    /** Vệt nắng xuyên lá dưới lưới (trượt texture chậm) */
+    dapples?: THREE.Mesh[];
     steamCups?: { x: number; y: number; z: number; size?: number }[];
     objectMap: Map<string, { sig: string; root: THREE.Group; shelves: ShelfSlot[] }>;
     selectionBox: THREE.Box3Helper;
@@ -1818,6 +1822,12 @@ export function Space3DCanvas({
       if (frameCount % 10 === 0) updateDutyHost(currentPlayer, totalTime);
       sceneObjRef.current?.leaves?.update(dt, totalTime);
       sceneObjRef.current?.steam.update(dt);
+      // Cánh quạt quay; vệt nắng trôi chậm như lá đung đưa
+      for (const sp of sceneObjRef.current?.spinners ?? []) sp.obj.rotation.z += sp.speed * dt;
+      for (const dm of sceneObjRef.current?.dapples ?? []) {
+        const map = (dm.material as THREE.MeshBasicMaterial).map;
+        if (map) map.offset.set(Math.sin(totalTime * 0.15) * 0.04, Math.cos(totalTime * 0.11) * 0.03);
+      }
       sceneObjRef.current?.birds?.update(dt, totalTime);
       // NPC quán cà phê: làm việc, chào khách, bưng nước
       if (sceneObjRef.current?.npcs.avatars.length) {
@@ -2297,9 +2307,24 @@ export function Space3DCanvas({
           fixedSteam.push({ x: p.x, y: 1.18, z: p.z, size: 0.14 });
         }
         if (o.kind === 'ESPRESSO_MACHINE') fixedSteam.push({ x: o.posX + 0.2, y: (o.posY ?? 0) + 0.55, z: o.posZ + 0.1, size: 0.08 });
+        if (o.kind === 'MIST_FAN') {
+          // Sương phun trước đầu quạt
+          const p = localToWorld(o, 0, 0.38);
+          fixedSteam.push({ x: p.x, y: o.heightM - 0.1, z: p.z, size: 0.2 });
+        }
       }
     }
     obj.steamFixed = fixedSteam;
+    const spinners: { obj: THREE.Object3D; speed: number }[] = [];
+    const dapples: THREE.Mesh[] = [];
+    for (const entry of obj.objectMap.values()) {
+      entry.root.traverse((c) => {
+        if (c.userData?.spinner) spinners.push({ obj: c, speed: c.userData.spinner.speed ?? 10 });
+        if (c.userData?.dapple) dapples.push(c as THREE.Mesh);
+      });
+    }
+    obj.spinners = spinners;
+    obj.dapples = dapples;
     obj.steam.setEmitters([...fixedSteam, ...(obj.steamCups ?? [])]);
     // Bóng đã bake theo mesh cũ → tính lại sau khi gom/bỏ gom instancing
     obj.renderer.shadowMap.needsUpdate = true;

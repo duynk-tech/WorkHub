@@ -802,8 +802,42 @@ export function buildShadeNet(o: SpaceObject): THREE.Group {
       g.add(sphere(0.032, bulb, pt.x, pt.y - 0.09, pt.z));
     }
   }
+  // Nắng xuyên lá loang lổ trên nền dưới lưới (canvas trượt texture chậm → như lá đung đưa)
+  const dapple = new THREE.Mesh(new THREE.PlaneGeometry(w, d), dappleMat(w, d));
+  dapple.rotation.x = -Math.PI / 2;
+  dapple.position.y = 0.018;
+  dapple.userData = { noMerge: true, dapple: true };
+  g.add(dapple);
   g.userData.noShadowCast = true;
   return g;
+}
+
+function dappleMat(w: number, d: number) {
+  return sharedMat(`g:dapple:${w.toFixed(1)}x${d.toFixed(1)}`, () => {
+    const t = gTex('dapple', 512, 512, (ctx, cw, ch) => {
+      ctx.clearRect(0, 0, cw, ch);
+      for (let i = 0; i < 140; i++) {
+        const x = Math.random() * cw;
+        const y = Math.random() * ch;
+        const r = 6 + Math.random() * 26;
+        const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+        gr.addColorStop(0, 'rgba(255,236,170,0.55)');
+        gr.addColorStop(1, 'rgba(255,236,170,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.ellipse(x, y, r, r * (0.6 + Math.random() * 0.5), Math.random() * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }).clone();
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w / 5, d / 5);
+    t.needsUpdate = true;
+    const m = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 });
+    // Ban đêm tắt nắng (đèn dây thay thế)
+    registerEmissive({ mat: m, day: 1, night: 0, mode: 'color' });
+    return m;
+  });
 }
 
 // ───────────── Xuồng ba lá ─────────────
@@ -1128,6 +1162,24 @@ export function buildMetalRoof(o: SpaceObject): THREE.Group {
   // Dây bóng đèn dọc mái hiên trước
   const bulb = M.glow('#ffd58a', 0.8, 3.5);
   for (let x = -w / 2 + 0.4; x < w / 2; x += 0.8) g.add(sphere(0.03, bulb, x, h - 0.28 - Math.sin(((x + w / 2) / w) * Math.PI) * 0.12, d / 2));
+  // Giỏ trầu bà treo dọc hiên, dây lá rủ dài
+  const rr = seeded(hashId(o.id) + 3);
+  const vines: Card[] = [];
+  const basket = M.wood('#a8743f');
+  for (let x = -w / 2 + 0.6; x < w / 2 - 0.3; x += 1.6) {
+    const bx = x + 0.4;
+    const by = h - 0.7;
+    const bz = d / 2 + 0.05;
+    g.add(lathe([[0, 0], [0.12, 0.02], [0.16, 0.14], [0, 0.14]], basket, 14)).children.at(-1)!.position.set(bx, by, bz);
+    g.add(cyl(0.004, 0.004, 0.5, M.black(), bx, by + 0.4, bz, 4));
+    for (let k = 0; k < 8; k++) vines.push({ pos: new THREE.Vector3(bx + (rr() - 0.5) * 0.2, by + 0.14, bz + (rr() - 0.5) * 0.2), yaw: rr() * 6.28, pitch: -0.4 - rr() * 0.5, sx: 0.28, sy: 0.28 });
+    for (let strand = 0; strand < 4; strand++) {
+      const sx = bx + (rr() - 0.5) * 0.24;
+      const len = 0.5 + rr() * 0.8;
+      for (let t = 0; t < len; t += 0.14) vines.push({ pos: new THREE.Vector3(sx + Math.sin(t * 6) * 0.02, by - t, bz + (rr() - 0.5) * 0.1), yaw: rr() * 0.6, pitch: 0.2, roll: rr() - 0.5, sx: 0.15, sy: 0.15 });
+    }
+  }
+  if (vines.length) g.add(cards('ficus', vines));
   // Đèn tre bầu dục treo hiên (như dãy nhà kính trong ảnh)
   const bamboo = sharedMat('g:bambooLamp', () => {
     const m = new THREE.MeshStandardMaterial({ color: '#d8b27a', roughness: 0.8, emissive: '#ffb15c', emissiveIntensity: 0.1, side: THREE.DoubleSide });
@@ -1655,5 +1707,125 @@ export function buildTreeRow(points: { x: number; z: number; scale: number }[], 
     }
   }
   g.add(cards('ficus', list));
+  return g;
+}
+
+// ───────────── Quạt phun sương, bảng phấn chữ A, xe máy ─────────────
+/** Quạt phun sương đứng (quán sân vườn VN): lồng quạt, cánh quay (canvas xoay), bình nước dưới chân */
+export function buildMistFan(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const h = o.heightM;
+  const body = M.paint(o.color ?? '#e5e7eb', 0.45);
+  g.add(cyl(0.22, 0.26, 0.42, body, 0, 0.21, 0, 20)); // bình nước
+  g.add(cyl(0.03, 0.035, h - 0.7, M.metal('#9ca3af', 0.35), 0, 0.42 + (h - 0.7) / 2, 0, 10));
+  const headY = h - 0.25;
+  // Lồng quạt (vòng thép) — hướng thổi +Z
+  const cage = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.008, 6, 32), M.metal('#d1d5db', 0.3));
+  cage.position.set(0, headY, 0.08);
+  g.add(cage, box(0.16, 0.16, 0.16, body, 0, headY, -0.06, 0.03));
+  // Cánh quạt quay: nhóm động (canvas xoay quanh trục Z cục bộ)
+  const rotor = new THREE.Group();
+  const bladeMat = sharedMat('g:fanBlade', () => new THREE.MeshStandardMaterial({ color: '#93c5fd', transparent: true, opacity: 0.85, roughness: 0.4 }));
+  for (let i = 0; i < 3; i++) {
+    const blade = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12, 0, Math.PI / 2.4), bladeMat);
+    blade.rotation.z = (i / 3) * Math.PI * 2;
+    rotor.add(blade);
+  }
+  rotor.add(new THREE.Mesh(new THREE.CircleGeometry(0.04, 12), M.paint('#1f2937', 0.4)));
+  rotor.position.set(0, headY, 0.06);
+  rotor.userData = { noMerge: true, dynamic: true, spinner: { axis: 'z', speed: 14 } };
+  g.add(rotor);
+  // Vòi phun sương trước lồng
+  g.add(cyl(0.012, 0.012, 0.05, M.metal('#6b7280', 0.3), 0, headY + 0.2, 0.12, 8).rotateX(Math.PI / 2));
+  g.userData.mistAt = { lx: 0, ly: headY + 0.2, lz: 0.18 };
+  return g;
+}
+
+function chalkTex(title: string, lines: string[]) {
+  return gTex(`chalk:${title}|${lines.join('|')}`, 512, 720, (ctx, w, h) => {
+    ctx.fillStyle = '#1f2a24';
+    ctx.fillRect(0, 0, w, h);
+    // Vết phấn mờ
+    for (let i = 0; i < 200; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.04})`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 30 + Math.random() * 60, 2 + Math.random() * 4);
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fde68a';
+    ctx.font = `italic 700 66px ${SERIF}`;
+    ctx.fillText(title, w / 2, 92);
+    ctx.strokeStyle = 'rgba(253,230,138,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(90, 118);
+    ctx.quadraticCurveTo(w / 2, 136, w - 90, 118);
+    ctx.stroke();
+    ctx.font = `600 36px ${SERIF}`;
+    lines.slice(0, 8).forEach((ln, i) => {
+      ctx.fillStyle = i % 2 ? '#f8fafc' : '#bbf7d0';
+      ctx.fillText(ln, w / 2, 190 + i * 62);
+    });
+    ctx.font = `italic 600 30px ${SERIF}`;
+    ctx.fillStyle = '#fca5a5';
+    ctx.fillText('♥ Xởi lởi trời cho ♥', w / 2, h - 50);
+  });
+}
+/** Bảng phấn chữ A đặt lối vào: tên quán + vài món & giá viết tay */
+export function buildChalkboard(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const { widthM: w, heightM: h } = o;
+  const wood = M.wood('#8a5a35');
+  const lines = ['Cà phê sữa đá · 39k', 'Bạc xỉu · 42k', 'Trà đào cam sả · 45k', 'Matcha latte · 52k', 'Bánh quê nóng · 25k', 'Nước cam ép · 45k'];
+  const face = sharedMat(`g:chalk:${o.label}`, () => new THREE.MeshStandardMaterial({ map: chalkTex(o.label || 'Menu hôm nay', lines), roughness: 0.95 }));
+  const tilt = 0.18;
+  for (const s of [1, -1]) {
+    const panel = new THREE.Group();
+    panel.add(box(w, h, 0.03, wood, 0, h / 2, 0));
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.1, h - 0.12), face);
+    board.position.set(0, h / 2, 0.016);
+    panel.add(board);
+    panel.position.z = s * Math.sin(tilt) * h * 0.5;
+    panel.rotation.x = -s * tilt;
+    if (s < 0) panel.rotation.y = Math.PI;
+    g.add(panel);
+  }
+  return g;
+}
+
+/** Xe tay ga đậu (bãi giữ xe trước quán): 2 bánh, thân bầu, yên, tay lái, gương */
+export function buildMotorbike(o: SpaceObject): THREE.Group {
+  const g = new THREE.Group();
+  const L = o.depthM; // dài theo trục Z cục bộ
+  const paint = M.gloss(o.color ?? '#dc2626');
+  const black = M.paint('#111111', 0.6);
+  const chrome = M.chrome();
+  for (const z of [-L * 0.36, L * 0.36]) {
+    const wheel = cyl(0.25, 0.25, 0.09, black, 0, 0.25, z, 20);
+    wheel.rotation.z = Math.PI / 2;
+    const hub = cyl(0.12, 0.12, 0.1, chrome, 0, 0.25, z, 14);
+    hub.rotation.z = Math.PI / 2;
+    g.add(wheel, hub);
+  }
+  // Thân sau bầu + sàn để chân + yếm trước
+  g.add(box(0.3, 0.32, L * 0.42, paint, 0, 0.5, -L * 0.18, 0.1));
+  g.add(box(0.26, 0.06, L * 0.3, black, 0, 0.32, L * 0.06, 0.02));
+  const apron = box(0.3, 0.6, 0.1, paint, 0, 0.62, L * 0.28, 0.06);
+  apron.rotation.x = -0.25;
+  g.add(apron);
+  g.add(box(0.26, 0.08, L * 0.36, M.leather('#1f1f1f'), 0, 0.7, -L * 0.15, 0.04)); // yên
+  // Cổ lái + tay lái + gương
+  const stem = cyl(0.03, 0.03, 0.5, chrome, 0, 0.85, L * 0.33, 8);
+  stem.rotation.x = -0.3;
+  g.add(stem);
+  const bar = cyl(0.016, 0.016, 0.62, black, 0, 1.08, L * 0.38, 8);
+  bar.rotation.z = Math.PI / 2;
+  g.add(bar);
+  for (const s of [-1, 1]) {
+    g.add(cyl(0.006, 0.006, 0.2, chrome, s * 0.24, 1.18, L * 0.37, 6));
+    g.add(sphere(0.04, chrome, s * 0.24, 1.29, L * 0.37));
+  }
+  g.add(sphere(0.06, M.glow('#fffbe6', 0.4, 1.6), 0, 0.95, L * 0.42)); // đèn pha
+  // Chân chống nghiêng nhẹ
+  g.rotation.z = 0.05;
   return g;
 }

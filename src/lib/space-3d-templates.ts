@@ -225,6 +225,13 @@ export function cafeTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceObject
   s.push({ kind: 'POND', ...at(6.6, 0.2), widthM: 5 * kx, depthM: 3 * kz });
   s.push({ kind: 'VINE_RAILING', posX: 6.6 * kx, posZ: 0.2 * kz - (3 * kz) / 2 - 0.15, widthM: 5 * kx });
   s.push({ kind: 'BOULDER', ...at(3.6, 1.6), widthM: 1, depthM: 0.8, heightM: 0.6 });
+  // Quạt phun sương cạnh khu bàn gỗ dài (quán sân vườn miền Nam)
+  for (const [x, z] of [[-6.35, -8.2], [5.4, -4.6], [-6.35, -5.2]] as [number, number][]) s.push({ kind: 'MIST_FAN', ...at(x, z), rotY: x < 0 ? HALF_PI : -HALF_PI });
+  // Bảng phấn menu chữ A ngay sau cổng
+  s.push({ kind: 'CHALKBOARD_STAND', ...at(-1.6, 9.6), rotY: 0.25, label: 'Menu hôm nay' });
+  // Bãi giữ xe máy góc trước phải, đậu song song vuông góc hàng rào
+  const bikeCols = ['#dc2626', '#1f2937', '#f8fafc', '#2563eb', '#16a34a'];
+  bikeCols.forEach((c, i) => s.push({ kind: 'MOTORBIKE', ...at(6.6 + i * 0.85, 10.2), color: c }));
   s.push({ kind: 'BOULDER', ...at(9.6, 2), widthM: 0.7, depthM: 0.6, heightM: 0.45 });
   // Mặt bằng nhỏ hơn mẫu → kẹp vật thể vào trong (không lọt ra ngoài hàng rào)
   return finalize(s).map((o) => clampInside(o, w, d));

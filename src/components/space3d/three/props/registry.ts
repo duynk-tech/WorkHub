@@ -49,6 +49,9 @@ import {
   buildClayJar,
   buildVineRailing,
   buildLogoStandee,
+  buildMistFan,
+  buildChalkboard,
+  buildMotorbike,
 } from './garden';
 
 type Builder = (o: SpaceObject, ctx: BuildContext) => THREE.Group;
@@ -126,6 +129,9 @@ const BUILDERS: Record<string, Builder> = {
   CLAY_JAR: buildClayJar,
   VINE_RAILING: buildVineRailing,
   LOGO_STANDEE: buildLogoStandee,
+  MIST_FAN: buildMistFan,
+  CHALKBOARD_STAND: buildChalkboard,
+  MOTORBIKE: buildMotorbike,
 };
 
 /** Chữ ký thay đổi — chỉ dựng lại vật thể khi chữ ký đổi (không dựng lại cả cảnh khi kéo 1 món). */
