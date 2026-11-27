@@ -110,18 +110,66 @@ function steamTexture() {
 }
 
 interface Puff {
-  sprite: THREE.Sprite;
   age: number;
   life: number;
   ox: number;
   oz: number;
 }
 
-/** Hơi nóng: mỗi điểm phát vài làn khói mỏng bay lên, nở dần rồi tan. Sprite mờ, rất nhẹ. */
+const STEAM_MAX = 24 * 4;
+
+/** Hơi nóng: toàn bộ làn khói là 1 đám hạt (THREE.Points) → 1 draw call thay vì ~96 sprite. */
 export class SteamSystem {
   readonly group = new THREE.Group();
   private emitters: { x: number; y: number; z: number; size: number; puffs: Puff[] }[] = [];
-  private mat = new THREE.SpriteMaterial({ map: steamTexture(), transparent: true, depthWrite: false, opacity: 0.5 });
+  private pos = new Float32Array(STEAM_MAX * 3);
+  private size = new Float32Array(STEAM_MAX);
+  private alpha = new Float32Array(STEAM_MAX);
+  private geo = new THREE.BufferGeometry();
+  private mat = new THREE.ShaderMaterial({
+    uniforms: { uMap: { value: steamTexture() }, uScale: { value: 600 } },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aAlpha;
+      uniform float uScale;
+      varying float vAlpha;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = aSize * uScale / max(0.05, -mv.z);
+        vAlpha = aAlpha;
+      }`,
+    fragmentShader: `
+      uniform sampler2D uMap;
+      varying float vAlpha;
+      void main() {
+        vec4 c = texture2D(uMap, gl_PointCoord);
+        gl_FragColor = vec4(c.rgb, c.a * vAlpha);
+        if (gl_FragColor.a < 0.01) discard;
+      }`,
+    transparent: true,
+    depthWrite: false,
+  });
+  private points: THREE.Points;
+  private bufSize = new THREE.Vector2();
+
+  constructor() {
+    this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    this.geo.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
+    this.geo.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+    this.geo.setDrawRange(0, 0);
+    this.points = new THREE.Points(this.geo, this.mat);
+    this.points.frustumCulled = false;
+    this.points.renderOrder = 2;
+    // Cỡ hạt theo độ cao khung vẽ & góc nhìn camera → khớp kích thước sprite cũ (đơn vị mét)
+    this.points.onBeforeRender = (renderer, _scene, camera) => {
+      const cam = camera as THREE.PerspectiveCamera;
+      renderer.getDrawingBufferSize(this.bufSize);
+      const fov = cam.isPerspectiveCamera ? cam.fov : 50;
+      this.mat.uniforms.uScale.value = this.bufSize.y / (2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2));
+    };
+    this.group.add(this.points);
+  }
 
   setEmitters(points: { x: number; y: number; z: number; size?: number }[]) {
     // Giữ nguyên emitter trùng vị trí để khói không nhảy lại từ đầu
@@ -132,26 +180,17 @@ export class SteamSystem {
       else {
         const size = p.size ?? 0.07;
         const puffs: Puff[] = [];
-        for (let i = 0; i < 4; i++) {
-          const sprite = new THREE.Sprite(this.mat.clone());
-          sprite.scale.setScalar(size);
-          this.group.add(sprite);
-          puffs.push({ sprite, age: (i / 4) * 2.2, life: 2.2, ox: 0, oz: 0 });
-        }
+        for (let i = 0; i < 4; i++) puffs.push({ age: (i / 4) * 2.2, life: 2.2, ox: 0, oz: 0 });
         next.push({ x: p.x, y: p.y, z: p.z, size, puffs });
       }
     }
-    for (const e of this.emitters) {
-      if (next.includes(e)) continue;
-      for (const pf of e.puffs) {
-        this.group.remove(pf.sprite);
-        pf.sprite.material.dispose();
-      }
-    }
     this.emitters = next;
+    this.geo.setDrawRange(0, next.length * 4);
+    this.points.visible = next.length > 0;
   }
 
   update(dt: number) {
+    let i = 0;
     for (const e of this.emitters) {
       for (const pf of e.puffs) {
         pf.age += dt;
@@ -161,15 +200,23 @@ export class SteamSystem {
           pf.oz = (Math.random() - 0.5) * e.size * 0.6;
         }
         const t = pf.age / pf.life;
-        pf.sprite.position.set(e.x + pf.ox + Math.sin(t * 6 + pf.oz * 40) * e.size * 0.4, e.y + t * e.size * 4.5, e.z + pf.oz);
-        pf.sprite.scale.setScalar(e.size * (0.6 + t * 1.8));
-        (pf.sprite.material as THREE.SpriteMaterial).opacity = 0.42 * Math.sin(Math.PI * t);
+        this.pos[i * 3] = e.x + pf.ox + Math.sin(t * 6 + pf.oz * 40) * e.size * 0.4;
+        this.pos[i * 3 + 1] = e.y + t * e.size * 4.5;
+        this.pos[i * 3 + 2] = e.z + pf.oz;
+        this.size[i] = e.size * (0.6 + t * 1.8);
+        this.alpha[i] = 0.42 * Math.sin(Math.PI * t);
+        i++;
       }
     }
+    if (i === 0) return;
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aSize.needsUpdate = true;
+    this.geo.attributes.aAlpha.needsUpdate = true;
   }
 
   dispose() {
     this.setEmitters([]);
+    this.geo.dispose();
     this.mat.dispose();
   }
 }

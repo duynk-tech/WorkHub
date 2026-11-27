@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Avatar3DConfig, RemotePlayerMeta } from '@/lib/space-3d-types';
 import { applyRimLight } from './materials';
 
@@ -1346,6 +1347,8 @@ export function createChibiAvatar(opts: {
     });
   });
   addBlobShadow(group, 0.36);
+  // Gộp các mảnh tĩnh cùng vật liệu trong từng khớp → ~70 mesh còn ~25 (giảm mạnh draw call)
+  mergeAvatarParts(group, new Set<THREE.Object3D>([...eyes, ...sparkles, mouthOpen]));
 
   return {
     group,
@@ -1370,6 +1373,54 @@ export function createChibiAvatar(opts: {
     sparkles,
     gaze: { x: 0, y: 0, tx: 0, ty: 0, at: 1 + Math.random() * 2 },
   };
+}
+
+/**
+ * Gộp mesh con trực tiếp của MỖI nút (thân, đầu, tay, chân, mí mắt…) theo vật liệu, giữ nguyên cây khớp
+ * nên mọi chuyển động (xoay khớp, chớp mắt) vẫn đúng. Bỏ qua mesh cần điều khiển riêng (`keep`), vật liệu dùng chung,
+ * mesh nhiều vật liệu và mesh có con.
+ */
+function mergeAvatarParts(root: THREE.Object3D, keep: Set<THREE.Object3D>) {
+  const nodes: THREE.Object3D[] = [];
+  root.traverse((n) => nodes.push(n));
+  for (const node of nodes) {
+    const buckets = new Map<string, THREE.Mesh[]>();
+    for (const c of node.children) {
+      const m = c as THREE.Mesh;
+      if (!m.isMesh || keep.has(m) || m.children.length || Array.isArray(m.material) || m.userData.shared || !m.visible) continue;
+      if ((m as unknown as { isInstancedMesh?: boolean }).isInstancedMesh) continue;
+      const mat = m.material as THREE.Material;
+      if (mat.userData?.shared) continue;
+      const key = `${mat.uuid}|${m.castShadow}|${m.receiveShadow}`;
+      const list = buckets.get(key) ?? [];
+      list.push(m);
+      buckets.set(key, list);
+    }
+    for (const list of buckets.values()) {
+      if (list.length < 2) continue;
+      const geos: THREE.BufferGeometry[] = [];
+      for (const m of list) {
+        m.updateMatrix();
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+        if (!g.attributes.normal) g.computeVertexNormals();
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+        g.applyMatrix4(m.matrix);
+        geos.push(g);
+      }
+      const merged = mergeGeometries(geos, false);
+      geos.forEach((g) => g.dispose());
+      if (!merged) continue;
+      const out = new THREE.Mesh(merged, list[0].material);
+      out.castShadow = list[0].castShadow;
+      out.receiveShadow = list[0].receiveShadow;
+      for (const m of list) {
+        node.remove(m);
+        m.geometry.dispose();
+      }
+      node.add(out);
+    }
+  }
 }
 
 /** Chớp mắt tự nhiên (mỗi 2–5s) + đầu khẽ nghiêng — gọi mỗi frame cho nhân vật trong tầm nhìn. */

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
  * Instancing: gom các vật thể GIỐNG HỆT nhau (cùng chữ ký dựng hình) thành InstancedMesh
@@ -92,5 +93,62 @@ export function rebuildInstancing(
       roots[i].userData.instanced = true;
     }
   }
+  // Gộp tĩnh toàn cảnh: mọi mesh thường còn lại (chưa instanced) gộp theo vật liệu → vài chục draw call.
+  // Bỏ qua mái (ẩn khi vào phòng) để camera phòng vẫn ẩn được.
+  const buckets = new Map<string, { mat: THREE.Material; cast: boolean; receive: boolean; meshes: THREE.Mesh[]; roots: Set<THREE.Object3D> }>();
+  for (const entry of objectMap.values()) {
+    const root = entry.root;
+    if (root.userData.kind === 'ROOM_ZONE' || !root.visible) continue;
+    root.updateMatrixWorld(true);
+    root.traverse((c) => {
+      const m = c as THREE.Mesh;
+      if (!m.isMesh || !m.visible || m.userData.instHidden || underRoof(m, root) || !isPlain(m, root)) return;
+      const mat = m.material as THREE.Material;
+      const key = `${mat.uuid}|${m.castShadow}|${m.receiveShadow}`;
+      let b = buckets.get(key);
+      if (!b) {
+        b = { mat, cast: m.castShadow, receive: m.receiveShadow, meshes: [], roots: new Set() };
+        buckets.set(key, b);
+      }
+      b.meshes.push(m);
+      b.roots.add(root);
+    });
+  }
+  for (const b of buckets.values()) {
+    if (b.meshes.length < 2) continue;
+    const geos: THREE.BufferGeometry[] = [];
+    for (const m of b.meshes) {
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      g.applyMatrix4(m.matrixWorld);
+      geos.push(g);
+    }
+    const merged = mergeGeometries(geos, false);
+    geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    merged.computeBoundingSphere();
+    const out = new THREE.Mesh(merged, b.mat);
+    out.castShadow = b.cast;
+    out.receiveShadow = b.receive;
+    out.matrixAutoUpdate = false;
+    out.userData.batched = true;
+    group.add(out);
+    instancedMeshes++;
+    for (const m of b.meshes) {
+      m.visible = false;
+      m.userData.instHidden = true;
+      hiddenMeshes++;
+    }
+    // Đánh dấu gốc để lần dựng lại hiện lại mesh gốc
+    for (const r of b.roots) r.userData.instanced = true;
+  }
   return { instancedMeshes, hiddenMeshes };
+}
+
+/** Mái / trần (hoặc nằm trong nhóm mái) — camera phòng cần ẩn riêng nên không gộp */
+function underRoof(mesh: THREE.Object3D, root: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = mesh; p && p !== root; p = p.parent) if (p.userData.roof) return true;
+  return false;
 }
