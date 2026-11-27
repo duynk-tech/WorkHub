@@ -199,16 +199,8 @@ export async function clearDrinkOrdersAction(input: {
 }
 
 const NPC_SERVER_NAME = 'Bé Na (phục vụ)';
-/** Có nhân viên thật đang trực trong cảnh (presence ON_DUTY còn hạn 3 phút) */
-async function hasStaffOnDuty(sceneCode: string): Promise<boolean> {
-  const n = await prisma.spacePresence.count({
-    where: { sceneCode, status: 'ON_DUTY', lastSeenAt: { gte: new Date(Date.now() - 3 * 60_000) } },
-  });
-  return n > 0;
-}
-
 /**
- * NPC quán cà phê tự pha & bưng nước khi KHÔNG có nhân viên trực.
+ * NPC (nhân viên quán) tự pha & bưng nước cho mọi đơn.
  * Chỉ người gọi đơn được đẩy trạng thái; đúng thứ tự & đủ thời gian (chống spam / nhảy cóc).
  */
 export async function npcAdvanceOrderAction(
@@ -222,7 +214,7 @@ export async function npcAdvanceOrderAction(
     if (!cur) return { ok: false, message: 'Không tìm thấy đơn' };
     const owner = ctx ? cur.employeeId === ctx.employeeId : Boolean(guestKey && GUEST_KEY_RE.test(guestKey) && cur.guestKey === guestKey);
     if (!owner) return { ok: false, message: 'Không phải đơn của bạn' };
-    if (await hasStaffOnDuty(cur.sceneCode)) return { ok: false, message: 'Nhân viên đang trực sẽ phục vụ bạn' };
+    // Quán cà phê có nhân viên riêng (NPC) → luôn tự phục vụ; nhân viên công ty vào quán cũng là khách
     const age = Date.now() - cur.createdAt.getTime();
     if (to === 'PREPARING' && (cur.status !== 'NEW' || age < 2500)) return { ok: false, message: 'Chưa thể nhận đơn' };
     if (to === 'SERVED' && (cur.status !== 'PREPARING' || age < 10_000)) return { ok: false, message: 'Đồ uống đang được pha' };

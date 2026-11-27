@@ -305,8 +305,8 @@ export class NpcSystem {
   private updateWaiter(n: Npc, dt: number, now: number, deliveries: DrinkOrderView[], menu: CafeMenuItem[], push: (pos: THREE.Vector3) => void) {
     const g = n.av.group.position;
     if (n.mode === 'work') {
-      const job = deliveries.find((o) => o.spot && !this.delivered.has(o.id));
-      if (job && job.spot) {
+      const job = deliveries.find((o) => !this.delivered.has(o.id));
+      if (job) {
         // Xếp ly lên khay
         const cups = new THREE.Group();
         const byCode = new Map(menu.map((m) => [m.code, m]));
@@ -325,7 +325,14 @@ export class NpcSystem {
         const route: { x: number; z: number }[] = [];
         if (this.doorPts) route.push(this.doorPts.a, this.doorPts.b);
         const from = route.length ? route[route.length - 1] : { x: g.x, z: g.z };
-        route.push(...serveRoute(from, job.spot, { x: job.posX, z: job.posZ }));
+        if (job.spot) route.push(...serveRoute(from, job.spot, { x: job.posX, z: job.posZ }));
+        else {
+          // Không có bàn → đưa tận tay: đứng trước người gọi ~0.75m
+          const dx = from.x - job.posX;
+          const dz = from.z - job.posZ;
+          const len = Math.hypot(dx, dz) || 1;
+          route.push({ x: job.posX + (dx / len) * 0.75, z: job.posZ + (dz / len) * 0.75 });
+        }
         n.path = route;
         n.mode = 'deliver';
         this.say(n, 'Có ngay ạ!', now);

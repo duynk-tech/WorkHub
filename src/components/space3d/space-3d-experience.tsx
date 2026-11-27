@@ -534,7 +534,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       const before = prev.get(o.id);
       if (before === o.status) continue;
       const mine = o.customerRid === myRidRef.current;
-      if (!before && o.status === 'NEW' && cu && !mine) {
+      if (!before && o.status === 'NEW' && cu && !mine && data.canEdit) {
         setToastMsg({ ok: true, text: `☕ ${o.customerName} gọi: ${orderSummary(o.lines, byCode)}` });
         window.setTimeout(() => setToastMsg((p) => (p?.text.startsWith('☕') ? null : p)), 5000);
         playChime();
@@ -563,7 +563,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const myDrinkOrders = drinkOrders.filter((o) => myRid != null && o.customerRid === myRid);
 
   // ───── NPC quán cà phê tự phục vụ khi KHÔNG có nhân viên trực ─────
-  const staffOnDuty = Boolean(cu?.isOnDuty) || realtime.roster.some((r) => !r.isGuest && r.onDuty);
+  // Quán cà phê có nhân viên riêng (NPC): nhân viên công ty vào quán cũng là khách → NPC luôn phục vụ
+  const staffOnDuty = false;
   const preparingSeenRef = useRef(new Map<number, number>());
   const npcRequestedRef = useRef(new Set<string>());
   const [npcTick, setNpcTick] = useState(0);
@@ -592,7 +593,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const npcDeliveries = useMemo(() => {
     void npcTick;
     const now = Date.now();
-    return drinkOrders.filter((o) => o.status === 'PREPARING' && o.spot && now - (preparingSeenRef.current.get(o.id) ?? now) >= 8000);
+    return drinkOrders.filter((o) => o.status === 'PREPARING' && now - (preparingSeenRef.current.get(o.id) ?? now) >= 8000);
   }, [drinkOrders, npcTick]);
   const onNpcArrive = (orderId: number) => {
     const o = drinkOrders.find((x) => x.id === orderId);
@@ -602,7 +603,14 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     npcRequestedRef.current.add(key);
     const tryServe = (left: number) =>
       void npcAdvanceOrderAction(orderId, 'SERVED', cu ? null : guestKey).then((res) => {
-        if (res.ok) void refreshCafe();
+        if (res.ok) {
+          // Không ngồi gần bàn → nhận ly tận tay, cầm trên tay
+          if (!o.spot && o.lines[0]) {
+            realtime.sendHold(o.lines[0].code);
+            setHolding(o.lines[0].code);
+          }
+          void refreshCafe();
+        }
         else if (left > 0) window.setTimeout(() => tryServe(left - 1), 2500);
       });
     tryServe(3);
@@ -1614,7 +1622,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             else for (const o of myDrinkOrders.filter((x) => x.status === 'SERVED')) void clearOrders(o.id);
           }} glassStyle={glassStyle} />
       )}
-      {isCafe && cu && cafeOrdersOpen && (
+      {isCafe && cu && data.canEdit && cafeOrdersOpen && (
         <SpaceCafeOrders
           menu={cafeMenu}
           orders={drinkOrders}
@@ -2010,8 +2018,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
                 <HudButton title="Khách đang hỏi bạn" active={guestInboxOpen} activeBg="#16a34a" badge={guestUnread} onClick={() => setGuestInboxOpen((v) => !v)}>
                   <Users size={15} />
                 </HudButton>
-                {isCafe && (
-                  <HudButton title="Đơn gọi món của khách" active={cafeOrdersOpen} activeBg="#d97706" badge={newOrderCount} onClick={() => setCafeOrdersOpen((v) => !v)}>
+                {isCafe && data.canEdit && (
+                  <HudButton title="Quản lý đơn gọi món (quán do nhân viên quán tự động phục vụ)" active={cafeOrdersOpen} activeBg="#d97706" badge={newOrderCount} onClick={() => setCafeOrdersOpen((v) => !v)}>
                     <ClipboardList size={15} />
                   </HudButton>
                 )}
