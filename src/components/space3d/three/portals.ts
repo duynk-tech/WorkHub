@@ -231,12 +231,13 @@ export function buildPortal(p: ScenePortal): THREE.Group {
     g.add(box(1.8, 0.58, 0.05, wood, 0, 2.98, 0.04), sign);
     // Bên ngoài: lối gạch qua bãi cỏ tới cổng gỗ quán + hàng rào + dây đèn
     const brick = sharedMat('portal:brick', () => new THREE.MeshStandardMaterial({ color: '#a7765a', roughness: 0.9 }));
-    const path = new THREE.Mesh(new THREE.PlaneGeometry(2, 7), brick);
+    // Cổng quán nằm bên kia đường nội bộ khuôn viên → lối gạch băng qua đường (vạch qua đường) tới cổng
+    const path = new THREE.Mesh(new THREE.PlaneGeometry(2, 12.5), brick);
     path.rotation.x = -Math.PI / 2;
-    path.position.set(0, -0.03, -3.6);
+    path.position.set(0, -0.015, -6.3);
     path.receiveShadow = true;
     g.add(path);
-    const gz = -7.2;
+    const gz = -12.5;
     for (const s of [-1, 1]) g.add(box(0.22, 3, 0.22, wood, s * 1.5, 1.5, gz));
     g.add(box(3.6, 0.22, 0.26, wood, 0, 3.05, gz));
     const cafeSign = new THREE.Mesh(

@@ -45,7 +45,8 @@ export function portalLocal(p: ScenePortal, x: number, z: number): { depth: numb
 /** Nhân vật đang đứng trong vùng kích hoạt cổng */
 export function inPortalZone(p: ScenePortal, x: number, z: number): boolean {
   const { depth, side } = portalLocal(p, x, z);
-  return depth < p.reach + 0.45 && Math.abs(side) < p.width / 2;
+  // Chỉ dải sát cổng phía trong (khuôn viên showroom đi được cả bên ngoài tường → không coi ngoài tường là "tới cổng")
+  return depth > -0.3 && depth < p.reach + 0.45 && Math.abs(side) < p.width / 2;
 }
 
 /** Điểm xuất hiện khi vừa đi qua cổng sang cảnh này (cách cổng đủ xa để không kích hoạt lại) */

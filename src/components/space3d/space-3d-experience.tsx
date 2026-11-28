@@ -778,6 +778,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   // Ngồi ghế: ghế đang chọn (hiện nút "Ngồi ghế") / đang ngồi (hiện nút "Đứng dậy")
   const [seatPick, setSeatPick] = useState<{ label: string } | null>(null);
   const [forkHint, setForkHint] = useState<'near' | 'driving' | 'pick' | 'carry' | null>(null);
+  const [carHint, setCarHint] = useState<{ state: 'near' | 'driving'; kmh: number } | null>(null);
   const [cartHint, setCartHint] = useState<{ state: 'near' | 'wait' | 'riding' | 'arrived'; departIn: number } | null>(null);
   const [isSitting, setIsSitting] = useState(false);
   /** Phòng đang đứng trong (camera đã chuyển vào phòng) */
@@ -1376,6 +1377,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         onSeatCandidate={setSeatPick}
         onForkliftHint={setForkHint}
         onCartHint={(st, d) => setCartHint(st ? { state: st, departIn: d ?? 0 } : null)}
+        onCarHint={(st, v) => setCarHint(st ? { state: st, kmh: v ?? 0 } : null)}
         onSittingChange={(v) => {
           isSittingRef.current = v;
           setIsSitting(v);
@@ -1700,8 +1702,33 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         </div>
       )}
 
+      {/* Ô tô (showroom) */}
+      {!editMode && carHint && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          {carHint.state === 'driving' && (
+            <div style={{ ...glassStyle, display: 'flex', alignItems: 'center', gap: 14, padding: '8px 16px', borderRadius: 14, fontSize: 12.5 }}>
+              <span style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: 'tabular-nums', minWidth: 46, textAlign: 'right' }}>{carHint.kmh}</span>
+              <span style={{ color: '#94a3b8', marginLeft: -8 }}>km/h</span>
+              <span style={{ lineHeight: 1.6 }}>
+                <b>W</b> ga · <b>S</b> phanh/lùi · <b>A/D</b> lái · <b>Space</b> phanh tay
+              </span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              (e.currentTarget as HTMLButtonElement).blur();
+              window.dispatchEvent(new Event('space3d:forklift-toggle'));
+            }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#0f172a,#334155)', boxShadow: '0 10px 28px rgba(15,23,42,0.45)' }}
+          >
+            🚗 {carHint.state === 'near' ? 'Lái ô tô (F)' : 'Xuống xe (F)'}
+          </button>
+        </div>
+      )}
+
       {/* Xe điện tham quan (showroom) */}
-      {!editMode && cartHint && (
+      {!editMode && cartHint && !carHint && (
         <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 27, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
           <div style={{ ...glassStyle, padding: '8px 14px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.6, textAlign: 'center' }}>
             {cartHint.state === 'near'
@@ -1755,7 +1782,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       )}
 
       {/* Nút Ngồi ghế / Đứng dậy */}
-      {!editMode && !forkHint && !cartHint && (seatPick || isSitting) && (
+      {!editMode && !forkHint && !cartHint && !carHint && (seatPick || isSitting) && (
         <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 26 }}>
           {isSitting ? (
             <button

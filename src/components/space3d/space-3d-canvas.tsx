@@ -43,6 +43,9 @@ import { createExhibitionHallEnvironment } from './three/hall';
 import { rebuildInstancing } from './three/instancing';
 import { NpcSystem } from './three/npc';
 import { TourCart } from './three/tour-cart';
+import { CarDriver } from './three/car-drive';
+import { kmh } from '@/lib/space-3d-car';
+import { campusCarFree, campusLayout, campusRoute, campusWalk } from '@/lib/space-3d-tour';
 import { ForkliftDriver, type ForkHint, type ForkliftEntry, type PalletEntry, type RackBay } from './three/forklift-drive';
 import { cafeFrontYard, showroomFrontYard, constrainWalk, crossesFence, gateWaypoint, walkableTarget, type FrontYard } from '@/lib/space-3d-yard';
 import { Birds, FallingLeaves, SteamSystem, buildGroundLeaves } from './three/ambient';
@@ -171,6 +174,8 @@ interface Props {
   onSittingChange?: (sitting: boolean) => void;
   /** Showroom: xe điện tham quan — đứng gần ('near'), xe đang chạy ('wait'), đang ngồi ('riding'), đã về trạm ('arrived') */
   onCartHint?: (state: 'near' | 'wait' | 'riding' | 'arrived' | null, departIn?: number) => void;
+  /** Showroom: ô tô — đứng gần ('near') / đang lái ('driving', kèm km/h) */
+  onCarHint?: (state: 'near' | 'driving' | null, kmh?: number) => void;
   /** Bấm vào ly nước của mình trên bàn → cầm ly lên mang theo */
   onPickDrink?: (orderId: number) => void;
   /** Kho: đứng cạnh xe nâng ('near') / đang lái ('driving') → hiện hướng dẫn phím */
@@ -410,6 +415,7 @@ export function Space3DCanvas({
   onForkliftHint,
   onPickDrink,
   onCartHint,
+  onCarHint,
   seatCommand = null,
   onReady,
   onPortal,
@@ -472,6 +478,7 @@ export function Space3DCanvas({
     onForkliftHint,
     onPickDrink,
     onCartHint,
+    onCarHint,
   });
   stateRef.current = {
     editMode,
@@ -521,6 +528,7 @@ export function Space3DCanvas({
     onForkliftHint,
     onPickDrink,
     onCartHint,
+    onCarHint,
   };
 
   const sceneObjRef = useRef<{
@@ -737,6 +745,10 @@ export function Space3DCanvas({
     // Showroom: xe điện chở khách tham quan vòng khuôn viên
     const tour = sceneKind === 'SHOWROOM' ? new TourCart(widthM, depthM) : null;
     if (tour) scene.add(tour.group);
+    // Showroom: khuôn viên đi bộ khắp nơi + ô tô lái được ở bãi đỗ hông trái
+    const campus = sceneKind === 'SHOWROOM' ? campusLayout(widthM, depthM) : null;
+    const cars = campus ? new CarDriver(campus.parking) : null;
+    if (cars) scene.add(cars.group);
     // Kiến trúc tĩnh → tính ma trận 1 lần rồi bỏ qua mỗi khung hình (trừ khi có bộ phận chuyển động)
     let envMoving = false;
     hallEnv.traverse((c) => {
@@ -995,6 +1007,9 @@ export function Space3DCanvas({
       }
       return yardCache;
     };
+    /** 1 bước đi hợp lệ: khuôn viên showroom (trong nhà/ngoài trời qua cửa chính) hoặc sân trước quán */
+    const walkStep = (px: number, pz: number, nx: number, nz: number) =>
+      campus ? campusWalk(campus, px, pz, nx, nz) : constrainWalk(getYard(), widthM, depthM, px, pz, nx, nz);
     /** Vật thể theo vị trí hiện tại (pallet đã được xe nâng dời chỗ) — dùng cho va chạm */
     let liveSrc: SpaceStructure[] | null = null;
     let liveCache: SpaceStructure[] = [];
@@ -1025,7 +1040,9 @@ export function Space3DCanvas({
       if (camRig.introActive) camRig.skipIntro();
       keys.add(e.code);
       if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey) {
-        if (tour) toggleCart();
+        const plp = sceneObjRef.current?.player.group.position;
+        if (cars && plp && (cars.active || cars.nearest(plp.x, plp.z))) toggleCar();
+        else if (tour) toggleCart();
         else toggleForklift();
       }
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
@@ -1303,6 +1320,25 @@ export function Space3DCanvas({
       }
 
       // 4. Click vào mặt sàn -> Click-to-Walk mượt mà
+      // Khuôn viên showroom: bấm bất kỳ đâu ngoài trời → đi (qua cửa chính nếu từ trong nhà ra)
+      if (campus && sceneObjRef.current) {
+        const hp = raycaster.ray.intersectPlane(floorPlane, hitPoint);
+        if (hp) {
+          const pl = sceneObjRef.current.player.group.position;
+          const route = campusRoute(campus, pl.x, pl.z, hp.x, hp.z);
+          if (route.length) {
+            standUp();
+            pendingSeat = null;
+            setCandidate(null);
+            const last = route[route.length - 1];
+            sceneObjRef.current.walkTarget = new THREE.Vector3(route[0].x, 0, route[0].z);
+            walkQueue = route.slice(1).map((p) => new THREE.Vector3(p.x, 0, p.z));
+            walkRing.position.set(last.x, 0.03, last.z);
+            walkRing.visible = true;
+          }
+          return;
+        }
+      }
       const floorHits = raycaster.intersectObject(floorMesh, false);
       const yard = getYard();
       // Sân trước (ngoài mặt sàn): bấm trúng mặt phẳng nền
@@ -1468,6 +1504,35 @@ export function Space3DCanvas({
       walkRing.visible = false;
       so.drive.enter(f);
     };
+    /** Showroom: vào ghế lái ô tô gần nhất (≤ 3.2m) / xuống xe khi xe gần dừng */
+    const toggleCar = () => {
+      const so = sceneObjRef.current;
+      if (!cars || !so || stateRef.current.editMode) return;
+      const pl = so.player;
+      if (cars.active) {
+        const out = cars.exit();
+        if (!out) {
+          stateRef.current.onNotice?.('Giảm tốc dừng xe rồi hãy xuống nhé');
+          return;
+        }
+        pl.group.position.set(out.x, 0, out.z);
+        pl.group.rotation.y = out.rotY;
+        if (playerPosRef) playerPosRef.current.sit = 0;
+        renderer.shadowMap.needsUpdate = true;
+        camRig.easeDistance(5.6);
+        return;
+      }
+      const c = cars.nearest(pl.group.position.x, pl.group.position.z);
+      if (!c) return;
+      standUp();
+      pendingSeat = null;
+      so.walkTarget = null;
+      walkQueue = [];
+      walkRing.visible = false;
+      cars.enter(c);
+      // Camera lùi xa hơn khi lái (rig giữ khoảng cách ưu tiên)
+      camRig.easeDistance(8.5);
+    };
     /** Showroom: lên xe điện (đang đỗ ở trạm, đứng ≤ 3.5m) / xuống xe tại trạm */
     const toggleCart = () => {
       const so = sceneObjRef.current;
@@ -1488,6 +1553,7 @@ export function Space3DCanvas({
         orbit.target.x += dx;
         orbit.target.z += dz;
         if (playerPosRef) playerPosRef.current.sit = 0;
+        camRig.easeDistance(5.6);
         return;
       }
       if (tour.distanceTo(pl.group.position.x, pl.group.position.z) > 3.5) return;
@@ -1500,11 +1566,18 @@ export function Space3DCanvas({
       so.walkTarget = null;
       walkRing.visible = false;
       tour.riding = true;
+      camRig.easeDistance(7.5);
     };
-    const onForkliftToggle = () => (tour ? toggleCart() : toggleForklift());
+    const onForkliftToggle = () => {
+      const plp = sceneObjRef.current?.player.group.position;
+      if (cars && plp && (cars.active || cars.nearest(plp.x, plp.z))) toggleCar();
+      else if (tour) toggleCart();
+      else toggleForklift();
+    };
     window.addEventListener('space3d:forklift-toggle', onForkliftToggle);
     let forkHint: ForkHint = null;
     let cartHintKey = '';
+    let carHintKey = '';
 
     /** Nhân viên vào trực: tự đi tới ghế nhân viên trống gần nhất (≤ 4m) và ngồi */
     const dutySit = () => {
@@ -1857,14 +1930,51 @@ export function Space3DCanvas({
 
       const currentPlayer = sceneObjRef.current?.player ?? player;
       const cartDelta = tour ? tour.update(dt, totalTime) : null;
-      const riding = Boolean(tour?.riding);
+      const carOn = Boolean(cars?.active);
+      const riding = Boolean(tour?.riding) || carOn;
       const driveSys = !riding && sceneObjRef.current?.drive.active ? sceneObjRef.current.drive : null;
       if (!driveSys && !riding && move.lengthSq() > 0 && (sitting || seatCandidate)) {
         standUp();
         pendingSeat = null;
         if (seatCandidate) setCandidate(null);
       }
-      if (riding && tour && cartDelta) {
+      if (carOn && cars && campus) {
+        // Lái ô tô: W ga · S phanh/lùi · A/D lái · Space phanh tay; camera bám đuôi, lùi xa hơn khi chạy nhanh
+        if (sceneObjRef.current?.walkTarget) {
+          sceneObjRef.current.walkTarget = null;
+          walkRing.visible = false;
+        }
+        const throttle = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+        const steerIn = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+        const res = cars.update(dt, { throttle, steer: steerIn, handbrake: keys.has('Space') }, (x, z) => {
+          if (!campusCarFree(campus, x, z)) return false;
+          return !tour || tour.distanceTo(x, z) > 2.1;
+        });
+        if (res) {
+          currentPlayer.group.position.x = res.seat.x;
+          currentPlayer.group.position.z = res.seat.z;
+          currentPlayer.group.rotation.y = res.seat.rotY;
+          poseSit(currentPlayer, res.seat.y);
+          for (const arm of [currentPlayer.leftArm, currentPlayer.rightArm]) arm.rotation.x += (-0.95 - arm.rotation.x) * 0.3;
+          for (const el of [currentPlayer.leftElbow, currentPlayer.rightElbow]) el.rotation.x += (-0.45 - el.rotation.x) * 0.3;
+          if (playerPosRef) playerPosRef.current.sit = res.seat.y;
+          const fx = Math.sin(res.seat.rotY);
+          const fz = Math.cos(res.seat.rotY);
+          const back = 7 + Math.abs(res.speed) * 0.18;
+          const kc = 1 - Math.exp(-dt * 3.2);
+          camera.position.x += (res.seat.x - fx * back - camera.position.x) * kc + res.dx;
+          camera.position.y += (3.1 - camera.position.y) * kc;
+          camera.position.z += (res.seat.z - fz * back - camera.position.z) * kc + res.dz;
+          orbit.target.x += (res.seat.x + fx * 1.2 - orbit.target.x) * kc + res.dx;
+          orbit.target.y += (1.25 - orbit.target.y) * kc;
+          orbit.target.z += (res.seat.z + fz * 1.2 - orbit.target.z) * kc + res.dz;
+          if (res.dx || res.dz || throttle) {
+            markActive();
+            if (frameCount % 8 === 0) renderer.shadowMap.needsUpdate = true;
+          }
+          if (frameCount % 10 === 0) stateRef.current.onCarHint?.('driving', kmh(res.speed));
+        }
+      } else if (riding && tour && cartDelta) {
         // Ngồi xe điện tham quan: theo ghế khách, camera đi theo xe
         if (sceneObjRef.current?.walkTarget) {
           sceneObjRef.current.walkTarget = null;
@@ -1975,7 +2085,7 @@ export function Space3DCanvas({
         const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 9.5 : 5.4;
         const dx = (forward.x * move.z + right.x * move.x) * speed * dt;
         const dz = (forward.z * move.z + right.z * move.x) * speed * dt;
-        const nxt = constrainWalk(getYard(), widthM, depthM, currentPlayer.group.position.x, currentPlayer.group.position.z, currentPlayer.group.position.x + dx, currentPlayer.group.position.z + dz);
+        const nxt = walkStep(currentPlayer.group.position.x, currentPlayer.group.position.z, currentPlayer.group.position.x + dx, currentPlayer.group.position.z + dz);
         const nextX = nxt.x;
         const nextZ = nxt.z;
         actualDx = nextX - currentPlayer.group.position.x;
@@ -2005,7 +2115,7 @@ export function Space3DCanvas({
           const step = Math.min(dist, 6.2 * dt);
           const px0 = currentPlayer.group.position.x;
           const pz0 = currentPlayer.group.position.z;
-          const nxt = constrainWalk(getYard(), widthM, depthM, px0, pz0, px0 + (diffX / dist) * step, pz0 + (diffZ / dist) * step);
+          const nxt = walkStep(px0, pz0, px0 + (diffX / dist) * step, pz0 + (diffZ / dist) * step);
           actualDx = nxt.x - px0;
           actualDz = nxt.z - pz0;
           currentPlayer.group.position.x = nxt.x;
@@ -2099,8 +2209,17 @@ export function Space3DCanvas({
       }
 
       animateAvatarIdle(currentPlayer, totalTime);
+      // Gợi ý ô tô (showroom)
+      if (cars && !cars.active && frameCount % 10 === 0) {
+        const near = Boolean(cars.nearest(currentPlayer.group.position.x, currentPlayer.group.position.z));
+        const key = near ? 'near' : '';
+        if (key !== carHintKey) {
+          carHintKey = key;
+          stateRef.current.onCarHint?.(near ? 'near' : null);
+        }
+      } else if (cars?.active) carHintKey = 'driving';
       // Gợi ý xe điện tham quan (showroom)
-      if (tour && frameCount % 10 === 0) {
+      if (tour && !cars?.active && frameCount % 10 === 0) {
         const near = tour.distanceTo(currentPlayer.group.position.x, currentPlayer.group.position.z) <= 3.5;
         const h = tour.riding ? (tour.atStop ? 'arrived' : 'riding') : near ? (tour.atStop ? 'near' : 'wait') : null;
         const key = `${h}:${h === 'near' || h === 'arrived' ? tour.departIn : ''}`;
@@ -2269,7 +2388,8 @@ export function Space3DCanvas({
       if (portal) {
         if (portalArrow) ((portalArrow as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(totalTime * 3.2));
         const pp = currentPlayer.group.position;
-        const inZone = inPortalZone(portal, pp.x, pp.z);
+        // Đang lái ô tô / ngồi xe điện thì không chuyển cảnh qua cổng đi bộ
+        const inZone = !riding && inPortalZone(portal, pp.x, pp.z);
         if (!inZone) portalArmed = true;
         else if (portalArmed && !stateRef.current.editMode && !sitting) {
           portalArmed = false;

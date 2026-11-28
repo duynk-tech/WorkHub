@@ -3,7 +3,7 @@ import type { SpaceKind, SpaceStructure } from '@/lib/space-3d-types';
 import { labelTex } from './props/textures';
 import { buildTreeRow } from './props/garden';
 import { corrugatedTex } from './environments';
-import { showroomRing } from '@/lib/space-3d-tour';
+import { campusLayout, showroomRing } from '@/lib/space-3d-tour';
 import { M as K, box, cyl } from './props/kit';
 import {
   applyWindSway,
@@ -627,10 +627,28 @@ export function createExhibitionHallEnvironment(
     });
     env.add(g);
   };
-  neighbor(-halfW - 26, -6, 30, 22, 10, Math.PI / 2, '#d4d9df');
-  neighbor(halfW + 24, 0, 34, 20, 11, -Math.PI / 2, '#c9d3de');
-  neighbor(-14, -halfD - 22, 36, 18, 12, 0, '#d4d9df');
-  neighbor(26, -halfD - 26, 28, 18, 9, 0, '#c9d3de');
+  // Xưởng lân cận & bãi đỗ ô tô theo bố cục khuôn viên dùng chung (đi bộ / lái xe va chạm đúng chỗ)
+  const campus = campusLayout(widthM, depthM);
+  for (const n of campus.neighbors) neighbor(n.x, n.z, n.w, n.d, n.h, n.rot, n.color);
+  {
+    const lineMat = K.paint('#f8fafc', 0.6);
+    for (const p of campus.parking) {
+      for (const dz of [-3.1, 3.1]) {
+        const ln = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.1), lineMat);
+        ln.rotation.x = -Math.PI / 2;
+        ln.position.set(p.x, -0.02, p.z + dz);
+        env.add(ln);
+      }
+    }
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.2, 0.5),
+      lightboxMat(labelTex([{ text: 'P', size: 150, color: '#ffffff', weight: 900, y: 150 }, { text: 'Bãi đỗ ô tô', size: 44, color: '#dbeafe', weight: 700, y: 230 }], '#1d4ed8', 500, 260)),
+    );
+    const sp = campus.parking[0];
+    env.add(cyl(0.04, 0.04, 2.2, K.paint('#374151', 0.5), sp.x + 1.6, 1.1, sp.z + 3.4, 8));
+    sign.position.set(sp.x + 1.6, 2.25, sp.z + 3.42);
+    env.add(sign);
+  }
   // ĐƯỜNG NỘI BỘ vòng quanh nhà xưởng (xe điện chở khách tham quan chạy theo vòng này — xem tour-cart.ts)
   const ring = showroomRing(widthM, depthM);
   const asphalt = K.paint('#4a4e55', 0.95);

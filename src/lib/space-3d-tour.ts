@@ -62,3 +62,106 @@ export function samplePath(pts: { x: number; z: number }[], lens: number[], s: n
   const t = (d - lens[i - 1]) / seg;
   return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, rotY: Math.atan2(b.x - a.x, b.z - a.z) };
 }
+
+// ───────────── Bố cục khuôn viên showroom (dùng chung cho dựng cảnh, đi bộ, lái ô tô) ─────────────
+export interface Box2 {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+}
+export interface CampusLayout {
+  /** Khối nhà xưởng (tính cả tường, chừa 0.3m) */
+  building: Box2;
+  /** Sàn trong nhà (đi lại bên trong) */
+  floor: { hw: number; hd: number };
+  /** Lối cửa chính giữa mặt tiền */
+  door: { x0: number; x1: number };
+  /** Ranh giới khuôn viên đi lại / lái xe */
+  bounds: { x0: number; x1: number; z0: number; z1: number };
+  /** Nhà xưởng lân cận (không đi xuyên) */
+  neighbors: (Box2 & { h: number; rot: number; w: number; d: number; color: string })[];
+  /** Chỗ đậu ô tô (bãi hông trái) */
+  parking: { x: number; z: number; rotY: number; color: string }[];
+}
+
+export function campusLayout(widthM: number, depthM: number): CampusLayout {
+  const halfW = widthM / 2 + 1;
+  const halfD = depthM / 2 + 2;
+  // Xưởng lân cận: (tâm x, tâm z, dài, sâu, cao, xoay, màu) — xoay ±90° thì đổi chiều dài/sâu theo trục thế giới
+  const nb = (x: number, z: number, w: number, d: number, h: number, rot: number, color: string) => {
+    const swap = Math.abs(Math.sin(rot)) > 0.5;
+    return { x, z, w, d, h, rot, color, hw: (swap ? d : w) / 2, hd: (swap ? w : d) / 2 };
+  };
+  return {
+    building: { x: 0, z: 0, hw: halfW + 0.3, hd: halfD + 0.3 },
+    floor: { hw: widthM / 2, hd: depthM / 2 },
+    door: { x0: -1.2, x1: 1.2 },
+    bounds: { x0: -halfW - 15, x1: halfW + 14, z0: -halfD - 12.5, z1: halfD + 20 },
+    neighbors: [
+      nb(-halfW - 26, -6, 30, 22, 10, Math.PI / 2, '#d4d9df'),
+      nb(halfW + 24, 0, 34, 20, 11, -Math.PI / 2, '#c9d3de'),
+      nb(-14, -halfD - 22, 36, 18, 12, 0, '#d4d9df'),
+      nb(26, -halfD - 26, 28, 18, 9, 0, '#c9d3de'),
+    ],
+    parking: [
+      { x: -halfW - 2.1, z: -2.5, rotY: 0, color: '#f8fafc' },
+      { x: -halfW - 2.1, z: -9, rotY: 0, color: '#1e3a8a' },
+    ],
+  };
+}
+
+const inBox = (b: Box2, x: number, z: number, pad = 0) => Math.abs(x - b.x) < b.hw + pad && Math.abs(z - b.z) < b.hd + pad;
+
+/** Điểm (x, z) ở ngoài nhà xưởng có đi/lái được không (trong ranh giới, không trong xưởng lân cận) */
+export function campusFree(c: CampusLayout, x: number, z: number, pad = 0): boolean {
+  if (x < c.bounds.x0 + pad || x > c.bounds.x1 - pad || z < c.bounds.z0 + pad || z > c.bounds.z1 - pad) return false;
+  if (inBox(c.building, x, z, pad)) return false;
+  return !c.neighbors.some((n) => inBox(n, x, z, pad));
+}
+
+/** Đang ở trong nhà (sàn hoặc hành lang cửa) */
+function insideHall(c: CampusLayout, x: number, z: number): boolean {
+  return inBox(c.building, x, z);
+}
+function onFloor(c: CampusLayout, x: number, z: number): boolean {
+  return Math.abs(x) <= c.floor.hw && Math.abs(z) <= c.floor.hd;
+}
+function inDoorway(c: CampusLayout, x: number, z: number): boolean {
+  return x >= c.door.x0 && x <= c.door.x1 && z >= c.floor.hd - 0.05 && z <= c.building.hd + 0.05;
+}
+
+/**
+ * Đi bộ khắp khuôn viên: trong nhà đi trên sàn; ra/vào nhà chỉ qua lối cửa chính; ngoài trời không xuyên
+ * nhà xưởng & xưởng lân cận. Bị chặn 1 trục thì trượt theo trục còn lại.
+ */
+export function campusWalk(c: CampusLayout, px: number, pz: number, nx: number, nz: number): { x: number; z: number } {
+  const ok = (x: number, z: number) => {
+    if (inDoorway(c, x, z)) return true;
+    if (insideHall(c, x, z)) return onFloor(c, x, z) && (insideHall(c, px, pz) || inDoorway(c, px, pz));
+    return campusFree(c, x, z) && (!insideHall(c, px, pz) || inDoorway(c, px, pz));
+  };
+  if (ok(nx, nz)) return { x: nx, z: nz };
+  if (ok(nx, pz)) return { x: nx, z: pz };
+  if (ok(px, nz)) return { x: px, z: nz };
+  return { x: px, z: pz };
+}
+
+/** Điểm bấm click-to-walk hợp lệ + chặng qua cửa nếu đi từ trong ra ngoài (hoặc ngược lại) */
+export function campusRoute(c: CampusLayout, px: number, pz: number, tx: number, tz: number): { x: number; z: number }[] {
+  const fromIn = insideHall(c, px, pz) && !inDoorway(c, px, pz);
+  let target = { x: tx, z: tz };
+  if (insideHall(c, tx, tz) && !inDoorway(c, tx, tz)) target = { x: Math.max(-c.floor.hw, Math.min(c.floor.hw, tx)), z: Math.max(-c.floor.hd, Math.min(c.floor.hd, tz)) };
+  else if (!campusFree(c, tx, tz) && !inDoorway(c, tx, tz)) return [];
+  const toIn = insideHall(c, target.x, target.z) && !inDoorway(c, target.x, target.z);
+  if (fromIn === toIn) return [target];
+  const mid = (c.door.x0 + c.door.x1) / 2;
+  const inPt = { x: mid, z: c.floor.hd - 0.6 };
+  const outPt = { x: mid, z: c.building.hd + 0.8 };
+  return fromIn ? [inPt, outPt, target] : [outPt, inPt, target];
+}
+
+/** Xe/người có trong vùng lái xe ngoài trời không (để đặt ô tô / kiểm tra va chạm) */
+export function campusCarFree(c: CampusLayout, x: number, z: number): boolean {
+  return campusFree(c, x, z, 0.1);
+}
