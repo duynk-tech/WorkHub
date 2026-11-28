@@ -212,11 +212,23 @@ const PASS_THROUGH = new Set([
  */
 function safeCompileAsync(renderer: THREE.WebGLRenderer, scene: THREE.Object3D, camera: THREE.Camera, timeoutMs: number, targetScene?: THREE.Scene): Promise<void> {
   let mats: Set<THREE.Material>;
+  // renderer.compile chỉ duyệt vật đang hiện → vật đang ẩn (vòng đánh dấu, mũi tên cổng, ly trên tay, phần chỉ hiện
+  // sau khi bấm "Vào"…) sẽ biên dịch shader đồng bộ lúc xuất hiện lần đầu (khựng 50–100ms).
+  // Tạm hiện tất cả trong lúc thu thập vật liệu (đồng bộ, không kịp vẽ ra màn hình) rồi trả lại như cũ.
+  const hidden: THREE.Object3D[] = [];
+  scene.traverse((o) => {
+    if (!o.visible) {
+      hidden.push(o);
+      o.visible = true;
+    }
+  });
   try {
     mats = renderer.compile(scene, camera, targetScene ?? null) as unknown as Set<THREE.Material>;
   } catch {
+    for (const o of hidden) o.visible = false;
     return Promise.resolve();
   }
+  for (const o of hidden) o.visible = false;
   const t0 = performance.now();
   return new Promise((resolve) => {
     const check = () => {
