@@ -21,6 +21,9 @@ describe('Xuất Excel theo luồng', () => {
     const ws = wb.getWorksheet('Theo nhân sự')!;
     expect(ws.getRow(1).getCell(1).value).toBe('Mã');
     expect(ws.getRow(1).getCell(1).font?.bold).toBe(true);
+    // Tiêu đề nền xanh dương đậm, chữ trắng
+    expect((ws.getRow(1).getCell(1).fill as any)?.fgColor?.argb).toBe('FF1E3A8A');
+    expect(ws.getRow(1).getCell(1).font?.color?.argb).toBe('FFFFFFFF');
     expect(ws.getRow(2).getCell(1).value).toBe('NV1');
     expect(ws.getRow(1501).getCell(2).value).toBe(1_500_000);
     expect(ws.rowCount).toBe(1501);

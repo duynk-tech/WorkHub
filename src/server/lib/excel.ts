@@ -8,7 +8,7 @@ import ExcelJS from 'exceljs';
  * định dạng thì tốn bộ nhớ và trễ byte đầu tiên. Ở đây mỗi dòng được tô màu ngay
  * khi thêm rồi `commit()` xuống luồng, trình duyệt nhận file dần dần.
  *
- * Quy ước định dạng giữ nguyên như trước: dòng tiêu đề nền xanh chữ trắng, dòng
+ * Quy ước định dạng: dòng tiêu đề nền xanh dương đậm chữ trắng, dòng
  * chẵn nền nhạt, viền mảnh, cố định dòng tiêu đề.
  */
 
@@ -22,7 +22,8 @@ export interface SheetColumn {
 
 export const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+// Xanh dương đậm (#1E3A8A), cùng màu tiêu đề bảng của báo cáo kho
+const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
 const STRIPE_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
 
 /** Tô dòng tiêu đề — tô từng ô có tên cột, không tô cả dòng để không loang sang cột trống. */
@@ -33,10 +34,10 @@ export function styleHeaderRow(row: ExcelJS.Row, columnCount: number) {
     cell.fill = HEADER_FILL;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     cell.border = {
-      top: { style: 'thin', color: { argb: 'FF1D4ED8' } },
-      bottom: { style: 'thin', color: { argb: 'FF1D4ED8' } },
-      left: { style: 'thin', color: { argb: 'FF3B82F6' } },
-      right: { style: 'thin', color: { argb: 'FF3B82F6' } },
+      top: { style: 'thin', color: { argb: 'FF172554' } },
+      bottom: { style: 'thin', color: { argb: 'FF172554' } },
+      left: { style: 'thin', color: { argb: 'FF1E40AF' } },
+      right: { style: 'thin', color: { argb: 'FF1E40AF' } },
     };
   }
   row.height = 26;

@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   workbook.title = `Báo cáo doanh thu - ${report.range.label}`;
 
   const navy = 'FF1E3A8A';
-  const blue = 'FF2563EB';
+  const blue = 'FF1E40AF'; // dải tiêu đề báo cáo: xanh dương đậm
   const gray = 'FFF1F5F9';
   const border = { style: 'thin' as const, color: { argb: 'FFE2E8F0' } };
 
