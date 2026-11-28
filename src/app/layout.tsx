@@ -8,7 +8,6 @@ import './globals.css';
 
 const appFont = Inter({
   subsets: ['vietnamese', 'latin'],
-  weight: ['400', '500', '600', '700'],
   variable: '--font-app-sans',
   display: 'swap',
 });

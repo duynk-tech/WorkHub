@@ -5,13 +5,15 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus, SlidersHorizontal, Share2, Star, Trash2, ArrowUp, ArrowDown,
-  LayoutDashboard, Check,
+  LayoutDashboard, Check, LayoutGrid,
 } from 'lucide-react';
 import {
   Button, Badge, Field, Input, Checkbox, Switch, Divider,
 } from '@/components/ui';
 import { Modal, ConfirmDialog } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
+import { ActionMenu } from '@/components/ui/action-menu';
+import { DASHBOARD_LAYOUT_EDIT_EVENT } from '@/components/domain/dashboard-layout-grid';
 import {
   DASHBOARD_WIDGET_GROUPS,
   DASHBOARD_WIDGETS,
@@ -182,39 +184,24 @@ export function DashboardBoardBar({
 
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
-          borderBottom: boards.length > 0 ? '1px solid var(--border-base)' : undefined,
-        }}
-      >
+      <div className="row-between" style={{ gap: 12, flexWrap: 'wrap' }}>
         {boards.length > 0 ? (
-          <div className="tabs" style={{ borderBottom: 'none', flex: 1 }}>
+          <div className="tabs" style={{ minWidth: 0 }}>
             {boards.map((b) => {
               const active = activeBoardId === b.id;
               return (
-                <Link
-                  key={b.id}
-                  href={`/dashboard?board=${b.id}`}
-                  className="tab"
-                  data-active={active}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
-                  <LayoutDashboard size={13} />
+                <Link key={b.id} href={`/dashboard?board=${b.id}`} className="tab" data-active={active}>
+                  <LayoutDashboard />
                   <span>{b.name}</span>
-                  {b.isDefault && <Star size={11} style={{ color: 'var(--warning)' }} />}
+                  {b.isDefault && <Star size={12} fill="#f59e0b" stroke="#f59e0b" aria-label="Bảng mặc định" />}
                   {b.isShared && !b.isOwn && (
-                    <Badge tone="info" style={{ fontSize: 10, padding: '0 5px' }}>
+                    <Badge tone="info" style={{ fontSize: 10.5, minHeight: 18, lineHeight: '16px', padding: '0 5px' }}>
                       <Share2 size={9} /> Chia sẻ
                     </Badge>
                   )}
                   {b.isShared && b.isOwn && (
                     <span title="Đang chia sẻ" style={{ display: 'inline-flex', color: 'var(--brand)' }}>
-                      <Share2 size={11} />
+                      <Share2 size={12} />
                     </span>
                   )}
                 </Link>
@@ -227,39 +214,40 @@ export function DashboardBoardBar({
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: boards.length > 0 ? 6 : 0 }}>
-          {activeBoard && activeBoard.isOwn && !activeBoard.isDefault && (
+        <div className="toolbar">
+          {canEditActive && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              disabled={pending}
-              onClick={() => handleSetDefault(activeBoard.id)}
-              title="Đặt bảng này làm mặc định khi mở Tổng quan"
+              onClick={() => window.dispatchEvent(new Event(DASHBOARD_LAYOUT_EDIT_EVENT))}
+              title="Kéo thả để đổi vị trí, kéo cạnh để đổi độ rộng khối"
             >
-              <Star size={13} /> Đặt mặc định
+              <LayoutGrid size={15} /> Bố cục
             </Button>
           )}
           {canEditActive && (
-            <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(activeBoard)}>
-                <SlidersHorizontal size={13} /> Tùy chỉnh
-              </Button>
-              <Button
-                type="button"
-                variant="danger-soft"
-                size="sm"
-                iconOnly
-                title="Xóa bảng này"
-                onClick={() => setConfirmDelete(activeBoard)}
-              >
-                <Trash2 size={13} />
-              </Button>
-            </>
+            <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(activeBoard)}>
+              <SlidersHorizontal size={15} /> Tùy chỉnh
+            </Button>
           )}
           <Button type="button" variant="primary" size="sm" onClick={openCreate}>
-            <Plus size={14} /> Tạo bảng
+            <Plus size={15} /> Tạo bảng
           </Button>
+          {activeBoard && (canEditActive || (activeBoard.isOwn && !activeBoard.isDefault)) && (
+            <ActionMenu
+              label="Thao tác khác với bảng"
+              title={activeBoard.name}
+              items={[
+                ...(activeBoard.isOwn && !activeBoard.isDefault
+                  ? [{ key: 'default', label: 'Đặt làm bảng mặc định', icon: <Star size={14} />, onClick: () => handleSetDefault(activeBoard.id), disabled: pending }]
+                  : []),
+                ...(canEditActive
+                  ? [{ key: 'delete', label: 'Xóa bảng này', icon: <Trash2 size={14} />, danger: true, onClick: () => setConfirmDelete(activeBoard) }]
+                  : []),
+              ]}
+            />
+          )}
         </div>
       </div>
 

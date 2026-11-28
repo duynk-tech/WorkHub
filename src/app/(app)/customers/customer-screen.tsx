@@ -102,12 +102,12 @@ export function CustomerScreen({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 40 }}>
       {/* 1. Header & Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--text-strong)' }}>
+          <h1 className="page-title">
             {activeTab === 'care' ? 'Lịch Bảo Dưỡng & Bảo Hành Thiết Bị' : 'Khách hàng'}
           </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--text-muted)' }}>
+          <p className="page-desc">
             {activeTab === 'care'
               ? 'Theo dõi hạn bảo dưỡng định kỳ và thời hạn bảo hành của thiết bị tại tất cả các điểm khách hàng'
               : 'Quản lý chuỗi nhà hàng, quán cà phê, tiệm bánh, lịch sử mua máy và các điểm lắp đặt'}
@@ -131,20 +131,8 @@ export function CustomerScreen({
             key={t.key}
             type="button"
             onClick={() => handleTabChange(t.key)}
-            style={{
-              padding: '10px 16px',
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-              fontWeight: activeTab === t.key ? 700 : 500,
-              fontSize: 14,
-              borderBottom: activeTab === t.key ? '2px solid var(--brand)' : '2px solid transparent',
-              color: activeTab === t.key ? 'var(--brand)' : 'var(--text-muted)',
-              background: 'none',
-              borderTop: 'none',
-              borderLeft: 'none',
-              borderRight: 'none',
-              cursor: 'pointer',
-            }}
+            className="tab"
+              data-active={activeTab === t.key}
           >
             {t.label}
           </button>

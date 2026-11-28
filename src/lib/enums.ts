@@ -1,13 +1,17 @@
 /** Nhãn tiếng Việt và màu cho các enum của Prisma — dùng chung toàn hệ thống. */
 
-export const TASK_STATUS: Record<string, { label: string; tone: string; color: string }> = {
-  TODO: { label: 'Chờ làm', tone: 'neutral', color: 'var(--text-muted)' },
-  IN_PROGRESS: { label: 'Đang làm', tone: 'info', color: 'var(--info)' },
-  REVIEW: { label: 'Chờ nghiệm thu', tone: 'warning', color: 'var(--warning)' },
-  DONE: { label: 'Hoàn thành', tone: 'success', color: 'var(--success)' },
-  BLOCKED: { label: 'Bị chặn', tone: 'danger', color: 'var(--danger)' },
-  CANCELLED: { label: 'Đã hủy', tone: 'outline', color: 'var(--text-faint)' },
+/** `chart`: màu đặc cho biểu đồ/thanh tiến độ — dùng chung để donut và progress cùng màu. */
+export const TASK_STATUS: Record<string, { label: string; tone: string; color: string; chart: string }> = {
+  TODO: { label: 'Chờ làm', tone: 'neutral', color: 'var(--text-muted)', chart: '#94a3b8' },
+  IN_PROGRESS: { label: 'Đang làm', tone: 'info', color: 'var(--info)', chart: '#2563eb' },
+  REVIEW: { label: 'Chờ nghiệm thu', tone: 'warning', color: 'var(--warning)', chart: '#f59e0b' },
+  DONE: { label: 'Hoàn thành', tone: 'success', color: 'var(--success)', chart: '#16a34a' },
+  BLOCKED: { label: 'Bị chặn', tone: 'danger', color: 'var(--danger)', chart: '#dc2626' },
+  CANCELLED: { label: 'Đã hủy', tone: 'outline', color: 'var(--text-faint)', chart: '#cbd5e1' },
 };
+
+/** Thứ tự trạng thái hiển thị trên các biểu đồ tổng hợp công việc. */
+export const TASK_STATUS_CHART_ORDER = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED'] as const;
 
 export const TASK_PRIORITY: Record<string, { label: string; tone: string; color: string }> = {
   LOW: { label: 'Thấp', tone: 'outline', color: 'var(--text-muted)' },

@@ -184,13 +184,23 @@ export function Alert({
   );
 }
 
+/** Header trang theo PageLayout của fmp-web: tiêu đề 20px, mô tả, nút thao tác bên phải, viền dưới. */
 export function PageHeader({
-  title, description, actions,
-}: { title: string; description?: string; actions?: React.ReactNode }) {
+  title, description, actions, meta,
+}: {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  actions?: React.ReactNode;
+  /** Badge/đếm nhỏ đặt cạnh tiêu đề. */
+  meta?: React.ReactNode;
+}) {
   return (
     <div className="page-header">
-      <div>
-        <h1 className="page-title">{title}</h1>
+      <div style={{ minWidth: 0 }}>
+        <h1 className="page-title">
+          {title}
+          {meta && <span className="page-meta">{meta}</span>}
+        </h1>
         {description && <p className="page-desc">{description}</p>}
       </div>
       {actions && <div className="toolbar">{actions}</div>}

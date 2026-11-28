@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { getAuthContext, can } from '@/server/auth/context';
 import { NAV_SECTIONS } from '@/lib/nav';
@@ -50,6 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell
+      initialCollapsed={(await cookies()).get('workhub-sidebar')?.value === 'collapsed'}
       appName={branding.name}
       logoUrl={branding.logoUrl}
       logoText={branding.logoText}

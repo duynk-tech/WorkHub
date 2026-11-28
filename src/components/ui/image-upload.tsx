@@ -512,7 +512,7 @@ export function MultiImageUpload({
               cursor: disabled || uploading ? 'not-allowed' : 'pointer',
               color: 'var(--text-muted)',
               fontSize: 11.5,
-              transition: 'all 0.15s ease',
+              transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
             }}
             onMouseEnter={(e) => {
               if (!disabled && !uploading) {

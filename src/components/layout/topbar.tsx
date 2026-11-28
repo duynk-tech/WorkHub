@@ -43,6 +43,8 @@ export function Topbar({
   const router = useRouter();
   const [openMenu, setOpenMenu] = useState<'user' | 'notif' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMac, setIsMac] = useState(true);
+  useEffect(() => setIsMac(/Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)), []);
   const [searchFocused, setSearchFocused] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -114,7 +116,7 @@ export function Topbar({
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
             />
-            <kbd className="topbar-search-kbd">⌘K</kbd>
+            <kbd className="topbar-search-kbd">{isMac ? '⌘K' : 'Ctrl K'}</kbd>
           </div>
         </form>
 
@@ -185,7 +187,7 @@ export function Topbar({
           </button>
 
           {openMenu === 'notif' && (
-            <div className="dropdown" style={{ width: 340 }}>
+            <div className="dropdown" style={{ width: 'min(340px, calc(100vw - 24px))' }}>
               <div className="dropdown-head">
                 <span>Thông báo</span>
                 {unreadCount > 0 && <span className="badge badge-brand">{unreadCount} mới</span>}

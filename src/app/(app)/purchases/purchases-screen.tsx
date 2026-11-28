@@ -450,7 +450,7 @@ export function PurchasesScreen({
                               border: '1px solid #ddd6fe',
                               borderRadius: 6,
                               cursor: 'pointer',
-                              transition: 'all 0.15s ease',
+                              transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                             }}
                           >
                             <Printer size={13} />
@@ -599,7 +599,7 @@ export function PurchasesScreen({
                                           ? '2px solid #6d28d9'
                                           : '1px solid var(--border-base, #cbd5e1)',
                                         boxShadow: isCurrent ? '0 0 0 3px rgba(124, 58, 237, 0.2)' : 'none',
-                                        transition: 'all 0.2s ease',
+                                        transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease',
                                       }}
                                       title={`Bước ${stage.step}: ${stage.label}`}
                                     >

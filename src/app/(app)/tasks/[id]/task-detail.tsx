@@ -476,17 +476,17 @@ export function TaskDetail({
           </Card>
 
           <Card>
-            <div className="tabs" style={{ padding: '0 16px' }}>
+            <div className="tabs" style={{ margin: '12px 16px 0' }}>
               <div className="tab" data-active={tab === 'comments'} onClick={() => handleTabChange('comments')}>
-                <MessageSquare size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
+                <MessageSquare size={14} />
                 Bình luận ({task._count?.comments ?? task.comments.length})
               </div>
               <div className="tab" data-active={tab === 'time'} onClick={() => handleTabChange('time')}>
-                <Timer size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
+                <Timer size={14} />
                 Chấm giờ ({task._count?.timeLogs ?? task.timeLogs.length})
               </div>
               <div className="tab" data-active={tab === 'activity'} onClick={() => handleTabChange('activity')}>
-                <Activity size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
+                <Activity size={14} />
                 Lịch sử
               </div>
             </div>

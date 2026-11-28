@@ -302,12 +302,12 @@ export function EquipmentScreen({
     >
       {/* 1. Header & Actions — nhúng trong tab thì tiêu đề và nút đã nằm ở màn cha */}
       {!embedded && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div className="page-header">
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
+            <h1 className="page-title">
               Thiết bị
             </h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--text-muted)' }}>
+            <p className="page-desc">
               Quản lý máy làm kem, máy socola, thiết bị bếp, điểm lắp đặt và lịch bảo dưỡng
             </p>
           </div>
@@ -438,7 +438,7 @@ export function EquipmentScreen({
               color: viewMode === 'card' ? 'var(--text)' : 'var(--text-muted)',
               boxShadow: viewMode === 'card' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
               cursor: 'pointer',
-              transition: 'all 0.15s ease',
+              transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
             }}
           >
             <LayoutGrid style={{ width: 14, height: 14 }} />
@@ -460,7 +460,7 @@ export function EquipmentScreen({
               color: viewMode === 'list' ? 'var(--text)' : 'var(--text-muted)',
               boxShadow: viewMode === 'list' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
               cursor: 'pointer',
-              transition: 'all 0.15s ease',
+              transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
             }}
           >
             <List style={{ width: 14, height: 14 }} />
@@ -1078,7 +1078,7 @@ export function EquipmentScreen({
                             borderRadius: 6,
                             color: 'var(--text-muted)',
                             textDecoration: 'none',
-                            transition: 'all 0.15s ease',
+                            transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                           }}
                           className="hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                           title="Xem chi tiết thiết bị"

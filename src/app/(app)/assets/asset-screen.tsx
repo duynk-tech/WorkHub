@@ -236,13 +236,13 @@ export function AssetScreen({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* 1. Header & Quick Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Laptop style={{ width: 24, height: 24, color: 'var(--primary, #0284c7)' }} />
             Thiết bị & Tài sản IT
           </h1>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
+          <p className="page-desc">
             Theo dõi danh mục máy tính, cấp phát nhân sự, luân chuyển, bảo hành và in tem QR code dán máy
           </p>
         </div>

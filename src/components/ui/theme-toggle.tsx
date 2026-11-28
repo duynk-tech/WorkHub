@@ -21,6 +21,15 @@ export function ThemeToggle() {
     setTheme(saved);
   }, []);
 
+  // Chế độ "theo hệ thống": đổi theme của máy thì đổi ngay, không cần tải lại
+  React.useEffect(() => {
+    if (theme !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyTheme('system');
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [theme]);
+
   const cycle = () => {
     const next: Theme = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
     setTheme(next);

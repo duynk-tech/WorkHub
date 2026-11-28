@@ -114,7 +114,7 @@ export function InstallWizard({
                         width: 34, height: 34, borderRadius: '50%', display: 'grid', placeItems: 'center',
                         background: i <= step ? 'var(--brand)' : 'var(--surface-sunken)',
                         color: i <= step ? '#fff' : 'var(--text-faint)',
-                        transition: 'all 0.2s var(--ease-out)',
+                        transition: 'background-color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), transform 0.2s var(--ease-out), opacity 0.2s var(--ease-out)',
                       }}>
                         <s.icon size={15} />
                       </div>

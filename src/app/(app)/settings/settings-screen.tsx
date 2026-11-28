@@ -874,7 +874,7 @@ export function SettingsScreen({
                     border: `2px solid ${(values['inventory.salesFulfillmentMode'] ?? 'MANUAL_WAREHOUSE_APPROVAL') === 'MANUAL_WAREHOUSE_APPROVAL' ? 'var(--primary)' : 'var(--border)'}`,
                     background: (values['inventory.salesFulfillmentMode'] ?? 'MANUAL_WAREHOUSE_APPROVAL') === 'MANUAL_WAREHOUSE_APPROVAL' ? 'var(--surface-subtle)' : 'var(--surface-card)',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
+                    transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -908,7 +908,7 @@ export function SettingsScreen({
                     border: `2px solid ${values['inventory.salesFulfillmentMode'] === 'AUTO_DEDUCT' ? 'var(--primary)' : 'var(--border)'}`,
                     background: values['inventory.salesFulfillmentMode'] === 'AUTO_DEDUCT' ? 'var(--surface-subtle)' : 'var(--surface-card)',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
+                    transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>

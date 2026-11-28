@@ -32,7 +32,7 @@ const LazyMonthlyAreaChart = dynamic(() => import('./dashboard-charts').then((m)
 });
 const LazyStatusDonutChart = dynamic(() => import('./dashboard-charts').then((m) => m.StatusDonutChart), {
   ssr: false,
-  loading: placeholder(240),
+  loading: placeholder(230),
 });
 
 export function MonthlyBars(props: ComponentProps<typeof Charts.MonthlyBars>) {

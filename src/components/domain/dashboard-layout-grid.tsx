@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { GripVertical, LayoutGrid, Save, RotateCcw, X, Columns3 } from 'lucide-react';
+import { GripVertical, Save, RotateCcw, X, Columns3 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -10,6 +10,9 @@ import {
   type DashboardWidgetColSpan,
 } from '@/lib/dashboard-widgets';
 import { saveDashboardLayoutAction } from '@/server/modules/dashboard/actions';
+
+/** Nút "Bố cục" ở thanh bảng (DashboardBoardBar) phát sự kiện này để bật chế độ thiết kế. */
+export const DASHBOARD_LAYOUT_EDIT_EVENT = 'workhub:dashboard-layout-edit';
 
 export interface DashboardGridItemData {
   key: string;
@@ -60,6 +63,13 @@ export function DashboardLayoutGrid({
     setLayout(items.map((i) => ({ key: i.key, colSpan: i.colSpan })));
     setEditMode(false);
   }, [boardId, itemsSig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!canEdit) return;
+    const start = () => setEditMode(true);
+    window.addEventListener(DASHBOARD_LAYOUT_EDIT_EVENT, start);
+    return () => window.removeEventListener(DASHBOARD_LAYOUT_EDIT_EVENT, start);
+  }, [canEdit]);
 
   const itemMap = new Map(items.map((i) => [i.key, i]));
 
@@ -134,8 +144,7 @@ export function DashboardLayoutGrid({
 
   return (
     <div className="stack" style={{ gap: 12 }}>
-      {canEdit && (
-        editMode ? (
+      {canEdit && editMode && (
           <div
             className="row-between"
             style={{
@@ -150,7 +159,7 @@ export function DashboardLayoutGrid({
             <div className="row" style={{ gap: 8, color: 'var(--brand)', fontSize: 12.5, fontWeight: 500 }}>
               <Columns3 size={15} />
               <span>
-                Chế độ thiết kế layout (12 cột responsive) — Kéo thả khối để đổi vị trí, kéo cạnh phải hoặc bấm chọn số cột (1/3 · 1/2 · 2/3 · Full) rồi lưu lại.
+                Đang sắp xếp bố cục — kéo thả khối để đổi vị trí, kéo cạnh phải hoặc chọn độ rộng (1/3 · 1/2 · 2/3 · Full) rồi bấm Lưu.
               </span>
             </div>
             <div className="row" style={{ gap: 6 }}>
@@ -165,13 +174,6 @@ export function DashboardLayoutGrid({
               </Button>
             </div>
           </div>
-        ) : (
-          <div className="row" style={{ justifyContent: 'flex-end', marginTop: -8 }}>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setEditMode(true)}>
-              <LayoutGrid size={13} /> Thiết kế layout (kéo / resize cột)
-            </Button>
-          </div>
-        )
       )}
 
       <div ref={gridRef} className="dashboard-grid-12">
@@ -258,7 +260,7 @@ export function DashboardLayoutGrid({
                           border: '1px solid',
                           borderColor: entry.colSpan === opt.span ? 'var(--brand)' : 'var(--border-base)',
                           background: entry.colSpan === opt.span ? 'var(--brand)' : 'var(--surface-card)',
-                          color: entry.colSpan === opt.span ? '#fff' : 'var(--text-muted)',
+                          color: entry.colSpan === opt.span ? 'var(--brand-contrast)' : 'var(--text-muted)',
                           cursor: 'pointer',
                         }}
                       >
@@ -288,7 +290,7 @@ export function DashboardLayoutGrid({
                 </div>
               )}
 
-              <div>{item.content}</div>
+              <div className="dashboard-grid-content">{item.content}</div>
 
               {editMode && (
                 <div

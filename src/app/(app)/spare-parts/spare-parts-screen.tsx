@@ -258,32 +258,12 @@ export function SparePartsScreen({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* ── HEADER ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
+      <div className="page-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 'var(--radius-md)',
-                background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
-                color: '#fff',
-                display: 'grid',
-                placeItems: 'center',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-              }}
-            >
-              <Boxes size={22} />
-            </div>
-            <div>
-              <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
-                Thiết bị & Phụ tùng
-              </h1>
-              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-                Danh mục phụ tùng và thiết bị nguyên chiếc, tồn kho, xuất nhập kho và thiết bị đang lắp tại khách
-              </p>
-            </div>
-          </div>
+          <h1 className="page-title">Thiết bị & Phụ tùng</h1>
+          <p className="page-desc">
+            Danh mục phụ tùng và thiết bị nguyên chiếc, tồn kho, xuất nhập kho và thiết bị đang lắp tại khách
+          </p>
         </div>
 
         {canManage && (
@@ -312,71 +292,26 @@ export function SparePartsScreen({
         <button
           type="button"
           onClick={() => setActiveTab('parts')}
-          style={{
-            padding: '10px 16px',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-            fontWeight: activeTab === 'parts' ? 700 : 500,
-            fontSize: 14,
-            borderBottom: activeTab === 'parts' ? '2px solid var(--brand)' : '2px solid transparent',
-            color: activeTab === 'parts' ? 'var(--brand)' : 'var(--text-muted)',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
+          className="tab"
+              data-active={activeTab === 'parts'}
         >
-          <Package size={16} /> Phụ tùng ({spareParts.length})
+          <Package /> Phụ tùng ({spareParts.length})
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('machines')}
-          style={{
-            padding: '10px 16px',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-            fontWeight: activeTab === 'machines' ? 700 : 500,
-            fontSize: 14,
-            borderBottom: activeTab === 'machines' ? '2px solid var(--brand)' : '2px solid transparent',
-            color: activeTab === 'machines' ? 'var(--brand)' : 'var(--text-muted)',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
+          className="tab"
+              data-active={activeTab === 'machines'}
         >
-          <Utensils size={16} /> Thiết bị ({equipmentList.length})
+          <Utensils /> Thiết bị ({equipmentList.length})
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('warehouses')}
-          style={{
-            padding: '10px 16px',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-            fontWeight: activeTab === 'warehouses' ? 700 : 500,
-            fontSize: 14,
-            borderBottom: activeTab === 'warehouses' ? '2px solid var(--brand)' : '2px solid transparent',
-            color: activeTab === 'warehouses' ? 'var(--brand)' : 'var(--text-muted)',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
+          className="tab"
+              data-active={activeTab === 'warehouses'}
         >
           <Building size={16} /> Kho ({warehouses.length})
         </button>
@@ -384,23 +319,8 @@ export function SparePartsScreen({
         <button
           type="button"
           onClick={() => setActiveTab('transactions')}
-          style={{
-            padding: '10px 16px',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-            fontWeight: activeTab === 'transactions' ? 700 : 500,
-            fontSize: 14,
-            borderBottom: activeTab === 'transactions' ? '2px solid var(--brand)' : '2px solid transparent',
-            color: activeTab === 'transactions' ? 'var(--brand)' : 'var(--text-muted)',
-            background: 'none',
-            borderTop: 'none',
-            borderLeft: 'none',
-            borderRight: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
+          className="tab"
+              data-active={activeTab === 'transactions'}
         >
           <ArrowLeftRight size={16} /> Lịch sử kho ({transactions.length})
         </button>
@@ -500,7 +420,7 @@ export function SparePartsScreen({
                   border: lowStockOnly ? '1px solid #dc2626' : '1px solid var(--border-base)',
                   background: lowStockOnly ? '#fee2e2' : 'var(--surface-card)',
                   color: lowStockOnly ? '#dc2626' : 'var(--text-muted)',
-                  transition: 'all 0.15s ease',
+                  transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                 }}
               >
                 <AlertTriangle size={14} />
@@ -851,7 +771,7 @@ export function SparePartsScreen({
                     borderRadius: 'var(--radius-lg)',
                     border: '1px solid var(--border-base)',
                     boxShadow: 'var(--shadow-xs)',
-                    transition: 'all 0.18s ease',
+                    transition: 'background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, opacity 0.18s ease',
                   }}
                 >
                   <div>
@@ -1045,7 +965,7 @@ export function SparePartsScreen({
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 4,
-                                transition: 'all 0.15s ease',
+                                transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                               }}
                               className="hover:border-blue-400"
                             >

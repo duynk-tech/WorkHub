@@ -56,9 +56,10 @@ export function ScrollTabs({
 
   const arrow: React.CSSProperties = {
     position: 'absolute',
-    top: 0,
-    bottom: 1,
-    width: 44,
+    top: 3,
+    bottom: 3,
+    width: 40,
+    borderRadius: 'var(--radius-sm)',
     display: 'grid',
     placeItems: 'center',
     border: 'none',
@@ -68,7 +69,8 @@ export function ScrollTabs({
   };
 
   return (
-    <div style={{ position: 'relative', ...style }}>
+    // Khay ôm vừa nội dung (kiểu segmented), tràn thì cuộn ngang trong khay
+    <div style={{ position: 'relative', display: 'flex', width: 'fit-content', maxWidth: '100%', ...style }}>
       {canLeft && (
         <button
           type="button"
@@ -80,25 +82,14 @@ export function ScrollTabs({
             // Phần đặc phải phủ kín chỗ mũi tên đứng, phần còn lại mới chuyển mờ,
             // nếu không chữ của tab sẽ lòi ra dưới biểu tượng
             background:
-              'linear-gradient(to right, var(--surface-app) 0, var(--surface-app) 78%, transparent 100%)',
+              'linear-gradient(to right, var(--neutral-soft) 0, var(--neutral-soft) 70%, transparent 100%)',
           }}
         >
           <ChevronLeft size={18} />
         </button>
       )}
 
-      <div
-        ref={ref}
-        className="scrollbar-none"
-        style={{
-          display: 'flex',
-          gap: 8,
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          borderBottom: '1px solid var(--border-base)',
-          scrollbarWidth: 'none',
-        }}
-      >
+      <div ref={ref} className="tabs">
         {children}
       </div>
 
@@ -111,7 +102,7 @@ export function ScrollTabs({
             ...arrow,
             right: 0,
             background:
-              'linear-gradient(to left, var(--surface-app) 0, var(--surface-app) 78%, transparent 100%)',
+              'linear-gradient(to left, var(--neutral-soft) 0, var(--neutral-soft) 70%, transparent 100%)',
           }}
         >
           <ChevronRight size={18} />

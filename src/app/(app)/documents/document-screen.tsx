@@ -54,10 +54,10 @@ export function DocumentScreen({ initialData }: { initialData: any }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <h1 style={{ fontSize: 21, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+        <h1 className="page-title">
           Sổ chứng từ
         </h1>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+        <p className="page-desc">
           Tra cứu báo giá, đơn hàng, phiếu thu chi, trả hàng, đặt hàng, phiếu kho và sự cố ở cùng một chỗ
         </p>
       </div>

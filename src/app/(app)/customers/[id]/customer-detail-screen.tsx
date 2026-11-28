@@ -147,26 +147,10 @@ export function CustomerDetailScreen(props: CustomerDetailProps) {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.views[0].key)}
-              style={{
-                padding: '10px 16px',
-                flexShrink: 0,
-                whiteSpace: 'nowrap',
-                fontWeight: isActive ? 700 : 500,
-                fontSize: 14,
-                borderBottom: isActive ? '2px solid var(--brand)' : '2px solid transparent',
-                color: isActive ? 'var(--brand)' : 'var(--text-muted)',
-                background: 'none',
-                borderTop: 'none',
-                borderLeft: 'none',
-                borderRight: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                transition: 'color 0.15s var(--ease-out), border-color 0.15s var(--ease-out)',
-              }}
+              className="tab"
+              data-active={isActive}
             >
-              <TabIcon size={16} /> {tab.label}
+              <TabIcon /> {tab.label}
             </button>
           );
         })}
@@ -190,7 +174,7 @@ export function CustomerDetailScreen(props: CustomerDetailProps) {
                   color: isSubActive ? 'var(--brand)' : 'var(--text-muted)',
                   border: isSubActive ? '1px solid var(--brand-soft-hover)' : '1px solid var(--border-base)',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                 }}
               >
                 {view.label}

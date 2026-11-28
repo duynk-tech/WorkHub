@@ -197,7 +197,7 @@ export function CustomerCarePanel({
             borderRadius: 'var(--radius-lg, 12px)',
             padding: 14,
             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            transition: 'all 0.15s ease',
+            transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
             position: 'relative',
             overflow: 'hidden',
           }}
@@ -227,7 +227,7 @@ export function CustomerCarePanel({
             borderRadius: 'var(--radius-lg, 12px)',
             padding: 14,
             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            transition: 'all 0.15s ease',
+            transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -255,7 +255,7 @@ export function CustomerCarePanel({
             borderRadius: 'var(--radius-lg, 12px)',
             padding: 14,
             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            transition: 'all 0.15s ease',
+            transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -284,7 +284,7 @@ export function CustomerCarePanel({
             padding: 14,
             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
             opacity: totals.warrantySoon > 0 ? 1 : 0.7,
-            transition: 'all 0.15s ease',
+            transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -462,7 +462,7 @@ export function CustomerCarePanel({
                 border: activeReasonFilter === 'ALL' ? '1px solid #2563eb' : '1px solid #e2e8f0',
                 background: activeReasonFilter === 'ALL' ? '#2563eb' : '#f8fafc',
                 color: activeReasonFilter === 'ALL' ? '#ffffff' : '#334155',
-                transition: 'all 0.15s ease',
+                transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
               }}
             >
               Tất cả ({totals.machines} máy)
@@ -492,7 +492,7 @@ export function CustomerCarePanel({
                     color: isSelected ? '#ffffff' : cfg.color,
                     opacity: count > 0 ? 1 : 0.5,
                     boxShadow: isSelected ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
-                    transition: 'all 0.15s ease',
+                    transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                   }}
                 >
                   {cfg.label}: {count}

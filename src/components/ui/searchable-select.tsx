@@ -269,7 +269,7 @@ export function SearchableSelect({
             top: pos.top,
             left: pos.left,
             width: pos.width,
-            zIndex: 1050,
+            zIndex: 1100,
             background: 'var(--surface-card)',
             border: '1px solid var(--border-base)',
             borderRadius: 'var(--radius-md)',

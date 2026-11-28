@@ -1,54 +1,25 @@
 import Link from 'next/link';
+import { Home, MapPinOff } from 'lucide-react';
+import { StatusScreen } from '@/components/ui/status-screen';
+import { BackButton } from '@/components/ui/back-button';
+import { getAppBranding } from '@/server/modules/settings/branding';
 
-export default function NotFound() {
+export const metadata = { title: 'Không tìm thấy trang' };
+
+export default async function NotFound() {
+  const branding = await getAppBranding().catch(() => ({ name: 'WorkHub', logoUrl: null, logoText: 'W' }));
   return (
-    <div
-      style={{
-        minHeight: '70vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-      }}
+    <StatusScreen
+      brand={{ name: branding.name, logoUrl: branding.logoUrl, logoText: branding.logoText }}
+      icon={<MapPinOff size={20} />}
+      eyebrow="Lỗi 404"
+      title="Không tìm thấy trang này"
+      description="Đường dẫn có thể đã cũ, bị gõ nhầm, hoặc nội dung đã bị xoá. Nếu bạn nghĩ mình cần xem trang này, hãy nhờ quản trị viên kiểm tra quyền truy cập."
     >
-      <div
-        style={{
-          maxWidth: 440,
-          width: '100%',
-          background: 'var(--surface-card, #ffffff)',
-          border: '1px solid var(--border-base, #dcdfea)',
-          borderRadius: 'var(--radius-lg, 14px)',
-          padding: 32,
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ fontSize: 44, fontWeight: 800, color: 'var(--accent, #2563eb)', lineHeight: 1 }}>
-          404
-        </div>
-        <h1 style={{ margin: '12px 0 8px', fontSize: 19, fontWeight: 700, color: 'var(--text-primary, #111827)' }}>
-          Không tìm thấy trang
-        </h1>
-        <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--text-muted, #6b7280)', lineHeight: 1.6 }}>
-          Đường dẫn bạn truy cập không tồn tại hoặc bạn không có quyền xem nội dung này.
-        </p>
-        <Link
-          href="/dashboard"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '10px 18px',
-            borderRadius: 9,
-            background: 'var(--accent, #2563eb)',
-            color: '#ffffff',
-            fontSize: 14,
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Về trang tổng quan
-        </Link>
-      </div>
-    </div>
+      <Link href="/dashboard" className="btn btn-primary">
+        <Home /> Về trang Tổng quan
+      </Link>
+      <BackButton />
+    </StatusScreen>
   );
 }

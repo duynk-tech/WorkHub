@@ -1114,7 +1114,7 @@ export function ZaloWorkflowDiagram({
                   gap: 7,
                   color: 'var(--text-muted)',
                   boxShadow: draggingId === 'new_tool' ? '0 12px 28px rgba(0, 0, 0, 0.15)' : 'none',
-                  transition: 'all 0.15s ease',
+                  transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.borderColor = 'var(--brand)';

@@ -16,9 +16,10 @@ import { ORDER_STATUSES as CUSTOMER_ORDER_STATUSES } from '@/server/modules/cust
 import { ORDER_STATUSES as PO_STATUSES, TRANSACTION_TYPES } from '@/server/modules/spare-parts/types';
 import { TICKET_STATUSES, TICKET_PRIORITIES } from '@/server/modules/equipment/types';
 import { MonthlyBars, MonthlyAreaChart, StatusDonutChart, type ChartSeries, type DonutSlice } from '@/components/domain/dashboard-charts-lazy';
-import { Card, CardHeader, CardTitle, CardBody, StatCard, Badge, Avatar, EmptyState, Progress, PageHeader } from '@/components/ui';
+import { Card, CardHeader, CardTitle, CardBody, StatCard, Badge, Avatar, EmptyState, Progress } from '@/components/ui';
 import { fmtDate } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
+import { TASK_STATUS, TASK_STATUS_CHART_ORDER } from '@/lib/enums';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
 import { DashboardBoardBar } from '@/components/domain/dashboard-board-bar';
 import { DashboardLayoutGrid, type DashboardGridItemData } from '@/components/domain/dashboard-layout-grid';
@@ -482,13 +483,6 @@ export default async function DashboardPage({
   const statusCount = (s: string) => teamTaskStats.find((t) => t.status === s)?._count._all ?? 0;
   const totalTeamTasks = teamTaskStats.reduce((sum, t) => sum + t._count._all, 0);
 
-  const hour = today.getHours();
-  const greeting = hour < 11 ? 'Chào buổi sáng' : hour < 14 ? 'Chào buổi trưa' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
-  const displayName =
-    ctx.username.toLowerCase() === 'admin' || ctx.fullName.toLowerCase().includes('quản trị')
-      ? ctx.username
-      : ctx.fullName.trim().split(/\s+/).slice(-1)[0] || ctx.username;
-
   const widgetSet = new Set(activeWidgetKeys);
   const showWidget = (key: string, defaultTab: string) =>
     useCustomBoard ? widgetSet.has(key) : tab === defaultTab;
@@ -570,7 +564,7 @@ export default async function DashboardPage({
                     <span className="mono-code">{o.orderCode}</span>
                     <StatusChip cfg={CUSTOMER_ORDER_STATUSES[o.status]} fallback={o.status} />
                   </div>
-                  <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }} className="truncate-2">
                     {o.customer.name}
                   </div>
                   <div className="hint" style={{ marginTop: 4 }}>
@@ -604,7 +598,7 @@ export default async function DashboardPage({
                     {c.code && <span className="mono-code">{c.code}</span>}
                     <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.phone || '—'}</span>
                   </div>
-                  <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{c.name}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }} className="truncate-2">{c.name}</div>
                   <div className="row" style={{ gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
                     {reasons.map((r) => <StatusChip key={r} cfg={CARE_REASONS[r]} />)}
                     <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.machines.length} máy</span>
@@ -631,7 +625,7 @@ export default async function DashboardPage({
           {sales.debtList.map((d) => (
             <Link key={d.customerId} href={`/customers/${d.customerId}`} className="list-row">
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{d.name}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }} className="truncate-2">{d.name}</div>
                 <div className="hint" style={{ marginTop: 3 }}>
                   {d.orderCount} đơn{d.maxOverdueDays > 0 ? ` · trễ nhất ${d.maxOverdueDays} ngày` : ' · trong hạn'}
                 </div>
@@ -736,7 +730,7 @@ export default async function DashboardPage({
                     <span className="mono-code">{o.orderCode}</span>
                     <StatusChip cfg={cfg} fallback={o.status} />
                   </div>
-                  <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }}>{o.supplier}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }}>{o.supplier}</div>
                 </div>
                 <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{money(Number(o.totalVnd || 0))}</div>
               </Link>
@@ -756,7 +750,7 @@ export default async function DashboardPage({
             <Link key={i.id} href="/spare-parts" className="list-row">
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span className="mono-code">{i.itemCode}</span>
-                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{i.name}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }} className="truncate-2">{i.name}</div>
               </div>
               <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>
                 {i.onHand} / {i.min} {i.unit}
@@ -831,7 +825,7 @@ export default async function DashboardPage({
                   <span className="mono-code">{t.ticketCode}</span>
                   <StatusChip cfg={TICKET_PRIORITIES[t.priority]} fallback={t.priority} />
                 </div>
-                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
                 <div className="hint" style={{ marginTop: 3 }}>{t.customer?.name || t.equipment?.name}</div>
               </div>
               {t.assignedTo && <Avatar name={t.assignedTo.fullName} src={t.assignedTo.avatarUrl} size="sm" />}
@@ -856,11 +850,7 @@ export default async function DashboardPage({
           subtitle={`Tổng ${totalTeamTasks} công việc theo trạng thái`}
           centerLabel="Công việc"
           data={[
-            { name: 'Chờ làm', value: statusCount('TODO'), color: '#94a3b8' },
-            { name: 'Đang làm', value: statusCount('IN_PROGRESS'), color: '#2563eb' },
-            { name: 'Chờ nghiệm thu', value: statusCount('REVIEW'), color: '#d97706' },
-            { name: 'Hoàn thành', value: statusCount('DONE'), color: '#16a34a' },
-            { name: 'Bị chặn', value: statusCount('BLOCKED'), color: '#dc2626' },
+            ...TASK_STATUS_CHART_ORDER.map((k) => ({ name: TASK_STATUS[k].label, value: statusCount(k), color: TASK_STATUS[k].chart })),
           ]}
         />
       );
@@ -879,7 +869,7 @@ export default async function DashboardPage({
                   <span className="mono-code">{t.code}</span>
                   <TaskPriorityBadge priority={t.priority} />
                 </div>
-                <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
               </div>
               <div style={{ width: 58, flexShrink: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right', marginBottom: 4 }}>{t.progress}%</div>
@@ -902,13 +892,7 @@ export default async function DashboardPage({
               <EmptyState icon={<CircleDot size={20} />} title="Chưa có dữ liệu công việc" />
             ) : (
               <div className="stack" style={{ gap: 11 }}>
-                {[
-                  { key: 'TODO', label: 'Chờ làm', color: 'var(--text-faint)' },
-                  { key: 'IN_PROGRESS', label: 'Đang làm', color: 'var(--info)' },
-                  { key: 'REVIEW', label: 'Chờ duyệt', color: 'var(--warning)' },
-                  { key: 'DONE', label: 'Hoàn thành', color: 'var(--success)' },
-                  { key: 'BLOCKED', label: 'Bị chặn', color: 'var(--danger)' },
-                ].map((s) => {
+                {TASK_STATUS_CHART_ORDER.map((key) => ({ key, label: TASK_STATUS[key].label, color: TASK_STATUS[key].chart })).map((s) => {
                   const c = statusCount(s.key);
                   const pct = totalTeamTasks ? Math.round((c / totalTeamTasks) * 100) : 0;
                   return (
@@ -938,10 +922,10 @@ export default async function DashboardPage({
             <div key={d.id} className="list-row" style={{ cursor: 'default' }}>
               <Avatar name={d.request.employee.fullName} src={d.request.employee.avatarUrl} size="sm" />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 540, color: 'var(--text-strong)' }}>{d.request.employee.fullName}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-strong)' }}>{d.request.employee.fullName}</div>
                 <div className="hint">{d.request.employee.department?.name ?? '—'}</div>
               </div>
-              <Badge style={{ background: `${d.request.leaveType.color}1f`, color: d.request.leaveType.color }}>
+              <Badge style={{ background: `color-mix(in srgb, ${d.request.leaveType.color} 12%, transparent)`, color: d.request.leaveType.color, borderColor: 'transparent' }}>
                 {d.request.leaveType.name}
               </Badge>
             </div>
@@ -949,27 +933,24 @@ export default async function DashboardPage({
         </ListCard>
       );
       customWidgets.hr_leaves_upcoming = (
-        <Card>
-                <CardHeader>
-                  <CardTitle>Lịch nghỉ sắp tới</CardTitle>
-                </CardHeader>
-                <CardBody style={{ padding: upcomingLeaves.length ? '6px 8px' : undefined }}>
-                  {upcomingLeaves.length === 0 ? (
-                    <EmptyState icon={<Plane size={20} />} title="Không có lịch nghỉ sắp tới" />
-                  ) : (
-                    upcomingLeaves.map((l) => (
-                      <Link key={l.id} href={`/leaves/${l.id}`} className="list-row">
-                        <Avatar name={l.employee.fullName} src={l.employee.avatarUrl} size="sm" />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 540, color: 'var(--text-strong)' }}>{l.employee.fullName}</div>
-                          <div className="hint">{fmtDate(l.startDate)} → {fmtDate(l.endDate)} · {formatDays(l.totalDays)} ngày</div>
-                        </div>
-                        <Badge style={{ background: `${l.leaveType.color}1f`, color: l.leaveType.color }}>{l.leaveType.name}</Badge>
-                      </Link>
-                    ))
-                  )}
-                </CardBody>
-              </Card>
+        <ListCard
+          title="Lịch nghỉ sắp tới"
+          subtitle={`${upcomingLeaves.length} lịch nghỉ trong thời gian tới`}
+          href="/leaves"
+          count={upcomingLeaves.length}
+          empty={<EmptyState icon={<Plane size={20} />} title="Không có lịch nghỉ sắp tới" />}
+        >
+          {upcomingLeaves.map((l) => (
+            <Link key={l.id} href={`/leaves/${l.id}`} className="list-row">
+              <Avatar name={l.employee.fullName} src={l.employee.avatarUrl} size="sm" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-strong)' }}>{l.employee.fullName}</div>
+                <div className="hint">{fmtDate(l.startDate)} → {fmtDate(l.endDate)} · {formatDays(l.totalDays)} ngày</div>
+              </div>
+              <Badge style={{ background: `color-mix(in srgb, ${l.leaveType.color} 12%, transparent)`, color: l.leaveType.color, borderColor: 'transparent' }}>{l.leaveType.name}</Badge>
+            </Link>
+          ))}
+        </ListCard>
       );
     }
   }
@@ -988,11 +969,6 @@ export default async function DashboardPage({
 
   return (
     <div className="stack">
-      <PageHeader
-        title={`${greeting}, ${displayName}!`}
-        description={`Hôm nay là ${fmtDate(today, "EEEE, 'ngày' dd/MM/yyyy")}${ctx.departmentName ? ` · ${ctx.departmentName}` : ''}`}
-      />
-
       <DashboardBoardBar
         boards={boards}
         activeBoardId={activeBoard?.id ?? null}
@@ -1010,7 +986,7 @@ export default async function DashboardPage({
         <div className="tabs">
           {tabs.map((t) => (
             <Link key={t.key} href={`/dashboard?tab=${t.key}`} className="tab" data-active={tab === t.key}>
-              <t.icon size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 6 }} />
+              <t.icon />
               {t.label}
             </Link>
           ))}
@@ -1019,10 +995,13 @@ export default async function DashboardPage({
 
       {useCustomBoard && activeBoard && (
         <>
-          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>
-            {activeBoard.description || `Bảng "${activeBoard.name}"`}
-            {activeBoard.isShared && !activeBoard.isOwn && ` · Chia sẻ bởi ${activeBoard.ownerName}`}
-          </div>
+          {(activeBoard.description || (activeBoard.isShared && !activeBoard.isOwn)) && (
+            <div className="hint" style={{ fontSize: 12.5, marginTop: -4 }}>
+              {activeBoard.description}
+              {activeBoard.description && activeBoard.isShared && !activeBoard.isOwn && ' · '}
+              {activeBoard.isShared && !activeBoard.isOwn && `Chia sẻ bởi ${activeBoard.ownerName}`}
+            </div>
+          )}
           <DashboardLayoutGrid
             boardId={activeBoard.id}
             canEdit={activeBoard.isOwn || ctx.isAdmin}

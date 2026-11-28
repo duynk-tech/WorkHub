@@ -150,8 +150,9 @@ export function StatusDonutChart({
   const total = nonZero.reduce((sum, d) => sum + d.value, 0);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 210px) minmax(0, 1fr)', gap: 16, alignItems: 'center' }}>
-      <div style={{ position: 'relative', width: '100%', height }}>
+    // Flex-wrap: card hẹp thì chú thích tự xuống dưới biểu đồ thay vì bị bóp cắt chữ
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', flex: '0 1 210px', minWidth: 160, height }}>
         <ResponsiveContainer width="100%" height={height}>
           <PieChart>
             <Pie
@@ -190,14 +191,14 @@ export function StatusDonutChart({
             pointerEvents: 'none',
           }}
         >
-          <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-strong)', lineHeight: 1.1 }} className="tnum">
+          <span style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-strong)', lineHeight: 1.1 }} className="tnum">
             {total}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{centerLabel}</span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: '1 1 180px', minWidth: 0 }}>
         {nonZero.map((item) => {
           const pct = total ? Math.round((item.value / total) * 100) : 0;
           return (

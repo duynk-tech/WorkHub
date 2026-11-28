@@ -1159,7 +1159,7 @@ export function LineItemsSummaryFooter({
                       color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
                       fontWeight: isSelected ? 700 : 500,
                       cursor: 'pointer',
-                      transition: 'all 0.15s ease',
+                      transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                     }}
                   >
                     {pct}%
@@ -1265,7 +1265,7 @@ export function LineItemsSummaryFooter({
                       color: isSelected ? '#7c3aed' : 'var(--text-base, #475569)',
                       fontWeight: isSelected ? 700 : 500,
                       cursor: 'pointer',
-                      transition: 'all 0.15s ease',
+                      transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
                     }}
                   >
                     {rate}%

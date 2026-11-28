@@ -122,12 +122,12 @@ export function TicketScreen({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: 21, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+          <h1 className="page-title">
             Sự cố & Sửa chữa
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+          <p className="page-desc">
             Tiếp nhận báo hỏng, phân công kỹ thuật, thay linh kiện và nghiệm thu
           </p>
         </div>

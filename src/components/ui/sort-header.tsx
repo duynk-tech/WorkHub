@@ -46,14 +46,8 @@ export function SortHeader({
       <button
         type="button"
         onClick={() => setParams({ sort: next() })}
-        style={{
-          all: 'unset',
-          cursor: 'pointer',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          color: active ? 'var(--text-strong)' : undefined,
-        }}
+        className="sort-header-btn"
+        data-active={active || undefined}
       >
         {label}
         <Icon size={12} style={{ opacity: active ? 1 : 0.4 }} aria-hidden />

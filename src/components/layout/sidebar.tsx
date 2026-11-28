@@ -15,6 +15,9 @@ import type { TopbarUser } from './topbar';
 import { NAV_ICONS } from './icons';
 import { cn } from '@/lib/utils';
 
+/** Icon nav kiểu fmp-web: 18px, nét 1.5px tuyệt đối — sắc nét, không bị CSS scale. */
+const NAV_ICON_PROPS = { size: 18, strokeWidth: 1.5, absoluteStrokeWidth: true } as const;
+
 const GROUP_ICONS: Record<string, LucideIcon> = {
   'Kinh doanh': ShoppingCart,
   'Mua hàng & Kho': Boxes,
@@ -80,12 +83,27 @@ export function Sidebar({
   const [isMobile, setIsMobile] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
+  // matchMedia chỉ báo khi thật sự qua ngưỡng 1024px, không chạy lại ở mỗi sự kiện resize
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
   }, []);
+
+  // Drawer mobile: Esc để đóng, khoá cuộn trang phía sau
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseMobile(); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Trên mobile/drawer, không bao giờ ở chế độ thu gọn icon-only
   const isEffectiveCollapsed = collapsed && !mobileOpen && !isMobile;
@@ -120,10 +138,12 @@ export function Sidebar({
 
   return (
     <>
-      {mobileOpen && <div className="sidebar-backdrop" onClick={onCloseMobile} />}
+      {mobileOpen && <div className="sidebar-backdrop" onClick={onCloseMobile} aria-hidden />}
 
       <aside
         className={cn('sidebar', isEffectiveCollapsed && 'sidebar-collapsed', mobileOpen && 'sidebar-mobile-open')}
+        // Drawer đang ẩn ngoài màn hình thì không cho Tab vào các link bên trong
+        inert={isMobile && !mobileOpen ? true : undefined}
       >
         <div className="sidebar-head">
           {isEffectiveCollapsed ? (
@@ -219,7 +239,7 @@ export function Sidebar({
                           onBlur={hideTooltip}
                           aria-label={labelWithCount}
                         >
-                          {Icon && <Icon />}
+                          {Icon && <Icon {...NAV_ICON_PROPS} />}
                           {!isEffectiveCollapsed && <span style={{ flex: 1 }}>{item.label}</span>}
                           {!isEffectiveCollapsed && count > 0 && <span className="nav-badge">{count > 99 ? '99+' : count}</span>}
                           {isEffectiveCollapsed && count > 0 && <span className="nav-badge-dot" />}
@@ -251,7 +271,7 @@ export function Sidebar({
                           onBlur={hideTooltip}
                           aria-label={labelWithCount}
                         >
-                          {Icon && <Icon />}
+                          {Icon && <Icon {...NAV_ICON_PROPS} />}
                           {count > 0 && <span className="nav-badge-dot" />}
                         </Link>
                       );
@@ -280,7 +300,7 @@ export function Sidebar({
                           setExpanded((previous) => ({ ...previous, [section.title!]: !previous[section.title!] }))
                         }
                       >
-                        <GroupIcon className="nav-group-icon" />
+                        <GroupIcon className="nav-group-icon" {...NAV_ICON_PROPS} />
                         <span className="nav-group-label">{section.title}</span>
                         {!isOpen && groupBadgeCount > 0 && (
                           <span className="nav-badge">{groupBadgeCount > 99 ? '99+' : groupBadgeCount}</span>
@@ -347,7 +367,7 @@ export function Sidebar({
                   onMouseEnter={(e) => showTooltip(e, 'Đăng xuất')}
                   onMouseLeave={hideTooltip}
                 >
-                  <LogOut size={15} />
+                  <LogOut {...NAV_ICON_PROPS} />
                 </button>
               </form>
             </div>

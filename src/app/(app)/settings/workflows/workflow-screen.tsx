@@ -188,7 +188,7 @@ export function WorkflowScreen({
                 gap: 8,
                 borderRadius: 'var(--radius-full)',
                 padding: '6px 14px',
-                transition: 'all 0.15s ease',
+                transition: 'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
               }}
             >
               <GitBranch size={14} style={{ color: isSel ? '#fff' : (def.isActive ? 'var(--brand)' : 'var(--text-faint)') }} />

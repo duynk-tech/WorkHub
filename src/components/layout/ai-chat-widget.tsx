@@ -87,7 +87,8 @@ export function AiChatWidget() {
       const saved = localStorage.getItem('workhub-mini-position');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+        // Vị trí cũ nằm nửa trên màn hình sẽ che tiêu đề/card — bỏ, về góc mặc định
+        if (Number.isFinite(parsed.left) && Number.isFinite(parsed.top) && parsed.top > window.innerHeight / 2) {
           const safe = {
             left: Math.max(8, Math.min(parsed.left, window.innerWidth - 74)),
             top: Math.max(8, Math.min(parsed.top, window.innerHeight - 78)),
@@ -167,7 +168,18 @@ export function AiChatWidget() {
       suppressClickRef.current = true;
       if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
       suppressTimerRef.current = setTimeout(() => { suppressClickRef.current = false; }, 350);
-      if (positionRef.current) localStorage.setItem('workhub-mini-position', JSON.stringify(positionRef.current));
+      // Thả ra thì hít về góc dưới gần nhất, để robot không nằm giữa nội dung
+      const rect = event.currentTarget.getBoundingClientRect();
+      const cur = positionRef.current;
+      if (cur) {
+        const snapped = {
+          left: cur.left + rect.width / 2 < window.innerWidth / 2 ? 16 : window.innerWidth - rect.width - 16,
+          top: window.innerHeight - rect.height - 16,
+        };
+        positionRef.current = snapped;
+        setPosition(snapped);
+        localStorage.setItem('workhub-mini-position', JSON.stringify(snapped));
+      }
     }
   }
 
@@ -207,7 +219,7 @@ export function AiChatWidget() {
 
   return (
     <div
-      className={`ai-mini-root${dragging ? ' is-dragging' : ''}`}
+      className={`ai-mini-root no-print${dragging ? ' is-dragging' : ''}`}
       style={position ? { left: position.left, top: position.top, right: 'auto', bottom: 'auto' } : undefined}
     >
       {open && (
@@ -216,7 +228,6 @@ export function AiChatWidget() {
           className="ai-mini-panel"
           style={panelPosition ? { left: panelPosition.left, top: panelPosition.top, right: 'auto', bottom: 'auto' } : undefined}
           aria-label="Trợ lý AI Mini"
-          aria-live="polite"
         >
           <header className="ai-mini-header">
             <div className="ai-mini-avatar"><MiniMascot mood={sending ? 'thinking' : celebrating ? 'excited' : 'happy'} /></div>
@@ -232,7 +243,7 @@ export function AiChatWidget() {
             </button>
           </header>
 
-          <div className="ai-mini-messages">
+          <div className="ai-mini-messages" aria-live="polite">
             {messages.length === 0 ? (
               <div className="ai-mini-welcome">
                 <div className="ai-mini-welcome-avatar"><MiniMascot large /></div>

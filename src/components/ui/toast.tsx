@@ -24,7 +24,7 @@ export function useToast(): ToastApi {
 }
 
 const ICONS: Record<ToastTone, React.ReactNode> = {
-  success: <CheckCircle2 />, error: <XCircle />, warning: <AlertTriangle />, info: <Info />,
+  success: <CheckCircle2 size={17} />, error: <XCircle size={17} />, warning: <AlertTriangle size={17} />, info: <Info size={17} />,
 };
 const COLORS: Record<ToastTone, string> = {
   success: 'var(--success)', error: 'var(--danger)', warning: 'var(--warning)', info: 'var(--info)',
@@ -56,11 +56,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       {mounted && createPortal(
-        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 9, maxWidth: 380 }}>
+        <div role="status" aria-live="polite" className="no-print" style={{ position: 'fixed', top: 'calc(var(--topbar-h) + 12px)', right: 16, zIndex: 'var(--z-toast)' as unknown as number, display: 'flex', flexDirection: 'column', gap: 8, width: 'min(380px, calc(100vw - 32px))' }}>
           {toasts.map((t) => (
             <div key={t.id} className="card animate-in" style={{ display: 'flex', gap: 10, padding: '12px 14px', boxShadow: 'var(--shadow-lg)', alignItems: 'flex-start' }}>
               <span style={{ color: COLORS[t.tone], display: 'flex', flexShrink: 0, marginTop: 1 }}>
-                <span style={{ width: 17, height: 17, display: 'block' }}>{ICONS[t.tone]}</span>
+                {ICONS[t.tone]}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 {t.title && <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-strong)' }}>{t.title}</div>}
