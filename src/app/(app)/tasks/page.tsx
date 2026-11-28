@@ -69,7 +69,8 @@ export default async function TasksPage({
   const scopeIds = await visibleEmployeeIds(ctx);
   const [data, board, tree, assignableEmployees, scopeCounts] = await Promise.all([
     view === 'list' ? listTasks(ctx, filter) : Promise.resolve(null),
-    view === 'board' ? listTasksBoard(ctx, filter) : Promise.resolve(null),
+    // ?more=100 nạp thêm thẻ cho mỗi cột (mặc định 50, tối đa 300)
+    view === 'board' ? listTasksBoard(ctx, filter, Number(sp.more) || 50) : Promise.resolve(null),
     getDepartmentTree(),
     prisma.employee.findMany({
       where: { status: 'ACTIVE', ...(scopeIds ? { id: { in: scopeIds } } : {}) },

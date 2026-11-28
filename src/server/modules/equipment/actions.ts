@@ -8,7 +8,7 @@ import type { SaveEquipmentInput } from './types';
 
 export async function saveEquipmentAction(id: number | null, input: SaveEquipmentInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý thiết bị F&B' };
   }
 
@@ -42,7 +42,7 @@ export async function saveEquipmentAction(id: number | null, input: SaveEquipmen
 
 export async function deleteEquipmentAction(id: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa thiết bị' };
   }
 
@@ -67,7 +67,7 @@ export async function saveCustomerAction(data: {
   contactName?: string;
 }) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý khách hàng' };
   }
 
@@ -102,7 +102,7 @@ export async function saveCustomerLocationAction(data: {
   phone?: string;
 }) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền thêm điểm lắp đặt' };
   }
 
@@ -139,8 +139,7 @@ export async function recordMaintenanceDoneAction(data: {
   const ctx = await requireAuth();
   if (
     !can(ctx, 'FEATURE_EQUIPMENT_MAINTENANCE') &&
-    !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') &&
-    !ctx.isAdmin
+    !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')
   ) {
     return { ok: false, message: 'Bạn không có quyền cập nhật lịch bảo dưỡng thiết bị' };
   }

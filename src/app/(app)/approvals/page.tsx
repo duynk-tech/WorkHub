@@ -14,6 +14,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
     prisma.approvalTask.findMany({
       where: { approverId: ctx.employeeId, status: 'PENDING', instance: { status: 'RUNNING' } },
       orderBy: [{ dueAt: 'asc' }, { createdAt: 'asc' }],
+      take: 200,
       include: {
         step: { select: { name: true, slaHours: true, approverType: true, mode: true } },
         instance: { select: { entityType: true, entityId: true, requesterId: true } },

@@ -9,12 +9,12 @@ import {
 import { prisma } from '@/lib/prisma';
 import { requireAuth, can } from '@/server/auth/context';
 import { visibleEmployeeIds } from '@/server/auth/scope';
-import { customerDebtReport } from '@/server/modules/report/customer-debt';
+import { getSalesAggregates, getSalesKpis, getStockAggregates, getTicketsByMonth } from '@/server/modules/dashboard/aggregates';
 import { getCustomerCareList, CARE_REASONS } from '@/server/modules/customer/care';
 import { ORDER_STATUSES as CUSTOMER_ORDER_STATUSES } from '@/server/modules/customer/types';
 import { ORDER_STATUSES as PO_STATUSES, TRANSACTION_TYPES } from '@/server/modules/spare-parts/types';
 import { TICKET_STATUSES, TICKET_PRIORITIES } from '@/server/modules/equipment/types';
-import { MonthlyBars, MonthlyAreaChart, StatusDonutChart, type ChartSeries, type DonutSlice } from '@/components/domain/dashboard-charts';
+import { MonthlyBars, MonthlyAreaChart, StatusDonutChart, type ChartSeries, type DonutSlice } from '@/components/domain/dashboard-charts-lazy';
 import { Card, CardHeader, CardTitle, CardBody, StatCard, Badge, Avatar, EmptyState, Progress, PageHeader } from '@/components/ui';
 import { fmtDate } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
@@ -174,12 +174,14 @@ async function loadSalesSummary() {
   const months = lastMonths(6);
 
   const [
-    openOrders, awaitingStock, quotations, debt, care, openOrderList, quotationList, monthlyOrders, orderStatusGroups,
+    openOrders, awaitingStock, quotations, agg, kpis, care, openOrderList, quotationList, orderStatusGroups,
   ] = await Promise.all([
     prisma.customerOrder.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
     prisma.customerOrder.count({ where: { status: { in: ['AWAITING_STOCK', 'READY_TO_DELIVER'] } } }),
     prisma.customerQuotation.count({ where: { status: { in: ['DRAFT', 'SENT'] } } }),
-    customerDebtReport(),
+    // Doanh thu theo tháng và công nợ tính trong DB, cache 60 giây (dashboard/aggregates.ts)
+    getSalesAggregates(),
+    getSalesKpis(),
     // Cửa sổ 30 ngày giống mặc định của tab "Bảo hành, bảo dưỡng" bên màn khách hàng
     getCustomerCareList({ within: 30 }),
     prisma.customerOrder.findMany({
@@ -201,33 +203,24 @@ async function loadSalesSummary() {
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),
-    prisma.customerOrder.findMany({
-      where: { status: { not: 'CANCELLED' }, orderDate: { gte: months[0].from } },
-      select: { orderDate: true, totalAmount: true, goodsAmount: true, paidAmount: true },
-    }),
     prisma.customerOrder.groupBy({
       by: ['status'],
       _count: { _all: true },
     }),
   ]);
 
-  // Gom theo tháng tại chỗ: dữ liệu một đơn vị trong 6 tháng là vài trăm dòng,
-  // không đáng để viết raw SQL group by rồi phải tự lo múi giờ
-  const revenueByMonth = months.map((m) => ({ label: m.label, billed: 0, collected: 0 }));
-  for (const o of monthlyOrders) {
-    const idx = months.findIndex((m) => m.key === monthKey(o.orderDate));
-    if (idx < 0) continue;
-    revenueByMonth[idx].billed += Number(o.totalAmount ?? o.goodsAmount ?? 0);
-    revenueByMonth[idx].collected += Number(o.paidAmount || 0);
-  }
+  const revenueByMonth = months.map((m) => {
+    const row = agg.revenueByMonth.find((r) => r.key === m.key);
+    return { label: m.label, billed: row?.billed ?? 0, collected: row?.collected ?? 0 };
+  });
 
   return {
     openOrders,
     awaitingStock,
     quotations,
-    outstanding: debt.totals.outstanding,
-    overdue: debt.totals.overdue,
-    debtors: debt.customerCount,
+    outstanding: agg.outstanding,
+    overdue: agg.overdue,
+    debtors: agg.debtors,
     careCustomers: care.totals.customers,
     careMachines: care.totals.machines,
     // Khách gấp nhất lên đầu; danh sách đầy đủ nằm ở màn Khách hàng
@@ -241,7 +234,8 @@ async function loadSalesSummary() {
       color: CUSTOMER_ORDER_STATUSES[g.status]?.color ?? '#64748b',
     })),
     // Nợ nhiều nhất lên đầu, chỉ lấy khách còn dư nợ thật
-    debtList: debt.rows.slice(0, 5),
+    debtList: agg.debtList,
+    kpis,
   };
 }
 
@@ -250,20 +244,14 @@ async function loadStockSummary() {
   const months = lastMonths(6);
 
   const [
-    incoming, pendingApproval, items, machines, incomingList, recentDocs, monthlyDocs,
+    incoming, pendingApproval, agg, machines, incomingList, recentDocs,
   ] = await Promise.all([
     prisma.sparePartOrder.count({
       where: { status: { notIn: ['STOCKED', 'COMPLETED', 'CANCELLED'] } },
     }),
     prisma.inventoryTransaction.count({ where: { status: 'PENDING_APPROVAL' } }),
-    prisma.inventoryItem.findMany({
-      where: { status: 'ACTIVE' },
-      select: {
-        id: true, itemCode: true, name: true, unit: true,
-        minStockAlert: true, avgCost: true, costPrice: true,
-        stocks: { select: { quantity: true } },
-      },
-    }),
+    // Tồn, giá trị tồn, mã dưới mức an toàn và luồng nhập/xuất tính trong DB
+    getStockAggregates(),
     prisma.fnbEquipment.count({ where: { status: { not: 'LIQUIDATED' } } }),
     prisma.sparePartOrder.findMany({
       where: { status: { notIn: ['STOCKED', 'COMPLETED', 'CANCELLED'] } },
@@ -282,44 +270,13 @@ async function loadStockSummary() {
       orderBy: { transDate: 'desc' },
       take: 6,
     }),
-    prisma.inventoryTransaction.findMany({
-      where: { status: 'COMPLETED', transDate: { gte: months[0].from } },
-      select: { transDate: true, type: true, totalValue: true },
-    }),
   ]);
 
-  const flowByMonth = months.map((m) => ({ label: m.label, in: 0, out: 0 }));
-  for (const t of monthlyDocs) {
-    const idx = months.findIndex((m) => m.key === monthKey(t.transDate));
-    if (idx < 0) continue;
-    // Điều chuyển không làm thay đổi tổng tồn nên không tính vào nhập hay xuất
-    if (t.type === 'IN') flowByMonth[idx].in += Number(t.totalValue || 0);
-    else if (t.type === 'OUT') flowByMonth[idx].out += Number(t.totalValue || 0);
-  }
-
-  // Mức an toàn so trên tổng tồn của tất cả kho, giống cách màn hình phụ tùng cảnh báo
-  const lowStock = items.filter((i) => {
-    const onHand = i.stocks.reduce((sum, st) => sum + Number(st.quantity || 0), 0);
-    return onHand < Number(i.minStockAlert || 0);
-  }).length;
-
-  // Giá trị tồn tính theo giá vốn bình quân, rơi về giá vốn danh mục khi chưa có lần nhập nào
-  const stockValue = items.reduce((sum, i) => {
-    const onHand = i.stocks.reduce((q, st) => q + Number(st.quantity || 0), 0);
-    return sum + onHand * (Number(i.avgCost || 0) || Number(i.costPrice || 0));
-  }, 0);
-  const skuCount = items.length;
-
-  // Thiếu nhiều nhất so với mức an toàn thì lên đầu, đó là mã phải đặt trước
-  const lowStockList = items
-    .map((i) => {
-      const onHand = i.stocks.reduce((q, st) => q + Number(st.quantity || 0), 0);
-      return { ...i, onHand, min: Number(i.minStockAlert || 0), gap: Number(i.minStockAlert || 0) - onHand };
-    })
-    .filter((i) => i.gap > 0)
-    .sort((a, b) => b.gap - a.gap)
-    .slice(0, 6)
-    .map((i) => ({ id: i.id, itemCode: i.itemCode, name: i.name, unit: i.unit, onHand: i.onHand, min: i.min }));
+  const flowByMonth = months.map((m) => {
+    const row = agg.flowByMonth.find((r) => r.key === m.key);
+    return { label: m.label, in: row?.in ?? 0, out: row?.out ?? 0 };
+  });
+  const { lowStock, stockValue, skuCount, lowStockList } = agg;
 
   return {
     incoming, pendingApproval, lowStock, stockValue, skuCount, machines,
@@ -362,12 +319,7 @@ async function loadServiceSummary() {
       orderBy: { resolvedAt: 'desc' },
       take: 5,
     }),
-    prisma.serviceTicket.findMany({
-      where: {
-        OR: [{ createdAt: { gte: months[0].from } }, { resolvedAt: { gte: months[0].from } }],
-      },
-      select: { createdAt: true, resolvedAt: true },
-    }),
+    getTicketsByMonth(),
     prisma.serviceTicket.groupBy({
       by: ['status'],
       _count: { _all: true },
@@ -376,13 +328,10 @@ async function loadServiceSummary() {
 
   // Một phiếu có thể rơi vào hai tháng khác nhau: mở tháng này, xong tháng sau.
   // Đếm riêng từng mốc mới thấy được tháng nào nhận nhiều hơn xử lý được.
-  const ticketsByMonth = months.map((m) => ({ label: m.label, opened: 0, resolved: 0 }));
-  for (const t of monthlyTickets) {
-    const oi = months.findIndex((m) => m.key === monthKey(t.createdAt));
-    if (oi >= 0) ticketsByMonth[oi].opened += 1;
-    const ri = months.findIndex((m) => m.key === monthKey(t.resolvedAt));
-    if (ri >= 0) ticketsByMonth[ri].resolved += 1;
-  }
+  const ticketsByMonth = months.map((m) => {
+    const row = monthlyTickets.find((r) => r.key === m.key);
+    return { label: m.label, opened: row?.opened ?? 0, resolved: row?.resolved ?? 0 };
+  });
 
   return {
     open, inProgress, resolvedThisMonth, openList, resolvedList, ticketsByMonth,
@@ -443,13 +392,13 @@ export default async function DashboardPage({
 
   // Khi chưa có bảng tùy chỉnh/chia sẻ nào, dùng các tab mặc định theo quyền
   const tabs = [
-    can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin
+    can(ctx, 'FEATURE_CUSTOMER_MANAGE')
       ? { key: 'sales', label: 'Kinh doanh', hint: 'Đơn hàng, báo giá và tiền còn phải thu của khách', icon: Briefcase }
       : null,
-    can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') || ctx.isAdmin
+    can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')
       ? { key: 'stock', label: 'Kho & Mua hàng', hint: 'Hàng đang về, tồn dưới mức an toàn và phiếu chờ duyệt', icon: Boxes }
       : null,
-    can(ctx, 'FEATURE_EQUIPMENT_MAINTENANCE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE') || ctx.isAdmin
+    can(ctx, 'FEATURE_EQUIPMENT_MAINTENANCE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE')
       ? { key: 'service', label: 'Dịch vụ & Sửa chữa', hint: 'Phiếu sự cố đang xử lý và phần đã trễ cam kết', icon: Wrench }
       : null,
     { key: 'work', label: 'Công việc & Nhân sự', hint: 'Việc được giao, đơn chờ bạn duyệt và tình hình nghỉ phép', icon: Users },
@@ -464,15 +413,16 @@ export default async function DashboardPage({
   const showWork = useCustomBoard ? activeDataSources.has('work') : tab === 'work';
 
   // Chỉ truy vấn số liệu của các khối thực sự hiển thị
-  const [sales, stock, service] = await Promise.all([
+  // Khởi động mọi khối cùng lúc: phần Công việc không phải đợi Kinh doanh/Kho/Dịch vụ xong
+  const sectionsPromise = Promise.all([
     needSales ? loadSalesSummary() : Promise.resolve(null),
     needStock ? loadStockSummary() : Promise.resolve(null),
     needService ? loadServiceSummary() : Promise.resolve(null),
   ]);
 
-  const [myOpenTasks, myOverdue, pendingApprovals, balance, onLeaveToday, myTasks, teamTaskStats, upcomingLeaves] =
+  const workPromise =
     showWork
-      ? await Promise.all([
+      ? Promise.all([
       prisma.task.count({ where: { assigneeId: ctx.employeeId, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] } } }),
       prisma.task.count({
         where: { assigneeId: ctx.employeeId, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] }, dueDate: { lt: new Date() } },
@@ -520,7 +470,10 @@ export default async function DashboardPage({
         },
       }),
     ])
-      : [0, 0, 0, null, [], [], [], []] as const;
+      : Promise.resolve([0, 0, 0, null, [], [], [], []] as const);
+
+  const [[sales, stock, service], [myOpenTasks, myOverdue, pendingApprovals, balance, onLeaveToday, myTasks, teamTaskStats, upcomingLeaves]] =
+    await Promise.all([sectionsPromise, workPromise]);
 
   const remaining = balance
     ? Number(balance.standardDays) + Number(balance.bonusDays) + Number(balance.carriedOverDays) - Number(balance.usedDays)
@@ -1193,6 +1146,54 @@ export default async function DashboardPage({
                   </Link>
                 ))}
               </ListCard>
+              )}
+
+              {showWidget('sales_quotations', 'sales') && (
+              <Card>
+                <CardHeader>
+                  <div>
+                    <CardTitle>Hiệu quả kinh doanh</CardTitle>
+                    <div className="card-subtitle">
+                      {sales.kpis.quotes.winRate !== null
+                        ? `Chốt ${Math.round(sales.kpis.quotes.winRate * 100)}% báo giá 90 ngày qua`
+                        : 'Chưa có báo giá có kết quả trong 90 ngày'}
+                      {sales.kpis.quotes.avgDaysToWin !== null && ` · trung bình ${sales.kpis.quotes.avgDaysToWin} ngày để chốt`}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <div className="hint" style={{ marginBottom: 6 }}>Doanh số tháng này theo nhân viên KD</div>
+                    {sales.kpis.bySalesperson.length === 0 ? (
+                      <div className="hint">Chưa có đơn trong tháng.</div>
+                    ) : (
+                      sales.kpis.bySalesperson.map((r) => (
+                        <div key={r.employeeId ?? 'none'} className="row-between" style={{ padding: '5px 0', fontSize: 13 }}>
+                          <span className="truncate-2">{r.name} <span className="hint">· {r.orders} đơn</span></span>
+                          <strong style={{ whiteSpace: 'nowrap' }}>{money(r.billed)}</strong>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div>
+                    <div className="hint" style={{ marginBottom: 6 }}>Tuổi nợ phải thu</div>
+                    {([
+                      ['current', 'Chưa tới hạn'],
+                      ['d1to30', 'Quá 1–30 ngày'],
+                      ['d31to60', 'Quá 31–60 ngày'],
+                      ['d61to90', 'Quá 61–90 ngày'],
+                      ['over90', 'Quá trên 90 ngày'],
+                    ] as const).map(([k, label]) => (
+                      <div key={k} className="row-between" style={{ padding: '4px 0', fontSize: 13 }}>
+                        <span>{label}</span>
+                        <strong style={{ whiteSpace: 'nowrap', color: k === 'current' ? undefined : sales.kpis.aging[k] > 0 ? 'var(--danger)' : undefined }}>
+                          {money(sales.kpis.aging[k])}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
               )}
             </div>
             )}

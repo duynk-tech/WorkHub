@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAuth, can } from '@/server/auth/context';
+import { canViewModule, NO_ACCESS_MESSAGE } from '@/server/auth/module-access';
 import {
   saveSparePart,
   deleteSparePart,
@@ -21,7 +22,7 @@ import type {
 
 export async function saveSparePartAction(id: number | null, input: SaveSparePartInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý phụ tùng & linh kiện' };
   }
 
@@ -42,7 +43,7 @@ export async function saveSparePartAction(id: number | null, input: SaveSparePar
 
 export async function deleteSparePartAction(id: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa phụ tùng' };
   }
 
@@ -58,7 +59,7 @@ export async function deleteSparePartAction(id: number) {
 
 export async function saveWarehouseAction(id: number | null, input: SaveWarehouseInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý kho bãi' };
   }
 
@@ -78,7 +79,7 @@ export async function saveWarehouseAction(id: number | null, input: SaveWarehous
 
 export async function saveStockTransactionAction(input: SaveStockTransactionInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền thực hiện giao dịch kho' };
   }
 
@@ -99,7 +100,7 @@ export async function saveStockTransactionAction(input: SaveStockTransactionInpu
 
 export async function seedSparePartsAction() {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền khởi tạo dữ liệu' };
   }
 
@@ -115,7 +116,7 @@ export async function seedSparePartsAction() {
 
 export async function createSparePartOrderAction(input: any) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền tạo đơn hàng order' };
   }
 
@@ -137,7 +138,7 @@ export async function createSparePartOrderAction(input: any) {
 
 export async function updateSparePartOrderAction(orderId: number, input: any) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền chỉnh sửa đơn hàng order' };
   }
 
@@ -159,7 +160,7 @@ export async function updateSparePartOrderAction(orderId: number, input: any) {
 
 export async function deleteNewSparePartOrderAction(orderId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa phiếu mua hàng NCC' };
   }
 
@@ -179,7 +180,7 @@ export async function deleteNewSparePartOrderAction(orderId: number) {
 
 export async function updateSparePartOrderStatusAction(orderId: number, input: any) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền cập nhật đơn hàng order' };
   }
 
@@ -205,7 +206,7 @@ export async function updateSparePartOrderStatusAction(orderId: number, input: a
 
 export async function saveSparePartPricingConfigAction(input: any) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_EQUIPMENT_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền cấu hình chính sách giá & margin' };
   }
 
@@ -236,8 +237,7 @@ export async function getInventoryReportAction(input: {
   const ctx = await requireAuth();
   if (
     !can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') &&
-    !can(ctx, 'FEATURE_REPORT_INVENTORY') &&
-    !ctx.isAdmin
+    !can(ctx, 'FEATURE_REPORT_INVENTORY')
   ) {
     return { ok: false, message: 'Bạn không có quyền xem báo cáo kho' };
   }
@@ -266,8 +266,7 @@ export async function exportInventoryReportCsvAction(input: {
   const ctx = await requireAuth();
   if (
     !can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') &&
-    !can(ctx, 'FEATURE_REPORT_INVENTORY') &&
-    !ctx.isAdmin
+    !can(ctx, 'FEATURE_REPORT_INVENTORY')
   ) {
     return { ok: false, message: 'Bạn không có quyền xuất báo cáo kho' };
   }
@@ -294,7 +293,7 @@ export async function exportInventoryReportCsvAction(input: {
 
 export async function approveStockTransactionAction(transactionId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_APPROVE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_APPROVE')) {
     return { ok: false, message: 'Bạn không có quyền duyệt phiếu kho' };
   }
 
@@ -311,7 +310,7 @@ export async function approveStockTransactionAction(transactionId: number) {
 
 export async function rejectStockTransactionAction(transactionId: number, reason: string) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_APPROVE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_APPROVE')) {
     return { ok: false, message: 'Bạn không có quyền duyệt phiếu kho' };
   }
 
@@ -327,7 +326,8 @@ export async function rejectStockTransactionAction(transactionId: number, reason
 }
 
 export async function listStockTransactionsAction(filter: any) {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'inventory')) return { ok: false, message: NO_ACCESS_MESSAGE };
   try {
     const { listStockTransactions } = await import('./service');
     const res = await listStockTransactions(filter);
@@ -340,7 +340,7 @@ export async function listStockTransactionsAction(filter: any) {
 
 export async function createStockCountAction(warehouseId: number, note?: string) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền mở đợt kiểm kê' };
   }
 
@@ -360,7 +360,8 @@ export async function createStockCountAction(warehouseId: number, note?: string)
 }
 
 export async function getStockCountAction(id: number) {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'inventory')) return { ok: false, message: NO_ACCESS_MESSAGE };
   try {
     const { getStockCount } = await import('./service');
     const count = await getStockCount(id);
@@ -372,7 +373,8 @@ export async function getStockCountAction(id: number) {
 }
 
 export async function listStockCountsAction() {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'inventory')) return { ok: false, message: NO_ACCESS_MESSAGE };
   try {
     const { listStockCounts } = await import('./service');
     const counts = await listStockCounts();
@@ -387,7 +389,7 @@ export async function saveStockCountItemsAction(
   lines: { itemId: number; countedQty: number | null; note?: string }[],
 ) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền nhập số kiểm kê' };
   }
 
@@ -403,7 +405,7 @@ export async function saveStockCountItemsAction(
 
 export async function submitStockCountAction(countId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền chốt đợt kiểm kê' };
   }
 
@@ -434,7 +436,7 @@ export async function recordSupplierPaymentAction(input: {
   note?: string;
 }) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền ghi nhận thanh toán nhà cung cấp' };
   }
 
@@ -456,7 +458,7 @@ export async function recordSupplierPaymentAction(input: {
 
 export async function deleteSupplierPaymentAction(id: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa phiếu chi' };
   }
 
@@ -471,12 +473,46 @@ export async function deleteSupplierPaymentAction(id: number) {
 }
 
 export async function listSupplierPaymentsAction(supplier?: string, orderId?: number) {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) {
+    return { ok: false, message: 'Bạn không có quyền xem lịch sử thanh toán nhà cung cấp' };
+  }
   try {
     const { listSupplierPayments } = await import('./service');
     const payments = await listSupplierPayments(supplier, orderId);
     return { ok: true, message: '', payments: JSON.parse(JSON.stringify(payments)) };
   } catch (error: any) {
     return { ok: false, message: error.message || 'Lỗi khi đọc lịch sử thanh toán' };
+  }
+}
+
+/** Danh mục cho form đặt mua NCC (phụ tùng kèm tồn, khách, máy) — nạp khi mở form. */
+export async function getPurchaseFormCatalogAction() {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) return { ok: false, message: 'Bạn không có quyền lập phiếu mua' };
+  try {
+    const [{ listSpareParts }, { prisma }] = await Promise.all([import('./service'), import('@/lib/prisma')]);
+    const [spareParts, customers, equipments] = await Promise.all([
+      listSpareParts({}),
+      prisma.customer.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, phone: true, code: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.fnbEquipment.findMany({
+        select: { id: true, name: true, machineCode: true },
+        orderBy: { machineCode: 'asc' },
+      }),
+    ]);
+    return {
+      ok: true,
+      message: '',
+      spareParts: JSON.parse(JSON.stringify(spareParts)),
+      customers,
+      equipments,
+    };
+  } catch (error: any) {
+    console.error('[getPurchaseFormCatalogAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi tải danh mục' };
   }
 }

@@ -2,7 +2,8 @@ export interface NavItem {
   href: string;
   label: string;
   icon: string;
-  permission?: string;
+  /** Một mã quyền, hoặc danh sách: có một trong các quyền là thấy mục. */
+  permission?: string | readonly string[];
   badgeKey?: 'pendingApprovals' | 'myTasks';
 }
 
@@ -23,15 +24,15 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Kinh doanh',
     items: [
-      { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: 'MENU_CUSTOMERS' },
-      { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: 'MENU_CUSTOMERS' },
+      { href: '/sales', label: 'Bán hàng', icon: 'ShoppingCart', permission: ['MENU_SALES', 'MENU_CUSTOMERS', 'FEATURE_CUSTOMER_MANAGE'] },
+      { href: '/quotations', label: 'Báo giá', icon: 'FileText', permission: ['MENU_QUOTATIONS', 'MENU_CUSTOMERS', 'FEATURE_CUSTOMER_MANAGE'] },
       { href: '/customers', label: 'Khách hàng', icon: 'Building2', permission: 'MENU_CUSTOMERS' },
     ],
   },
   {
     title: 'Mua hàng & Kho',
     items: [
-      { href: '/purchases', label: 'Mua hàng', icon: 'ClipboardList', permission: 'MENU_EQUIPMENT' },
+      { href: '/purchases', label: 'Mua hàng', icon: 'ClipboardList', permission: ['MENU_PURCHASES', 'MENU_EQUIPMENT', 'MENU_SPARE_PARTS', 'FEATURE_SPARE_PARTS_MANAGE'] },
       { href: '/spare-parts', label: 'Hàng hóa & Kho', icon: 'Boxes', permission: 'MENU_EQUIPMENT' },
     ],
   },

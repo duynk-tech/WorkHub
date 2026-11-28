@@ -1,8 +1,9 @@
 import { allocatePayment } from '@/lib/payment-allocation';
+import { nextCode, withFreshCode } from '@/server/lib/code-sequence';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { nextSequentialCode } from '@/lib/code-sequence';
-import { getSetting, setSetting } from '@/server/modules/settings/service';
+import { cachedSettings, getSetting, setSetting } from '@/server/modules/settings/service';
 import { isEquipmentCategory } from './types';
 import type {
   SaveSparePartInput,
@@ -948,7 +949,10 @@ export const DEFAULT_PRICING_CONFIG: SparePartPricingConfig = {
 /** Đọc cấu hình chính sách giá & margin phụ tùng */
 export async function getSparePartPricingConfig(): Promise<SparePartPricingConfig> {
   try {
-    const raw = await getSetting<SparePartPricingConfig | null>('spare_parts_pricing_config', null);
+    // Đọc ở mọi màn bán/mua/kho: cache theo tag settings, lưu cấu hình là tự xoá
+    const raw = await cachedSettings('spare-parts-pricing', () =>
+      getSetting<SparePartPricingConfig | null>('spare_parts_pricing_config', null),
+    );
     if (!raw) return DEFAULT_PRICING_CONFIG;
     const parsed = SparePartPricingConfigSchema.safeParse(raw);
     if (parsed.success) {
@@ -1054,11 +1058,7 @@ export function calculateOrderPricing(
 export async function generateOrderCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `PO-${year}-`;
-  const rows = await prisma.sparePartOrder.findMany({
-    where: { orderCode: { startsWith: prefix } },
-    select: { orderCode: true },
-  });
-  return nextSequentialCode(prefix, rows.map((r) => r.orderCode));
+  return nextCode('SparePartOrder', prefix);
 }
 
 async function getOrCreateDefaultWarehouseId(): Promise<number> {
@@ -1945,16 +1945,7 @@ export async function finalizeStockCountIfSettled(countId: number) {
 export async function generateSupplierPaymentCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `CTT-${year}-`;
-  try {
-    if (!prisma.supplierPayment) return `${prefix}0001`;
-    const rows = await prisma.supplierPayment.findMany({
-      where: { paymentCode: { startsWith: prefix } },
-      select: { paymentCode: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.paymentCode));
-  } catch {
-    return `${prefix}0001`;
-  }
+  return nextCode('SupplierPayment', prefix);
 }
 
 /** Công nợ của một phiếu đặt hàng: phải trả (giá vốn NCC), đã trả, còn lại, quá hạn. */
@@ -2013,8 +2004,8 @@ export async function recordSupplierPayment(
 ) {
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
-  const paymentCode = await generateSupplierPaymentCode();
-  return prisma.$transaction(async (tx) => {
+  return withFreshCode(generateSupplierPaymentCode, (paymentCode) =>
+    prisma.$transaction(async (tx) => {
     // Với thanh toán gắn trực tiếp PO, người nhận tiền có thể là hãng vận
     // chuyển/hải quan chứ không trùng tên nhà cung cấp trên PO.
     const orders = input.orderId
@@ -2037,7 +2028,8 @@ export async function recordSupplierPayment(
     for (const allocation of allocations) await tx.sparePartOrder.update({ where: { id: allocation.orderId }, data: { paidAmount: { increment: allocation.amount } } });
     await tx.auditLog.create({ data: { actorId: userId || null, entityType: 'SupplierPayment', entityId: String(payment.id), action: 'ALLOCATE', diffJson: { allocations, amount } } });
     return { ...payment, unappliedAmount: unapplied };
-  }, { isolationLevel: 'Serializable' });
+  }, { isolationLevel: 'Serializable' }),
+  );
 }
 
 export async function deleteSupplierPayment(id: number, actorId?: number) {

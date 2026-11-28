@@ -16,7 +16,9 @@ import {
   Users,
   Phone,
 } from 'lucide-react';
-import { Card, Button, Input, Badge, usePaged, Pagination, ScrollTabs, ConfirmDialog } from '@/components/ui';
+import { Card, Button, Input, Badge, ScrollTabs, ConfirmDialog } from '@/components/ui';
+import { UrlPagination, useDebouncedSearch, useUrlParams } from '@/components/ui/url-state';
+import type { PageMeta } from '@/lib/list-query';
 import { useToast } from '@/components/ui/toast';
 import { CustomerModal } from '@/components/domain/customer-modals';
 import { deleteCustomerAction } from '@/server/modules/customer/actions';
@@ -25,6 +27,7 @@ import { CustomerCarePanel } from '@/components/domain/customer-care-panel';
 
 export function CustomerScreen({
   customers,
+  paging,
   care,
   technicians = [],
   initialTab,
@@ -33,12 +36,13 @@ export function CustomerScreen({
   canManage,
 }: {
   customers: any[];
+  paging: PageMeta;
   /** Danh sách máy cần chăm sóc, gom theo khách. */
   care?: any;
   technicians?: any[];
   initialTab?: string;
   metrics: CustomerMetrics;
-  filter: { search: string };
+  filter: { search: string; status?: string; sort?: string };
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -67,22 +71,12 @@ export function CustomerScreen({
     }
   };
 
-  // Danh sách khách hàng lọc phía server nhưng vẫn trả về hết, phân trang tại đây
-  const paged = usePaged(customers, 20);
+  // Lọc, sắp xếp và phân trang đều chạy ở server; trạng thái nằm trên URL
   const toast = useToast();
-
-  const [search, setSearch] = useState(filter.search || '');
+  const { setParams } = useUrlParams();
+  const search = useDebouncedSearch();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
-
-  const handleFilterChange = (updates: Partial<{ search: string }>) => {
-    const params = new URLSearchParams();
-    const newSearch = updates.search !== undefined ? updates.search : search;
-
-    if (newSearch) params.set('q', newSearch);
-
-    router.push(`/customers?${params.toString()}`);
-  };
 
   const [customerToDelete, setCustomerToDelete] = useState<any>(null);
   const [deletingCustomer, setDeletingCustomer] = useState(false);
@@ -130,7 +124,7 @@ export function CustomerScreen({
       {/* 2. Tabs */}
       <ScrollTabs>
         {([
-          { key: 'list', label: `Danh sách khách hàng (${customers.length})` },
+          { key: 'list', label: `Danh sách khách hàng (${paging.total})` },
           { key: 'care', label: `Bảo hành, bảo dưỡng (${care?.totals?.machines ?? 0})` },
         ] as const).map((t) => (
           <button
@@ -207,17 +201,25 @@ export function CustomerScreen({
           </div>
       {/* 3. Filter Bar */}
       <Card style={{ padding: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <Input
               placeholder="Tìm theo tên công ty, chuỗi quán, mã KH, SĐT, người đại diện..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleFilterChange({ search });
-              }}
+              value={search.value}
+              onChange={(e) => search.onChange(e.target.value)}
             />
           </div>
+          <select
+            className="select"
+            aria-label="Sắp xếp khách hàng"
+            value={filter.sort ?? 'created'}
+            onChange={(e) => setParams({ sort: e.target.value === 'created' ? null : e.target.value })}
+            style={{ width: 'auto', minWidth: 170 }}
+          >
+            <option value="created">Mới thêm gần đây</option>
+            <option value="name">Tên A → Z</option>
+            <option value="code">Mã khách hàng</option>
+          </select>
 
         </div>
       </Card>
@@ -241,11 +243,11 @@ export function CustomerScreen({
               {customers.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Không tìm thấy khách hàng nào phù hợp
+                    {filter.search ? 'Không tìm thấy khách hàng nào phù hợp' : 'Chưa có khách hàng nào'}
                   </td>
                 </tr>
               ) : (
-                paged.pageRows.map((c: any, index: number) => {
+                customers.map((c: any, index: number) => {
                   const locationCount = c._count?.locations ?? c.locations?.length ?? 0;
                   const machineCount = c._count?.machines ?? c.machines?.length ?? 0;
 
@@ -260,7 +262,7 @@ export function CustomerScreen({
                     >
                       {/* STT */}
                       <td style={{ padding: '14px', textAlign: 'center', color: 'var(--text-muted)', verticalAlign: 'top' }}>
-                        {String(paged.offset + index + 1).padStart(2, '0')}
+                        {String(paging.offset + index + 1).padStart(2, '0')}
                       </td>
 
                       {/* Mã KH */}
@@ -424,7 +426,7 @@ export function CustomerScreen({
           </table>
         </div>
 
-        <Pagination {...paged} unit="khách hàng" />
+        <UrlPagination total={paging.total} page={paging.page} pageSize={paging.pageSize} unit="khách hàng" />
       </Card>
       </>
       )}

@@ -35,8 +35,7 @@ export default async function SparePartsPage({
   const canView =
     can(ctx, 'MENU_SPARE_PARTS') ||
     can(ctx, 'MENU_EQUIPMENT') ||
-    can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') ||
-    ctx.isAdmin;
+    can(ctx, 'FEATURE_SPARE_PARTS_MANAGE');
 
   if (!canView) {
     redirect('/dashboard');
@@ -44,8 +43,7 @@ export default async function SparePartsPage({
 
   const canManage =
     can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') ||
-    can(ctx, 'FEATURE_EQUIPMENT_MANAGE') ||
-    ctx.isAdmin;
+    can(ctx, 'FEATURE_EQUIPMENT_MANAGE');
 
   if (sp.tab === 'orders' || sp.tab === 'purchases') {
     redirect('/purchases');

@@ -35,7 +35,7 @@ export default async function EquipmentDetailPage({
     notFound();
   }
 
-  const canManage = can(ctx, 'FEATURE_EQUIPMENT_MANAGE') || ctx.isAdmin;
+  const canManage = can(ctx, 'FEATURE_EQUIPMENT_MANAGE');
 
   return (
     <EquipmentDetailScreen

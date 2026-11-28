@@ -9,3 +9,16 @@ export function taskState(statusInput: string, progress: number | undefined, pre
     completedAt: status === 'DONE' ? (previous.status === 'DONE' ? previous.completedAt ?? now : now) : null,
   };
 }
+
+/** Trạng thái đã đóng sổ: không còn ai phải làm gì. */
+export const CLOSED_TASK_STATUS_LIST = ['DONE', 'CANCELLED'] as const;
+
+/** Việc quá hạn = có hạn, hạn đã qua và chưa đóng. Dùng chung cho list, board, chi tiết và job. */
+export function isTaskOverdue(
+  task: { dueDate: Date | string | null | undefined; status: string },
+  now: Date = new Date(),
+): boolean {
+  if (!task.dueDate) return false;
+  if ((CLOSED_TASK_STATUS_LIST as readonly string[]).includes(task.status)) return false;
+  return new Date(task.dueDate) < now;
+}

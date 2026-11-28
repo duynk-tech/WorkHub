@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAuth, can } from '@/server/auth/context';
+import { canViewModule, NO_ACCESS_MESSAGE } from '@/server/auth/module-access';
+import { customerInputSchema, firstZodMessage } from './schemas';
 import {
   saveCustomer,
   deleteCustomer,
@@ -25,12 +27,15 @@ import type { SaveCustomerReturnInput } from './service';
 
 export async function saveCustomerAction(id: number | null, input: SaveCustomerInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý khách hàng' };
   }
 
+  const parsed = customerInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: firstZodMessage(parsed.error) };
+
   try {
-    const customer = await saveCustomer(id, input);
+    const customer = await saveCustomer(id, parsed.data);
     revalidatePath('/customers');
     if (id) revalidatePath(`/customers/${id}`);
     revalidatePath('/spare-parts');
@@ -43,7 +48,7 @@ export async function saveCustomerAction(id: number | null, input: SaveCustomerI
 
 export async function deleteCustomerAction(id: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa khách hàng' };
   }
 
@@ -60,13 +65,19 @@ export async function deleteCustomerAction(id: number) {
 
 export async function saveCustomerOrderAction(id: number | null, input: SaveCustomerOrderInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý đơn hàng khách hàng' };
   }
 
   try {
     const order = await saveCustomerOrder(id, input);
+    // Đơn mới chưa có nhân viên KD phụ trách thì gán cho người lập (dùng cho KPI theo người)
+    if (!id && order?.id) {
+      const { prisma } = await import('@/lib/prisma');
+      await prisma.customerOrder.updateMany({ where: { id: order.id, salespersonId: null }, data: { salespersonId: ctx.employeeId } });
+    }
     revalidatePath('/customers');
+    revalidatePath('/sales');
     revalidatePath(`/customers/${input.customerId}`);
     return { ok: true, message: id ? 'Cập nhật đơn hàng thành công' : 'Tạo đơn hàng mới thành công', order };
   } catch (error: any) {
@@ -77,7 +88,7 @@ export async function saveCustomerOrderAction(id: number | null, input: SaveCust
 
 export async function deleteCustomerOrderAction(id: number, customerId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa đơn hàng' };
   }
 
@@ -93,7 +104,7 @@ export async function deleteCustomerOrderAction(id: number, customerId: number) 
 
 export async function cancelCustomerOrderAction(id: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền hủy đơn hàng' };
   }
 
@@ -113,7 +124,7 @@ export async function saveCustomerQuotationAction(
   input: SaveCustomerQuotationInput,
 ) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền quản lý báo giá' };
   }
 
@@ -122,8 +133,13 @@ export async function saveCustomerQuotationAction(
       ...input,
       createdById: input.createdById ?? ctx.employeeId,
     });
+    if (!id && quotation?.id) {
+      const { prisma } = await import('@/lib/prisma');
+      await prisma.customerQuotation.updateMany({ where: { id: quotation.id, salespersonId: null }, data: { salespersonId: ctx.employeeId } });
+    }
     revalidatePath(`/customers/${input.customerId}`);
     revalidatePath('/spare-parts');
+    revalidatePath('/quotations');
     return {
       ok: true,
       message: id ? 'Cập nhật báo giá thành công' : 'Tạo báo giá mới thành công',
@@ -139,7 +155,7 @@ export async function saveCustomerQuotationAction(
 
 export async function deleteCustomerQuotationAction(id: number, customerId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa báo giá' };
   }
 
@@ -160,7 +176,7 @@ export async function convertQuotationToOrderAction(
   orderType?: string,
 ) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền chốt báo giá thành đơn hàng' };
   }
 
@@ -185,7 +201,8 @@ export async function convertQuotationToOrderAction(
 
 /** Thông tin phục vụ giao hàng: dòng nào xuất kho được, dòng nào còn thiếu mã. */
 export async function getOrderFulfillmentAction(orderId: number) {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'customers')) return { ok: false, message: NO_ACCESS_MESSAGE };
   try {
     const data = await getCustomerOrderFulfillment(orderId);
     if (!data) return { ok: false, message: 'Không tìm thấy đơn hàng' };
@@ -235,7 +252,7 @@ export async function issueOrderStockAction(
   machineUnits: { orderItemId: number; serialNumber: string; warrantyMonths?: number }[] = [],
 ) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xuất kho giao hàng' };
   }
 
@@ -280,7 +297,7 @@ export async function createSupplierOrderAction(
   },
 ) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền tạo phiếu đặt hàng nhà cung cấp' };
   }
 
@@ -301,7 +318,7 @@ export async function createSupplierOrderAction(
 
 export async function recordCustomerPaymentAction(input: SaveCustomerPaymentInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền ghi nhận thanh toán' };
   }
 
@@ -324,7 +341,7 @@ export async function recordCustomerPaymentAction(input: SaveCustomerPaymentInpu
 
 export async function deleteCustomerPaymentAction(id: number, customerId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa phiếu thu' };
   }
 
@@ -343,7 +360,7 @@ export async function deleteCustomerPaymentAction(id: number, customerId: number
 
 export async function createCustomerReturnAction(input: SaveCustomerReturnInput) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền lập phiếu trả hàng' };
   }
 
@@ -371,7 +388,7 @@ export async function createCustomerReturnAction(input: SaveCustomerReturnInput)
 
 export async function deleteCustomerReturnAction(id: number, customerId: number) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
     return { ok: false, message: 'Bạn không có quyền xóa phiếu trả hàng' };
   }
 
@@ -385,5 +402,102 @@ export async function deleteCustomerReturnAction(id: number, customerId: number)
   } catch (error: any) {
     console.error('[deleteCustomerReturnAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi xóa phiếu trả hàng' };
+  }
+}
+
+/**
+ * Danh mục phụ tùng và máy trong kho cho form lập đơn. Trước đây trang Bán hàng
+ * nạp sẵn cả kho mỗi lần mở, giờ chỉ nạp khi người dùng thật sự mở form.
+ */
+export async function getOrderFormCatalogAction() {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) return { ok: false, message: 'Bạn không có quyền lập đơn bán' };
+  try {
+    const [{ listSpareParts }, { listEquipment }] = await Promise.all([
+      import('@/server/modules/spare-parts/service'),
+      import('@/server/modules/equipment/service'),
+    ]);
+    const [spareParts, stockMachines] = await Promise.all([listSpareParts({}), listEquipment({ status: 'IN_STOCK' })]);
+    return {
+      ok: true,
+      message: '',
+      spareParts: JSON.parse(JSON.stringify(spareParts)),
+      stockMachines: JSON.parse(JSON.stringify(stockMachines)),
+    };
+  } catch (error: any) {
+    console.error('[getOrderFormCatalogAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi tải danh mục hàng' };
+  }
+}
+
+/** Dữ liệu cho form báo giá (khách kèm địa điểm/máy, phụ tùng, máy trong kho) — nạp khi mở form. */
+export async function getQuotationFormCatalogAction() {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) return { ok: false, message: 'Bạn không có quyền lập báo giá' };
+  try {
+    const [{ prisma }, { listSpareParts }, { listEquipment }] = await Promise.all([
+      import('@/lib/prisma'),
+      import('@/server/modules/spare-parts/service'),
+      import('@/server/modules/equipment/service'),
+    ]);
+    const [customers, spareParts, stockMachines] = await Promise.all([
+      prisma.customer.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true, name: true, phone: true, code: true,
+          locations: { select: { id: true, name: true, address: true } },
+          machines: { select: { id: true, name: true, machineCode: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      listSpareParts({}),
+      listEquipment({ status: 'IN_STOCK' }),
+    ]);
+    return {
+      ok: true,
+      message: '',
+      customers: JSON.parse(JSON.stringify(customers)),
+      spareParts: JSON.parse(JSON.stringify(spareParts)),
+      stockMachines: JSON.parse(JSON.stringify(stockMachines)),
+    };
+  } catch (error: any) {
+    console.error('[getQuotationFormCatalogAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi tải dữ liệu báo giá' };
+  }
+}
+
+/** Đánh dấu hết hiệu lực nhiều báo giá cùng lúc (chỉ báo giá nháp/đã gửi). */
+export async function expireQuotationsAction(ids: number[]) {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) return { ok: false, message: 'Bạn không có quyền sửa báo giá' };
+  const clean = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 200);
+  if (!clean.length) return { ok: false, message: 'Chưa chọn báo giá nào' };
+  try {
+    const { prisma } = await import('@/lib/prisma');
+    const targets = await prisma.customerQuotation.findMany({
+      where: { id: { in: clean }, status: { in: ['DRAFT', 'SENT'] } },
+      select: { id: true, quoteCode: true, status: true },
+    });
+    if (targets.length) {
+      await prisma.$transaction([
+        prisma.customerQuotation.updateMany({ where: { id: { in: targets.map((t) => t.id) } }, data: { status: 'EXPIRED' } }),
+        prisma.auditLog.createMany({
+          data: targets.map((t) => ({
+            actorId: ctx.userId, entityType: 'CustomerQuotation', entityId: String(t.id), action: 'EXPIRE',
+            diffJson: { quoteCode: t.quoteCode, from: t.status, to: 'EXPIRED', bulk: true },
+          })),
+        }),
+      ]);
+    }
+    revalidatePath('/quotations');
+    const skipped = clean.length - targets.length;
+    return {
+      ok: true,
+      message: skipped
+        ? `Đã chuyển ${targets.length} báo giá sang hết hiệu lực; bỏ qua ${skipped} báo giá đã chốt/từ chối`
+        : `Đã chuyển ${targets.length} báo giá sang hết hiệu lực`,
+    };
+  } catch (error: any) {
+    return { ok: false, message: error.message || 'Lỗi khi cập nhật báo giá' };
   }
 }

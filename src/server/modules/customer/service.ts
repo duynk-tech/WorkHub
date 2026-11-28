@@ -1,8 +1,10 @@
+import { cache } from 'react';
 import { customerInsights } from '@/lib/customer-insights';
+import { nextCode, withFreshCode } from '@/server/lib/code-sequence';
+import { computeOrderDebt, type DebtInput } from '@/lib/customer-debt';
 import { allocatePayment } from '@/lib/payment-allocation';
 import { prisma } from '@/lib/prisma';
 import { can, type AuthContext } from '@/server/auth/context';
-import { nextSequentialCode } from '@/lib/code-sequence';
 import { generateMachineCode } from '@/server/modules/equipment/service';
 import {
   createStockTransaction,
@@ -29,106 +31,71 @@ import type {
 export async function generateCustomerCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `CUS-${year}-`;
-  try {
-    if (!prisma.customer) return `${prefix}0001`;
-    const rows = await prisma.customer.findMany({
-      where: { code: { startsWith: prefix } },
-      select: { code: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.code));
-  } catch {
-    return `${prefix}0001`;
-  }
+  return nextCode('Customer', prefix);
 }
 
 export async function generateOrderCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `ORD-${year}-`;
-  try {
-    if (!prisma.customerOrder) return `${prefix}0001`;
-    const rows = await prisma.customerOrder.findMany({
-      where: { orderCode: { startsWith: prefix } },
-      select: { orderCode: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.orderCode));
-  } catch {
-    return `${prefix}0001`;
-  }
+  return nextCode('CustomerOrder', prefix);
 }
 
-export async function listCustomers(filter: CustomerFilter = {}) {
+const CUSTOMER_LIST_INCLUDE = {
+  locations: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
+  machines: {
+    select: {
+      id: true,
+      machineCode: true,
+      serialNumber: true,
+      name: true,
+      category: true,
+      status: true,
+      ownershipType: true,
+    },
+  },
+  _count: { select: { machines: true, locations: true, orders: true, tickets: true } },
+} satisfies Prisma.CustomerInclude;
+
+export const CUSTOMER_SORTS = ['created', 'name', 'code'] as const;
+export type CustomerSort = (typeof CUSTOMER_SORTS)[number];
+
+function customerWhere(filter: CustomerFilter): Prisma.CustomerWhereInput {
   const where: Prisma.CustomerWhereInput = {};
-
-  try {
-    if (filter.search?.trim()) {
-      const s = filter.search.trim();
-      where.OR = [
-        { name: { contains: s, mode: 'insensitive' } },
-        { code: { contains: s, mode: 'insensitive' } },
-        { phone: { contains: s, mode: 'insensitive' } },
-        { contactName: { contains: s, mode: 'insensitive' } },
-        { email: { contains: s, mode: 'insensitive' } },
-      ];
-    }
-
-    return await prisma.customer.findMany({
-      where,
-      include: {
-        locations: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
-        machines: {
-          select: {
-            id: true,
-            machineCode: true,
-            serialNumber: true,
-            name: true,
-            category: true,
-            status: true,
-            ownershipType: true,
-          },
-        },
-        _count: {
-          select: {
-            machines: true,
-            locations: true,
-            orders: true,
-            tickets: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  } catch (error) {
-    console.error('[listCustomers error]:', error);
-    try {
-      return await prisma.customer.findMany({
-        where,
-        include: {
-          locations: { select: { id: true, name: true, address: true, managerName: true, phone: true } },
-          machines: {
-            select: {
-              id: true,
-              machineCode: true,
-              serialNumber: true,
-              name: true,
-              category: true,
-              status: true,
-              ownershipType: true,
-            },
-          },
-          _count: {
-            select: {
-              machines: true,
-              locations: true,
-              tickets: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch {
-      return [];
-    }
+  if (filter.search?.trim()) {
+    const s = filter.search.trim();
+    where.OR = [
+      { name: { contains: s, mode: 'insensitive' } },
+      { code: { contains: s, mode: 'insensitive' } },
+      { phone: { contains: s, mode: 'insensitive' } },
+      { contactName: { contains: s, mode: 'insensitive' } },
+      { email: { contains: s, mode: 'insensitive' } },
+    ];
   }
+  if (filter.status) where.status = filter.status;
+  return where;
+}
+
+/** Danh sách khách hàng (không phân trang) — giữ cho các chỗ gọi cũ như MCP/xuất file. */
+export async function listCustomers(filter: CustomerFilter = {}) {
+  return prisma.customer.findMany({
+    where: customerWhere(filter),
+    include: CUSTOMER_LIST_INCLUDE,
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/** Danh sách khách hàng phân trang phía server. */
+export async function listCustomersPage(filter: CustomerFilter, page: { skip: number; take: number; sort: CustomerSort }) {
+  const where = customerWhere(filter);
+  const orderBy: Prisma.CustomerOrderByWithRelationInput[] =
+    page.sort === 'name' ? [{ name: 'asc' }, { id: 'asc' }]
+    : page.sort === 'code' ? [{ code: 'asc' }]
+    : [{ createdAt: 'desc' }, { id: 'desc' }];
+  const [rows, total] = await Promise.all([
+    prisma.customer.findMany({ where, include: CUSTOMER_LIST_INCLUDE, orderBy, skip: page.skip, take: page.take }),
+    prisma.customer.count({ where }),
+  ]);
+  return { rows, total };
 }
 
 /**
@@ -138,7 +105,122 @@ export async function listCustomers(filter: CustomerFilter = {}) {
  * chiếu với đơn mua, nên trả gọn những gì bảng cần rồi link về hồ sơ khách.
  */
 export function canViewSalesOrders(ctx: AuthContext) {
-  return can(ctx, 'MENU_CUSTOMERS') || can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin;
+  return can(ctx, 'MENU_SALES') || can(ctx, 'MENU_CUSTOMERS') || can(ctx, 'FEATURE_CUSTOMER_MANAGE');
+}
+
+export const SALES_ROW_SELECT = {
+    id: true, orderCode: true, orderType: true, status: true,
+    orderDate: true, deliveryDate: true, dueDate: true,
+    goodsAmount: true, shippingFee: true, vatRate: true, totalAmount: true, paidAmount: true, returnedAmount: true,
+    stockIssuedAt: true,
+    items: { select: { id: true, itemType: true, inventoryItemId: true, equipmentId: true, quantity: true } },
+    returns: { select: { items: { select: { orderItemId: true, quantity: true } } } },
+    customer: { select: { id: true, code: true, name: true, phone: true } },
+    location: { select: { id: true, name: true } },
+    salesperson: { select: { id: true, fullName: true } },
+    _count: { select: { items: true, payments: true } },
+  } satisfies Prisma.CustomerOrderSelect;
+
+type SalesRowRaw = Prisma.CustomerOrderGetPayload<{ select: typeof SALES_ROW_SELECT }>;
+
+/**
+ * Bổ sung cột tính toán cho từng dòng đơn bán (thiếu hàng, trả hàng, công nợ).
+ * Chỉ ĐỌC: các việc sửa dữ liệu cũ (cước vận chuyển, tự hoàn tất) chạy ở
+ * runSalesMaintenance, không chạy trong lúc người dùng mở trang.
+ */
+export async function mapSalesRows(rows: SalesRowRaw[]) {
+  // Xác định phần thiếu hàng theo từng đơn để màn Bán hàng chỉ hiện nút
+  // đặt NCC khi tồn thực tế và PO đang mở chưa đủ đáp ứng đơn đó.
+  const orderIds = rows.map((o) => o.id);
+  const inventoryItemIds = [...new Set(rows.flatMap((o) => o.items
+    .filter((i) => i.itemType === 'SPARE_PART' || (i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId))
+    .flatMap((i) => i.inventoryItemId ? [i.inventoryItemId] : [])))];
+  const [stockRows, openPurchaseOrders] = await Promise.all([
+    inventoryItemIds.length
+      ? prisma.inventoryStock.findMany({ where: { itemId: { in: inventoryItemIds } }, select: { itemId: true, quantity: true } })
+      : Promise.resolve([]),
+    orderIds.length
+      ? prisma.sparePartOrder.findMany({
+          where: { customerOrderId: { in: orderIds }, status: { notIn: ['STOCKED', 'COMPLETED', 'CANCELLED'] } },
+          select: { customerOrderId: true, items: { select: { itemId: true, quantity: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
+  const stockByItem = new Map<number, number>();
+  for (const stock of stockRows) stockByItem.set(stock.itemId, (stockByItem.get(stock.itemId) || 0) + stock.quantity);
+  const openPoByOrderItem = new Map<string, number>();
+  for (const po of openPurchaseOrders) {
+    if (!po.customerOrderId) continue;
+    for (const line of po.items) {
+      const key = `${po.customerOrderId}:${line.itemId}`;
+      openPoByOrderItem.set(key, (openPoByOrderItem.get(key) || 0) + line.quantity);
+    }
+  }
+  const needsSupplierOrderById = new Map<number, boolean>();
+  for (const order of rows) {
+    const remainingStock = new Map(stockByItem);
+    const remainingPo = new Map<number, number>();
+    let needsSupplierOrder = false;
+    const lines = order.items.filter((i) => i.itemType === 'SPARE_PART' || (i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId));
+    for (const line of lines) {
+      const itemId = line.inventoryItemId;
+      if (!itemId) {
+        needsSupplierOrder = true;
+        continue;
+      }
+      const available = Math.min(line.quantity, remainingStock.get(itemId) || 0);
+      const key = `${order.id}:${itemId}`;
+      const openPo = remainingPo.has(itemId) ? remainingPo.get(itemId)! : (openPoByOrderItem.get(key) || 0);
+      const ordered = Math.min(Math.max(0, line.quantity - available), openPo);
+      remainingStock.set(itemId, Math.max(0, (remainingStock.get(itemId) || 0) - available));
+      remainingPo.set(itemId, Math.max(0, openPo - ordered));
+      if (line.quantity - available - ordered > 0) needsSupplierOrder = true;
+    }
+    needsSupplierOrderById.set(order.id, needsSupplierOrder);
+  }
+
+  const mapped = rows.map((o) => {
+    const { items, returns, ...orderRow } = o;
+    const returnedQuantityByLine = new Map<number, number>();
+    for (const customerReturn of returns) {
+      for (const returnedLine of customerReturn.items) {
+        if (!returnedLine.orderItemId) continue;
+        returnedQuantityByLine.set(
+          returnedLine.orderItemId,
+          (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + returnedLine.quantity,
+        );
+      }
+    }
+    const hasReturnableItems = items.some((item) => (returnedQuantityByLine.get(item.id) || 0) < item.quantity);
+    const freight = Number(o.shippingFee || 0);
+    let goodsAmount = Number(o.goodsAmount || 0);
+    let total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
+    if (freight > 0) {
+      const vatRate = Number(o.vatRate || 0);
+      const vat = Math.round((goodsAmount * vatRate) / 100);
+      total = goodsAmount + vat;
+    }
+    if (o.status === 'CANCELLED') total = 0;
+    const paid = Number(o.paidAmount || 0);
+    return {
+      ...orderRow,
+      hasReturnableItems,
+      hasReturns: returns.length > 0,
+      needsSupplierOrder: needsSupplierOrderById.get(o.id) || false,
+      shippingFee: 0,
+      total,
+      paid,
+      // Hàng trả lại không còn phải thu, trừ ra trước khi tính công nợ
+      remaining: computeOrderDebt({ ...o, totalAmount: total }).remaining,
+    };
+  });
+
+  return mapped.map((o) =>
+    // Đã xuất kho và thu đủ thì hiển thị là hoàn tất ngay; job bảo trì sẽ lưu lại trạng thái
+    !['COMPLETED', 'CANCELLED'].includes(o.status) && Boolean(o.stockIssuedAt) && o.remaining <= 0
+      ? { ...o, status: 'COMPLETED' }
+      : o,
+  );
 }
 
 export async function listSalesOrders(ctx: AuthContext, limit = 200) {
@@ -151,140 +233,15 @@ export async function listSalesOrders(ctx: AuthContext, limit = 200) {
     const rows = await prisma.customerOrder.findMany({
       orderBy: [{ orderDate: 'desc' }, { id: 'desc' }],
       take: limit,
-      select: {
-        id: true, orderCode: true, orderType: true, status: true,
-        orderDate: true, deliveryDate: true, dueDate: true,
-        goodsAmount: true, shippingFee: true, vatRate: true, totalAmount: true, paidAmount: true, returnedAmount: true,
-        stockIssuedAt: true,
-        items: { select: { id: true, itemType: true, inventoryItemId: true, equipmentId: true, quantity: true } },
-        returns: { select: { items: { select: { orderItemId: true, quantity: true } } } },
-        customer: { select: { id: true, code: true, name: true, phone: true } },
-        location: { select: { id: true, name: true } },
-        _count: { select: { items: true, payments: true } },
-      },
+      select: SALES_ROW_SELECT,
     });
-
-    // Xác định phần thiếu hàng theo từng đơn để màn Bán hàng chỉ hiện nút
-    // đặt NCC khi tồn thực tế và PO đang mở chưa đủ đáp ứng đơn đó.
-    const orderIds = rows.map((o) => o.id);
-    const inventoryItemIds = [...new Set(rows.flatMap((o) => o.items
-      .filter((i) => i.itemType === 'SPARE_PART' || (i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId))
-      .flatMap((i) => i.inventoryItemId ? [i.inventoryItemId] : [])))];
-    const [stockRows, openPurchaseOrders] = await Promise.all([
-      inventoryItemIds.length
-        ? prisma.inventoryStock.findMany({ where: { itemId: { in: inventoryItemIds } }, select: { itemId: true, quantity: true } })
-        : Promise.resolve([]),
-      orderIds.length
-        ? prisma.sparePartOrder.findMany({
-            where: { customerOrderId: { in: orderIds }, status: { notIn: ['STOCKED', 'COMPLETED', 'CANCELLED'] } },
-            select: { customerOrderId: true, items: { select: { itemId: true, quantity: true } } },
-          })
-        : Promise.resolve([]),
-    ]);
-    const stockByItem = new Map<number, number>();
-    for (const stock of stockRows) stockByItem.set(stock.itemId, (stockByItem.get(stock.itemId) || 0) + stock.quantity);
-    const openPoByOrderItem = new Map<string, number>();
-    for (const po of openPurchaseOrders) {
-      if (!po.customerOrderId) continue;
-      for (const line of po.items) {
-        const key = `${po.customerOrderId}:${line.itemId}`;
-        openPoByOrderItem.set(key, (openPoByOrderItem.get(key) || 0) + line.quantity);
-      }
-    }
-    const needsSupplierOrderById = new Map<number, boolean>();
-    for (const order of rows) {
-      const remainingStock = new Map(stockByItem);
-      const remainingPo = new Map<number, number>();
-      let needsSupplierOrder = false;
-      const lines = order.items.filter((i) => i.itemType === 'SPARE_PART' || (i.itemType === 'EQUIPMENT' && i.inventoryItemId && !i.equipmentId));
-      for (const line of lines) {
-        const itemId = line.inventoryItemId;
-        if (!itemId) {
-          needsSupplierOrder = true;
-          continue;
-        }
-        const available = Math.min(line.quantity, remainingStock.get(itemId) || 0);
-        const key = `${order.id}:${itemId}`;
-        const openPo = remainingPo.has(itemId) ? remainingPo.get(itemId)! : (openPoByOrderItem.get(key) || 0);
-        const ordered = Math.min(Math.max(0, line.quantity - available), openPo);
-        remainingStock.set(itemId, Math.max(0, (remainingStock.get(itemId) || 0) - available));
-        remainingPo.set(itemId, Math.max(0, openPo - ordered));
-        if (line.quantity - available - ordered > 0) needsSupplierOrder = true;
-      }
-      needsSupplierOrderById.set(order.id, needsSupplierOrder);
-    }
-
-    const mapped = rows.map((o) => {
-      const { items, returns, ...orderRow } = o;
-      const returnedQuantityByLine = new Map<number, number>();
-      for (const customerReturn of returns) {
-        for (const returnedLine of customerReturn.items) {
-          if (!returnedLine.orderItemId) continue;
-          returnedQuantityByLine.set(
-            returnedLine.orderItemId,
-            (returnedQuantityByLine.get(returnedLine.orderItemId) || 0) + returnedLine.quantity,
-          );
-        }
-      }
-      const hasReturnableItems = items.some((item) => (returnedQuantityByLine.get(item.id) || 0) < item.quantity);
-      const freight = Number(o.shippingFee || 0);
-      let goodsAmount = Number(o.goodsAmount || 0);
-      let total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
-      if (freight > 0) {
-        const vatRate = Number(o.vatRate || 0);
-        const vat = Math.round((goodsAmount * vatRate) / 100);
-        total = goodsAmount + vat;
-      }
-      if (o.status === 'CANCELLED') total = 0;
-      const paid = Number(o.paidAmount || 0);
-      return {
-        ...orderRow,
-        hasReturnableItems,
-        hasReturns: returns.length > 0,
-        needsSupplierOrder: needsSupplierOrderById.get(o.id) || false,
-        shippingFee: 0,
-        total,
-        paid,
-        // Hàng trả lại không còn phải thu, trừ ra trước khi tính công nợ
-        remaining: Math.max(0, total - Number(o.returnedAmount || 0) - paid),
-      };
-    });
-
-    // Dọn dẹp cước vận chuyển cũ trên đơn bán khách nếu còn tồn tại trong DB
-    const toFixFreight = rows.filter((o) => Number(o.shippingFee) > 0);
-    if (toFixFreight.length > 0) {
-      for (const o of toFixFreight) {
-        const goods = Number(o.goodsAmount || 0);
-        const vatRate = Number(o.vatRate || 0);
-        const vat = Math.round((goods * vatRate) / 100);
-        const total = goods + vat;
-        prisma.customerOrder.update({
-          where: { id: o.id },
-          data: { shippingFee: 0, vatAmount: vat, totalAmount: total },
-        }).catch(() => {});
-      }
-    }
-
-    // Tự động chuyển COMPLETED cho đơn đã xuất kho và đã thanh toán đủ 100%
-    const toComplete = mapped.filter(
-      (o) => !['COMPLETED', 'CANCELLED'].includes(o.status) && Boolean(o.stockIssuedAt) && o.remaining <= 0,
-    );
-    if (toComplete.length > 0) {
-      await prisma.customerOrder.updateMany({
-        where: { id: { in: toComplete.map((x) => x.id) } },
-        data: { status: 'COMPLETED' },
-      }).catch((e) => console.warn('[listSalesOrders] auto-complete err:', e?.message));
-      for (const item of toComplete) {
-        item.status = 'COMPLETED';
-      }
-    }
-
-    return mapped;
+    return await mapSalesRows(rows);
   } catch (err: any) {
     console.warn('[listSalesOrders] bỏ qua:', err?.message);
     return [];
   }
 }
+
 
 /**
  * Dữ liệu riêng của một khách, đủ để mở form lập đơn bán ở bất kỳ màn nào.
@@ -330,102 +287,6 @@ export async function getCustomerOrderContext(ctx: AuthContext, customerId: numb
  * Cùng một popup dùng lại ở màn Bán hàng, hồ sơ khách và bất cứ chỗ nào hiện
  * đơn, nên dữ liệu gom một lần ở đây thay vì mỗi màn tự truy vấn một kiểu.
  */
-async function ensureSeedOrderItems(order: any) {
-  if (!order || (order.items && order.items.length > 0)) return order?.items || [];
-  if (order.orderCode === 'ORD-2026-0002') {
-    const eq = await prisma.fnbEquipment
-      .findFirst({
-        where: { machineCode: 'EQ-2026-0007' },
-        select: { id: true },
-      })
-      .catch(() => null);
-    await prisma.customerOrderItem
-      .createMany({
-        data: [
-          {
-            orderId: order.id,
-            itemType: 'EQUIPMENT',
-            name: 'Máy làm đá viên vuông cao cấp Hoshizaki IM-100CNE (Gói thuê 6 tháng)',
-            quantity: 1,
-            unitPrice: 58000000,
-            totalPrice: 58000000,
-            equipmentId: eq?.id || null,
-            notes: 'Thuê máy làm đá viên 100 kg/24h đặt tại Kichi Kichi Vạn Hạnh Mall',
-          },
-          {
-            orderId: order.id,
-            itemType: 'SPARE_PART',
-            name: 'Bộ lõi lọc nước thô & khử cặn Hoshizaki 4HC-H (2 lõi)',
-            quantity: 2,
-            unitPrice: 3200000,
-            totalPrice: 6400000,
-            notes: 'Lõi lọc nước chuẩn bảo dưỡng định kỳ 6 tháng',
-          },
-          {
-            orderId: order.id,
-            itemType: 'SERVICE',
-            name: 'Dịch vụ vận chuyển, lắp đặt đường ống cấp thoát nước & hiệu chỉnh máy',
-            quantity: 1,
-            unitPrice: 3600000,
-            totalPrice: 3600000,
-            notes: 'Bàn giao kỹ thuật và hướng dẫn vận hành quầy Bar',
-          },
-        ],
-      })
-      .catch((e) => console.warn('[ensureSeedOrderItems] err:', e?.message));
-
-    return await prisma.customerOrderItem
-      .findMany({
-        where: { orderId: order.id },
-        orderBy: { id: 'asc' },
-      })
-      .catch(() => []);
-  }
-
-  if (order.orderCode === 'ORD-2026-0001') {
-    const eq = await prisma.fnbEquipment
-      .findFirst({
-        where: { machineCode: 'EQ-2026-0005' },
-        select: { id: true },
-      })
-      .catch(() => null);
-    await prisma.customerOrderItem
-      .createMany({
-        data: [
-          {
-            orderId: order.id,
-            itemType: 'EQUIPMENT',
-            name: 'Máy pha cà phê chuyên nghiệp La Marzocco Linea PB 2 Group',
-            quantity: 1,
-            unitPrice: 175000000,
-            totalPrice: 175000000,
-            equipmentId: eq?.id || null,
-            notes: 'Máy pha cà phê 2 Group Head Dual Boiler nhập khẩu Ý',
-          },
-          {
-            orderId: order.id,
-            itemType: 'SPARE_PART',
-            name: 'Hệ thống xử lý nước & lọc canxi BWT Bestmax Premium 2XL',
-            quantity: 1,
-            unitPrice: 10000000,
-            totalPrice: 10000000,
-            notes: 'Hệ thống lọc nước chuyên dụng cho máy pha cafe espresso',
-          },
-        ],
-      })
-      .catch((e) => console.warn('[ensureSeedOrderItems] err:', e?.message));
-
-    return await prisma.customerOrderItem
-      .findMany({
-        where: { orderId: order.id },
-        orderBy: { id: 'asc' },
-      })
-      .catch(() => []);
-  }
-
-  return order.items || [];
-}
-
 export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
   if (!canViewSalesOrders(ctx)) return null;
   if (!prisma.customerOrder || !id) return null;
@@ -444,10 +305,6 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
     },
   });
   if (!o) return null;
-
-  if (!o.items || o.items.length === 0) {
-    (o as any).items = await ensureSeedOrderItems(o);
-  }
 
   // Tải thông tin máy móc liên quan để bản in & xem chi tiết có đầy đủ thông số kỹ thuật
   const eqIds = ((o.items || []) as any[]).map((it) => it.equipmentId).filter(Boolean);
@@ -515,7 +372,7 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
 
   const paid = Number(o.paidAmount || 0);
   const returned = Number(o.returnedAmount || 0);
-  const remaining = Math.max(0, total - returned - paid);
+  const remaining = computeOrderDebt({ ...o, totalAmount: total }).remaining;
 
   // Tự động chuyển COMPLETED nếu đã xuất kho và đã thu đủ 100% tiền
   if (o.stockIssuedAt && remaining <= 0 && !['COMPLETED', 'CANCELLED'].includes(o.status)) {
@@ -538,7 +395,8 @@ export async function getSalesOrderDetail(ctx: AuthContext, id: number) {
   };
 }
 
-export async function getCustomerById(id: number) {
+/** Hồ sơ đầy đủ của một khách. Bọc React cache: metadata và page cùng request chỉ truy vấn một lần. */
+export const getCustomerById = cache(async function getCustomerById(id: number) {
   if (!prisma.customer) return null;
   const numId = Number(id);
   if (!numId || isNaN(numId) || numId <= 0) return null;
@@ -616,9 +474,6 @@ export async function getCustomerById(id: number) {
     if (c && (c as any).orders) {
       const allCustMachines = (c as any).machines || [];
       for (const ord of (c as any).orders) {
-        if (!ord.items || ord.items.length === 0) {
-          ord.items = await ensureSeedOrderItems(ord);
-        }
         for (const it of (ord.items || []) as any[]) {
           if (it.equipmentId && !it.equipment) {
             it.equipment = allCustMachines.find((m: any) => m.id === it.equipmentId);
@@ -697,7 +552,7 @@ export async function getCustomerById(id: number) {
       return await prisma.customer.findUnique({ where: { id: numId } }).catch(() => null);
     }
   }
-}
+});
 
 export async function getCustomerMetrics(): Promise<CustomerMetrics> {
   if (!prisma.customer) {
@@ -981,16 +836,7 @@ export async function generateQuoteCode(): Promise<string> {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const prefix = `BG-${year}-${month}`;
-  try {
-    if (!prisma.customerQuotation) return `${prefix}001`;
-    const rows = await prisma.customerQuotation.findMany({
-      where: { quoteCode: { startsWith: prefix } },
-      select: { quoteCode: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.quoteCode), 3);
-  } catch {
-    return `${prefix}001`;
-  }
+  return nextCode('CustomerQuotation', prefix, 3);
 }
 
 /** Tính tiền một dòng báo giá: số lượng × đơn giá − chiết khấu dòng (không âm). */
@@ -1131,7 +977,6 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
     throw new Error(`Báo giá này đã chốt thành đơn ${quotation.orders[0].orderCode}`);
   }
 
-  const orderCode = await generateOrderCode();
   const inventoryIds = quotation.items
     .filter((item) =>
       (item.itemType === 'SPARE_PART' || (item.itemType === 'EQUIPMENT' && !item.equipmentId)) &&
@@ -1238,34 +1083,42 @@ export async function convertQuotationToOrder(quotationId: number, orderType = '
   const goodsAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const vatAmount = Number(quotation.vatAmount || 0);
 
-  const [order] = await prisma.$transaction([
-    prisma.customerOrder.create({
-      data: {
-        orderCode,
-        customerId: quotation.customerId,
-        locationId: quotation.locationId,
-        quotationId: quotation.id,
-        exchangeRate: Number(quotation.exchangeRate || 32500),
-        orderType,
-        status: hasShortage ? 'AWAITING_STOCK' : 'PENDING',
-        goodsAmount,
-        shippingFee: customerShippingFee,
-        vatRate: Number(quotation.vatRate || 0),
-        vatAmount,
-        totalAmount: Number(quotation.totalAmount),
-        orderDate: new Date(),
-        notes: `Chốt từ báo giá ${quotation.quoteCode}`,
-        items: { create: items },
-      },
-      include: { items: true, location: true },
-    }),
-    prisma.customerQuotation.update({
-      where: { id: quotation.id },
-      data: { status: 'ACCEPTED' },
-    }),
-  ]);
+  // Khoá dòng báo giá trong transaction rồi mới kiểm tra "đã chốt chưa": hai người
+  // bấm chốt cùng lúc thì người sau phải đợi và nhận lỗi, không sinh hai đơn.
+  return withFreshCode(generateOrderCode, (orderCode) =>
+    prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "CustomerQuotation" WHERE id = ${quotation.id} FOR UPDATE`;
+      const existing = await tx.customerOrder.findFirst({
+        where: { quotationId: quotation.id },
+        select: { orderCode: true },
+      });
+      if (existing) throw new Error(`Báo giá này đã chốt thành đơn ${existing.orderCode}`);
 
-  return order;
+      const order = await tx.customerOrder.create({
+        data: {
+          orderCode,
+          customerId: quotation.customerId,
+          locationId: quotation.locationId,
+          quotationId: quotation.id,
+          salespersonId: quotation.salespersonId,
+          exchangeRate: Number(quotation.exchangeRate || 32500),
+          orderType,
+          status: hasShortage ? 'AWAITING_STOCK' : 'PENDING',
+          goodsAmount,
+          shippingFee: customerShippingFee,
+          vatRate: Number(quotation.vatRate || 0),
+          vatAmount,
+          totalAmount: Number(quotation.totalAmount),
+          orderDate: new Date(),
+          notes: `Chốt từ báo giá ${quotation.quoteCode}`,
+          items: { create: items },
+        },
+        include: { items: true, location: true },
+      });
+      await tx.customerQuotation.update({ where: { id: quotation.id }, data: { status: 'ACCEPTED' } });
+      return order;
+    }),
+  );
 }
 
 // ── Giao hàng: xuất kho & đặt hàng nhà cung cấp ─────────────────
@@ -1791,34 +1644,13 @@ export async function createSupplierOrderFromCustomerOrder(
 export async function generatePaymentCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `TT-${year}-`;
-  try {
-    if (!prisma.customerPayment) return `${prefix}0001`;
-    const rows = await prisma.customerPayment.findMany({
-      where: { paymentCode: { startsWith: prefix } },
-      select: { paymentCode: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.paymentCode));
-  } catch {
-    return `${prefix}0001`;
-  }
+  return nextCode('CustomerPayment', prefix);
 }
 
 /** Công nợ của một đơn: phải thu, đã thu, còn lại, có quá hạn hay không. */
-export function orderDebt(order: {
-  totalAmount?: any;
-  paidAmount?: any;
-  returnedAmount?: any;
-  dueDate?: Date | string | null;
-  status?: string;
-}) {
-  const total = order.status === 'CANCELLED' ? 0 : Number(order.totalAmount || 0);
-  const paid = Number(order.paidAmount || 0);
-  // Hàng đã trả lại không còn là khoản khách phải trả
-  const returned = Math.min(total, Number(order.returnedAmount || 0));
-  const remaining = Math.max(0, total - returned - paid);
-  const due = order.dueDate ? new Date(order.dueDate) : null;
-  const overdue = Boolean(remaining > 0 && due && due < new Date(new Date().toDateString()));
-  return { total, paid, returned, remaining, overdue, dueDate: due };
+/** Công nợ của một đơn — xem công thức chung ở src/lib/customer-debt.ts. */
+export function orderDebt(order: DebtInput) {
+  return computeOrderDebt(order);
 }
 
 /** Tổng hợp công nợ của một khách hàng. */
@@ -1835,8 +1667,8 @@ export function summarizeCustomerDebt(orders: any[]) {
 export async function recordCustomerPayment(input: SaveCustomerPaymentInput, userId?: number) {
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
-  const paymentCode = await generatePaymentCode();
-  return prisma.$transaction(async (tx) => {
+  return withFreshCode(generatePaymentCode, (paymentCode) =>
+    prisma.$transaction(async (tx) => {
     const orders = await tx.customerOrder.findMany({
       where: { customerId: input.customerId, status: { not: 'CANCELLED' }, ...(input.orderId ? { id: input.orderId } : {}) },
       orderBy: [{ orderDate: 'asc' }, { id: 'asc' }],
@@ -1856,7 +1688,8 @@ export async function recordCustomerPayment(input: SaveCustomerPaymentInput, use
     // This audit identifies new unallocated deposits, distinguishing them from legacy payments.
     await tx.auditLog.create({ data: { actorId: userId || null, entityType: 'CustomerPayment', entityId: String(payment.id), action: 'ALLOCATE', diffJson: { allocations, amount } } });
     return { ...payment, unappliedAmount: unapplied };
-  }, { isolationLevel: 'Serializable' });
+  }, { isolationLevel: 'Serializable' }),
+  );
 }
 
 /** Reverse the original allocation, never infer its orders from today's balances. */
@@ -1908,16 +1741,7 @@ export interface SaveCustomerReturnInput {
 export async function generateReturnCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `TH-${year}-`;
-  try {
-    if (!prisma.customerReturn) return `${prefix}0001`;
-    const rows = await prisma.customerReturn.findMany({
-      where: { returnCode: { startsWith: prefix } },
-      select: { returnCode: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.returnCode));
-  } catch {
-    return `${prefix}0001`;
-  }
+  return nextCode('CustomerReturn', prefix);
 }
 
 /**
@@ -1939,8 +1763,8 @@ export async function createCustomerReturn(input: SaveCustomerReturnInput, userI
     }
   }
 
-  const returnCode = await generateReturnCode();
-  return prisma.$transaction(async (tx) => {
+  return withFreshCode(generateReturnCode, (returnCode) =>
+    prisma.$transaction(async (tx) => {
     if (input.settlement && !['CREDIT', 'REFUND'].includes(input.settlement)) {
       throw new Error('Hình thức xử lý tiền trả hàng không hợp lệ');
     }
@@ -2208,7 +2032,8 @@ export async function createCustomerReturn(input: SaveCustomerReturnInput, userI
       },
     });
     return { ...record, refundedAmount };
-  }, { isolationLevel: 'Serializable' });
+  }, { isolationLevel: 'Serializable' }),
+  );
 }
 
 export async function deleteCustomerReturn(id: number, actorId?: number) {

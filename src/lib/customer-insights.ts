@@ -1,12 +1,10 @@
+import { computeOrderDebt } from './customer-debt';
+
 export function customerInsights(customer: any, today = new Date()) {
-  const date = today.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
   const orders = (customer.orders || []).filter((o: any) => o.status !== 'CANCELLED');
   const rows = orders.map((o: any) => {
-    const total = Number(o.totalAmount ?? 0), paid = Number(o.paidAmount ?? 0);
-    const returned = Math.min(total, Number(o.returnedAmount ?? 0));
-    const remaining = Math.max(0, total - returned - paid);
-    const due = o.dueDate ? new Date(o.dueDate).toISOString().slice(0, 10) : null;
-    return { ...o, total, paid, returned, remaining, overdue: remaining > 0 && !!due && due < date };
+    const { total, paid, returned, remaining, overdue } = computeOrderDebt(o, today);
+    return { ...o, total, paid, returned, remaining, overdue };
   });
   const payments = customer.payments || [];
   const unapplied = payments.filter((p: any) => p.allocationVersion === 1).reduce((s: number, p: any) => s + Math.max(0, Number(p.amount) - (p.allocations || []).reduce((a: number, x: any) => a + Number(x.amount), 0)), 0);

@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -15,39 +16,47 @@ import {
   Card,
   Button,
   Badge,
-  usePaged,
-  Pagination,
   ActionMenu,
   ConfirmDialog,
   PageHeader,
 } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
+import { UrlPagination, useDebouncedSearch, useUrlParams } from '@/components/ui/url-state';
+import { SortHeader } from '@/components/ui/sort-header';
 import { fmtDate } from '@/lib/date';
-import {
-  CustomerQuotationModal,
-  CustomerQuotationPrintModal,
-} from '@/components/domain/customer-quotation-modal';
-import { OrderFulfillmentModal } from '@/components/domain/order-fulfillment-modal';
 import {
   deleteCustomerQuotationAction,
   convertQuotationToOrderAction,
+  getQuotationFormCatalogAction,
+  expireQuotationsAction,
 } from '@/server/modules/customer/actions';
 import { QUOTATION_STATUSES } from '@/server/modules/customer/types';
 
+// Modal chỉ tải khi cần mở, không nằm trong bundle đầu của trang
+const CustomerQuotationModal = dynamic(() => import('@/components/domain/customer-quotation-modal').then((m) => m.CustomerQuotationModal));
+const CustomerQuotationPrintModal = dynamic(() => import('@/components/domain/customer-quotation-modal').then((m) => m.CustomerQuotationPrintModal));
+const OrderFulfillmentModal = dynamic(() => import('@/components/domain/order-fulfillment-modal').then((m) => m.OrderFulfillmentModal));
+
+const STATUS_OPTIONS = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED'] as const;
+
 export function QuotationsScreen({
-  quotations = [],
-  customers = [],
-  spareParts = [],
-  stockMachines = [],
+  list,
+  filter,
+  sellers = [],
   warehouses = [],
   pricingConfig,
   companyInfo,
   canManage = false,
 }: {
-  quotations?: any[];
-  customers?: any[];
-  spareParts?: any[];
-  stockMachines?: any[];
+  list: {
+    rows: any[];
+    total: number;
+    page: number;
+    pageSize: number;
+    summary: { all: number; pending: number; accepted: number; totalValue: number; statusCounts: Record<string, number>; winRate: number | null };
+  };
+  filter: { q: string; status: string; seller: string; from: string; to: string; sort: string };
+  sellers?: { id: number; fullName: string }[];
   warehouses?: any[];
   pricingConfig?: any;
   companyInfo?: any;
@@ -57,8 +66,47 @@ export function QuotationsScreen({
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const { setParams } = useUrlParams();
+  const search = useDebouncedSearch();
+  const quotations = list.rows;
+  const summary = list.summary;
+  const hasFilter = Boolean(filter.q || filter.status || filter.seller || filter.from || filter.to);
+
+  // Chọn nhiều báo giá (chỉ nháp/đã gửi) để đánh dấu hết hiệu lực một lần
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const selectable = quotations.filter((q: any) => ['DRAFT', 'SENT'].includes(q.status)).map((q: any) => q.id as number);
+  const allSelected = selectable.length > 0 && selectable.every((id: number) => selected.has(id));
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const expireSelected = async () => {
+    const res = await expireQuotationsAction([...selected]);
+    if (res.ok) toast.success(res.message);
+    else toast.error(res.message);
+    setSelected(new Set());
+    startTransition(() => router.refresh());
+  };
+
+  // Khách, phụ tùng, máy cho form lập báo giá: tải khi mở form lần đầu
+  const [catalog, setCatalog] = useState<{ customers: any[]; spareParts: any[]; stockMachines: any[] } | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const openModal = async () => {
+    if (!catalog) {
+      setCatalogLoading(true);
+      const res = await getQuotationFormCatalogAction();
+      setCatalogLoading(false);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      setCatalog({ customers: (res as any).customers, spareParts: (res as any).spareParts, stockMachines: (res as any).stockMachines });
+    }
+    void openModal();
+  };
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<any | null>(null);
@@ -77,20 +125,6 @@ export function QuotationsScreen({
     onConfirm: () => void | Promise<void>;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
-  const filteredQuotations = quotations.filter((q: any) => {
-    if (statusFilter !== 'ALL' && q.status !== statusFilter) return false;
-    if (searchTerm.trim()) {
-      const s = searchTerm.toLowerCase().trim();
-      const codeMatch = q.quoteCode?.toLowerCase().includes(s);
-      const custMatch = q.customer?.name?.toLowerCase().includes(s);
-      const phoneMatch = q.customer?.phone?.includes(s);
-      const notesMatch = q.notes?.toLowerCase().includes(s);
-      return codeMatch || custMatch || phoneMatch || notesMatch;
-    }
-    return true;
-  });
-
-  const quotesPage = usePaged(filteredQuotations, 20);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -101,9 +135,10 @@ export function QuotationsScreen({
           canManage && (
             <Button
               size="sm"
+              loading={catalogLoading}
               onClick={() => {
                 setEditingQuotation(null);
-                setModalOpen(true);
+                void openModal();
               }}
               style={{
                 background: '#2563eb',
@@ -124,27 +159,30 @@ export function QuotationsScreen({
         <Card style={{ padding: '14px 18px' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Tổng số bản báo giá</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-strong)', marginTop: 4 }}>
-            {quotations.length}
+            {summary.all}
           </div>
         </Card>
         <Card style={{ padding: '14px 18px' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Đang chờ duyệt</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#2563eb', marginTop: 4 }}>
-            {quotations.filter((q: any) => q.status === 'SENT' || q.status === 'DRAFT').length}
+            {summary.pending}
           </div>
         </Card>
         <Card style={{ padding: '14px 18px' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Khách đã chốt duyệt</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>
-            {quotations.filter((q: any) => q.status === 'ACCEPTED').length}
+            {summary.accepted}
           </div>
+          {summary.winRate !== null && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Tỉ lệ chốt {Math.round(summary.winRate * 100)}% trên báo giá đã có kết quả
+            </div>
+          )}
         </Card>
         <Card style={{ padding: '14px 18px' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Tổng giá trị báo giá</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-strong)', marginTop: 4 }}>
-            {new Intl.NumberFormat('vi-VN').format(
-              quotations.reduce((sum: number, q: any) => sum + Number(q.totalAmount || 0), 0)
-            )} ₫
+            {new Intl.NumberFormat('vi-VN').format(summary.totalValue)} ₫
           </div>
         </Card>
       </div>
@@ -174,8 +212,8 @@ export function QuotationsScreen({
             <input
               type="text"
               placeholder="Tìm theo mã báo giá, khách hàng, số điện thoại..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={search.value}
+              onChange={(e) => search.onChange(e.target.value)}
               style={{
                 width: '100%',
                 padding: '8px 10px 8px 32px',
@@ -189,8 +227,9 @@ export function QuotationsScreen({
           </div>
 
           <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            value={filter.status}
+            onChange={(e) => setParams({ status: e.target.value || null })}
+            aria-label="Lọc trạng thái"
             style={{
               padding: '8px 12px',
               borderRadius: 6,
@@ -200,18 +239,38 @@ export function QuotationsScreen({
               color: 'var(--text-strong)',
             }}
           >
-            <option value="ALL">Tất cả trạng thái ({quotations.length})</option>
-            <option value="DRAFT">Bản nháp ({quotations.filter((q: any) => q.status === 'DRAFT').length})</option>
-            <option value="SENT">Đã gửi khách ({quotations.filter((q: any) => q.status === 'SENT').length})</option>
-            <option value="ACCEPTED">Khách đã duyệt ({quotations.filter((q: any) => q.status === 'ACCEPTED').length})</option>
-            <option value="REJECTED">Khách từ chối ({quotations.filter((q: any) => q.status === 'REJECTED').length})</option>
-            <option value="EXPIRED">Hết hiệu lực ({quotations.filter((q: any) => q.status === 'EXPIRED').length})</option>
+            <option value="">Tất cả trạng thái ({summary.all})</option>
+            {STATUS_OPTIONS.map((k) => (
+              <option key={k} value={k}>
+                {QUOTATION_STATUSES[k]?.label ?? k} ({summary.statusCounts[k] ?? 0})
+              </option>
+            ))}
           </select>
+          {sellers.length > 0 && (
+            <select
+              value={filter.seller}
+              onChange={(e) => setParams({ seller: e.target.value || null })}
+              aria-label="Lọc nhân viên kinh doanh"
+              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-base)', background: 'var(--surface-card)', fontSize: 13, color: 'var(--text-strong)' }}
+            >
+              <option value="">Mọi nhân viên KD</option>
+              {sellers.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+            </select>
+          )}
+          <input type="date" value={filter.from} onChange={(e) => setParams({ from: e.target.value || null })} aria-label="Từ ngày báo giá"
+            style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-base)', background: 'var(--surface-card)', fontSize: 13 }} />
+          <input type="date" value={filter.to} onChange={(e) => setParams({ to: e.target.value || null })} aria-label="Đến ngày báo giá"
+            style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-base)', background: 'var(--surface-card)', fontSize: 13 }} />
+          {hasFilter && (
+            <Button size="sm" variant="ghost" onClick={() => setParams({ q: null, status: null, seller: null, from: null, to: null })}>
+              Xoá lọc
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Quotations List */}
-      {filteredQuotations.length === 0 ? (
+      {quotations.length === 0 ? (
         <Card style={{ padding: '56px 24px', textAlign: 'center' }}>
           <div
             style={{
@@ -228,7 +287,7 @@ export function QuotationsScreen({
             <FileText size={28} />
           </div>
           <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-strong)' }}>
-            Chưa có bản báo giá nào
+            {hasFilter ? 'Không có báo giá nào khớp bộ lọc' : 'Chưa có bản báo giá nào'}
           </h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 460, margin: '0 auto 20px' }}>
             Lập báo giá chuyên nghiệp gửi khách hàng gồm linh kiện, thiết bị, dịch vụ, chiết khấu và thuế VAT. In khổ giấy A4 hoặc chốt thành đơn hàng bán.
@@ -236,9 +295,10 @@ export function QuotationsScreen({
           {canManage && (
             <Button
               size="sm"
+              loading={catalogLoading}
               onClick={() => {
                 setEditingQuotation(null);
-                setModalOpen(true);
+                void openModal();
               }}
               style={{ background: '#2563eb', color: '#fff' }}
             >
@@ -248,21 +308,47 @@ export function QuotationsScreen({
         </Card>
       ) : (
         <div className="table-wrap">
+          {canManage && selected.size > 0 && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid var(--border-base)', background: 'var(--brand-soft)' }}>
+              <strong style={{ fontSize: 13 }}>Đã chọn {selected.size} báo giá</strong>
+              <Button size="sm" variant="secondary" onClick={() => setConfirmDialog({
+                open: true,
+                title: 'Đánh dấu hết hiệu lực',
+                message: `Chuyển ${selected.size} báo giá đã chọn sang "Hết hiệu lực"?`,
+                confirmText: 'Xác nhận',
+                onConfirm: expireSelected,
+              })}>
+                Đánh dấu hết hiệu lực
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Bỏ chọn</Button>
+            </div>
+          )}
           <table className="table">
             <thead>
               <tr>
+                {canManage && (
+                  <th style={{ width: 36 }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      disabled={!selectable.length}
+                      onChange={() => setSelected(allSelected ? new Set() : new Set(selectable))}
+                      aria-label="Chọn tất cả báo giá nháp/đã gửi trên trang"
+                    />
+                  </th>
+                )}
                 <th style={{ width: 140, whiteSpace: 'nowrap' }}>Mã báo giá</th>
                 <th>Khách hàng</th>
-                <th style={{ width: 120 }}>Ngày lập</th>
-                <th style={{ width: 120 }}>Hiệu lực đến</th>
+                <SortHeader label="Ngày lập" sort={filter.sort} field="date" style={{ width: 120 }} />
+                <SortHeader label="Hiệu lực đến" sort={filter.sort} field="valid" style={{ width: 120 }} />
                 <th style={{ width: 100 }}>Số dòng</th>
                 <th style={{ width: 140 }}>Trạng thái</th>
-                <th className="num" style={{ width: 160 }}>Tổng thanh toán (VNĐ)</th>
+                <SortHeader label="Tổng thanh toán (VNĐ)" sort={filter.sort} field="total" className="num" style={{ width: 160 }} />
                 <th style={{ width: 120, textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {quotesPage.pageRows.map((q: any) => {
+              {quotations.map((q: any) => {
                 const statusCfg = QUOTATION_STATUSES[q.status] || {
                   label: q.status,
                   color: '#64748b',
@@ -271,7 +357,18 @@ export function QuotationsScreen({
                 const hasOrder = (q.orders?.length || 0) > 0;
 
                 return (
-                  <tr key={q.id}>
+                  <tr key={q.id} data-selected={selected.has(q.id) || undefined}>
+                    {canManage && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(q.id)}
+                          disabled={!['DRAFT', 'SENT'].includes(q.status)}
+                          onChange={() => toggle(q.id)}
+                          aria-label={`Chọn ${q.quoteCode}`}
+                        />
+                      </td>
+                    )}
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#2563eb' }}>
                         {q.quoteCode}
@@ -345,7 +442,7 @@ export function QuotationsScreen({
                                 icon: <Edit2 size={15} />,
                                 onClick: () => {
                                   setEditingQuotation(q);
-                                  setModalOpen(true);
+                                  void openModal();
                                 },
                               },
                               ...(!hasOrder && q.status !== 'REJECTED'
@@ -411,11 +508,11 @@ export function QuotationsScreen({
               })}
             </tbody>
           </table>
-          <Pagination {...quotesPage} unit="bản báo giá" />
+          <UrlPagination total={list.total} page={list.page} pageSize={list.pageSize} unit="bản báo giá" />
         </div>
       )}
 
-      {modalOpen && (
+      {modalOpen && catalog && (
         <CustomerQuotationModal
           open={modalOpen}
           onClose={() => {
@@ -423,10 +520,10 @@ export function QuotationsScreen({
             setEditingQuotation(null);
           }}
           quotation={editingQuotation}
-          customers={customers}
-          spareParts={spareParts}
+          customers={catalog.customers}
+          spareParts={catalog.spareParts}
           pricingConfig={pricingConfig}
-          stockMachines={stockMachines}
+          stockMachines={catalog.stockMachines}
           companyInfo={companyInfo}
           onSuccess={() => startTransition(() => router.refresh())}
         />

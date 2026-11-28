@@ -3,7 +3,9 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card, Button, Input, Select, Field, usePaged, Pagination, ConfirmDialog } from '@/components/ui';
+import { Card, Button, Input, Select, Field, ConfirmDialog } from '@/components/ui';
+import { UrlPagination, useDebouncedSearch, useUrlParams } from '@/components/ui/url-state';
+import type { PageMeta } from '@/lib/list-query';
 import { useToast } from '@/components/ui/toast';
 import {
   Wrench,
@@ -19,6 +21,7 @@ import { TICKET_PRIORITIES, TICKET_STATUSES } from '@/server/modules/equipment/t
 import {
   updateTicketStatusAction,
   deleteTicketAction,
+  getTicketFormCatalogAction,
 } from '@/server/modules/equipment/ticket-actions';
 import { TicketModal, TicketCloseModal } from '@/components/domain/ticket-modals';
 import { QuickReplacePartModal } from '@/components/domain/spare-parts-modals';
@@ -41,27 +44,42 @@ const iconBtn = (bg: string, color: string): React.CSSProperties => ({
 
 export function TicketScreen({
   tickets,
+  paging,
+  allCount,
+  filter,
   metrics,
-  equipments,
   technicians,
-  spareParts,
-  warehouses,
   canManage,
 }: {
   tickets: any[];
+  paging: PageMeta;
+  allCount: number;
+  filter: { status: string; priority: string; q: string };
   metrics: { open: number; inProgress: number; resolvedThisMonth: number };
-  equipments: any[];
   technicians: any[];
-  spareParts: any[];
-  warehouses: any[];
   canManage: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
 
-  const [status, setStatus] = useState('OPEN_ONLY');
-  const [priority, setPriority] = useState('ALL');
-  const [search, setSearch] = useState('');
+  const { setParams } = useUrlParams();
+  const search = useDebouncedSearch();
+  const { status, priority } = filter;
+
+  // Máy, phụ tùng, kho cho các form: tải khi mở form lần đầu
+  const [catalog, setCatalog] = useState<{ equipments: any[]; spareParts: any[]; warehouses: any[] } | null>(null);
+  const withCatalog = async (open: () => void) => {
+    if (!catalog) {
+      const res = await getTicketFormCatalogAction();
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      const r = res as any;
+      setCatalog({ equipments: r.equipments, spareParts: r.spareParts, warehouses: r.warehouses });
+    }
+    open();
+  };
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTicket, setEditTicket] = useState<any>(null);
@@ -69,20 +87,6 @@ export function TicketScreen({
   const [partTicket, setPartTicket] = useState<any>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const visible = tickets.filter((t: any) => {
-    if (status === 'OPEN_ONLY' && ['RESOLVED', 'CLOSED'].includes(t.status)) return false;
-    if (status !== 'ALL' && status !== 'OPEN_ONLY' && t.status !== status) return false;
-    if (priority !== 'ALL' && t.priority !== priority) return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      const hay = `${t.ticketCode} ${t.title} ${t.equipment?.machineCode} ${t.equipment?.name} ${t.customer?.name}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
-
-  // Phiếu sự cố dồn theo năm; chỉ đổ ra màn hình một trang mỗi lần
-  const paged = usePaged(visible, 20);
 
   const handleStatus = async (ticket: any, next: string) => {
     const res = await updateTicketStatusAction(ticket.id, next);
@@ -128,7 +132,7 @@ export function TicketScreen({
           </p>
         </div>
         {canManage && (
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
+          <Button variant="primary" onClick={() => void withCatalog(() => setCreateOpen(true))}>
             <Plus size={15} style={{ marginRight: 6 }} /> Tạo phiếu sự cố
           </Button>
         )}
@@ -151,7 +155,7 @@ export function TicketScreen({
       <Card style={{ padding: 14 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
           <Field label="Trạng thái">
-            <Select value={status} onChange={(e) => setStatus(e.target.value)} sizeSm>
+            <Select value={status} onChange={(e) => setParams({ status: e.target.value === 'OPEN_ONLY' ? null : e.target.value })} sizeSm>
               <option value="OPEN_ONLY">Đang mở (chưa đóng)</option>
               <option value="ALL">Tất cả</option>
               {Object.entries(TICKET_STATUSES).map(([k, v]) => (
@@ -162,7 +166,7 @@ export function TicketScreen({
             </Select>
           </Field>
           <Field label="Mức độ">
-            <Select value={priority} onChange={(e) => setPriority(e.target.value)} sizeSm>
+            <Select value={priority} onChange={(e) => setParams({ priority: e.target.value === 'ALL' ? null : e.target.value })} sizeSm>
               <option value="ALL">Tất cả</option>
               {['P1_CRITICAL', 'P2_MAJOR', 'MEDIUM', 'P3_ROUTINE'].map((k) => (
                 <option key={k} value={k}>
@@ -174,18 +178,18 @@ export function TicketScreen({
           <Field label="Tìm kiếm">
             <Input
               placeholder="Mã phiếu, tên máy, khách hàng..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={search.value}
+              onChange={(e) => search.onChange(e.target.value)}
               sizeSm
             />
           </Field>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 10 }}>
-          Hiển thị {visible.length} / {tickets.length} phiếu
+          Hiển thị {paging.total} / {allCount} phiếu
         </div>
       </Card>
 
-      {visible.length === 0 ? (
+      {tickets.length === 0 ? (
         <Card style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
           Không có phiếu nào khớp bộ lọc
         </Card>
@@ -213,7 +217,7 @@ export function TicketScreen({
                 </tr>
               </thead>
               <tbody>
-                {paged.pageRows.map((t: any) => {
+                {tickets.map((t: any) => {
                   const pr = TICKET_PRIORITIES[t.priority] || { label: t.priority, color: '#64748b', bg: '#f1f5f9' };
                   const st = TICKET_STATUSES[t.status] || { label: t.status, color: '#64748b', bg: '#f1f5f9' };
                   const closed = ['RESOLVED', 'CLOSED'].includes(t.status);
@@ -268,7 +272,7 @@ export function TicketScreen({
                                 </button>
                               )}
                               {!closed && (
-                                <button type="button" onClick={() => setPartTicket(t)} style={iconBtn('#eff6ff', '#2563eb')} title="Thay linh kiện">
+                                <button type="button" onClick={() => void withCatalog(() => setPartTicket(t))} style={iconBtn('#eff6ff', '#2563eb')} title="Thay linh kiện">
                                   <Package size={14} />
                                 </button>
                               )}
@@ -277,7 +281,7 @@ export function TicketScreen({
                                   <CheckCircle2 size={14} />
                                 </button>
                               )}
-                              <button type="button" onClick={() => setEditTicket(t)} style={iconBtn('var(--surface-sunken)', 'var(--text-strong)')} title="Sửa / phân công">
+                              <button type="button" onClick={() => void withCatalog(() => setEditTicket(t))} style={iconBtn('var(--surface-sunken)', 'var(--text-strong)')} title="Sửa / phân công">
                                 <UserCheck size={14} />
                               </button>
                               {parts.length === 0 && (
@@ -337,15 +341,15 @@ export function TicketScreen({
             </table>
           </div>
 
-          <Pagination {...paged} unit="phiếu sự cố" />
+          <UrlPagination total={paging.total} page={paging.page} pageSize={paging.pageSize} unit="phiếu sự cố" />
         </Card>
       )}
 
-      {(createOpen || editTicket) && (
+      {(createOpen || editTicket) && catalog && (
         <TicketModal
           open={createOpen || Boolean(editTicket)}
           ticket={editTicket}
-          equipments={equipments}
+          equipments={catalog.equipments}
           technicians={technicians}
           onClose={() => {
             setCreateOpen(false);
@@ -364,13 +368,13 @@ export function TicketScreen({
         />
       )}
 
-      {partTicket && (
+      {partTicket && catalog && (
         <QuickReplacePartModal
           open={Boolean(partTicket)}
           equipment={partTicket.equipment}
           ticketId={partTicket.id}
-          spareParts={spareParts}
-          warehouses={warehouses}
+          spareParts={catalog.spareParts}
+          warehouses={catalog.warehouses}
           onClose={() => setPartTicket(null)}
           onSuccess={() => router.refresh()}
         />

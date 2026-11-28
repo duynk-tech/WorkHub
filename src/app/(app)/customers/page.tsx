@@ -1,6 +1,9 @@
+import { redirect } from 'next/navigation';
 import { requireAuth, can } from '@/server/auth/context';
+import { canViewModule } from '@/server/auth/module-access';
 import { prisma } from '@/lib/prisma';
-import { listCustomers, getCustomerMetrics } from '@/server/modules/customer/service';
+import { listCustomersPage, getCustomerMetrics, CUSTOMER_SORTS } from '@/server/modules/customer/service';
+import { pageMeta, parseListQuery } from '@/lib/list-query';
 import { getCustomerCareList } from '@/server/modules/customer/care';
 import { CustomerScreen } from './customer-screen';
 
@@ -10,17 +13,18 @@ export const dynamic = 'force-dynamic';
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; within?: string; tab?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'customers')) redirect('/dashboard');
   const sp = await searchParams;
 
-  const filter = {
-    search: sp.q ?? '',
-  };
+  const query = parseListQuery(sp, { sorts: CUSTOMER_SORTS, defaultSort: 'created' });
+  const status = sp.status === 'ACTIVE' || sp.status === 'INACTIVE' ? sp.status : '';
+  const filter = { search: query.q, status, sort: query.sort };
 
   const [customers, metrics, care, technicians] = await Promise.all([
-    listCustomers(filter),
+    listCustomersPage(filter, query),
     getCustomerMetrics(),
     getCustomerCareList({ within: sp.within ? Number(sp.within) : 30 }),
     prisma.employee.findMany({
@@ -30,11 +34,12 @@ export default async function CustomersPage({
     }),
   ]);
 
-  const canManage = can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin;
+  const canManage = can(ctx, 'FEATURE_CUSTOMER_MANAGE');
 
   return (
     <CustomerScreen
-      customers={JSON.parse(JSON.stringify(customers))}
+      customers={JSON.parse(JSON.stringify(customers.rows))}
+      paging={pageMeta(customers.total, query.page, query.pageSize)}
       care={JSON.parse(JSON.stringify(care))}
       technicians={JSON.parse(JSON.stringify(technicians))}
       initialTab={sp.tab || (sp.within ? 'care' : undefined)}

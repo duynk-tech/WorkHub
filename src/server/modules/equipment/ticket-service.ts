@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { nextSequentialCode } from '@/lib/code-sequence';
+import { nextCode, withFreshCode } from '@/server/lib/code-sequence';
 
 /**
  * Phiếu sự cố & sửa chữa máy F&B.
@@ -34,16 +34,7 @@ export interface TicketFilter {
 export async function generateTicketCode(): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `TICK-${year}-`;
-  try {
-    if (!prisma.serviceTicket) return `${prefix}0001`;
-    const rows = await prisma.serviceTicket.findMany({
-      where: { ticketCode: { startsWith: prefix } },
-      select: { ticketCode: true },
-    });
-    return nextSequentialCode(prefix, rows.map((r) => r.ticketCode));
-  } catch {
-    return `${prefix}0001`;
-  }
+  return nextCode('ServiceTicket', prefix);
 }
 
 const TICKET_INCLUDE = {
@@ -94,6 +85,42 @@ export async function listServiceTickets(filter: TicketFilter = {}) {
     include: TICKET_INCLUDE,
     orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
   });
+}
+
+/** Danh sách phiếu sự cố phân trang phía server; status `OPEN_ONLY` = mọi phiếu chưa đóng. */
+export async function listServiceTicketsPage(
+  filter: TicketFilter,
+  page: { skip: number; take: number },
+) {
+  const where: any = {};
+  if (filter.status === 'OPEN_ONLY' || filter.openOnly) where.status = { notIn: ['RESOLVED', 'CLOSED'] };
+  else if (filter.status && filter.status !== 'ALL') where.status = filter.status;
+  if (filter.priority && filter.priority !== 'ALL') where.priority = filter.priority;
+  if (filter.customerId) where.customerId = filter.customerId;
+  if (filter.assignedToId) where.assignedToId = filter.assignedToId;
+  if (filter.search?.trim()) {
+    const q = filter.search.trim();
+    where.OR = [
+      { ticketCode: { contains: q, mode: 'insensitive' } },
+      { title: { contains: q, mode: 'insensitive' } },
+      { equipment: { machineCode: { contains: q, mode: 'insensitive' } } },
+      { equipment: { name: { contains: q, mode: 'insensitive' } } },
+      { customer: { name: { contains: q, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [rows, total, all] = await Promise.all([
+    prisma.serviceTicket.findMany({
+      where,
+      include: TICKET_INCLUDE,
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      skip: page.skip,
+      take: page.take,
+    }),
+    prisma.serviceTicket.count({ where }),
+    prisma.serviceTicket.count(),
+  ]);
+  return { rows, total, all };
 }
 
 export async function getServiceTicket(id: number) {
@@ -148,14 +175,16 @@ export async function saveServiceTicket(id: number | null, input: SaveTicketInpu
     });
   }
 
-  return prisma.serviceTicket.create({
-    data: {
-      ...data,
-      ticketCode: await generateTicketCode(),
-      status: input.assignedToId ? 'ASSIGNED' : 'OPEN',
-    },
-    include: TICKET_INCLUDE,
-  });
+  return withFreshCode(generateTicketCode, (ticketCode) =>
+    prisma.serviceTicket.create({
+      data: {
+        ...data,
+        ticketCode,
+        status: input.assignedToId ? 'ASSIGNED' : 'OPEN',
+      },
+      include: TICKET_INCLUDE,
+    }),
+  );
 }
 
 /** Phân công kỹ thuật viên; phiếu mới tiếp nhận sẽ tự chuyển sang "Đã phân công". */

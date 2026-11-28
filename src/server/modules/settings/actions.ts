@@ -333,7 +333,7 @@ export async function deleteZaloWebhookAction(botToken?: string): Promise<Result
 
 export async function clearZaloInboundLogsAction(): Promise<Result> {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_MCP_MANAGE') && !can(ctx, 'FEATURE_SETTING_ZALO') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_MCP_MANAGE') && !can(ctx, 'FEATURE_SETTING_ZALO')) {
     return { ok: false, message: 'Bạn không có quyền xóa nhật ký Webhook Zalo' };
   }
   try {
@@ -347,7 +347,7 @@ export async function clearZaloInboundLogsAction(): Promise<Result> {
 
 export async function deleteZaloInboundLogAction(id: number): Promise<Result> {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_MCP_MANAGE') && !can(ctx, 'FEATURE_SETTING_ZALO') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_MCP_MANAGE') && !can(ctx, 'FEATURE_SETTING_ZALO')) {
     return { ok: false, message: 'Bạn không có quyền xóa nhật ký Webhook Zalo' };
   }
   try {

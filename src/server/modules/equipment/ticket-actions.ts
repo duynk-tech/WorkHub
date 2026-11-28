@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAuth, can } from '@/server/auth/context';
+import { canViewModule, NO_ACCESS_MESSAGE } from '@/server/auth/module-access';
+import { ticketInputSchema } from './ticket-schema';
 import {
   listServiceTickets,
   getServiceTicket,
@@ -14,13 +16,12 @@ import {
 } from './ticket-service';
 
 function canManageTickets(ctx: any) {
-  return (
-    can(ctx, 'FEATURE_EQUIPMENT_MAINTENANCE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE') || ctx.isAdmin
-  );
+  return can(ctx, 'FEATURE_EQUIPMENT_MAINTENANCE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE');
 }
 
 export async function listTicketsAction(filter: TicketFilter) {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'tickets')) return { ok: false, message: NO_ACCESS_MESSAGE };
   try {
     const tickets = await listServiceTickets(filter);
     return { ok: true, message: '', tickets: JSON.parse(JSON.stringify(tickets)) };
@@ -31,7 +32,8 @@ export async function listTicketsAction(filter: TicketFilter) {
 }
 
 export async function getTicketAction(id: number) {
-  await requireAuth();
+  const ctx = await requireAuth();
+  if (!canViewModule(ctx, 'tickets')) return { ok: false, message: NO_ACCESS_MESSAGE };
   try {
     const ticket = await getServiceTicket(id);
     if (!ticket) return { ok: false, message: 'Không tìm thấy phiếu sự cố' };
@@ -46,6 +48,10 @@ export async function saveTicketAction(id: number | null, input: SaveTicketInput
   if (!canManageTickets(ctx)) {
     return { ok: false, message: 'Bạn không có quyền xử lý phiếu sự cố' };
   }
+
+  const parsed = ticketInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dữ liệu không hợp lệ' };
+  input = parsed.data as SaveTicketInput;
 
   try {
     const ticket = await saveServiceTicket(id, input);
@@ -201,5 +207,28 @@ export async function closeTicketWithBillingAction(
   } catch (error: any) {
     console.error('[closeTicketWithBillingAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi đóng phiếu' };
+  }
+}
+
+/** Danh mục cho form phiếu sự cố và thay linh kiện — nạp khi mở form. */
+export async function getTicketFormCatalogAction() {
+  const ctx = await requireAuth();
+  if (!canManageTickets(ctx)) return { ok: false, message: 'Bạn không có quyền xử lý phiếu sự cố' };
+  try {
+    const [{ listEquipment }, { listSpareParts, listWarehouses }] = await Promise.all([
+      import('./service'),
+      import('@/server/modules/spare-parts/service'),
+    ]);
+    const [equipments, spareParts, warehouses] = await Promise.all([listEquipment({}), listSpareParts({}), listWarehouses()]);
+    return {
+      ok: true,
+      message: '',
+      equipments: JSON.parse(JSON.stringify(equipments)),
+      spareParts: JSON.parse(JSON.stringify(spareParts)),
+      warehouses: JSON.parse(JSON.stringify(warehouses)),
+    };
+  } catch (error: any) {
+    console.error('[getTicketFormCatalogAction error]:', error);
+    return { ok: false, message: error.message || 'Lỗi khi tải danh mục' };
   }
 }

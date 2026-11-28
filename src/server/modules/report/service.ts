@@ -55,8 +55,29 @@ export async function attendanceReport(ctx: AuthContext, month: string) {
   };
 }
 
+export const MAX_REPORT_RANGE_DAYS = 366;
+
+/**
+ * Chuẩn hoá khoảng ngày yyyy-mm-dd của báo cáo: ngày sai định dạng thì rơi về
+ * đầu năm → hôm nay, đảo ngược thì hoán đổi, dài quá 366 ngày thì cắt bớt đầu.
+ * Không chặn thì một yêu cầu "từ 2000" sẽ quét toàn bộ bảng.
+ */
+export function normalizeReportRange(from?: string | null, to?: string | null, today = new Date()) {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const valid = (v?: string | null) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)));
+  let f = valid(from) ? from! : `${today.getFullYear()}-01-01`;
+  let t = valid(to) ? to! : iso(today);
+  if (f > t) [f, t] = [t, f];
+  const span = (Date.parse(`${t}T00:00:00Z`) - Date.parse(`${f}T00:00:00Z`)) / 86_400_000;
+  if (span > MAX_REPORT_RANGE_DAYS) {
+    f = iso(new Date(Date.parse(`${t}T00:00:00Z`) - MAX_REPORT_RANGE_DAYS * 86_400_000));
+  }
+  return { from: f, to: t, clamped: span > MAX_REPORT_RANGE_DAYS };
+}
+
 /** Báo cáo công việc: đúng hạn/trễ hạn, khối lượng theo người và phòng ban. */
-export async function taskReport(ctx: AuthContext, from: string, to: string) {
+export async function taskReport(ctx: AuthContext, rawFrom: string, rawTo: string) {
+  const { from, to } = normalizeReportRange(rawFrom, rawTo);
   const scopeIds = await visibleEmployeeIds(ctx);
   const range = { gte: new Date(from), lte: new Date(`${to}T23:59:59`) };
   const where = {
@@ -64,10 +85,12 @@ export async function taskReport(ctx: AuthContext, from: string, to: string) {
     ...(scopeIds ? { OR: [{ assigneeId: { in: scopeIds } }, { creatorId: { in: scopeIds } }] } : {}),
   };
 
+  // Chỉ lấy đúng các cột dùng để tổng hợp, không kéo mô tả/tag... của từng việc
   const tasks = await prisma.task.findMany({
     where,
-    include: {
-      assignee: { select: { id: true, fullName: true, code: true, department: { select: { name: true } } } },
+    select: {
+      status: true, priority: true, dueDate: true, completedAt: true,
+      assignee: { select: { fullName: true, code: true, department: { select: { name: true } } } },
       department: { select: { name: true } },
     },
   });

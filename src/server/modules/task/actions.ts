@@ -5,9 +5,11 @@ import { taskState, taskStatusSchema } from '@/lib/task-state';
 import { transitionTask, assertCompletion, assertChecklistEditable, syncChecklistProgress } from './mutations';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireAuth, requirePermission, can } from '@/server/auth/context';
-import { generateTaskCode, logActivity, notifyTaskAssigned, notifyTaskComment, taskScopeWhere } from './service';
+import { requireAuth, can } from '@/server/auth/context';
+import { generateTaskCode, logActivity, notifyTaskAssigned, notifyTaskComment, notifyTaskParticipants, taskScopeWhere } from './service';
 import { TASK_STATUS } from '@/lib/enums';
+import { parseRecurrence } from '@/lib/task-recurrence';
+import { writeAudit } from '@/server/lib/audit';
 import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
 
 export interface Result { ok: boolean; message: string; id?: number }
@@ -29,6 +31,8 @@ const taskSchema = z.object({
   watcherIds: z.array(z.number().int()).default([]),
   checklist: z.array(z.string()).default([]),
   reminderOffsetMinutes: z.number().int().nullable().optional(),
+  // Quy tắc lặp rút gọn FREQ=DAILY|WEEKLY|MONTHLY[;INTERVAL=n]; rỗng = không lặp
+  recurrenceRule: z.string().max(255).nullable().optional().refine((v) => !v || parseRecurrence(v) !== null, 'Quy tắc lặp không hợp lệ'),
 });
 
 async function assertCanEdit(taskId: number) {
@@ -41,6 +45,13 @@ async function assertCanEdit(taskId: number) {
     throw new Error('Bạn không có quyền sửa công việc này');
   }
   return { ctx, task };
+}
+
+/** Bình luận chỉ được thấy/sửa khi công việc chứa nó nằm trong phạm vi dữ liệu của người gọi. */
+async function findCommentInScope(ctx: Awaited<ReturnType<typeof requireAuth>>, commentId: number) {
+  return prisma.taskComment.findFirst({
+    where: { id: commentId, task: await taskScopeWhere(ctx) },
+  });
 }
 
 export async function saveTaskAction(id: number | null, raw: unknown): Promise<Result> {
@@ -90,6 +101,9 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
     estimateHours: d.estimateHours ?? null,
     tags: d.tags || null,
     progress: d.progress,
+    ...(d.recurrenceRule !== undefined
+      ? { isRecurring: Boolean(d.recurrenceRule), recurrenceRule: d.recurrenceRule || null }
+      : {}),
   };
 
   try {
@@ -188,7 +202,11 @@ export async function saveTaskAction(id: number | null, raw: unknown): Promise<R
 export async function updateTaskStatusAction(id: number, status: string, progress?: number): Promise<Result> {
   try {
     const ctx = await requireAuth();
-    await transitionTask(ctx, id, status, progress);
+    const before = await prisma.task.findUnique({ where: { id }, select: { status: true, reviewerId: true } });
+    const updated = await transitionTask(ctx, id, status, progress);
+    if (before && before.status !== updated.status) {
+      await notifyStatusChange(ctx, id, updated.status, before.reviewerId).catch(() => {});
+    }
 
     revalidatePath('/tasks');
     revalidatePath(`/tasks/${id}`);
@@ -213,14 +231,13 @@ export async function updateTaskProgressAction(id: number, progress: number): Pr
 }
 
 export async function deleteTaskAction(id: number): Promise<Result> {
-  const ctx = await requirePermission('FEATURE_TASK_DELETE');
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_TASK_DELETE')) return { ok: false, message: 'Bạn không có quyền xóa công việc' };
   const task = await prisma.task.findFirst({ where: { AND: [{ id }, await taskScopeWhere(ctx)] } });
   if (!task) return { ok: false, message: 'Không tìm thấy công việc' };
 
   await prisma.task.delete({ where: { id } });
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'Task', entityId: String(id), action: 'DELETE', diffJson: { code: task.code, title: task.title } as never },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'Task', entityId: id, action: 'DELETE', diff: { code: task.code, title: task.title } });
 
   revalidatePath('/tasks');
   return { ok: true, message: `Đã xóa công việc ${task.code}` };
@@ -249,7 +266,7 @@ export async function updateCommentAction(commentId: number, content: string): P
   const trimmed = content.trim();
   if (!trimmed) return { ok: false, message: 'Nội dung bình luận trống' };
 
-  const comment = await prisma.taskComment.findUnique({ where: { id: commentId } });
+  const comment = await findCommentInScope(ctx, commentId);
   if (!comment) return { ok: false, message: 'Không tìm thấy bình luận' };
   if (comment.authorId !== ctx.employeeId && !ctx.isAdmin) {
     return { ok: false, message: 'Bạn chỉ có thể sửa bình luận của mình' };
@@ -262,9 +279,9 @@ export async function updateCommentAction(commentId: number, content: string): P
 
 export async function deleteCommentAction(commentId: number): Promise<Result> {
   const ctx = await requireAuth();
-  const comment = await prisma.taskComment.findUnique({ where: { id: commentId } });
+  const comment = await findCommentInScope(ctx, commentId);
   if (!comment) return { ok: false, message: 'Không tìm thấy bình luận' };
-  if (comment.authorId !== ctx.employeeId && !ctx.isAdmin && !can(ctx, 'FEATURE_TASK_EDIT')) {
+  if (comment.authorId !== ctx.employeeId && !can(ctx, 'FEATURE_TASK_EDIT')) {
     return { ok: false, message: 'Bạn không có quyền xóa bình luận này' };
   }
 
@@ -274,6 +291,7 @@ export async function deleteCommentAction(commentId: number): Promise<Result> {
 }
 
 export async function toggleChecklistAction(itemId: number, isDone: boolean): Promise<Result> {
+  await requireAuth();
   const item = await prisma.taskChecklistItem.findUnique({ where: { id: itemId } });
   if (!item) return { ok: false, message: 'Không tìm thấy mục checklist' };
 
@@ -311,6 +329,7 @@ export async function addChecklistItemAction(taskId: number, content: string): P
 }
 
 export async function deleteChecklistItemAction(itemId: number): Promise<Result> {
+  await requireAuth();
   const item = await prisma.taskChecklistItem.findUnique({ where: { id: itemId } });
   if (!item) return { ok: false, message: 'Không tìm thấy mục' };
   try {
@@ -419,4 +438,111 @@ export async function toggleWatchTaskAction(taskId: number): Promise<Result> {
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Cập nhật theo dõi thất bại' };
   }
+}
+
+/**
+ * Báo người liên quan khi công việc đổi trạng thái. Chuyển sang "Chờ duyệt" thì
+ * chỉ báo người nghiệm thu (đó là việc của họ), các trạng thái khác báo cả nhóm.
+ */
+async function notifyStatusChange(
+  ctx: Awaited<ReturnType<typeof requireAuth>>,
+  taskId: number,
+  status: string,
+  reviewerId: number | null,
+) {
+  const label = TASK_STATUS[status]?.label ?? status;
+  if (status === 'REVIEW' && reviewerId) {
+    await notifyTaskParticipants(taskId, ctx.employeeId, (t) => ({
+      title: `${ctx.fullName} gửi ${t.code} chờ bạn nghiệm thu`,
+      body: t.title,
+    }), { only: [reviewerId] });
+    return;
+  }
+  await notifyTaskParticipants(taskId, ctx.employeeId, (t) => ({
+    title: `${t.code} chuyển sang "${label}"`,
+    body: `${ctx.fullName} cập nhật: ${t.title}`,
+  }));
+}
+
+const bulkSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(200),
+  action: z.enum(['status', 'assign', 'delete']),
+  status: taskStatusSchema.optional(),
+  assigneeId: z.number().int().positive().nullable().optional(),
+});
+
+export interface BulkResult extends Result {
+  done: number;
+  failed: { id: number; message: string }[];
+}
+
+/**
+ * Thao tác hàng loạt trên danh sách công việc. Mỗi việc đi qua đúng luật như
+ * khi làm lẻ (phạm vi dữ liệu, quyền sửa, điều kiện hoàn thành), việc nào không
+ * đạt thì bỏ qua và báo lại, không làm hỏng cả lô.
+ */
+export async function bulkTaskAction(raw: unknown): Promise<BulkResult> {
+  const ctx = await requireAuth();
+  const parsed = bulkSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, message: 'Dữ liệu không hợp lệ', done: 0, failed: [] };
+  const { ids, action } = parsed.data;
+
+  if (action === 'delete' && !can(ctx, 'FEATURE_TASK_DELETE')) {
+    return { ok: false, message: 'Bạn không có quyền xóa công việc', done: 0, failed: [] };
+  }
+  if (action === 'assign' && !can(ctx, 'FEATURE_TASK_ASSIGN')) {
+    return { ok: false, message: 'Bạn không có quyền giao việc', done: 0, failed: [] };
+  }
+  if (action === 'status' && !parsed.data.status) {
+    return { ok: false, message: 'Chưa chọn trạng thái', done: 0, failed: [] };
+  }
+
+  const failed: { id: number; message: string }[] = [];
+  let done = 0;
+
+  if (action === 'status') {
+    for (const id of ids) {
+      const r = await updateTaskStatusAction(id, parsed.data.status!);
+      if (r.ok) done++;
+      else failed.push({ id, message: r.message });
+    }
+  } else {
+    const scope = await taskScopeWhere(ctx);
+    const tasks = await prisma.task.findMany({
+      where: { AND: [{ id: { in: ids } }, scope] },
+      select: { id: true, code: true, title: true, assigneeId: true },
+    });
+    const found = new Set(tasks.map((t) => t.id));
+    for (const id of ids) if (!found.has(id)) failed.push({ id, message: 'Không tìm thấy hoặc ngoài phạm vi dữ liệu' });
+
+    if (action === 'delete' && tasks.length) {
+      await prisma.$transaction([
+        prisma.task.deleteMany({ where: { id: { in: tasks.map((t) => t.id) } } }),
+        prisma.auditLog.createMany({
+          data: tasks.map((t) => ({
+            actorId: ctx.userId, entityType: 'Task', entityId: String(t.id), action: 'DELETE',
+            diffJson: { code: t.code, title: t.title, bulk: true },
+          })),
+        }),
+      ]);
+      done = tasks.length;
+    }
+
+    if (action === 'assign' && tasks.length) {
+      const assigneeId = parsed.data.assigneeId ?? null;
+      const changed = tasks.filter((t) => t.assigneeId !== assigneeId);
+      await prisma.task.updateMany({ where: { id: { in: changed.map((t) => t.id) } }, data: { assigneeId } });
+      for (const t of changed) {
+        await logActivity(t.id, ctx.employeeId, 'ASSIGN', 'assigneeId', t.assigneeId ? String(t.assigneeId) : null, assigneeId ? String(assigneeId) : null);
+        if (assigneeId) await notifyTaskAssigned(t.id, ctx.fullName).catch(() => {});
+      }
+      done = tasks.length;
+    }
+  }
+
+  revalidatePath('/tasks');
+  const message = failed.length
+    ? `Đã xử lý ${done}/${ids.length} công việc; ${failed.length} việc bị bỏ qua`
+    : `Đã xử lý ${done} công việc`;
+  return { ok: done > 0 || failed.length === 0, message, done, failed };
 }

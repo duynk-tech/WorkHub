@@ -1257,6 +1257,8 @@ a.list-row:hover { background: var(--surface-hover); }
 
 /* ── Bảng Kanban ──────────────────────────────────────────── */
 .kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(268px, 1fr); gap: 13px; overflow-x: auto; padding-bottom: 8px; }
+/* Dòng đang được chọn để thao tác hàng loạt */
+.table tr[data-selected] td { background: var(--brand-soft); }
 /* Bảng Kanban — màu chỉ dùng để nhận cột, thẻ giữ nền trắng cho dễ đọc.
    Mỗi cột nhận màu trạng thái qua biến --col đặt inline từ TASK_STATUS. */
 .kanban-col {

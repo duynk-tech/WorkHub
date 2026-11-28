@@ -1,5 +1,7 @@
 'use client';
 
+import { isTaskOverdue } from '@/lib/task-state';
+import { describeRecurrence } from '@/lib/task-recurrence';
 import { useState, useTransition, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -140,9 +142,14 @@ export function TaskDetail({
     run(() => addCommentAction(task.id, text));
   };
 
-  const overdue = task.dueDate && new Date(task.dueDate) < new Date() && !['DONE', 'CANCELLED'].includes(task.status);
+  const overdue = isTaskOverdue(task);
   const doneCount = task.checklist.filter((c: any) => c.isDone).length;
   const subDoneCount = task.subTasks.filter((s: any) => s.status === 'DONE').length;
+  // Tiến độ gộp của việc con (bỏ việc đã hủy): cho thấy việc cha thực sự đi tới đâu
+  const activeSubs = task.subTasks.filter((s: any) => s.status !== 'CANCELLED');
+  const subProgress = activeSubs.length
+    ? Math.round(activeSubs.reduce((sum: number, s: any) => sum + (s.status === 'DONE' ? 100 : Number(s.progress || 0)), 0) / activeSubs.length)
+    : null;
   const isWatching = task.watchers.some((w: any) => w.employeeId === currentEmployeeId);
   const activeReminder = task.reminders?.[0] ?? null;
 
@@ -156,6 +163,7 @@ export function TaskDetail({
     tags: task.tags ?? '', progress: task.progress,
     watcherIds: task.watchers.map((w: any) => w.employeeId),
     checklist: [], reminderOffsetMinutes: activeReminder?.offsetMinutesBeforeDue ?? null,
+    recurrenceRule: task.isRecurring ? (task.recurrenceRule ?? '') : '',
   };
 
   const subtaskInitial: TaskFormValue = {
@@ -190,6 +198,9 @@ export function TaskDetail({
               <TaskStatusBadge status={task.status} />
               <TaskPriorityBadge priority={task.priority} />
               {overdue && <Badge tone="danger">Quá hạn</Badge>}
+              {task.isRecurring && describeRecurrence(task.recurrenceRule) && (
+                <Badge tone="outline" title="Đóng việc này sẽ tự tạo lần kế tiếp">↻ {describeRecurrence(task.recurrenceRule)}</Badge>
+              )}
             </div>
             <h1 className="page-title">{task.title}</h1>
           </div>
@@ -319,7 +330,10 @@ export function TaskDetail({
                 <div>
                   <CardTitle>Công việc con ({task.subTasks.length})</CardTitle>
                   {task.subTasks.length > 0 && (
-                    <div className="card-subtitle">{subDoneCount}/{task.subTasks.length} việc con đã hoàn thành</div>
+                    <div className="card-subtitle">
+                      {subDoneCount}/{task.subTasks.length} việc con đã hoàn thành
+                      {subProgress !== null && ` · tiến độ gộp ${subProgress}%`}
+                    </div>
                   )}
                 </div>
                 {canCreate && (
@@ -465,11 +479,11 @@ export function TaskDetail({
             <div className="tabs" style={{ padding: '0 16px' }}>
               <div className="tab" data-active={tab === 'comments'} onClick={() => handleTabChange('comments')}>
                 <MessageSquare size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
-                Bình luận ({task.comments.length})
+                Bình luận ({task._count?.comments ?? task.comments.length})
               </div>
               <div className="tab" data-active={tab === 'time'} onClick={() => handleTabChange('time')}>
                 <Timer size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
-                Chấm giờ ({task.timeLogs.length})
+                Chấm giờ ({task._count?.timeLogs ?? task.timeLogs.length})
               </div>
               <div className="tab" data-active={tab === 'activity'} onClick={() => handleTabChange('activity')}>
                 <Activity size={13} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
@@ -508,6 +522,11 @@ export function TaskDetail({
 
                   <Divider />
 
+                  {(task._count?.comments ?? 0) > task.comments.length && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                      Đang hiện {task.comments.length} bình luận gần nhất trên tổng {task._count.comments}.
+                    </div>
+                  )}
                   {task.comments.length === 0 ? (
                     <EmptyState icon={<MessageSquare size={18} />} title="Chưa có bình luận" />
                   ) : (

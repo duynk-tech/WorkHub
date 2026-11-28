@@ -1,21 +1,18 @@
 'use client';
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle, Printer, Undo2, PackageCheck, CircleX } from 'lucide-react';
 import {
-  Badge, Button, Card, PageHeader, Pagination, SearchInput, SearchableSelect, StatCard, usePaged,
+  Badge, Button, Card, Input, PageHeader, SearchInput, SearchableSelect, StatCard,
 } from '@/components/ui';
+import { UrlPagination, useDebouncedSearch, useUrlParams } from '@/components/ui/url-state';
+import { SortHeader } from '@/components/ui/sort-header';
 import { fmtDate } from '@/lib/date';
-import { SalesOrderDetailModal } from '@/components/domain/sales-order-detail-modal';
-import { QuickSaleModal } from '@/components/domain/quick-sale-modal';
-import { CustomerOrderModal } from '@/components/domain/customer-modals';
-import { CustomerPaymentModal } from '@/components/domain/customer-payment-modal';
-import { CustomerReturnModal } from '@/components/domain/customer-return-modal';
-import { CustomerOrderPrintModal } from '@/components/domain/customer-order-print-modal';
 import { OrderFulfillmentModal, type FulfillmentMode } from '@/components/domain/order-fulfillment-modal';
-import { cancelCustomerOrderAction, getCustomerOrderContextAction, getSalesOrderDetailAction } from '@/server/modules/customer/actions';
+import { cancelCustomerOrderAction, getCustomerOrderContextAction, getOrderFormCatalogAction, getSalesOrderDetailAction } from '@/server/modules/customer/actions';
 import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -23,6 +20,14 @@ import {
   ORDER_STATUSES,
   ORDER_TYPES,
 } from '@/server/modules/customer/types';
+
+// Modal chỉ tải khi cần mở, không nằm trong bundle đầu của trang
+const SalesOrderDetailModal = dynamic(() => import('@/components/domain/sales-order-detail-modal').then((m) => m.SalesOrderDetailModal));
+const QuickSaleModal = dynamic(() => import('@/components/domain/quick-sale-modal').then((m) => m.QuickSaleModal));
+const CustomerOrderModal = dynamic(() => import('@/components/domain/customer-modals').then((m) => m.CustomerOrderModal));
+const CustomerPaymentModal = dynamic(() => import('@/components/domain/customer-payment-modal').then((m) => m.CustomerPaymentModal));
+const CustomerReturnModal = dynamic(() => import('@/components/domain/customer-return-modal').then((m) => m.CustomerReturnModal));
+const CustomerOrderPrintModal = dynamic(() => import('@/components/domain/customer-order-print-modal').then((m) => m.CustomerOrderPrintModal));
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -135,42 +140,46 @@ function OrderActionButton({
   );
 }
 
-const isCompletedOrCancelled = (o: any) =>
-  ['COMPLETED', 'CANCELLED'].includes(o.status) || (Boolean(o.stockIssuedAt) && Number(o.remaining || 0) <= 0);
-
-/** Nhóm theo việc kinh doanh phải làm, không theo cột dữ liệu. */
-const CHIPS: { key: string; label: string; color: string; match: (o: any) => boolean }[] = [
-  { key: 'ALL', label: 'Tất cả', color: 'var(--brand)', match: () => true },
-  {
-    key: 'OPEN',
-    label: 'Chưa hoàn tất',
-    color: '#d97706',
-    match: (o) => !isCompletedOrCancelled(o),
-  },
-  {
-    key: 'AWAITING',
-    label: 'Chờ xuất kho',
-    color: '#7c3aed',
-    match: (o) => !o.stockIssuedAt && ['AWAITING_STOCK', 'READY_TO_DELIVER'].includes(o.status),
-  },
-  { key: 'DEBT', label: 'Còn phải thu', color: '#dc2626', match: (o) => Number(o.remaining) > 0 },
+/** Nhóm theo việc kinh doanh phải làm, không theo cột dữ liệu. Lọc chạy ở server (sales-list.ts). */
+const CHIPS: { key: string; label: string }[] = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'OPEN', label: 'Chưa hoàn tất' },
+  { key: 'AWAITING', label: 'Chờ xuất kho' },
+  { key: 'DEBT', label: 'Còn phải thu' },
+  { key: 'OVERDUE', label: 'Quá hạn thanh toán' },
 ];
 
+interface SalesFilterState {
+  q: string;
+  chip: string;
+  type: string;
+  seller: string;
+  from: string;
+  to: string;
+  sort: string;
+}
+
 export function SalesScreen({
-  orders = [],
+  list,
+  filter,
   customers = [],
-  spareParts = [],
-  stockMachines = [],
+  sellers = [],
   pricingConfig,
   companyInfo,
   warehouses = [],
   canManage = false,
 }: {
-  orders?: any[];
+  list: {
+    rows: any[];
+    total: number;
+    page: number;
+    pageSize: number;
+    summary: { open: number; awaiting: number; revenue: number; remaining: number; overdue: number; chipCounts: Record<string, number> };
+  };
+  filter: SalesFilterState;
   /** Danh sách khách để chọn khi lập đơn — chỉ cần id, mã, tên, điện thoại. */
   customers?: any[];
-  spareParts?: any[];
-  stockMachines?: any[];
+  sellers?: { id: number; fullName: string }[];
   pricingConfig?: any;
   companyInfo?: any;
   warehouses?: any[];
@@ -179,9 +188,13 @@ export function SalesScreen({
   const router = useRouter();
   const [quickSaleOpen, setQuickSaleOpen] = useState(false);
   const toast = useToast();
-  const [search, setSearch] = useState('');
-  const [chip, setChip] = useState('ALL');
-  const [typeFilter, setTypeFilter] = useState('');
+  const { setParams, isPending } = useUrlParams();
+  const search = useDebouncedSearch();
+  const orders = list.rows;
+  const totals = list.summary;
+  const hasFilter = Boolean(filter.q || filter.chip !== 'ALL' || filter.type || filter.seller || filter.from || filter.to);
+  // Phụ tùng và máy trong kho chỉ tải khi mở form lập đơn lần đầu
+  const [catalog, setCatalog] = useState<{ spareParts: any[]; stockMachines: any[] } | null>(null);
   // Xem chi tiết bằng popup: bấm xong đóng lại là vẫn ở đúng trang và bộ lọc đang xem
   const [detailId, setDetailId] = useState<number | null>(null);
   const [actionOrder, setActionOrder] = useState<any>(null);
@@ -205,11 +218,21 @@ export function SalesScreen({
 
   const openOrderForm = async (customerId: number) => {
     setLoadingCtx(true);
-    const res = await getCustomerOrderContextAction(customerId);
+    const [res, cat] = await Promise.all([
+      getCustomerOrderContextAction(customerId),
+      catalog ? Promise.resolve(null) : getOrderFormCatalogAction(),
+    ]);
     setLoadingCtx(false);
     if (!res.ok) {
       toast.error(res.message);
       return;
+    }
+    if (cat) {
+      if (!cat.ok) {
+        toast.error(cat.message);
+        return;
+      }
+      setCatalog({ spareParts: (cat as any).spareParts, stockMachines: (cat as any).stockMachines });
     }
     setPickCustomerOpen(false);
     setPickedCustomerId('');
@@ -262,49 +285,15 @@ export function SalesScreen({
     }
   }, [customerIdParam]);
 
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    const rule = CHIPS.find((c) => c.key === chip)!;
-    return orders.filter((o) => {
-      if (!rule.match(o)) return false;
-      if (typeFilter && o.orderType !== typeFilter) return false;
-      if (!s) return true;
-      return [o.orderCode, o.customer?.name, o.customer?.code, o.customer?.phone]
-        .some((v) => String(v || '').toLowerCase().includes(s));
-    });
-  }, [orders, search, chip, typeFilter]);
-
-  const paged = usePaged(filtered, 20);
-
-  // Số liệu tính trên toàn bộ đơn, không theo bộ lọc: đây là hiện trạng chung
-  const totals = useMemo(
-    () =>
-      orders.reduce(
-        (acc, o) => {
-          const open = !isCompletedOrCancelled(o);
-          return {
-            open: acc.open + (open ? 1 : 0),
-            awaiting:
-              acc.awaiting +
-              (!o.stockIssuedAt && ['AWAITING_STOCK', 'READY_TO_DELIVER'].includes(o.status) ? 1 : 0),
-            revenue: acc.revenue + (o.status === 'CANCELLED' ? 0 : Number(o.total || 0)),
-            remaining: acc.remaining + Number(o.remaining || 0),
-          };
-        },
-        { open: 0, awaiting: 0, revenue: 0, remaining: 0 },
-      ),
-    [orders],
-  );
-
   return (
     <div className="stack">
       {quickSaleOpen && <QuickSaleModal onClose={() => setQuickSaleOpen(false)} onSuccess={() => { setQuickSaleOpen(false); toast.success("Đã thanh toán và xuất kho. Mở đơn để in phiếu bán hàng."); router.refresh(); }} />}
       <PageHeader
         title="Bán hàng"
         description={
-          filtered.length === orders.length
-            ? `${orders.length} đơn bán`
-            : `${filtered.length}/${orders.length} đơn khớp bộ lọc`
+          hasFilter
+            ? `${list.total}/${totals.chipCounts.ALL} đơn khớp bộ lọc`
+            : `${list.total} đơn bán`
         }
         actions={
           canManage ? (
@@ -337,21 +326,21 @@ export function SalesScreen({
         />
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', opacity: isPending ? 0.7 : 1 }}>
         <SearchInput
           placeholder="Tìm theo mã đơn, tên khách, mã khách, số điện thoại…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={search.value}
+          onChange={(e) => search.onChange(e.target.value)}
           style={{ flex: 1, minWidth: 260, maxWidth: 420 }}
         />
         <SearchableSelect
           sizeSm
           style={{ width: 'auto', minWidth: 190 }}
-          value={chip}
-          onChange={(val) => setChip(val || 'ALL')}
+          value={filter.chip}
+          onChange={(val) => setParams({ chip: val && val !== 'ALL' ? val : null })}
           options={CHIPS.map((c) => ({
             value: c.key,
-            label: `${c.label} (${orders.filter(c.match).length})`,
+            label: `${c.label} (${totals.chipCounts[c.key] ?? 0})`,
           }))}
           placeholder="Tất cả trạng thái"
           searchPlaceholder="Lọc trạng thái…"
@@ -359,8 +348,8 @@ export function SalesScreen({
         <SearchableSelect
           sizeSm
           style={{ width: 'auto', minWidth: 200 }}
-          value={typeFilter}
-          onChange={setTypeFilter}
+          value={filter.type}
+          onChange={(val) => setParams({ type: val || null })}
           options={[
             { value: '', label: 'Tất cả loại đơn' },
             ...Object.entries(ORDER_TYPES).map(([k, v]) => ({ value: k, label: v.label })),
@@ -368,9 +357,34 @@ export function SalesScreen({
           placeholder="Tất cả loại đơn"
           searchPlaceholder="Tìm loại đơn…"
         />
+        {sellers.length > 0 && (
+          <SearchableSelect
+            sizeSm
+            style={{ width: 'auto', minWidth: 190 }}
+            value={filter.seller}
+            onChange={(val) => setParams({ seller: val || null })}
+            options={[
+              { value: '', label: 'Mọi nhân viên KD' },
+              ...sellers.map((e) => ({ value: String(e.id), label: e.fullName })),
+            ]}
+            placeholder="Mọi nhân viên KD"
+            searchPlaceholder="Tìm nhân viên…"
+          />
+        )}
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text-muted)' }}>
+          Từ
+          <Input type="date" value={filter.from} onChange={(e) => setParams({ from: e.target.value || null })} style={{ width: 150, height: 32 }} aria-label="Từ ngày đặt" />
+          đến
+          <Input type="date" value={filter.to} onChange={(e) => setParams({ to: e.target.value || null })} style={{ width: 150, height: 32 }} aria-label="Đến ngày đặt" />
+        </label>
+        {hasFilter && (
+          <Button size="sm" variant="ghost" onClick={() => setParams({ q: null, chip: null, type: null, seller: null, from: null, to: null })}>
+            Xoá lọc
+          </Button>
+        )}
       </div>
 
-      {filtered.length === 0 ? (
+      {orders.length === 0 ? (
         <Card style={{ padding: '48px 24px', textAlign: 'center' }}>
           <div
             style={{
@@ -382,14 +396,14 @@ export function SalesScreen({
             <ShoppingCart size={28} />
           </div>
           <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-strong)' }}>
-            {orders.length === 0 ? 'Chưa có đơn bán nào' : 'Không có đơn nào khớp'}
+            {!hasFilter ? 'Chưa có đơn bán nào' : 'Không có đơn nào khớp'}
           </h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 460, margin: '0 auto 18px' }}>
-            {orders.length === 0
+            {!hasFilter
               ? 'Chọn khách rồi lập đơn ngay tại đây — địa điểm giao, máy tại khách và báo giá đã chốt sẽ tự nạp theo khách.'
               : 'Thử bỏ bớt bộ lọc hoặc đổi từ khóa tìm kiếm.'}
           </p>
-          {orders.length === 0 && canManage && (
+          {!hasFilter && canManage && (
             <Button size="sm" variant="primary" onClick={() => setPickCustomerOpen(true)}>
               <Plus /> Tạo đơn bán đầu tiên
             </Button>
@@ -404,14 +418,14 @@ export function SalesScreen({
                 <th>Khách hàng</th>
                 <th style={{ width: 170 }}>Trạng thái đơn</th>
                 <th style={{ width: 125 }}>Giao hàng</th>
-                <th style={{ width: 110 }}>Ngày đặt</th>
-                <th className="num" style={{ width: 130 }}>Tổng tiền</th>
-                <th className="num" style={{ width: 130 }}>Còn phải thu</th>
+                <SortHeader label="Ngày đặt" sort={filter.sort} field="date" ascField="date_asc" style={{ width: 110 }} />
+                <SortHeader label="Tổng tiền" sort={filter.sort} field="total" className="num" style={{ width: 130 }} />
+                <SortHeader label="Còn phải thu" sort={filter.sort} field="remaining" className="num" style={{ width: 130 }} />
                 <th style={{ width: 220, textAlign: 'center' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {paged.pageRows.map((o: any) => {
+              {orders.map((o: any) => {
                 const st = ORDER_STATUSES[o.status];
                 const isFullyReturned = Boolean(o.hasReturns) && !o.hasReturnableItems;
                 return (
@@ -424,6 +438,7 @@ export function SalesScreen({
                     </td>
                     <td style={{ minWidth: 300 }}>
                       <div style={{ fontWeight: 540, color: 'var(--text-strong)' }}>{o.customer?.name ?? '—'}</div>
+                      {o.salesperson && <div className="hint">NV KD: {o.salesperson.fullName}</div>}
                     </td>
                     <td>
                       {st ? (
@@ -510,7 +525,7 @@ export function SalesScreen({
             </tbody>
           </table>
 
-          <Pagination {...paged} unit="đơn bán" />
+          <UrlPagination total={list.total} page={list.page} pageSize={list.pageSize} unit="đơn bán" />
         </div>
       )}
 
@@ -628,7 +643,7 @@ export function SalesScreen({
         />
       </Modal>
 
-      {orderCtx && (
+      {orderCtx && catalog && (
         <CustomerOrderModal
           open={Boolean(orderCtx)}
           customerId={orderCtx.id}
@@ -636,8 +651,8 @@ export function SalesScreen({
           customer={orderCtx}
           locations={orderCtx.locations || []}
           machines={orderCtx.machines || []}
-          stockMachines={stockMachines}
-          spareParts={spareParts}
+          stockMachines={catalog.stockMachines}
+          spareParts={catalog.spareParts}
           quotations={orderCtx.quotations || []}
           pricingConfig={pricingConfig}
           companyInfo={companyInfo}

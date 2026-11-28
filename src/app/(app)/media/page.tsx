@@ -17,8 +17,7 @@ export default async function MediaPage() {
     can(ctx, 'MENU_SETTINGS') ||
     can(ctx, 'FEATURE_EQUIPMENT_MANAGE') ||
     can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') ||
-    can(ctx, 'FEATURE_SETTING_GENERAL') ||
-    ctx.isAdmin;
+    can(ctx, 'FEATURE_SETTING_GENERAL');
 
   if (!canView) {
     redirect('/dashboard');

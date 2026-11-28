@@ -12,7 +12,7 @@ const moneyFormat = '#,##0 "₫";[Red]-#,##0 "₫";–';
 
 export async function GET(req: NextRequest) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_REPORT_INVENTORY') && !ctx.isAdmin) {
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') && !can(ctx, 'FEATURE_REPORT_INVENTORY')) {
     return NextResponse.json({ error: 'Bạn không có quyền xuất báo cáo kho' }, { status: 403 });
   }
 

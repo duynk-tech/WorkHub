@@ -146,6 +146,7 @@ export interface SaveCustomerPaymentInput {
 
 export interface CustomerFilter {
   search?: string;
+  status?: string;
 }
 
 export interface CustomerMetrics {

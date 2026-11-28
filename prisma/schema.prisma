@@ -121,14 +121,16 @@ model Employee {
   notifications  NotificationOutbox[]
   workflowSteps  WorkflowStep[]       @relation("StepSpecificApprover")
 
-  assetsInUse               Asset[]            @relation("AssetCurrentAssignee")
-  assetAssignments          AssetAssignment[]  @relation("AssetAssignee")
-  assetHandoversDone        AssetAssignment[]  @relation("AssetHandoverBy")
-  assetMaintenancesDone     AssetMaintenance[] @relation("AssetMaintenancePerformedBy")
-  assetUpgradesDone         AssetUpgrade[]     @relation("AssetUpgradePerformedBy")
-  assetLiquidationsApproved AssetLiquidation[] @relation("AssetLiquidationApprovedBy")
-  assignedTickets           ServiceTicket[]    @relation("TicketAssignee")
-  managedWarehouses         Warehouse[]        @relation("WarehouseManager")
+  assetsInUse               Asset[]             @relation("AssetCurrentAssignee")
+  assetAssignments          AssetAssignment[]   @relation("AssetAssignee")
+  assetHandoversDone        AssetAssignment[]   @relation("AssetHandoverBy")
+  assetMaintenancesDone     AssetMaintenance[]  @relation("AssetMaintenancePerformedBy")
+  assetUpgradesDone         AssetUpgrade[]      @relation("AssetUpgradePerformedBy")
+  assetLiquidationsApproved AssetLiquidation[]  @relation("AssetLiquidationApprovedBy")
+  assignedTickets           ServiceTicket[]     @relation("TicketAssignee")
+  managedWarehouses         Warehouse[]         @relation("WarehouseManager")
+  salesOrders               CustomerOrder[]     @relation("OrderSalesperson")
+  salesQuotations           CustomerQuotation[] @relation("QuotationSalesperson")
 
   @@index([departmentId])
   @@index([managerId])
@@ -333,6 +335,10 @@ model Task {
   @@index([dueDate])
   @@index([creatorId])
   @@index([parentTaskId])
+  @@index([status, dueDate])
+  @@index([reviewerId])
+  @@index([createdAt])
+  @@index([completedAt])
 }
 
 model TaskWatcher {
@@ -419,6 +425,7 @@ model TaskActivity {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([taskId])
+  @@index([taskId, createdAt])
 }
 
 model TaskReminder {
@@ -436,6 +443,7 @@ model TaskReminder {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([taskId])
+  @@index([isActive])
 }
 
 // ============================================================
@@ -693,6 +701,7 @@ model ApprovalTask {
 
   @@index([instanceId, stepOrder])
   @@index([approverId, status])
+  @@index([status, dueAt])
 }
 
 model WorkflowLog {
@@ -887,6 +896,7 @@ model InAppNotification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([userId, readAt])
+  @@index([userId, createdAt])
 }
 
 model ZaloLinkCode {
@@ -990,6 +1000,7 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([actorId, createdAt])
+  @@index([createdAt])
 }
 
 model ReportPreset {
@@ -1170,6 +1181,9 @@ model Customer {
   sparePartOrders SparePartOrder[]
   payments        CustomerPayment[]
   returns         CustomerReturn[]
+
+  @@index([status, createdAt])
+  @@index([name])
 }
 
 model CustomerOrder {
@@ -1198,6 +1212,7 @@ model CustomerOrder {
   quotationId     Int? // Đơn được chốt từ báo giá nào
   serviceTicketId Int? // Đơn dịch vụ sinh từ phiếu sự cố nào — để quy doanh thu về đúng máy
   stockIssuedAt   DateTime? // Thời điểm đã xuất kho giao khách
+  salespersonId   Int? // Nhân viên kinh doanh phụ trách đơn
   createdAt       DateTime                    @default(now())
   updatedAt       DateTime                    @updatedAt
 
@@ -1211,11 +1226,18 @@ model CustomerOrder {
   serviceTicket   ServiceTicket?      @relation(fields: [serviceTicketId], references: [id])
   soldMachines    FnbEquipment[]      @relation("OrderSoldMachines")
 
+  salesperson Employee? @relation("OrderSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+
   @@index([customerId])
   @@index([locationId])
   @@index([orderType])
   @@index([status])
   @@index([quotationId])
+  @@index([status, orderDate])
+  @@index([customerId, status])
+  @@index([orderDate])
+  @@index([dueDate])
+  @@index([salespersonId, orderDate])
 }
 
 model CustomerOrderItem {
@@ -1265,6 +1287,7 @@ model CustomerQuotation {
   warrantyTerms  String?   @db.Text
   notes          String?   @db.Text
   createdById    Int? // Nhân sự lập báo giá (audit)
+  salespersonId  Int? // Nhân viên kinh doanh lập/phụ trách báo giá
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1273,9 +1296,14 @@ model CustomerQuotation {
   items    CustomerQuotationItem[]
   orders   CustomerOrder[] // Đơn hàng chốt từ báo giá này
 
+  salesperson Employee? @relation("QuotationSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+
   @@index([customerId])
   @@index([locationId])
   @@index([status])
+  @@index([createdAt])
+  @@index([status, validUntil])
+  @@index([salespersonId])
 }
 
 model CustomerQuotationItem {
@@ -1370,6 +1398,7 @@ model CustomerReturn {
 
   @@index([customerId])
   @@index([orderId])
+  @@index([returnedAt])
 }
 
 model CustomerReturnItem {
@@ -1505,6 +1534,8 @@ model ServiceTicket {
   @@index([equipmentId])
   @@index([status])
   @@index([assignedToId])
+  @@index([createdAt])
+  @@index([customerId])
 }
 
 model Warehouse {
@@ -1581,6 +1612,7 @@ model InventoryStock {
   item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([warehouseId, itemId])
+  @@index([itemId])
 }
 
 model InventoryTransaction {
@@ -1626,6 +1658,7 @@ model InventoryTransaction {
   @@index([sparePartOrderId])
   @@index([createdAt])
   @@index([transDate])
+  @@index([status, transDate])
 }
 
 model InventoryTransactionItem {
@@ -1727,6 +1760,7 @@ model SparePartOrder {
   @@index([customerId])
   @@index([customerOrderId])
   @@index([equipmentId])
+  @@index([createdAt])
 }
 
 model SparePartOrderItem {

@@ -1,4 +1,5 @@
 'use server';
+import { computeOrderDebt } from '@/lib/customer-debt';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, can } from '@/server/auth/context';
 import { revalidatePath } from 'next/cache';
@@ -71,7 +72,7 @@ export async function allocateCustomerCreditAction(customerId: number, raw: unkn
       const allocated = payment.allocations.reduce((s, a) => s + Number(a.amount), 0);
       if (Math.abs(allocated - input.expectedAllocated) > .01) throw new Error('Phiếu thu đã thay đổi. Tải lại trước khi phân bổ để tránh ghi trùng.');
       const spare = Number(payment.amount) - allocated;
-      const remaining = Math.max(0, Number(order.totalAmount) - Number(order.returnedAmount) - Number(order.paidAmount));
+      const remaining = computeOrderDebt(order).remaining;
       if (input.amount > spare || input.amount > remaining) throw new Error('Số tiền vượt tiền chưa phân bổ hoặc dư nợ của đơn.');
       const existing = payment.allocations.find(a => a.orderId === order.id);
       if (existing) await tx.customerPaymentAllocation.update({ where: { id: existing.id }, data: { amount: { increment: input.amount } } });

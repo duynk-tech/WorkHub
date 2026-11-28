@@ -193,15 +193,56 @@ export interface InventoryProfitReport {
 }
 
 export async function getInventoryProfitReport(range: ReportRange): Promise<InventoryProfitReport> {
-  // 1. Bản đồ đơn giá vốn nhập gần nhất từ PO. Ưu tiên phí đã chốt theo từng dòng;
-  //    PO cũ chưa có tách dòng thì dùng cùng cách phân bổ theo số lượng như lúc nhận kho.
-  const poOrders = await prisma.sparePartOrder.findMany({
+  // Bốn truy vấn nguồn độc lập nhau: khởi động cùng lúc, chỗ nào cần mới await
+  const poOrdersPromise = prisma.sparePartOrder.findMany({
     where: { status: { not: 'CANCELLED' } },
     include: {
       items: true,
     },
     orderBy: { createdAt: 'desc' },
   });
+  const transactionsPromise = prisma.inventoryTransaction.findMany({
+    where: { status: 'COMPLETED', transDate: { gte: range.from, lte: range.to } },
+    include: {
+      items: {
+        include: { item: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } } },
+      },
+    },
+  });
+  const customerOrdersPromise = prisma.customerOrder.findMany({
+    where: {
+      orderDate: { gte: range.from, lte: range.to },
+      status: { notIn: ['CANCELLED'] },
+    },
+    include: {
+      items: {
+        include: {
+          inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } },
+        },
+      },
+      soldMachines: { select: { id: true, machineCode: true, name: true, model: true, serialNumber: true, customerOrderItemId: true, unitCost: true } },
+      customer: { select: { name: true } },
+    },
+  });
+  const customerReturnsPromise = prisma.customerReturn.findMany({
+    where: { returnedAt: { gte: range.from, lte: range.to } },
+    include: {
+      customer: { select: { name: true } },
+      order: {
+        include: {
+          items: { include: { inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } } } },
+          soldMachines: { select: { id: true, machineCode: true, name: true, model: true, serialNumber: true, customerOrderItemId: true, unitCost: true } },
+        },
+      },
+      items: true,
+    },
+  });
+  // Tránh unhandled rejection nếu một truy vấn lỗi trước khi được await
+  for (const p of [poOrdersPromise, transactionsPromise, customerOrdersPromise, customerReturnsPromise]) p.catch(() => {});
+
+  // 1. Bản đồ đơn giá vốn nhập gần nhất từ PO. Ưu tiên phí đã chốt theo từng dòng;
+  //    PO cũ chưa có tách dòng thì dùng cùng cách phân bổ theo số lượng như lúc nhận kho.
+  const poOrders = await poOrdersPromise;
 
   const actualUnitCostMap = new Map<number, number>();
   for (const po of poOrders) {
@@ -237,14 +278,7 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
 
   // 2. Phiếu kho — chỉ dùng để tính nhập kho và xuất khác (bảo hành, hủy…),
   //    KHÔNG dùng để tính doanh thu bán ra.
-  const transactions = await prisma.inventoryTransaction.findMany({
-    where: { status: 'COMPLETED', transDate: { gte: range.from, lte: range.to } },
-    include: {
-      items: {
-        include: { item: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } } },
-      },
-    },
-  });
+  const transactions = await transactionsPromise;
 
   const rows = new Map<number, ItemReportRow>();
   const reasonAgg = new Map<string, { qty: number; value: number }>();
@@ -312,37 +346,11 @@ export async function getInventoryProfitReport(range: ReportRange): Promise<Inve
   // 3. Doanh thu & giá vốn tính chính xác từ chi tiết từng Đơn bán hàng (CustomerOrder)
   //    Mỗi CustomerOrderItem ghi rõ: mặt hàng, số lượng, đơn giá bán, thành tiền.
   //    → Đây là nguồn duy nhất để tính doanh thu, đảm bảo khớp từng đơn.
-  const customerOrders = await prisma.customerOrder.findMany({
-    where: {
-      orderDate: { gte: range.from, lte: range.to },
-      status: { notIn: ['CANCELLED'] },
-    },
-    include: {
-      items: {
-        include: {
-          inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } },
-        },
-      },
-      soldMachines: { select: { id: true, machineCode: true, name: true, model: true, serialNumber: true, customerOrderItemId: true, unitCost: true } },
-      customer: { select: { name: true } },
-    },
-  });
+  const customerOrders = await customerOrdersPromise;
 
   // Hàng trả được ghi nhận theo ngày lập phiếu trả, không dời ngược về ngày
   // bán. Nhờ vậy kỳ sau vẫn thể hiện được khoản giảm doanh thu của đơn cũ.
-  const customerReturns = await prisma.customerReturn.findMany({
-    where: { returnedAt: { gte: range.from, lte: range.to } },
-    include: {
-      customer: { select: { name: true } },
-      order: {
-        include: {
-          items: { include: { inventoryItem: { select: { id: true, itemCode: true, name: true, unit: true, costPrice: true, avgCost: true } } } },
-          soldMachines: { select: { id: true, machineCode: true, name: true, model: true, serialNumber: true, customerOrderItemId: true, unitCost: true } },
-        },
-      },
-      items: true,
-    },
-  });
+  const customerReturns = await customerReturnsPromise;
   const unmatchedReturns = customerReturns.filter((customerReturn) => !customerReturn.order).map((customerReturn) => ({
     returnCode: customerReturn.returnCode,
     returnedAt: toLocalDateString(customerReturn.returnedAt),

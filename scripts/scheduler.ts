@@ -18,6 +18,9 @@ const SCHEDULE: { expr: string; job: JobName; label: string }[] = [
   { expr: '0 8 * * *', job: 'daily-digest', label: 'Bản tin buổi sáng' },
   { expr: '0 * * * *', job: 'approval-sla', label: 'Nhắc duyệt quá hạn SLA' },
   { expr: '30 1 * * *', job: 'attendance-rollup', label: 'Chốt công ngày hôm trước' },
+  { expr: '15 2 * * *', job: 'sales-maintenance', label: 'Bảo trì dữ liệu đơn bán' },
+  { expr: '5 0 * * *', job: 'quotation-expiry', label: 'Báo giá hết hiệu lực' },
+  { expr: '*/30 * * * *', job: 'recurring-tasks', label: 'Sinh công việc định kỳ' },
 ];
 
 const stamp = () => new Date().toLocaleString('vi-VN', { timeZone: TZ });

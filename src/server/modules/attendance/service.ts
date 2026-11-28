@@ -1,4 +1,5 @@
 import type { AttendanceStatus, Prisma, PrismaClient, RecordSource } from '@prisma/client';
+import { mapLimit } from '@/lib/concurrency';
 import { prisma } from '@/lib/prisma';
 import { dateOnly, isWorkDay, minutesBetweenTimes, timeOnDate } from '@/lib/date';
 import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
@@ -247,8 +248,14 @@ export async function rollupDay(date: Date, db: PrismaClient | Prisma.Transactio
     leaveMap.set(day.request.employeeId, { portion: Math.min(1, (previous?.portion || 0) + Number(day.portion)), duration: day.request.durationType });
   }
 
-  let created = 0;
-  let updated = 0;
+  // Nạp sẵn bản ghi của cả ngày một lần, thay vì findUnique cho từng nhân viên
+  const existingRows = await db.attendanceRecord.findMany({
+    where: { workDate, employeeId: { in: employees.map((e) => e.id) } },
+  });
+  const existingByEmp = new Map(existingRows.map((r) => [r.employeeId, r]));
+
+  const toCreate: Prisma.AttendanceRecordCreateManyInput[] = [];
+  const toUpdate: { id: number; data: ReturnType<typeof computeMetrics> }[] = [];
 
   for (const emp of employees) {
     const shift: ShiftInfo = emp.workShift
@@ -259,9 +266,7 @@ export async function rollupDay(date: Date, db: PrismaClient | Prisma.Transactio
         }
       : { id: null, startTime: '08:00', endTime: '17:30', breakMinutes: 90, lateToleranceMin: 5, workDays: 62 };
 
-    const existing = await db.attendanceRecord.findUnique({
-      where: { employeeId_workDate: { employeeId: emp.id, workDate } },
-    });
+    const existing = existingByEmp.get(emp.id);
 
     const leave = leaveMap.get(emp.id);
     const leavePortion = leave?.portion;
@@ -279,15 +284,18 @@ export async function rollupDay(date: Date, db: PrismaClient | Prisma.Transactio
     if (existing) {
       // Không ghi đè bản ghi đã được HR chỉnh tay
       if (existing.editedById) continue;
-      await db.attendanceRecord.update({ where: { id: existing.id }, data: metrics });
-      updated++;
+      toUpdate.push({ id: existing.id, data: metrics });
     } else {
-      await db.attendanceRecord.create({
-        data: { employeeId: emp.id, workDate, shiftId: shift.id, source: 'SYSTEM', ...metrics },
-      });
-      created++;
+      toCreate.push({ employeeId: emp.id, workDate, shiftId: shift.id, source: 'SYSTEM', ...metrics });
     }
   }
+
+  // skipDuplicates: lỡ có người check-in đúng lúc đang chốt công thì không vỡ cả lô
+  const created = toCreate.length
+    ? (await db.attendanceRecord.createMany({ data: toCreate, skipDuplicates: true })).count
+    : 0;
+  await mapLimit(toUpdate, 5, (u) => db.attendanceRecord.update({ where: { id: u.id }, data: u.data }));
+  const updated = toUpdate.length;
 
   return { created, updated, date: workDate };
 }

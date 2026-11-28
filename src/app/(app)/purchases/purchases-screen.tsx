@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -28,52 +29,77 @@ import {
   Card,
   Button,
   Badge,
-  usePaged,
-  Pagination,
   ActionMenu,
   ConfirmDialog,
   PageHeader,
 } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
+import { UrlPagination, useDebouncedSearch, useUrlParams } from '@/components/ui/url-state';
 import { fmtDate } from '@/lib/date';
 import {
   ORDER_STATUSES,
   orderStatusLabel,
 } from '@/server/modules/spare-parts/types';
-import {
-  SparePartOrderModal,
-  OrderStatusModal,
-} from '@/components/domain/spare-part-order-modal';
-import { SupplierPaymentModal } from '@/components/domain/supplier-payment-modal';
-import { SparePartQuotationModal } from '@/components/domain/spare-part-quotation-modal';
-import { deleteNewSparePartOrderAction } from '@/server/modules/spare-parts/actions';
+import { deleteNewSparePartOrderAction, getPurchaseFormCatalogAction } from '@/server/modules/spare-parts/actions';
+
+// Modal chỉ tải khi cần mở, không nằm trong bundle đầu của trang
+const SparePartOrderModal = dynamic(() => import('@/components/domain/spare-part-order-modal').then((m) => m.SparePartOrderModal));
+const OrderStatusModal = dynamic(() => import('@/components/domain/spare-part-order-modal').then((m) => m.OrderStatusModal));
+const SupplierPaymentModal = dynamic(() => import('@/components/domain/supplier-payment-modal').then((m) => m.SupplierPaymentModal));
+const SparePartQuotationModal = dynamic(() => import('@/components/domain/spare-part-quotation-modal').then((m) => m.SparePartQuotationModal));
 
 export function PurchasesScreen({
-  orders = [],
+  list,
+  filter,
   warehouses = [],
-  spareParts = [],
   pricingConfig,
   companyInfo,
-  customers = [],
-  equipments = [],
   canManage = false,
 }: {
-  orders?: any[];
+  list: {
+    rows: any[];
+    total: number;
+    page: number;
+    pageSize: number;
+    summary: {
+      all: number; forCustomer: number; forStock: number; inTransit: number; inStocking: number;
+      totalCost: number; totalDebt: number; statusCounts: Record<string, number>;
+    };
+  };
+  filter: { q: string; kind: 'ALL' | 'CUSTOMER' | 'STOCK'; status: string; sort: string };
   warehouses?: any[];
-  spareParts?: any[];
   pricingConfig?: any;
   companyInfo?: any;
-  customers?: any[];
-  equipments?: any[];
   canManage?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [orderKind, setOrderKind] = useState<'ALL' | 'CUSTOMER' | 'STOCK'>('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const { setParams } = useUrlParams();
+  const search = useDebouncedSearch();
+  const orders = list.rows;
+  const summary = list.summary;
+  const orderKind = filter.kind;
+  const hasFilter = Boolean(filter.q || filter.kind !== 'ALL' || filter.status);
+
+  // Danh mục cho form đặt mua: tải khi mở form lần đầu
+  const [catalog, setCatalog] = useState<{ spareParts: any[]; customers: any[]; equipments: any[] } | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const openOrderModal = async () => {
+    if (!catalog) {
+      setCatalogLoading(true);
+      const res = await getPurchaseFormCatalogAction();
+      setCatalogLoading(false);
+      if (!res.ok) {
+        toast.error(res.message);
+        return;
+      }
+      const r = res as any;
+      setCatalog({ spareParts: r.spareParts, customers: r.customers, equipments: r.equipments });
+    }
+    void openOrderModal();
+  };
 
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
@@ -104,33 +130,9 @@ export function PurchasesScreen({
     { step: 8, key: 'COMPLETED', label: 'Hoàn tất', icon: CheckCircle2 },
   ];
 
-  const filteredOrders = orders.filter((o: any) => {
-    if (orderKind === 'CUSTOMER' && !o.customerOrderId) return false;
-    if (orderKind === 'STOCK' && Boolean(o.customerOrderId)) return false;
-    if (statusFilter !== 'ALL' && o.status !== statusFilter) return false;
-    if (searchTerm.trim()) {
-      const s = searchTerm.toLowerCase().trim();
-      const codeMatch = o.orderCode?.toLowerCase().includes(s);
-      const supplierMatch = o.supplier?.toLowerCase().includes(s);
-      const trackingMatch = o.trackingNumber?.toLowerCase().includes(s);
-      const whMatch = o.targetWarehouse?.name?.toLowerCase().includes(s);
-      const custMatch = o.customer?.name?.toLowerCase().includes(s);
-      return codeMatch || supplierMatch || trackingMatch || whMatch || custMatch;
-    }
-    return true;
-  });
-
-  const ordersPage = usePaged(filteredOrders, 20);
-
-  // Thống kê
-  const totalCost = orders.reduce((sum: number, o: any) => sum + Number(o.totalVnd || 0), 0);
-  const totalDebt = orders.reduce((sum: number, o: any) => {
-    if (o.status === 'CANCELLED') return sum;
-    const cost = Number(o.subtotalVnd || 0) > 0 ? Number(o.subtotalVnd) : Number(o.totalVnd || 0);
-    return sum + Math.max(0, cost - Number(o.paidAmount || 0));
-  }, 0);
-  const inTransitCount = orders.filter((o: any) => ['ORDERED_SUPPLIER', 'SHIPPING_INTL', 'CUSTOMS_CLEARING', 'ARRIVED_WAREHOUSE'].includes(o.status)).length;
-  const inStockingCount = orders.filter((o: any) => ['INSPECTING', 'STOCKED'].includes(o.status)).length;
+  const totalCost = summary.totalCost;
+  const totalDebt = summary.totalDebt;
+  const inTransitCount = summary.inTransit;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -141,9 +143,10 @@ export function PurchasesScreen({
           canManage && (
             <Button
               size="sm"
+              loading={catalogLoading}
               onClick={() => {
                 setEditingOrder(null);
-                setOrderModalOpen(true);
+                void openOrderModal();
               }}
               style={{
                 background: '#7c3aed',
@@ -164,7 +167,7 @@ export function PurchasesScreen({
         <Card style={{ padding: '14px 18px' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Tổng số phiếu mua PO</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-strong)', marginTop: 4 }}>
-            {orders.length}
+            {summary.all}
           </div>
         </Card>
         <Card style={{ padding: '14px 18px' }}>
@@ -212,8 +215,8 @@ export function PurchasesScreen({
             <input
               type="text"
               placeholder="Tìm mã PO, nhà cung cấp, vận đơn, kho nhận..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={search.value}
+              onChange={(e) => search.onChange(e.target.value)}
               style={{
                 width: '100%',
                 padding: '8px 10px 8px 32px',
@@ -228,20 +231,14 @@ export function PurchasesScreen({
 
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {([
-              { key: 'ALL', label: `Tất cả (${orders.length})` },
-              {
-                key: 'CUSTOMER',
-                label: `Theo đơn khách (${orders.filter((o: any) => o.customerOrderId).length})`,
-              },
-              {
-                key: 'STOCK',
-                label: `Nhập dự trữ (${orders.filter((o: any) => !o.customerOrderId).length})`,
-              },
+              { key: 'ALL', label: `Tất cả (${summary.all})` },
+              { key: 'CUSTOMER', label: `Theo đơn khách (${summary.forCustomer})` },
+              { key: 'STOCK', label: `Nhập dự trữ (${summary.forStock})` },
             ] as const).map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setOrderKind(tab.key)}
+                onClick={() => setParams({ kind: tab.key === 'ALL' ? null : tab.key })}
                 style={{
                   padding: '7px 12px',
                   borderRadius: 999,
@@ -260,8 +257,9 @@ export function PurchasesScreen({
           </div>
 
           <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            value={filter.status || 'ALL'}
+            onChange={(e) => setParams({ status: e.target.value === 'ALL' ? null : e.target.value })}
+            aria-label="Lọc trạng thái phiếu mua"
             style={{
               padding: '7px 12px',
               borderRadius: 6,
@@ -274,7 +272,7 @@ export function PurchasesScreen({
             <option value="ALL">Tất cả trạng thái</option>
             {Object.entries(ORDER_STATUSES).map(([k, v]) => (
               <option key={k} value={k}>
-                {v.label}
+                {v.label} ({summary.statusCounts[k] ?? 0})
               </option>
             ))}
           </select>
@@ -282,7 +280,7 @@ export function PurchasesScreen({
       </div>
 
       {/* Orders List Table */}
-      {filteredOrders.length === 0 ? (
+      {orders.length === 0 ? (
         <Card style={{ padding: '56px 24px', textAlign: 'center' }}>
           <div
             style={{
@@ -299,7 +297,7 @@ export function PurchasesScreen({
             <ShoppingCart size={28} />
           </div>
           <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-strong)' }}>
-            Chưa có đơn mua hàng nào
+            {hasFilter ? 'Không có phiếu mua nào khớp bộ lọc' : 'Chưa có đơn mua hàng nào'}
           </h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 460, margin: '0 auto 20px' }}>
             Tạo phiếu mua hàng PO để theo dõi tỷ giá ngoại tệ, chi phí vận chuyển quốc tế, hải quan và lộ trình về kho.
@@ -309,7 +307,7 @@ export function PurchasesScreen({
               size="sm"
               onClick={() => {
                 setEditingOrder(null);
-                setOrderModalOpen(true);
+                void openOrderModal();
               }}
               style={{ background: '#7c3aed', color: '#fff' }}
             >
@@ -334,7 +332,7 @@ export function PurchasesScreen({
               </tr>
             </thead>
             <tbody>
-              {ordersPage.pageRows.map((order: any) => {
+              {orders.map((order: any) => {
                 const statusCfg = ORDER_STATUSES[order.status] || {
                   label: order.status,
                   color: '#64748b',
@@ -475,7 +473,7 @@ export function PurchasesScreen({
                                       icon: <Edit2 size={15} />,
                                       onClick: () => {
                                         setEditingOrder(order);
-                                        setOrderModalOpen(true);
+                                        void openOrderModal();
                                       },
                                     },
                                   ]
@@ -694,7 +692,7 @@ export function PurchasesScreen({
                                           type="button"
                                           onClick={() => {
                                             setEditingOrder(order);
-                                            setOrderModalOpen(true);
+                                            void openOrderModal();
                                           }}
                                           style={{
                                             display: 'inline-flex',
@@ -905,18 +903,18 @@ export function PurchasesScreen({
               })}
             </tbody>
           </table>
-          <Pagination {...ordersPage} unit="phiếu mua" />
+          <UrlPagination total={list.total} page={list.page} pageSize={list.pageSize} unit="phiếu mua" />
         </div>
       )}
 
-      {orderModalOpen && (
+      {orderModalOpen && catalog && (
         <SparePartOrderModal
           open={orderModalOpen}
           initialOrder={editingOrder}
-          spareParts={spareParts}
+          spareParts={catalog.spareParts}
           warehouses={warehouses}
-          customers={customers}
-          equipments={equipments}
+          customers={catalog.customers}
+          equipments={catalog.equipments}
           pricingConfig={pricingConfig}
           companyInfo={companyInfo}
           onClose={() => {

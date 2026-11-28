@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { requireAuth, can } from '@/server/auth/context';
+import { canViewModule } from '@/server/auth/module-access';
 import { getCustomerById } from '@/server/modules/customer/service';
 import { getCompanyInfo } from '@/server/modules/settings/branding';
 import {
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'MENU_CUSTOMERS') && !can(ctx, 'FEATURE_CUSTOMER_MANAGE')) return { title: 'Khách hàng' };
+  if (!canViewModule(ctx, 'customers')) return { title: 'Khách hàng' };
   const { id } = await params;
   const numId = parseInt(id, 10);
   if (isNaN(numId) || numId <= 0) {
@@ -33,34 +34,35 @@ export default async function CustomerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const ctx = await requireAuth();
-  if (!can(ctx, 'MENU_CUSTOMERS') && !can(ctx, 'FEATURE_CUSTOMER_MANAGE')) redirect('/dashboard');
+  if (!canViewModule(ctx, 'customers')) redirect('/dashboard');
   const { id } = await params;
   const numId = parseInt(id, 10);
   if (isNaN(numId) || numId <= 0) {
     notFound();
   }
 
-  const [customer, companyInfo, spareParts, stockMachines, warehouses, pricingConfig] =
+  // Mọi truy vấn độc lập chạy song song (trước đây phần workspace và nhân viên chạy nối tiếp sau)
+  const [customer, companyInfo, spareParts, stockMachines, warehouses, pricingConfig, workspace, employees] =
     await Promise.all([
-    getCustomerById(numId),
-    getCompanyInfo(),
-    listSpareParts({}),
-    // Máy đang nằm trong kho → dùng cho đơn "Mua máy mới / Thuê máy"
-    listEquipment({ status: 'IN_STOCK' }),
-    listWarehouses(),
-    getSparePartPricingConfig(),
-  ]);
+      getCustomerById(numId),
+      getCompanyInfo(),
+      listSpareParts({}),
+      // Máy đang nằm trong kho → dùng cho đơn "Mua máy mới / Thuê máy"
+      listEquipment({ status: 'IN_STOCK' }),
+      listWarehouses(),
+      getSparePartPricingConfig(),
+      prisma.customer.findUnique({ where: { id: numId }, select: {
+        profile: true, contacts: { orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }] }, careActivities: { orderBy: { createdAt: 'desc' }, take: 200 },
+        payments: { include: { order: { select: { id: true, orderCode: true } }, allocations: true }, orderBy: { paidAt: 'desc' } },
+      } }),
+      prisma.employee.findMany({ where: { status: 'ACTIVE' }, select: { id: true, fullName: true }, orderBy: { fullName: 'asc' } }),
+    ]);
 
-  if (!customer) {
+  if (!customer || !workspace) {
     notFound();
   }
 
-  const workspace = await prisma.customer.findUniqueOrThrow({ where: { id: numId }, select: {
-    profile: true, contacts: { orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }] }, careActivities: { orderBy: { createdAt: 'desc' } },
-    payments: { include: { order: { select: { id: true, orderCode: true } }, allocations: true }, orderBy: { paidAt: 'desc' } },
-  } });
-  const employees = await prisma.employee.findMany({ where: { status: 'ACTIVE' }, select: { id: true, fullName: true }, orderBy: { fullName: 'asc' } });
-  const canManage = can(ctx, 'FEATURE_CUSTOMER_MANAGE') || ctx.isAdmin;
+  const canManage = can(ctx, 'FEATURE_CUSTOMER_MANAGE');
 
   return (
     <CustomerDetailScreen

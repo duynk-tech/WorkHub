@@ -17,7 +17,7 @@ export default async function SettingsPage({
   const ctx = await requireAuth();
   const allowed = {
     general: can(ctx, 'FEATURE_SETTING_GENERAL'),
-    pricing: can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE') || ctx.isAdmin,
+    pricing: can(ctx, 'FEATURE_SPARE_PARTS_MANAGE') || can(ctx, 'FEATURE_EQUIPMENT_MANAGE'),
     zalo: can(ctx, 'FEATURE_SETTING_ZALO'),
     holiday: can(ctx, 'FEATURE_SETTING_HOLIDAY'),
     shift: can(ctx, 'FEATURE_ATTENDANCE_SHIFT_MANAGE'),

@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
  */
 
 export const PAGE_SIZE_OPTIONS = [20, 50, 100, 200];
+/** Phân trang phía server giới hạn 100 dòng mỗi trang (xem src/lib/list-query.ts). */
 
 /**
  * Phần tính toán thuần của phân trang, tách riêng để kiểm thử được.
@@ -69,6 +70,7 @@ export function Pagination({
   offset,
   unit = 'dòng',
   style,
+  pageSizeOptions = PAGE_SIZE_OPTIONS,
 }: {
   page: number;
   setPage: (p: number) => void;
@@ -80,6 +82,7 @@ export function Pagination({
   /** Danh từ đếm được hiển thị trong câu tóm tắt: "… trong 145 phiếu". */
   unit?: string;
   style?: React.CSSProperties;
+  pageSizeOptions?: readonly number[];
 }) {
   // Chỉ có một trang thì thanh phân trang không mang thông tin gì
   if (totalPages <= 1) return null;
@@ -145,7 +148,7 @@ export function Pagination({
                 cursor: 'pointer',
               }}
             >
-              {PAGE_SIZE_OPTIONS.map((n) => (
+              {pageSizeOptions.map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>

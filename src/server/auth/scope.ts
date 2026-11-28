@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
 import type { AuthContext } from './context';
 
@@ -5,7 +6,7 @@ import type { AuthContext } from './context';
  * Chuyển phạm vi dữ liệu của vai trò thành danh sách employeeId được phép xem.
  * Trả về null nghĩa là "không giới hạn" (scope ALL).
  */
-export async function visibleEmployeeIds(ctx: AuthContext): Promise<number[] | null> {
+async function loadVisibleEmployeeIds(ctx: AuthContext): Promise<number[] | null> {
   if (ctx.dataScope === 'ALL') return null;
 
   if (ctx.dataScope === 'SELF') {
@@ -29,8 +30,7 @@ export async function visibleEmployeeIds(ctx: AuthContext): Promise<number[] | n
   return Array.from(ids);
 }
 
-/** Danh sách phòng ban được phép xem. null = tất cả. */
-export async function visibleDepartmentIds(ctx: AuthContext): Promise<number[] | null> {
+async function loadVisibleDepartmentIds(ctx: AuthContext): Promise<number[] | null> {
   if (ctx.dataScope === 'ALL') return null;
 
   if (ctx.dataScope === 'DEPT_TREE') {
@@ -55,6 +55,16 @@ export async function visibleDepartmentIds(ctx: AuthContext): Promise<number[] |
 
   return ctx.departmentId ? [ctx.departmentId] : [];
 }
+
+/**
+ * Một request gọi phạm vi dữ liệu nhiều lần (layout, page, từng báo cáo...).
+ * `cache` của React nhớ kết quả theo đúng object ctx trong phạm vi một request
+ * (getAuthContext cũng được cache nên ctx là cùng một object), nên chỉ truy vấn một lần.
+ */
+export const visibleEmployeeIds: (ctx: AuthContext) => Promise<number[] | null> = cache(loadVisibleEmployeeIds);
+
+/** Danh sách phòng ban được phép xem. null = tất cả. */
+export const visibleDepartmentIds: (ctx: AuthContext) => Promise<number[] | null> = cache(loadVisibleDepartmentIds);
 
 /** Điều kiện Prisma cho bảng có cột employeeId */
 export async function employeeScopeWhere(ctx: AuthContext, field = 'employeeId') {

@@ -26,6 +26,8 @@ export interface TaskFormValue {
   watcherIds: number[];
   checklist: string[];
   reminderOffsetMinutes: number | null;
+  /** Quy tắc lặp, rỗng = không lặp. */
+  recurrenceRule?: string;
 }
 
 const empty: TaskFormValue = {
@@ -74,6 +76,7 @@ export function TaskFormModal({
         ...form,
         estimateHours: form.estimateHours ? Number(form.estimateHours) : null,
         reminderOffsetMinutes: form.reminderOffsetMinutes || null,
+        recurrenceRule: form.recurrenceRule ?? null,
       });
       if (res.ok) { toast.success(res.message); onSaved(res.id); }
       else toast.error(res.message);
@@ -161,6 +164,17 @@ export function TaskFormModal({
 
         <Field label="Hạn hoàn thành">
           <Input type="datetime-local" value={form.dueDate} onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))} />
+        </Field>
+
+        <Field label="Lặp lại" hint="Đóng việc này thì tự tạo lần kế tiếp">
+          <Select value={form.recurrenceRule ?? ''} onChange={(e) => setForm((f) => ({ ...f, recurrenceRule: e.target.value }))}>
+            <option value="">Không lặp</option>
+            <option value="FREQ=DAILY">Hằng ngày</option>
+            <option value="FREQ=WEEKLY">Hằng tuần</option>
+            <option value="FREQ=WEEKLY;INTERVAL=2">2 tuần một lần</option>
+            <option value="FREQ=MONTHLY">Hằng tháng</option>
+            <option value="FREQ=MONTHLY;INTERVAL=3">Hằng quý (3 tháng)</option>
+          </Select>
         </Field>
 
         <Field label="Ước lượng (giờ)">

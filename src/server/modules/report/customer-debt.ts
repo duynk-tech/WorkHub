@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { orderDebt } from '@/server/modules/customer/service';
+import { computeOrderDebt } from '@/lib/customer-debt';
 
 /**
  * Báo cáo công nợ phải thu.
@@ -30,14 +31,10 @@ export interface CustomerDebtRow {
   buckets: DebtBucket;
 }
 
-const DAY = 24 * 60 * 60 * 1000;
-
-/** Số ngày quá hạn tính đến hôm nay; chưa tới hạn hoặc không có hạn trả về 0. */
+/** Số ngày quá hạn tính đến hôm nay (giờ Việt Nam); chưa tới hạn hoặc không có hạn trả về 0. */
 export function overdueDays(dueDate: Date | null, today = new Date()): number {
   if (!dueDate) return 0;
-  const start = new Date(today.toDateString()).getTime();
-  const diff = Math.floor((start - new Date(dueDate.toDateString()).getTime()) / DAY);
-  return diff > 0 ? diff : 0;
+  return computeOrderDebt({ totalAmount: 1, dueDate }, today).overdueDays;
 }
 
 /** Xếp một khoản nợ vào ô tuổi nợ tương ứng. */

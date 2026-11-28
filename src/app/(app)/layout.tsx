@@ -13,7 +13,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Lọc menu theo quyền, bỏ nhóm rỗng
   const sections = NAV_SECTIONS
-    .map((s) => ({ ...s, items: s.items.filter((i) => !i.permission || can(ctx, i.permission)) }))
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((i) =>
+        !i.permission || (typeof i.permission === 'string' ? can(ctx, i.permission) : i.permission.some((p) => can(ctx, p)))),
+    }))
     .filter((s) => s.items.length > 0);
 
   const [pendingApprovals, myTasks, notifications, unreadCount, branding, printWatermark, disabledReports, disabledMenus] = await Promise.all([

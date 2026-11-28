@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useOptimistic, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -11,11 +11,13 @@ import {
   Button, Card, CardBody, Badge, Avatar, EmptyState, SearchInput, Select, SearchableSelect, Input, Progress, PageHeader,
 } from '@/components/ui';
 import { useToast } from '@/components/ui/toast';
+import { useDebouncedSearch } from '@/components/ui/url-state';
+import { isTaskOverdue } from '@/lib/task-state';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
 import { TaskFormModal, type TaskFormValue } from './task-form-modal';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 import { fmtDate } from '@/lib/date';
-import { updateTaskStatusAction } from '@/server/modules/task/actions';
+import { bulkTaskAction, updateTaskStatusAction } from '@/server/modules/task/actions';
 import {
   TASK_DATE_FIELDS, TASK_DATE_PRESETS, describeDateFilter,
   type TaskDateField, type TaskDatePreset,
@@ -55,17 +57,44 @@ interface Props {
 
 export function TaskScreen({
   view, data, board, departments, employees, filter, scopeCounts, currentEmployeeId, canCreate, canAssign,
-  canExport,
+  canDelete, canExport,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
   const [, startTransition] = useTransition();
-  const [search, setSearch] = useState(filter.search);
+  const search = useDebouncedSearch();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<TaskFormValue | null>(null);
   const [draggingTask, setDraggingTask] = useState<{ id: number; status: string } | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+
+  // Kéo thả trên Kanban: thẻ chuyển cột ngay lập tức, server xác nhận sau.
+  // Lỗi (thiếu quyền, checklist chưa xong...) thì refresh trả thẻ về chỗ cũ.
+  const [optimisticBoard, moveOptimistic] = useOptimistic(
+    board,
+    (state, move: { id: number; from: string; to: string }) => {
+      if (!state) return state;
+      const card = state.find((c) => c.status === move.from)?.tasks.find((t) => t.id === move.id);
+      if (!card) return state;
+      return state.map((c) => {
+        if (c.status === move.from) return { ...c, tasks: c.tasks.filter((t) => t.id !== move.id), total: c.total - 1 };
+        if (c.status === move.to) return { ...c, tasks: [{ ...card, status: move.to }, ...c.tasks], total: c.total + 1 };
+        return c;
+      });
+    },
+  );
+
+  const moveTask = (id: number, from: string, to: string) => {
+    if (from === to) return;
+    startTransition(async () => {
+      moveOptimistic({ id, from, to });
+      const res = await updateTaskStatusAction(id, to);
+      if (res.ok) toast.success(res.message);
+      else toast.error(res.message);
+      router.refresh();
+    });
+  };
 
   const handleKanbanDrop = (targetStatus: string) => {
     setDragOverStatus(null);
@@ -73,14 +102,38 @@ export function TaskScreen({
       setDraggingTask(null);
       return;
     }
-    const { id } = draggingTask;
+    const { id, status } = draggingTask;
     setDraggingTask(null);
-    startTransition(async () => {
-      const res = await updateTaskStatusAction(id, targetStatus);
-      if (res.ok) toast.success(res.message);
-      else toast.error(res.message);
-      router.refresh();
+    moveTask(id, status, targetStatus);
+  };
+
+  // Chọn nhiều dòng để thao tác hàng loạt
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const pageIds = data?.rows.map((t) => t.id) ?? [];
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleOne = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
+  const toggleAll = () => setSelected(allOnPage ? new Set() : new Set(pageIds));
+
+  const runBulk = async (payload: { action: 'status' | 'assign' | 'delete'; status?: string; assigneeId?: number | null }) => {
+    if (!selected.size) return;
+    if (payload.action === 'delete' && !window.confirm(`Xóa ${selected.size} công việc đã chọn? Không thể hoàn tác.`)) return;
+    setBulkBusy(true);
+    const res = await bulkTaskAction({ ids: [...selected], ...payload });
+    setBulkBusy(false);
+    if (res.ok) toast.success(res.message);
+    else toast.error(res.message);
+    if (res.failed.length) {
+      toast.error(res.failed.slice(0, 3).map((f) => f.message).join(' · '));
+    }
+    setSelected(new Set());
+    router.refresh();
   };
 
   const setParam = (key: string, value: string) => setParams({ [key]: value });
@@ -111,7 +164,7 @@ export function TaskScreen({
     from: filter.dateFrom, to: filter.dateTo, noDate: filter.noDate,
   });
 
-  const overdue = (t: TaskRow) => t.dueDate && new Date(t.dueDate) < new Date() && !['DONE', 'CANCELLED'].includes(t.status);
+  const overdue = (t: TaskRow) => isTaskOverdue(t);
 
   const advancedFilterCount =
     (filter.pickedStatus.length ? 1 : 0) +
@@ -129,9 +182,9 @@ export function TaskScreen({
       <CardBody style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {/* Hàng 1 gọn 1 dòng: Tìm kiếm + Lọc nhanh + Nút Bộ lọc nâng cao + Chuyển chế độ xem */}
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <form style={{ flex: '1 1 220px', maxWidth: 340 }} onSubmit={(e) => { e.preventDefault(); setParam('q', search); }}>
-            <SearchInput placeholder="Tìm mã hoặc tiêu đề công việc…" value={search} onChange={(e) => setSearch(e.target.value)} />
-          </form>
+          <div style={{ flex: '1 1 220px', maxWidth: 340 }}>
+            <SearchInput placeholder="Tìm mã hoặc tiêu đề công việc…" value={search.value} onChange={(e) => search.onChange(e.target.value)} />
+          </div>
 
           <Button size="sm" variant={filter.onlyMine ? 'soft' : 'secondary'} onClick={() => setParam('mine', filter.onlyMine ? '' : '1')}>
             Của tôi
@@ -330,10 +383,51 @@ export function TaskScreen({
           /></CardBody></Card>
         ) : (
           <>
+            {selected.size > 0 && (
+              <Card style={{ position: 'sticky', top: 8, zIndex: 5 }}>
+                <CardBody style={{ padding: '10px 12px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>Đã chọn {selected.size}</strong>
+                  <Select
+                    sizeSm
+                    value=""
+                    disabled={bulkBusy}
+                    aria-label="Đổi trạng thái các việc đã chọn"
+                    onChange={(e) => e.target.value && runBulk({ action: 'status', status: e.target.value })}
+                    style={{ width: 'auto' }}
+                  >
+                    <option value="">Đổi trạng thái…</option>
+                    {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </Select>
+                  {canAssign && (
+                    <Select
+                      sizeSm
+                      value=""
+                      disabled={bulkBusy}
+                      aria-label="Giao các việc đã chọn cho"
+                      onChange={(e) => e.target.value && runBulk({ action: 'assign', assigneeId: e.target.value === 'none' ? null : Number(e.target.value) })}
+                      style={{ width: 'auto', maxWidth: 220 }}
+                    >
+                      <option value="">Giao cho…</option>
+                      <option value="none">— Bỏ người thực hiện —</option>
+                      {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+                    </Select>
+                  )}
+                  {canDelete && (
+                    <Button size="sm" variant="danger-soft" loading={bulkBusy} onClick={() => runBulk({ action: 'delete' })}>
+                      Xóa
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Bỏ chọn</Button>
+                </CardBody>
+              </Card>
+            )}
             <div className="table-wrap">
               <table className="table table-clickable">
                 <thead>
                   <tr>
+                    <th style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Chọn tất cả công việc trên trang" />
+                    </th>
                     <th style={{ width: 140, minWidth: 130 }}>Mã</th>
                     <th>Công việc</th>
                     <th style={{ width: 180, minWidth: 160 }}>Người thực hiện</th>
@@ -345,7 +439,10 @@ export function TaskScreen({
                 </thead>
                 <tbody>
                   {data.rows.map((t) => (
-                    <tr key={t.id} onClick={() => router.push(`/tasks/${t.id}`)}>
+                    <tr key={t.id} onClick={() => router.push(`/tasks/${t.id}`)} data-selected={selected.has(t.id) || undefined}>
+                      <td style={{ verticalAlign: 'middle' }} onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleOne(t.id)} aria-label={`Chọn ${t.code}`} />
+                      </td>
                       <td style={{ whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t.code}</span>
                       </td>
@@ -420,9 +517,9 @@ export function TaskScreen({
         )
       )}
 
-      {view === 'board' && board && (
+      {view === 'board' && optimisticBoard && (
         <div className="kanban">
-          {board.map((col) => {
+          {optimisticBoard.map((col, colIndex) => {
             const meta = TASK_STATUS[col.status];
             const isDropTarget = dragOverStatus === col.status && draggingTask?.status !== col.status;
             return (
@@ -468,6 +565,14 @@ export function TaskScreen({
                       draggable
                       onDragStart={() => setDraggingTask({ id: t.id, status: col.status })}
                       onDragEnd={() => { setDraggingTask(null); setDragOverStatus(null); }}
+                      onKeyDown={(e) => {
+                        // Bàn phím thay cho kéo thả: Shift + ←/→ chuyển thẻ sang cột kế bên
+                        if (!e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+                        e.preventDefault();
+                        const target = optimisticBoard[colIndex + (e.key === 'ArrowRight' ? 1 : -1)];
+                        if (target) moveTask(t.id, col.status, target.status);
+                      }}
+                      title="Kéo thả hoặc Shift + ←/→ để chuyển trạng thái"
                       className="kanban-card"
                       data-overdue={Boolean(overdue(t))}
                       data-muted={['DONE', 'CANCELLED'].includes(t.status)}
@@ -498,6 +603,16 @@ export function TaskScreen({
                       </div>
                     </Link>
                   ))}
+                  {col.tasks.length < col.total && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      style={{ width: '100%' }}
+                      onClick={() => setParams({ more: String(Math.max(...optimisticBoard.map((c) => c.tasks.length)) + 50), view: 'board' })}
+                    >
+                      Xem thêm {col.total - col.tasks.length} thẻ
+                    </Button>
+                  )}
                 </div>
               </div>
             );

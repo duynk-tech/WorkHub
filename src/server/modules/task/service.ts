@@ -1,20 +1,19 @@
+import { cache } from 'react';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { AuthContext } from '@/server/auth/context';
 import { visibleEmployeeIds, visibleDepartmentIds } from '@/server/auth/scope';
 import { fmtDate } from '@/lib/date';
+import { nextCode } from '@/server/lib/code-sequence';
 import { notify } from '@/server/modules/notify/service';
 import { TASK_PRIORITY } from '@/lib/enums';
+import { extractMentions } from '@/lib/mentions';
 
 export async function generateTaskCode(offset = 0): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `TSK-${year}-`;
-  const last = await prisma.task.findFirst({
-    where: { code: { startsWith: prefix } },
-    orderBy: { code: 'desc' },
-    select: { code: true },
-  });
-  const seq = (last ? Number(last.code.slice(prefix.length)) : 0) + 1 + offset;
+  const next = await nextCode('Task', prefix);
+  const seq = Number(next.slice(prefix.length)) + offset;
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
@@ -64,6 +63,14 @@ export async function taskScopeWhere(ctx: AuthContext): Promise<Prisma.TaskWhere
 export const CLOSED_TASK_STATUSES = ['DONE', 'CANCELLED'] as const;
 export const OPEN_TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'REVIEW', 'BLOCKED'] as const;
 
+/** Phòng ban và mọi phòng ban con; cache theo request vì list, số đếm tab và board cùng gọi. */
+const departmentBranchIds = cache(async (departmentId: number): Promise<number[] | null> => {
+  const dept = await prisma.department.findUnique({ where: { id: departmentId }, select: { path: true } });
+  if (!dept) return null;
+  const branch = await prisma.department.findMany({ where: { path: { startsWith: dept.path } }, select: { id: true } });
+  return branch.map((d) => d.id);
+});
+
 /** Dựng điều kiện lọc dùng chung cho danh sách và cho số đếm của các tab. */
 async function buildTaskWhere(ctx: AuthContext, filter: TaskFilter) {
   const where: Prisma.TaskWhereInput = { AND: [await taskScopeWhere(ctx)] };
@@ -100,11 +107,8 @@ async function buildTaskWhere(ctx: AuthContext, filter: TaskFilter) {
   }
 
   if (filter.departmentId) {
-    const dept = await prisma.department.findUnique({ where: { id: filter.departmentId }, select: { path: true } });
-    if (dept) {
-      const branch = await prisma.department.findMany({ where: { path: { startsWith: dept.path } }, select: { id: true } });
-      and.push({ departmentId: { in: branch.map((d) => d.id) } });
-    }
+    const branch = await departmentBranchIds(filter.departmentId);
+    if (branch) and.push({ departmentId: { in: branch } });
   }
 
   return where;
@@ -194,7 +198,8 @@ export async function exportTasks(ctx: AuthContext, filter: TaskFilter) {
 
 /** Dữ liệu cho bảng Kanban — lấy tối đa N việc mỗi cột, đồng bộ đầy đủ bộ lọc với Danh sách. */
 export async function listTasksBoard(ctx: AuthContext, filter: TaskFilter, perColumn = 50) {
-  const statuses = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE', 'BLOCKED'] as const;
+  const statuses = ['TODO', 'IN_PROGRESS', 'REVIEW', 'BLOCKED', 'DONE', 'CANCELLED'] as const;
+  perColumn = Math.min(300, Math.max(10, Math.floor(perColumn) || 50));
   const baseWhere = await buildTaskWhere(ctx, { ...filter, status: [] });
   const baseAnd = (baseWhere.AND as Prisma.TaskWhereInput[]) ?? [];
 
@@ -220,6 +225,9 @@ export async function listTasksBoard(ctx: AuthContext, filter: TaskFilter, perCo
   return columns;
 }
 
+/** Số bình luận / tệp / giờ công tối đa nạp kèm chi tiết công việc. */
+export const TASK_DETAIL_LIMIT = 100;
+
 export async function getTaskDetail(ctx: AuthContext, id: number) {
   const scope = await taskScopeWhere(ctx);
   const task = await prisma.task.findFirst({
@@ -236,16 +244,20 @@ export async function getTaskDetail(ctx: AuthContext, id: number) {
       },
       checklist: { orderBy: { sortOrder: 'asc' } },
       watchers: { include: { employee: { select: { id: true, fullName: true, avatarUrl: true } } } },
+      // Giới hạn số dòng lịch sử nạp kèm: việc chạy lâu có thể có hàng nghìn bình luận/giờ công
       comments: {
         orderBy: { createdAt: 'desc' },
+        take: TASK_DETAIL_LIMIT,
         include: { author: { select: { id: true, fullName: true, avatarUrl: true } } },
       },
-      attachments: { orderBy: { createdAt: 'desc' } },
+      attachments: { orderBy: { createdAt: 'desc' }, take: TASK_DETAIL_LIMIT },
       activities: { orderBy: { createdAt: 'desc' }, take: 30 },
       timeLogs: {
         orderBy: { workDate: 'desc' },
+        take: TASK_DETAIL_LIMIT,
         include: { employee: { select: { fullName: true } } },
       },
+      _count: { select: { comments: true, attachments: true, timeLogs: true } },
       reminders: true,
     },
   });
@@ -283,52 +295,80 @@ export async function notifyTaskAssigned(taskId: number, actorName: string) {
   });
 }
 
-/** Gửi thông báo in-app khi có bình luận mới cho người thực hiện, người tạo, người nghiệm thu và người theo dõi. */
+/**
+ * Thông báo in-app cho những người liên quan tới công việc (người làm, người tạo,
+ * người nghiệm thu, người theo dõi + `extra`), trừ chính người thao tác.
+ */
+export async function notifyTaskParticipants(
+  taskId: number,
+  actorEmployeeId: number,
+  build: (task: { id: number; code: string; title: string }) => { title: string; body: string },
+  opts: { extraEmployeeIds?: number[]; only?: number[]; exclude?: number[] } = {},
+) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true, code: true, title: true, assigneeId: true, creatorId: true, reviewerId: true,
+      watchers: { select: { employeeId: true } },
+    },
+  });
+  if (!task) return 0;
+
+  const base = opts.only ?? [
+    task.assigneeId,
+    task.creatorId,
+    task.reviewerId,
+    ...task.watchers.map((w) => w.employeeId),
+    ...(opts.extraEmployeeIds ?? []),
+  ];
+  const recipientEmployeeIds = Array.from(
+    new Set(base.filter((id): id is number => Boolean(id) && id !== actorEmployeeId && !opts.exclude?.includes(id as number))),
+  );
+  if (recipientEmployeeIds.length === 0) return 0;
+
+  const users = await prisma.user.findMany({
+    where: { employeeId: { in: recipientEmployeeIds }, isActive: true },
+    select: { id: true },
+  });
+  if (users.length === 0) return 0;
+
+  const { title, body } = build(task);
+  await prisma.inAppNotification.createMany({
+    data: users.map((u) => ({ userId: u.id, title, body, linkUrl: `/tasks/${task.id}` })),
+  });
+  return users.length;
+}
+
+
+/** Gửi thông báo in-app khi có bình luận mới; người được @nhắc tên nhận thông báo riêng. */
 export async function notifyTaskComment(
   taskId: number,
   actorEmployeeId: number,
   actorName: string,
   content: string,
 ) {
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
-    select: {
-      id: true,
-      code: true,
-      title: true,
-      assigneeId: true,
-      creatorId: true,
-      reviewerId: true,
-      watchers: { select: { employeeId: true } },
-    },
-  });
-  if (!task) return;
-
-  const recipientEmployeeIds = Array.from(
-    new Set(
-      [
-        task.assigneeId,
-        task.creatorId,
-        task.reviewerId,
-        ...task.watchers.map((w) => w.employeeId),
-      ].filter((id): id is number => Boolean(id) && id !== actorEmployeeId),
-    ),
-  );
-  if (recipientEmployeeIds.length === 0) return;
-
-  const users = await prisma.user.findMany({
-    where: { employeeId: { in: recipientEmployeeIds }, isActive: true },
-    select: { id: true },
-  });
-  if (users.length === 0) return;
-
   const snippet = content.length > 120 ? `${content.slice(0, 120)}…` : content;
-  await prisma.inAppNotification.createMany({
-    data: users.map((u) => ({
-      userId: u.id,
-      title: `${actorName} đã bình luận ở ${task.code}`,
-      body: `${task.title}: ${snippet}`,
-      linkUrl: `/tasks/${task.id}`,
-    })),
-  });
+
+  const usernames = extractMentions(content);
+  const mentioned = usernames.length
+    ? await prisma.user.findMany({
+        where: { username: { in: usernames, mode: 'insensitive' }, isActive: true },
+        select: { employeeId: true },
+      })
+    : [];
+  const mentionedIds = mentioned.map((u) => u.employeeId);
+
+  if (mentionedIds.length) {
+    await notifyTaskParticipants(
+      taskId,
+      actorEmployeeId,
+      (task) => ({ title: `${actorName} đã nhắc bạn ở ${task.code}`, body: `${task.title}: ${snippet}` }),
+      { only: mentionedIds },
+    );
+  }
+
+  await notifyTaskParticipants(taskId, actorEmployeeId, (task) => ({
+    title: `${actorName} đã bình luận ở ${task.code}`,
+    body: `${task.title}: ${snippet}`,
+  }), { exclude: mentionedIds });
 }
