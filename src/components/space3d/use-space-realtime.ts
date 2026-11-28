@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import { getRealtimeSessionAction } from '@/server/modules/space3d/actions';
+import { spaceSceneTopic } from '@/lib/space-3d-guest';
 import {
   normalizeAvatar3DConfig,
   type RemoteBubble,
@@ -197,7 +198,8 @@ export function useSpaceRealtime({ sceneCode, self, guestKey = null, playerPosRe
       };
       scheduleRefresh(session.expiresAt);
 
-      sceneChannel = client.channel(`space:${sceneCode}`, {
+      // Bản chạy thử ở máy dùng kênh riêng (xem spaceSceneTopic)
+      sceneChannel = client.channel(spaceSceneTopic(sceneCode), {
         config: {
           private: true,
           broadcast: { self: false },

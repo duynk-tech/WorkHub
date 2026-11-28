@@ -578,7 +578,8 @@ export async function startGuestChatAction(
     if (typeof handle !== 'string' || !handle.startsWith('v1.')) return { ok: false, message: 'Không nhắn được cho khách này' };
     const plain = decryptSecret(handle);
     const guestKey = plain.startsWith('gk:') ? plain.slice(3) : '';
-    if (!GUEST_KEY_RE.test(guestKey)) return { ok: false, message: 'Không nhắn được cho khách này' };
+    // Giải mã thất bại = mã tạo ở môi trường khác (bản chạy thử) hoặc khách đã rời và vào lại
+    if (!GUEST_KEY_RE.test(guestKey)) return { ok: false, message: 'Khách này đang dùng phiên khác (bản chạy thử hoặc đã tải lại trang) — chưa nhắn được, thử lại sau khi khách vào lại' };
     const recent = await prisma.spaceGuestMessage.count({
       where: { staffEmployeeId: ctx.employeeId, fromGuest: false, createdAt: { gte: new Date(Date.now() - 10_000) } },
     });

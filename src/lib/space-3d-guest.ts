@@ -30,3 +30,11 @@ export function getOrCreateGuestKey(): string {
   }
   return key;
 }
+
+/**
+ * Tên kênh realtime của 1 cảnh. Bản chạy thử ở máy (next dev) dùng kênh riêng `space:dev~<mã>` →
+ * khách / nhân vật chạy thử không lẫn vào bản thật (mã nhắn tin của khách mã hoá bằng khoá môi trường khác).
+ */
+export function spaceSceneTopic(sceneCode: string): string {
+  return `space:${process.env.NODE_ENV === 'development' ? `dev~${sceneCode}` : sceneCode}`;
+}

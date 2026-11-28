@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthContext } from '@/server/auth/context';
 import { getSetting } from '@/server/modules/settings/service';
 import { broadcastServer } from './realtime';
-import { GUEST_KEY_RE, guestNumericId } from '@/lib/space-3d-guest';
+import { GUEST_KEY_RE, guestNumericId, spaceSceneTopic } from '@/lib/space-3d-guest';
 import { normalizeSpaceObjects } from '@/lib/space-3d-types';
 import {
   DRINK_ORDER_TTL_MS,
@@ -72,7 +72,7 @@ async function autoAdvanceOrders(sceneCode: string): Promise<number> {
     }),
   ]);
   const changed = a.count + b.count + c.count;
-  if (changed > 0) await broadcastServer(`space:${sceneCode}`, 'order', { auto: changed });
+  if (changed > 0) await broadcastServer(spaceSceneTopic(sceneCode), 'order', { auto: changed });
   return changed;
 }
 
@@ -167,7 +167,7 @@ export async function placeDrinkOrderAction(input: {
         spotZ: spot?.z ?? null,
       },
     });
-    await broadcastServer(`space:${scene.code}`, 'order', { id: row.id });
+    await broadcastServer(spaceSceneTopic(scene.code), 'order', { id: row.id });
     return { ok: true, message: `Đã gọi: ${orderSummary(v.lines, menu)}`, order: toView(row) };
   } catch (e) {
     console.error('[space3d-cafe] placeDrinkOrder failed:', e);
@@ -195,7 +195,7 @@ export async function updateDrinkOrderAction(
       servedAt: status === 'SERVED' ? new Date() : null,
     },
   });
-  await broadcastServer(`space:${row.sceneCode}`, 'order', { id: row.id });
+  await broadcastServer(spaceSceneTopic(row.sceneCode), 'order', { id: row.id });
   const msg = status === 'SERVED' ? 'Đã phục vụ' : status === 'PREPARING' ? 'Đang pha chế' : 'Đã huỷ đơn';
   return { ok: true, message: msg, order: toView(row) };
 }
@@ -219,7 +219,7 @@ export async function clearDrinkOrdersAction(input: {
       where.guestKey = input.guestKey;
     }
     const res = await prisma.spaceDrinkOrder.updateMany({ where, data: { status: 'CLEARED' } });
-    if (res.count > 0) await broadcastServer(`space:${code}`, 'order', { cleared: res.count });
+    if (res.count > 0) await broadcastServer(spaceSceneTopic(code), 'order', { cleared: res.count });
     return { ok: true, message: res.count ? `Đã dọn ${res.count} đơn` : 'Không còn ly nào để dọn', count: res.count };
   } catch (e) {
     return { ok: false, message: friendlyError(e, 'Dọn bàn thất bại') };
@@ -250,7 +250,7 @@ export async function npcAdvanceOrderAction(
       where: { id: cur.id },
       data: { status: to, servedByName: NPC_SERVER_NAME, servedAt: to === 'SERVED' ? new Date() : null },
     });
-    await broadcastServer(`space:${cur.sceneCode}`, 'order', { id: cur.id });
+    await broadcastServer(spaceSceneTopic(cur.sceneCode), 'order', { id: cur.id });
     return { ok: true, message: to === 'SERVED' ? 'Đã phục vụ' : 'Đang pha chế' };
   } catch (e) {
     return { ok: false, message: friendlyError(e, 'Không cập nhật được đơn') };

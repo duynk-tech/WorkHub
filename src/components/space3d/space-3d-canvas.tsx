@@ -205,6 +205,36 @@ const PASS_THROUGH = new Set([
  * Đẩy vị trí `pos` ra khỏi các nhân vật khác (hình tròn) và vật thể (hộp xoay theo rotY).
  * Trả về true nếu có va chạm.
  */
+/**
+ * Biên dịch trước shader của cảnh rồi chờ GPU link xong (song song, không chặn luồng chính) — bản an toàn của
+ * renderer.compileAsync: vật liệu bị huỷ giữa chừng (dựng lại vật thể) thì bỏ qua thay vì ném lỗi & treo mãi;
+ * có giới hạn thời gian.
+ */
+function safeCompileAsync(renderer: THREE.WebGLRenderer, scene: THREE.Object3D, camera: THREE.Camera, timeoutMs: number, targetScene?: THREE.Scene): Promise<void> {
+  let mats: Set<THREE.Material>;
+  try {
+    mats = renderer.compile(scene, camera, targetScene ?? null) as unknown as Set<THREE.Material>;
+  } catch {
+    return Promise.resolve();
+  }
+  const t0 = performance.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      for (const m of mats) {
+        const prog = (renderer.properties.get(m) as { currentProgram?: { isReady: () => boolean } }).currentProgram;
+        try {
+          if (!prog || prog.isReady()) mats.delete(m);
+        } catch {
+          mats.delete(m);
+        }
+      }
+      if (mats.size === 0 || performance.now() - t0 > timeoutMs) resolve();
+      else window.setTimeout(check, 16);
+    };
+    check();
+  });
+}
+
 /** Điểm (x, z) có bị đồ đạc chắn không (tính cả bán kính thân người) */
 function pointBlocked(x: number, z: number, objects: SpaceStructure[]): boolean {
   for (const o of objects) {
@@ -2412,23 +2442,35 @@ export function Space3DCanvas({
   useEffect(() => {
     const obj = sceneObjRef.current;
     if (!obj) return;
-    const oldPos = obj.player.group.position.clone();
-    const oldRotY = obj.player.group.rotation.y;
-    obj.scene.remove(obj.player.group);
     const nextPlayer = createChibiAvatar({
       name: playerName || 'Bạn',
       config: playerAvatar,
       isSelf: true,
       isOnDuty: isSelfOnDuty,
     });
-    nextPlayer.group.position.copy(oldPos);
-    nextPlayer.group.rotation.y = oldRotY;
-    obj.scene.add(nextPlayer.group);
-    obj.player = nextPlayer;
-    if (obj.selfBubble.sprite) {
-      obj.selfBubble.sprite.parent?.remove(obj.selfBubble.sprite);
-      nextPlayer.group.add(obj.selfBubble.sprite);
-    }
+    let cancelled = false;
+    let swapped = false;
+    const swap = () => {
+      if (cancelled || sceneObjRef.current !== obj) return;
+      swapped = true;
+      const prev = obj.player;
+      nextPlayer.group.position.copy(prev.group.position);
+      nextPlayer.group.rotation.y = prev.group.rotation.y;
+      obj.scene.remove(prev.group);
+      obj.scene.add(nextPlayer.group);
+      obj.player = nextPlayer;
+      if (obj.selfBubble.sprite) {
+        obj.selfBubble.sprite.parent?.remove(obj.selfBubble.sprite);
+        nextPlayer.group.add(obj.selfBubble.sprite);
+      }
+    };
+    // Biên dịch trước shader của nhân vật mới ở nền rồi mới thay → bấm "Vào" / đổi diện mạo không khựng
+    void safeCompileAsync(obj.renderer, nextPlayer.group, obj.camera, 1500, obj.scene).finally(swap);
+    return () => {
+      cancelled = true;
+      // Đổi diện mạo liên tiếp: nhân vật chưa kịp thay thì bỏ (giải phóng GPU)
+      if (!swapped) disposeObject(nextPlayer.group);
+    };
   }, [avatarSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -2718,12 +2760,12 @@ export function Space3DCanvas({
     // Màn hình tải chờ bước này xong mới báo sẵn sàng.
     const compileId = ++compileSeqRef.current;
     shadersReadyRef.current = false;
-    obj.renderer
-      .compileAsync(obj.scene, obj.camera)
-      .catch(() => undefined)
-      .finally(() => {
-        if (compileSeqRef.current === compileId) shadersReadyRef.current = true;
-      });
+    // Giới hạn thời gian chờ: compileAsync của three.js không bao giờ báo xong nếu một vật liệu bị huỷ giữa chừng
+    // (vd. kệ kho dựng lại khi dữ liệu hàng hoá về sau) → không có giới hạn thì cảnh trắng mãi ở lần vào đầu.
+    // Quá 3s thì vẽ luôn (có thể khựng nhẹ vài khung hình), còn hơn không hiện gì.
+    void safeCompileAsync(obj.renderer, obj.scene, obj.camera, 3000).finally(() => {
+      if (compileSeqRef.current === compileId) shadersReadyRef.current = true;
+    });
     if (changed) obj.renderer.shadowMap.needsUpdate = true;
     const upd = (obj as unknown as { updateSelectionBox?: (id: string | null, c?: boolean) => void }).updateSelectionBox;
     upd?.(editMode ? selectedObjectId : null, selectedObjectId ? findCollisions(structures, selectedObjectId).length > 0 : false);
