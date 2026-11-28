@@ -39,6 +39,7 @@ import {
   getGuestChatHandleAction,
 } from '@/server/modules/space3d/actions';
 import type { TeleportTarget } from './space-3d-canvas';
+import { clearPortalPath, portalFor } from '@/lib/space-3d-portals';
 import { useSpaceRealtime, type IncomingDm } from './use-space-realtime';
 import { SpaceCafeMenu } from './space-cafe-menu';
 import { SpaceCafeOrders } from './space-cafe-orders';
@@ -234,7 +235,10 @@ function HudButton({
 export function Space3DExperience({ data }: { data: SpacePayload }) {
   const router = useRouter();
   // Vừa đi bộ qua cổng nối sang cảnh này (?via=portal) → nhân vật xuất hiện ngay cổng đối diện
-  const arriveViaPortal = useSearchParams().get('via') === 'portal';
+  const searchParams = useSearchParams();
+  const arriveViaPortal = searchParams.get('via') === 'portal';
+  // Chỉ để xem trước mẫu bố trí khi phát triển: ?debug=1&tpl=1 dựng mẫu mới nhất thay bố cục đã lưu (không ghi gì)
+  const previewTemplate = searchParams.get('debug') === '1' && searchParams.get('tpl') === '1';
   const [pending, startTransition] = useTransition();
 
   // Guest entry overlay + Persistent Staff Avatar customizer
@@ -727,6 +731,13 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   // Editable Scene State (vật thể có lịch sử hoàn tác)
   const layout = useLayoutHistory(data.activeScene.structures);
   const structures = layout.objects;
+  // Lối đi bộ sang cảnh bên cạnh luôn thông thoáng (dời cột dây đèn cắm giữa lối khi dựng)
+  const canvasStructures = useMemo(() => {
+    const { kind, widthM, depthM } = data.activeScene;
+    const base = previewTemplate ? (templateFor(normalizeSceneKind(kind), { widthM, depthM, departments: data.departments }) as SpaceStructure[]) : structures;
+    const portal = portalFor(kind, widthM, depthM);
+    return portal ? clearPortalPath(base, portal, widthM, depthM) : base;
+  }, [structures, previewTemplate, data.activeScene, data.departments]);
   useEffect(() => {
     const calc = () => {
       const isStaffUser = Boolean(data.currentUser);
@@ -1283,7 +1294,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         widthM={data.activeScene.widthM}
         depthM={data.activeScene.depthM}
         branding={data.branding}
-        structures={structures}
+        structures={canvasStructures}
         placements={placements}
         presences={data.presences}
         currentEmployeeId={data.currentUser?.employeeId ?? null}

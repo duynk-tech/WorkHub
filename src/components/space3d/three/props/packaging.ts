@@ -159,15 +159,15 @@ function packGeometry(kind: PackKind): THREE.BufferGeometry {
   switch (kind) {
     case 'bottle': {
       const pts = [[0, 0], [0.48, 0], [0.5, 0.04], [0.5, 0.62], [0.42, 0.72], [0.2, 0.84], [0.17, 0.92], [0.19, 0.94], [0.19, 1], [0, 1]].map(([r, y]) => new THREE.Vector2(r, y));
-      g = new THREE.LatheGeometry(pts, 20);
+      g = new THREE.LatheGeometry(pts, 12);
       break;
     }
     case 'can':
-      g = new THREE.CylinderGeometry(0.5, 0.5, 1, 20).translate(0, 0.5, 0);
+      g = new THREE.CylinderGeometry(0.5, 0.5, 1, 12).translate(0, 0.5, 0);
       break;
     case 'jar': {
       const pts = [[0, 0], [0.46, 0], [0.5, 0.05], [0.5, 0.82], [0.44, 0.86], [0.44, 1], [0, 1]].map(([r, y]) => new THREE.Vector2(r, y));
-      g = new THREE.LatheGeometry(pts, 20);
+      g = new THREE.LatheGeometry(pts, 12);
       break;
     }
     case 'pouch': {

@@ -95,23 +95,22 @@ export function showroomTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceOb
   s.push({ kind: 'ARMCHAIR', posX: lx + 1.4, posZ: lz + 0.3, rotY: -HALF_PI, color: '#b45309' });
   s.push({ kind: 'COFFEE_TABLE', posX: lx - 0.2, posZ: lz + 0.1 });
   s.push({ kind: 'PLANT_MONSTERA', posX: lx - 1.9, posZ: lz - 1.1 });
-  // 2 dãy quầy trưng bày máy sát tường hai bên, quay mặt vào lối đi giữa
+  // 2 dãy quầy trưng bày máy sát tường hai bên, quay mặt vào lối đi giữa — cùng nhịp 4.2m, hai bên thẳng hàng
   const rowX = halfW - 1.6;
   const zFrom = -halfD + 4;
   const zTo = halfD - 11;
-  const perSide = Math.max(2, Math.min(4, Math.floor((zTo - zFrom) / 4.2) + 1));
-  // Phòng Lab Kem & Socola chiếm góc sau bên phải → dãy quầy phải bắt đầu sau phòng Lab
+  const PITCH = 4.2;
+  // Phòng Lab Kem & Socola chiếm góc sau bên phải → dãy quầy phải bắt đầu sau phòng Lab (chừa ≥2.2m trước vách kính)
   const labW = Math.min(10, halfW - 7.5);
   const labD = Math.min(8, d * 0.28);
   const labX0 = halfW - labW;
   const labZ1 = -halfD + labD;
-  const zFromRight = labZ1 + 2;
+  const rowZs: number[] = [];
+  for (let z = zFrom; z <= zTo + 0.01 && rowZs.length < 6; z += PITCH) rowZs.push(z);
   let idx = 0;
   for (const side of [-1, 1]) {
-    const zA = side > 0 ? zFromRight : zFrom;
-    const n = side > 0 ? Math.max(2, Math.min(perSide, Math.floor((zTo - zA) / 3.5) + 1)) : perSide;
-    for (let i = 0; i < n; i++) {
-      const z = zA + ((zTo - zA) / Math.max(1, n - 1)) * i;
+    const zs = side > 0 ? rowZs.filter((z) => z - 1.6 >= labZ1 + 2.2) : rowZs;
+    for (const z of zs) {
       const counter: Seed = {
         kind: 'DISPLAY_COUNTER',
         posX: side * rowX,
@@ -127,13 +126,15 @@ export function showroomTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceOb
       idx++;
     }
   }
-  // Khu giữa: kệ gondola phụ tùng & vật tư + tủ kính linh kiện (chừa đại lộ thảm 4.8m)
+  // Khu giữa: đảo kệ nằm giữa khoang (giữa mép thảm 2.4m và chỗ khách đứng trước quầy tường) → 2 lối đi đều nhau
+  const islandX = Math.min(8.2, (2.4 + rowX - 2) / 2);
   for (const side of [-1, 1]) {
-    if (side < 0) s.push({ kind: 'GONDOLA', posX: side * 6.2, posZ: -4.5, rotY: HALF_PI, widthM: 3.6, accentColor: '#2563eb', label: 'Phụ tùng & Linh kiện' });
-    // Phải: khu máy làm kem — tủ kem gelato kính cong quay ra lối giữa
-    else s.push({ kind: 'GELATO_CASE', posX: 6.2, posZ: -4.5, rotY: -HALF_PI, widthM: 2.4, label: 'Gelato · Kem tươi' });
-    s.push({ kind: 'GONDOLA', posX: side * 6.2, posZ: 0.5, rotY: HALF_PI, widthM: 3.6, accentColor: side < 0 ? '#0891b2' : '#16a34a', label: 'Vật tư tiêu hao' });
-    s.push({ kind: 'DISPLAY_CABINET', posX: side * 4, posZ: -2, rotY: side < 0 ? HALF_PI : -HALF_PI });
+    if (side < 0) s.push({ kind: 'GONDOLA', posX: -islandX, posZ: -4.5, rotY: HALF_PI, widthM: 3.6, accentColor: '#2563eb', label: 'Phụ tùng & Linh kiện' });
+    // Phải: tủ kem gelato kính cong ngay trước cửa phòng Lab (lệch trái cửa để không chắn lối ra vào)
+    else s.push({ kind: 'GELATO_CASE', posX: islandX - 0.4, posZ: -4.5, rotY: -HALF_PI, widthM: 2.4, label: 'Gelato · Kem tươi' });
+    s.push({ kind: 'GONDOLA', posX: side * islandX, posZ: 0.5, rotY: HALF_PI, widthM: 3.6, accentColor: side < 0 ? '#0891b2' : '#16a34a', label: 'Vật tư tiêu hao' });
+    // 4 tủ kính đứng dọc hai bên đại lộ thảm như hàng cột trưng bày
+    for (const z of [-1.5, 3.3]) s.push({ kind: 'DISPLAY_CABINET', posX: side * 4.1, posZ: z, rotY: side < 0 ? HALF_PI : -HALF_PI });
     s.push({ kind: 'PLANT_PALM', posX: side * 3.3, posZ: halfD - 2.2 });
   }
   // Cuối sảnh giữa: QUẦY PHA THỬ MÁY — nhân viên đứng sau pha cho khách, khách ngồi ghế bar phía trước xem & thử
@@ -269,8 +270,8 @@ export function cafeTemplate({ widthM: w, depthM: d }: TemplateCtx): SpaceObject
   s.push({ kind: 'BOULDER', ...at(3.6, 1.6), widthM: 1, depthM: 0.8, heightM: 0.6 });
   // Quạt phun sương cạnh khu bàn gỗ dài (quán sân vườn miền Nam)
   for (const [x, z] of [[-6.35, -8.2], [5.4, -4.6], [-6.35, -5.2]] as [number, number][]) s.push({ kind: 'MIST_FAN', ...at(x, z), rotY: x < 0 ? HALF_PI : -HALF_PI });
-  // Dây đèn Edison giăng ngang sân trước (cao 3.6m, trên dù che)
-  s.push({ kind: 'STRING_LIGHTS', ...at(4, 6), widthM: 18 * kx, heightM: 3.6 });
+  // Dây đèn Edison giăng ngang sân trước (cao 3.6m, trên dù che) — chân cột tránh lối đi bộ sang Showroom (z≈6)
+  s.push({ kind: 'STRING_LIGHTS', ...at(4.5, 9.4), widthM: 16 * kx, heightM: 3.6 });
   s.push({ kind: 'STRING_LIGHTS', ...at(7, 2.4), widthM: 12 * kx, heightM: 3.4 });
   // Góc tiện ích: bồn rửa tay đá + gương cạnh nhà kính, thùng rác phân loại
   s.push({ kind: 'OUTDOOR_SINK', ...at(-5.6, -11.6) });

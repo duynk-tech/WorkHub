@@ -2,60 +2,8 @@ import * as THREE from 'three';
 import { M, box, cyl } from './props/kit';
 import { sharedMat } from './materials';
 
-/**
- * Lối đi bộ nối Quán cà phê ⇄ Showroom: ngoài việc chọn cảnh, nhân vật có thể đi bộ sang.
- * - Quán cà phê: lối mở ở hàng rào bên phải, nhìn ra mặt tiền showroom TIM Corp phía bên kia đường nội bộ.
- * - Showroom: cửa kính bên trái, nhìn ra cổng gỗ quán Xởi Lởi.
- * Đi vào sát cổng → chuyển cảnh và xuất hiện ngay cổng đối diện bên kia.
- */
-export type PortalTarget = 'SHOWROOM' | 'CAFE';
-
-export interface ScenePortal {
-  target: PortalTarget;
-  /** Tâm cổng (trên mặt tường / hàng rào) */
-  x: number;
-  z: number;
-  /** Hướng mặt từ cổng nhìn VÀO trong cảnh (rad, theo trục +Z) */
-  inward: number;
-  /** Bề rộng lối đi */
-  width: number;
-  /** Khoảng cách tối thiểu tới cổng mà nhân vật đi tới được (giới hạn sàn) */
-  reach: number;
-  label: string;
-}
-
-/** Cổng nối của cảnh hiện tại (không có → null) */
-export function portalFor(sceneKind: string, widthM: number, depthM: number): ScenePortal | null {
-  if (sceneKind === 'CAFE') {
-    return { target: 'SHOWROOM', x: widthM / 2, z: depthM * 0.25, inward: -Math.PI / 2, width: 1.8, reach: 0.4, label: 'Sang Showroom TIM Corp' };
-  }
-  if (sceneKind === 'SHOWROOM') {
-    // Tường kính hông nằm ngoài sàn 1m → nhân vật chỉ tới được cách kính 1.4m
-    return { target: 'CAFE', x: -(widthM / 2 + 1), z: depthM * 0.32, inward: Math.PI / 2, width: 2, reach: 1.4, label: 'Sang Quán Xởi Lởi' };
-  }
-  return null;
-}
-
-/** Toạ độ cục bộ của điểm (x,z) so với cổng: depth = khoảng cách vào trong, side = lệch ngang */
-export function portalLocal(p: ScenePortal, x: number, z: number): { depth: number; side: number } {
-  const fx = Math.sin(p.inward);
-  const fz = Math.cos(p.inward);
-  const dx = x - p.x;
-  const dz = z - p.z;
-  return { depth: dx * fx + dz * fz, side: dx * fz - dz * fx };
-}
-
-/** Nhân vật đang đứng trong vùng kích hoạt cổng */
-export function inPortalZone(p: ScenePortal, x: number, z: number): boolean {
-  const { depth, side } = portalLocal(p, x, z);
-  return depth < p.reach + 0.45 && Math.abs(side) < p.width / 2;
-}
-
-/** Điểm xuất hiện khi vừa đi qua cổng sang cảnh này (cách cổng đủ xa để không kích hoạt lại) */
-export function portalSpawn(p: ScenePortal): { x: number; z: number; rotY: number } {
-  const k = p.reach + 1.6;
-  return { x: p.x + Math.sin(p.inward) * k, z: p.z + Math.cos(p.inward) * k, rotY: p.inward };
-}
+export * from '@/lib/space-3d-portals';
+import type { ScenePortal } from '@/lib/space-3d-portals';
 
 const alu = () => sharedMat('alu', () => new THREE.MeshStandardMaterial({ color: '#d7dde5', metalness: 0.9, roughness: 0.26 }));
 

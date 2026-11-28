@@ -357,6 +357,16 @@ export function buildEspresso(o: SpaceObject): THREE.Group {
 const screenMat = () => sharedMat('esp:screen', () => new THREE.MeshBasicMaterial({ map: screenTex(), toneMapped: false }));
 
 /** Máy xay on-demand: thân đúc, phễu kính chứa hạt cà phê, núm chỉnh độ mịn, ngàm giữ tay pha */
+const BEAN_COUNT = 150;
+let beanGeo: THREE.BufferGeometry | null = null;
+function beanGeometry(): THREE.BufferGeometry {
+  if (!beanGeo) {
+    beanGeo = new THREE.IcosahedronGeometry(0.0068, 0);
+    beanGeo.scale(1, 0.7, 1.35);
+  }
+  return beanGeo;
+}
+
 export function buildGrinder(): THREE.Group {
   const g = new THREE.Group();
   const bodyMat = mats.bodyPaint('#1f2328');
@@ -372,15 +382,14 @@ export function buildGrinder(): THREE.Group {
   hopper.position.set(0, 0.39, -0.01);
   g.add(hopper);
   g.add(cyl(0.088, 0.088, 0.018, M.black(), 0, 0.57, -0.01, 32)); // nắp
-  const beanGeo = new THREE.SphereGeometry(0.006, 8, 6);
-  beanGeo.scale(1, 0.7, 1.35);
-  const beans = new THREE.InstancedMesh(beanGeo, mats.bean(), 260);
+  // Hạt nhỏ sau kính: khối 20 mặt dùng chung (20 tam giác/hạt thay vì 80), 150 hạt — nhìn vẫn đầy phễu
+  const beans = new THREE.InstancedMesh(beanGeometry(), mats.bean(), BEAN_COUNT);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < BEAN_COUNT; i++) {
     const y = rnd() * 0.12;
     const rMax = 0.036 + (y / 0.17) * 0.045;
     const a = rnd() * Math.PI * 2;
@@ -390,7 +399,7 @@ export function buildGrinder(): THREE.Group {
     m.compose(new THREE.Vector3(Math.cos(a) * rr, 0.395 + y, -0.01 + Math.sin(a) * rr), q, new THREE.Vector3(1, 1, 1));
     beans.setMatrixAt(i, m);
   }
-  beans.userData.noMerge = true;
+  beans.userData = { noMerge: true, shared: true };
   g.add(beans);
   // Ngàm giữ tay pha + nút xay + màn hình nhỏ
   for (const s of [-1, 1]) g.add(box(0.012, 0.012, 0.07, M.chrome(), s * 0.035, 0.2, 0.12, 0.004));
