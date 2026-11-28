@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { createOutdoorTree } from './hall';
 import { createGrassTexture, lightboxMat, registerEmissive, sharedMat } from './materials';
 import { M, box, cyl } from './props/kit';
 import { buildFenceGreenery, buildTreeRow } from './props/garden';
@@ -31,11 +30,7 @@ function outdoor(w: number, d: number, env: THREE.Group, lowPolyTrees = true) {
   const trees: [number, number, number][] = [
     [-w / 2 - 4, d / 2 + 4, 1.2], [w / 2 + 4, d / 2 + 4, 1.3], [-w / 2 - 5, -d / 4, 1.25], [w / 2 + 5, -d / 4, 1.15], [0, -d / 2 - 6, 1.4],
   ];
-  if (lowPolyTrees) for (const [x, z, s] of trees) {
-    const t = createOutdoorTree(s);
-    t.position.set(x, 0, z);
-    env.add(t);
-  }
+  if (lowPolyTrees) env.add(buildTreeRow(trees.map(([x, z, scale]) => ({ x, z, scale })), Math.round(w * 11 + d)));
 }
 
 function warmLight(env: THREE.Group, lights: THREE.Light[], x: number, y: number, z: number, intensity: number, color = '#ffd8a8', distance = 11) {

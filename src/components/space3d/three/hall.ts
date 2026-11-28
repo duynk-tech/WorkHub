@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { SpaceKind, SpaceStructure } from '@/lib/space-3d-types';
 import { labelTex } from './props/textures';
+import { buildTreeRow } from './props/garden';
 import {
   applyWindSway,
   createCarpetTexture,
@@ -30,29 +31,6 @@ const M = {
   wood: () => sharedMat('wood', () => new THREE.MeshStandardMaterial({ map: createWoodTexture(), roughness: 0.55 })),
   leaf: () => sharedMat('leaf', () => new THREE.MeshStandardMaterial({ color: '#2f9e4f', roughness: 0.7, flatShading: true })),
 };
-
-/** Dựng cây xanh Low-Poly tán nhiều tầng chân thực cho sân vườn bên ngoài nhà triển lãm. */
-export function createOutdoorTree(scale = 1): THREE.Group {
-  const g = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22 * scale, 0.36 * scale, 2.2 * scale, 8), M.trunk());
-  trunk.position.y = 1.1 * scale;
-  trunk.castShadow = true;
-  g.add(trunk);
-
-  const clusters: [number, number, number, number][] = [
-    [0, 2.9, 0, 1.35],
-    [-0.75, 2.4, 0.4, 0.95],
-    [0.75, 2.45, -0.35, 1.0],
-    [0.1, 3.65, 0.2, 0.85],
-  ];
-  clusters.forEach(([x, y, z, r], idx) => {
-    const foliage = new THREE.Mesh(new THREE.DodecahedronGeometry(r * scale, 1), M.foliage(idx));
-    foliage.position.set(x * scale, y * scale, z * scale);
-    foliage.castShadow = true;
-    g.add(foliage);
-  });
-  return g;
-}
 
 /** Tạo texture vách hậu Lightbox chuyên nghiệp cho Gian hàng Triển lãm Expo. */
 export function createExpoBackdropTexture(title: string, subtitle: string, accentColor: string): THREE.CanvasTexture {
@@ -272,11 +250,11 @@ export function createExhibitionHallEnvironment(
   env.add(lawn);
 
   // Vòng đồi low-poly ở xa tan vào sương mù (tạo chiều sâu đường chân trời)
-  const hillMat = sharedMat('hill', () => new THREE.MeshStandardMaterial({ color: '#5f9e6e', roughness: 0.95, flatShading: true }));
+  const hillMat = sharedMat('hill', () => new THREE.MeshStandardMaterial({ color: '#6f9a6c', roughness: 1 }));
   for (let i = 0; i < 22; i++) {
     const ang = (i / 22) * Math.PI * 2 + (i % 3) * 0.1;
     const r = 210 + (i % 4) * 22;
-    const hill = new THREE.Mesh(new THREE.DodecahedronGeometry(30 + (i % 5) * 7, 1), hillMat);
+    const hill = new THREE.Mesh(new THREE.DodecahedronGeometry(30 + (i % 5) * 7, 2), hillMat);
     hill.scale.set(1.8, 0.32 + (i % 3) * 0.1, 1.2);
     hill.position.set(Math.cos(ang) * r, -6, Math.sin(ang) * r);
     hill.rotation.y = ang;
@@ -486,18 +464,19 @@ export function createExhibitionHallEnvironment(
     }
   }
 
-  // 5. Hàng cây xanh Low-Poly tán nhiều lớp bao quanh khuôn viên ngoài tường kính
-  const treeCoords: [number, number, number][] = [
-    [-halfW - 4.5, -14, 1.3], [-halfW - 5, -5, 1.15], [-halfW - 4.5, 5, 1.35], [-halfW - 5, 14, 1.2],
-    [halfW + 4.5, -14, 1.25], [halfW + 5, -5, 1.3], [halfW + 4.5, 5, 1.15], [halfW + 5, 14, 1.3],
-    [-12, -halfD - 5, 1.4], [-4, -halfD - 6, 1.2], [4, -halfD - 6, 1.25], [12, -halfD - 5, 1.35],
-    [-11, halfD + 5, 1.25], [11, halfD + 5, 1.3],
-  ];
-  for (const [tx, tz, sc] of treeCoords) {
-    const tree = createOutdoorTree(sc);
-    tree.position.set(tx, 0, tz);
-    env.add(tree);
+  // 5. Hàng cây tán lá thật (thân cong, cành toả, chùm lá) bao quanh khuôn viên ngoài tường kính.
+  //    Chừa khoảng trống trước lối đi bộ sang quán cà phê (tường trái Showroom) để nhìn thấy cổng quán.
+  const portalZ = sceneKind === 'SHOWROOM' ? depthM * 0.32 : null;
+  const treePts: { x: number; z: number; scale: number }[] = [];
+  for (const sgn of [-1, 1]) {
+    for (let z = -halfD + 1; z <= halfD + 2; z += 6.2) {
+      if (sgn < 0 && portalZ !== null && Math.abs(z - portalZ) < 4.5) continue;
+      treePts.push({ x: sgn * (halfW + 4.6 + Math.abs(Math.sin(z * 1.7)) * 0.9), z, scale: 1.2 + Math.abs(Math.cos(z * 0.9)) * 0.3 });
+    }
   }
+  for (let x = -halfW - 2; x <= halfW + 2; x += 6.5) treePts.push({ x, z: -halfD - 5 - Math.abs(Math.sin(x)) * 0.8, scale: 1.25 + Math.abs(Math.sin(x * 0.7)) * 0.3 });
+  for (const sgn of [-1, 1]) treePts.push({ x: sgn * 11, z: halfD + 5, scale: 1.3 });
+  env.add(buildTreeRow(treePts, Math.round(widthM * 7 + depthM)));
 
   // 6. Cổng chào TIM Corp tại lối vào (thiết kế cổng doanh nghiệp hiện đại)
   const archGroup = createEntranceGate(companyName, logoUrl, sceneKind);

@@ -178,7 +178,8 @@ const cardGeo = new Map<string, THREE.BufferGeometry>();
 function getCardGeo(kind: CardKind) {
   const hit = cardGeo.get(kind);
   if (hit) return hit;
-  const g = new THREE.PlaneGeometry(1, 1, 2, 6);
+  // Lá chuối cong nhiều → lưới 2×6; chùm lá khác gần như phẳng → 2×2 (8 tam giác thay vì 24, nhẹ cả pass bóng)
+  const g = new THREE.PlaneGeometry(1, 1, 2, kind === 'banana' ? 6 : 2);
   g.translate(0, 0.5, 0);
   const p = g.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {
