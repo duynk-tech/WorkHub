@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const PUBLIC_PATHS = [
   '/login',
+  '/sw.js',
+  '/manifest.webmanifest',
+  '/api/pwa-icon',
   '/3d',
   '/api/auth/google',
   '/install',

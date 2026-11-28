@@ -8,6 +8,9 @@ import { mapLimit } from '@/lib/concurrency';
 import { expireQuotations, runSalesMaintenance } from '@/server/modules/customer/maintenance';
 import { generateRecurringTasks } from '@/server/modules/task/recurrence-job';
 import { escalateOverdueApprovals } from '@/server/modules/workflow/escalation';
+import { findLowStockItems } from '@/server/modules/spare-parts/low-stock';
+import { runDebtReminders } from '@/server/modules/customer/debt-reminders';
+import { employeeIdsWithPermission } from '@/server/lib/permission-holders';
 
 export interface JobResult { job: string; message: string; count?: number }
 
@@ -306,6 +309,33 @@ export async function jobRecurringTasks(): Promise<JobResult> {
   return { job: 'recurring-tasks', message: `Đã tạo ${r.created} công việc định kỳ kế tiếp`, count: r.created };
 }
 
+/** Cảnh báo hàng dưới ngưỡng an toàn — một tin tổng hợp cho người quản lý kho. */
+export async function jobLowStock(): Promise<JobResult> {
+  const items = (await findLowStockItems()).filter((i) => i.suggestedQty > 0);
+  if (!items.length) return { job: 'low-stock', message: 'Không có mặt hàng nào cần đặt thêm', count: 0 };
+  const recipients = await employeeIdsWithPermission('FEATURE_SPARE_PARTS_MANAGE');
+  const lines = items.slice(0, 10).map((i) => `• ${i.name} (${i.itemCode}): còn ${i.stock}/${i.minStockAlert} ${i.unit}, nên đặt ${i.suggestedQty}`);
+  if (items.length > 10) lines.push(`… và ${items.length - 10} mặt hàng khác`);
+  await notify({
+    templateCode: 'LOW_STOCK',
+    employeeIds: recipients,
+    vars: { count: items.length, items: lines.join('\n') },
+    linkPath: '/spare-parts?lowStock=1',
+    dedupeKey: `LOW_STOCK:${new Date().toISOString().slice(0, 10)}`,
+  });
+  return { job: 'low-stock', message: `Đã cảnh báo ${items.length} mặt hàng sắp hết tới ${recipients.length} người`, count: items.length };
+}
+
+/** Nhắc thu nợ các đơn quá hạn 1 / 7 / 15 ngày (rồi mỗi 15 ngày). */
+export async function jobDebtReminders(): Promise<JobResult> {
+  const r = await runDebtReminders();
+  return {
+    job: 'debt-reminders',
+    message: `Nhắc ${r.orders} đơn quá hạn (${r.staff} thông báo nhân viên, ${r.customerEmails} email khách)`,
+    count: r.orders,
+  };
+}
+
 export const JOBS = {
   'task-reminders': jobTaskReminders,
   'overdue-tasks': jobOverdueTasks,
@@ -317,6 +347,8 @@ export const JOBS = {
   'sales-maintenance': jobSalesMaintenance,
   'quotation-expiry': jobQuotationExpiry,
   'recurring-tasks': jobRecurringTasks,
+  'low-stock': jobLowStock,
+  'debt-reminders': jobDebtReminders,
 } as const;
 
 export type JobName = keyof typeof JOBS;

@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle, Printer, Undo2, PackageCheck, CircleX } from 'lucide-react';
+import { ShoppingCart, Plus, Wallet, Truck, AlertTriangle, Printer, Undo2, PackageCheck, CircleX, Target } from 'lucide-react';
 import {
   Badge, Button, Card, Input, PageHeader, SearchInput, SearchableSelect, StatCard,
 } from '@/components/ui';
@@ -296,11 +296,15 @@ export function SalesScreen({
             : `${list.total} đơn bán`
         }
         actions={
-          canManage ? (
-            <div style={{ display: "flex", gap: 8 }}><Button onClick={() => setQuickSaleOpen(true)}>Bán nhanh</Button><Button variant="primary" onClick={() => setPickCustomerOpen(true)}>
-              <Plus /> Tạo đơn bán
-            </Button></div>
-          ) : undefined
+          <>
+            <Link href="/sales/targets" className="btn btn-ghost"><Target /> Chỉ tiêu</Link>
+            {canManage && <Button variant="secondary" onClick={() => setQuickSaleOpen(true)}>Bán nhanh</Button>}
+            {canManage && (
+              <Button variant="primary" onClick={() => setPickCustomerOpen(true)}>
+                <Plus /> Tạo đơn bán
+              </Button>
+            )}
+          </>
         }
       />
 

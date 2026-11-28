@@ -1,6 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { writeAudit } from '@/server/lib/audit';
+import { prisma } from '@/lib/prisma';
 import { requireAuth, can } from '@/server/auth/context';
 import { canViewModule, NO_ACCESS_MESSAGE } from '@/server/auth/module-access';
 import {
@@ -514,5 +516,47 @@ export async function getPurchaseFormCatalogAction() {
   } catch (error: any) {
     console.error('[getPurchaseFormCatalogAction error]:', error);
     return { ok: false, message: error.message || 'Lỗi khi tải danh mục' };
+  }
+}
+
+/**
+ * Tạo PO nháp (trạng thái "Yêu cầu đặt hàng") từ các mặt hàng dưới ngưỡng an toàn.
+ * Mỗi nhà sản xuất một PO; số lượng = gợi ý (đủ gấp đôi ngưỡng, trừ tồn và hàng đang về).
+ * Người dùng xem lại, sửa số lượng rồi mới chuyển "Đã đặt hãng".
+ */
+export async function createReorderDraftsAction() {
+  const ctx = await requireAuth();
+  if (!can(ctx, 'FEATURE_SPARE_PARTS_MANAGE')) return { ok: false, message: 'Bạn không có quyền tạo đơn đặt hàng' };
+  try {
+    const { findLowStockItems } = await import('./low-stock');
+    const low = (await findLowStockItems()).filter((i) => i.suggestedQty > 0);
+    if (!low.length) return { ok: true, message: 'Không có mặt hàng nào cần đặt thêm', created: [] as string[] };
+
+    const meta = await prisma.inventoryItem.findMany({ where: { id: { in: low.map((i) => i.id) } }, select: { id: true, manufacturer: true } });
+    const supplierOf = new Map(meta.map((m) => [m.id, m.manufacturer?.trim() || 'Selmi']));
+    const groups = new Map<string, typeof low>();
+    for (const item of low) {
+      const key = supplierOf.get(item.id) ?? 'Selmi';
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
+
+    const { SaveSparePartOrderSchema } = await import('./types');
+    const created: string[] = [];
+    for (const [supplier, items] of groups) {
+      const input = SaveSparePartOrderSchema.parse({
+        supplier,
+        notes: `Tạo tự động từ ${items.length} mặt hàng dưới ngưỡng an toàn — kiểm tra số lượng trước khi đặt hãng.`,
+        items: items.map((i) => ({ itemId: i.id, quantity: i.suggestedQty })),
+      });
+      const order = await createSparePartOrder(input, ctx.userId);
+      created.push(order.orderCode);
+    }
+    await writeAudit({ actorId: ctx.userId, entityType: 'SparePartOrder', entityId: created.join(','), action: 'REORDER_DRAFT', diff: { items: low.length } });
+    revalidatePath('/spare-parts');
+    revalidatePath('/purchases');
+    return { ok: true, message: `Đã tạo ${created.length} đơn đặt hàng nháp: ${created.join(', ')}`, created };
+  } catch (error: any) {
+    console.error('[createReorderDraftsAction error]:', error);
+    return { ok: false, message: error.message || 'Không tạo được đơn đặt hàng' };
   }
 }

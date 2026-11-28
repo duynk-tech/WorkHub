@@ -3,6 +3,9 @@ import { requireAuth } from '@/server/auth/context';
 import { prisma } from '@/lib/prisma';
 import { getOrCreateBalance, remainingDays } from '@/server/modules/leave/service';
 import { ProfileScreen } from './profile-screen';
+import { getNotifyPrefsMap, DEFAULT_NOTIFY_PREFS } from '@/server/modules/notify/prefs';
+import { vapidPublicKey } from '@/server/modules/notify/push';
+import { isEmailConfigured } from '@/server/modules/notify/email';
 
 export const metadata = { title: 'Hồ sơ cá nhân' };
 export const dynamic = 'force-dynamic';
@@ -36,6 +39,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
       })
     : null;
   const result = (await searchParams).google;
+  const prefs = (await getNotifyPrefsMap([ctx.userId])).get(ctx.userId) ?? DEFAULT_NOTIFY_PREFS;
 
   return (
     <ProfileScreen
@@ -50,6 +54,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
       stats={{ openTasks: stats[0], doneTasks: stats[1], approvedLeaves: stats[2] }}
       zaloLinked={ctx.zaloLinked}
       google={{ enabled: googleEnabled, email: google?.email ?? null, result }}
+      notify={{ prefs, vapidKey: vapidPublicKey(), emailReady: isEmailConfigured(), hasEmail: Boolean(employee?.email) }}
     />
   );
 }

@@ -26,7 +26,8 @@
     "scheduler": "tsx scripts/scheduler.ts",
     "job": "tsx scripts/scheduler.ts",
     "db:seed:business-demo": "tsx scripts/seed-business-demo.ts",
-    "db:seed:hr-demo": "tsx scripts/seed-business-demo.ts --include-hr"
+    "db:seed:hr-demo": "tsx scripts/seed-business-demo.ts --include-hr",
+    "vapid": "web-push generate-vapid-keys"
   },
   "prisma": {
     "seed": "tsx prisma/seed/index.ts"
@@ -46,21 +47,25 @@
     "mysql2": "^3.14.1",
     "next": "^15.3.3",
     "node-cron": "^4.0.7",
+    "nodemailer": "^10.6.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "recharts": "^2.15.3",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.3.0",
     "three": "^0.175.0",
+    "web-push": "^4.0.0",
     "zod": "^3.25.48"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.8",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^22.15.29",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "@types/three": "^0.175.0",
+    "@types/web-push": "^3.6.4",
     "dotenv": "^16.5.0",
     "prisma": "^6.9.0",
     "tailwindcss": "^4.1.8",

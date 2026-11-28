@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useToast } from '@/components/ui/toast';
 import type { NavSection } from '@/lib/nav';
 import { Sidebar } from './sidebar';
 import { Topbar, type TopbarUser, type TopbarNotification } from './topbar';
@@ -29,6 +30,14 @@ export function AppShell({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const live = useLiveShell({ badges, notifications, unreadCount });
+
+  // Service worker: cài app lên màn hình chính (PWA) và nhận thông báo đẩy
+  useEffect(() => {
+    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
 
   const persist = (next: boolean) => {
     const value = next ? 'collapsed' : 'expanded';
@@ -63,7 +72,7 @@ export function AppShell({
           appName={appName}
           logoUrl={logoUrl}
           logoText={logoText}
-          badges={badges}
+          badges={live.badges}
           user={user}
           mobileOpen={mobileOpen}
           onCloseMobile={() => setMobileOpen(false)}
@@ -73,8 +82,8 @@ export function AppShell({
         <div className="app-main" data-collapsed={collapsed}>
           <Topbar
             user={user}
-            notifications={notifications}
-            unreadCount={unreadCount}
+            notifications={live.notifications}
+            unreadCount={live.unreadCount}
             onOpenMobileMenu={() => setMobileOpen(true)}
             onToggleSidebar={toggleCollapsed}
           />
@@ -84,4 +93,69 @@ export function AppShell({
       </PrintWatermarkProvider>
     </CurrentUserProvider>
   );
+}
+
+type LiveState = { badges: Record<string, number>; notifications: TopbarNotification[]; unreadCount: number };
+const LIVE_INTERVAL_MS = 30_000;
+
+/**
+ * Chuông + badge menu tự cập nhật: hỏi máy chủ mỗi 30 giây khi tab đang hiện,
+ * và hỏi ngay khi người dùng quay lại tab. Có thông báo mới thì hiện toast.
+ * Dữ liệu ban đầu vẫn đến từ layout (server), nên lần tải đầu không chờ fetch.
+ */
+function useLiveShell(initial: LiveState): LiveState {
+  const [state, setState] = useState(initial);
+  const toast = useToast();
+  const lastTopId = useRef(initial.notifications[0]?.id ?? 0);
+
+  // Layout render lại (router.refresh, điều hướng) thì nhận số mới từ server
+  useEffect(() => {
+    setState(initial);
+    lastTopId.current = Math.max(lastTopId.current, initial.notifications[0]?.id ?? 0);
+  }, [initial.unreadCount, initial.notifications[0]?.id, initial.badges.pendingApprovals, initial.badges.myTasks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let timer: number | undefined;
+    let stopped = false;
+
+    const tick = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const res = await fetch('/api/notifications/live', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as LiveState;
+        const notifications = data.notifications.map((n) => ({
+          ...n,
+          createdAt: new Date(n.createdAt),
+          readAt: n.readAt ? new Date(n.readAt) : null,
+        }));
+        const fresh = notifications.filter((n) => n.id > lastTopId.current && !n.readAt);
+        if (fresh.length && lastTopId.current > 0) {
+          toast.info(fresh.length === 1 ? fresh[0].title : `Bạn có ${fresh.length} thông báo mới`);
+        }
+        lastTopId.current = Math.max(lastTopId.current, notifications[0]?.id ?? 0);
+        if (!stopped) setState({ badges: data.badges, notifications, unreadCount: data.unreadCount });
+      } catch {
+        /* mất mạng tạm thời — lượt sau thử lại */
+      }
+    };
+
+    const schedule = () => {
+      window.clearInterval(timer);
+      timer = window.setInterval(tick, LIVE_INTERVAL_MS);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') { void tick(); schedule(); }
+    };
+
+    schedule();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [toast]);
+
+  return state;
 }

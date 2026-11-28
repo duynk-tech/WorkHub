@@ -21,6 +21,8 @@ import { EMPLOYMENT_TYPE } from '@/lib/enums';
 import { changePasswordAction, type ActionState } from '@/server/modules/auth/actions';
 import { requestZaloLinkCodeAction, unlinkZaloAction } from '@/server/modules/settings/actions';
 import { linkGoogleAction, unlinkGoogleAction } from '@/server/auth/google/actions';
+import { NotificationSettings } from '@/components/domain/notification-settings';
+import type { NotifyPrefs } from '@/server/modules/notify/prefs';
 import {
   uploadAvatarAction,
   setAvatarUrlAction,
@@ -35,6 +37,7 @@ interface ProfileScreenProps {
   stats: { openTasks: number; doneTasks: number; approvedLeaves: number };
   zaloLinked: boolean;
   google?: { enabled: boolean; email: string | null; result?: string };
+  notify?: { prefs: NotifyPrefs; vapidKey: string | null; emailReady: boolean; hasEmail: boolean };
 }
 
 export function ProfileScreen({
@@ -44,6 +47,7 @@ export function ProfileScreen({
   stats,
   zaloLinked,
   google,
+  notify,
 }: ProfileScreenProps) {
   const router = useRouter();
   const toast = useToast();
@@ -675,6 +679,9 @@ export function ProfileScreen({
 
         {/* Right Column: Security, Zalo, & External Logins */}
         <div className="stack" style={{ gap: 16 }} id="security-section">
+          {notify && (
+            <NotificationSettings initialPrefs={notify.prefs} vapidKey={notify.vapidKey} emailReady={notify.emailReady} hasEmail={notify.hasEmail} />
+          )}
           {/* Card: Liên kết Zalo Bot */}
           <Card>
             <CardHeader style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

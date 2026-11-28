@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getSetting } from '@/server/modules/settings/service';
+import { getAppBranding } from '@/server/modules/settings/branding';
+import { sendEmail, renderEmailHtml, isEmailConfigured } from './email';
 
 /**
  * Adapter Zalo Bot API.
@@ -297,29 +299,38 @@ export async function deleteZaloWebhook(explicitToken?: string): Promise<SendRes
  * Gọi bởi scheduler hoặc endpoint /api/cron/outbox.
  */
 export async function processOutbox(limit = 25): Promise<{ sent: number; failed: number; skipped: number }> {
-  const enabled = await getSetting<boolean>('zalo.enabled', false);
-  if (!enabled) return { sent: 0, failed: 0, skipped: 0 };
+  const zaloOn = await getSetting<boolean>('zalo.enabled', false);
+  const emailOn = isEmailConfigured();
+  const channels = [...(zaloOn ? ['ZALO' as const] : []), ...(emailOn ? ['EMAIL' as const] : [])];
+  if (!channels.length) return { sent: 0, failed: 0, skipped: 0 };
 
   const pending = await prisma.notificationOutbox.findMany({
-    where: { status: 'PENDING', channel: 'ZALO', sendAfter: { lte: new Date() }, attempts: { lt: 5 } },
+    where: { status: 'PENDING', channel: { in: channels }, sendAfter: { lte: new Date() }, attempts: { lt: 5 } },
     orderBy: { sendAfter: 'asc' },
     take: limit,
   });
 
   let sent = 0, failed = 0, skipped = 0;
+  const branding = pending.some((p) => p.channel === 'EMAIL') ? await getAppBranding() : null;
 
   for (const item of pending) {
-    if (!item.zaloUserId) {
+    const target = item.channel === 'EMAIL' ? item.recipientEmail : item.zaloUserId;
+    if (!target) {
       await prisma.notificationOutbox.update({
         where: { id: item.id },
-        data: { status: 'SKIPPED', error: 'Người nhận chưa liên kết Zalo' },
+        data: { status: 'SKIPPED', error: item.channel === 'EMAIL' ? 'Người nhận chưa có email' : 'Người nhận chưa liên kết Zalo' },
       });
       skipped++;
       continue;
     }
 
-    const body = item.linkUrl ? `${item.body}` : item.body;
-    const result = await sendZaloMessage(item.zaloUserId, body);
+    const result = item.channel === 'EMAIL'
+      ? await sendEmail({
+          to: target,
+          subject: item.title ?? branding!.name,
+          html: renderEmailHtml({ appName: branding!.name, logoUrl: branding!.logoUrl, title: item.title ?? branding!.name, body: item.body, link: item.linkUrl }),
+        })
+      : await sendZaloMessage(target, item.body);
 
     if (result.ok) {
       await prisma.notificationOutbox.update({

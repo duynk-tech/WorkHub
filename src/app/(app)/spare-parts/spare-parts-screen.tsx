@@ -32,6 +32,7 @@ import {
   Wallet,
   FilePlus2,
   ShoppingCart,
+  FileSpreadsheet,
   ChevronDown,
   ChevronRight,
   Calculator,
@@ -58,6 +59,7 @@ import {
   parseFeesFromDescription,
 } from '@/components/domain/spare-parts-modals';
 import { saveSparePartAction } from '@/server/modules/spare-parts/actions';
+import { ImportExcelModal } from '@/components/domain/import-excel-modal';
 import { InventoryTransactionReportModal } from '@/components/domain/inventory-transaction-report-modal';
 import { StockHistoryPanel } from '@/components/domain/stock-history-panel';
 import { StockCountModal } from '@/components/domain/stock-count-modal';
@@ -66,6 +68,7 @@ import { EquipmentScreen } from '@/app/(app)/equipment/equipment-screen';
 import {
   deleteSparePartAction,
   seedSparePartsAction,
+  createReorderDraftsAction,
 } from '@/server/modules/spare-parts/actions';
 
 export function SparePartsScreen({
@@ -141,6 +144,11 @@ export function SparePartsScreen({
   const [supplyTypeFilter, setSupplyTypeFilter] = useState('ALL');
   const [warehouseFilter, setWarehouseFilter] = useState<number | 'ALL'>('ALL');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  // ?lowStock=1 (từ thông báo tồn kho thấp) mở sẵn bộ lọc hàng sắp hết
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('lowStock') === '1') setLowStockOnly(true);
+  }, []);
 
   // Modals state
   const [partModalOpen, setPartModalOpen] = useState(false);
@@ -268,6 +276,10 @@ export function SparePartsScreen({
 
         {canManage && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
+              <FileSpreadsheet size={15} /> Nhập Excel
+            </Button>
+            <ImportExcelModal kind="spare-parts" open={importOpen} onClose={() => setImportOpen(false)} />
             {spareParts.length === 0 && (
               <Button size="sm" variant="secondary" onClick={handleSeedData}>
                 <Sparkles size={15} style={{ marginRight: 6, color: '#d97706' }} /> Khởi tạo dữ liệu mẫu
@@ -427,6 +439,27 @@ export function SparePartsScreen({
                 Chỉ xem sắp hết hàng ({stats.lowStockCount})
               </button>
             </div>
+            {canManage && stats.lowStockCount > 0 && (
+              <div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={isPending}
+                  onClick={() =>
+                    startTransition(async () => {
+                      const res = await createReorderDraftsAction();
+                      if (res.ok) {
+                        toast.success(res.message);
+                        if (res.created?.length) router.push('/purchases');
+                      } else toast.error(res.message);
+                    })
+                  }
+                  title="Tạo đơn đặt hàng nháp với số lượng gợi ý cho các mặt hàng dưới ngưỡng"
+                >
+                  <ShoppingCart size={14} /> Tạo đơn đặt hàng gợi ý
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Table */}

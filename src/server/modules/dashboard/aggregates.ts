@@ -1,4 +1,5 @@
 import { unstable_cache, revalidateTag } from 'next/cache';
+import { vnDayOfMonth } from '@/lib/sales-target';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
@@ -128,7 +129,9 @@ export const getSalesAggregates = cached('sales', loadSalesAggregates);
 
 export interface SalesKpis {
   /** Doanh số tháng hiện tại theo nhân viên KD (đơn không hủy, theo ngày đặt). */
-  bySalesperson: { employeeId: number | null; name: string; orders: number; billed: number; collected: number }[];
+  bySalesperson: { employeeId: number | null; name: string; orders: number; billed: number; collected: number; target: number | null }[];
+  /** Ngày hiện tại trong tháng (giờ VN) — để tính dự báo cuối tháng. */
+  monthDay: { day: number; daysInMonth: number };
   /** Dư nợ theo tuổi nợ. */
   aging: { current: number; d1to30: number; d31to60: number; d61to90: number; over90: number };
   /** Báo giá 90 ngày gần nhất: tỉ lệ chốt và số ngày trung bình từ lúc lập tới lúc chốt. */
@@ -136,8 +139,9 @@ export interface SalesKpis {
 }
 
 async function loadSalesKpis(): Promise<SalesKpis> {
-  const monthStart = `${monthKeys(1)[0]}-01`;
-  const [sellers, aging, quotes] = await Promise.all([
+  const vn = vnDayOfMonth();
+  const monthStart = `${vn.year}-${String(vn.month).padStart(2, '0')}-01`;
+  const [sellers, aging, quotes, targets] = await Promise.all([
     prisma.$queryRaw<{ id: number | null; name: string | null; orders: unknown; billed: unknown; collected: unknown }[]>`
       SELECT e.id, e."fullName" AS name, COUNT(*) AS orders,
              SUM(COALESCE(o."totalAmount", 0)) AS billed, SUM(o."paidAmount") AS collected
@@ -171,20 +175,33 @@ async function loadSalesKpis(): Promise<SalesKpis> {
         SELECT MIN(co."createdAt") AS "createdAt" FROM "CustomerOrder" co WHERE co."quotationId" = q.id
       ) o ON TRUE
       WHERE q."createdAt" >= NOW() - INTERVAL '90 days'`,
+    prisma.salesTarget.findMany({
+      where: { year: vn.year, month: vn.month },
+      select: { employeeId: true, amount: true, employee: { select: { fullName: true } } },
+    }),
   ]);
+  const targetBy = new Map(targets.map((t) => [t.employeeId, Number(t.amount)]));
 
   const a = aging[0] ?? {};
   const q = quotes[0] ?? { won: 0, lost: 0, open: 0, avg_days: null };
   const won = n(q.won);
   const lost = n(q.lost);
   return {
-    bySalesperson: sellers.map((r) => ({
-      employeeId: r.id,
-      name: r.name ?? 'Chưa gán nhân viên',
-      orders: n(r.orders),
-      billed: n(r.billed),
-      collected: n(r.collected),
-    })),
+    bySalesperson: [
+      ...sellers.map((r) => ({
+        employeeId: r.id,
+        name: r.name ?? 'Chưa gán nhân viên',
+        orders: n(r.orders),
+        billed: n(r.billed),
+        collected: n(r.collected),
+        target: r.id !== null ? targetBy.get(r.id) ?? null : null,
+      })),
+      // Có chỉ tiêu nhưng chưa bán được đơn nào trong tháng vẫn phải hiện để thấy 0%
+      ...targets
+        .filter((t) => !sellers.some((r) => r.id === t.employeeId))
+        .map((t) => ({ employeeId: t.employeeId, name: t.employee.fullName, orders: 0, billed: 0, collected: 0, target: Number(t.amount) })),
+    ],
+    monthDay: { day: vn.day, daysInMonth: vn.daysInMonth },
     aging: {
       current: n(a.current), d1to30: n(a.d1to30), d31to60: n(a.d31to60), d61to90: n(a.d61to90), over90: n(a.over90),
     },

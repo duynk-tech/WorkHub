@@ -20,6 +20,7 @@ import { Card, CardHeader, CardTitle, CardBody, StatCard, Badge, Avatar, EmptySt
 import { fmtDate } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
 import { TASK_STATUS, TASK_STATUS_CHART_ORDER } from '@/lib/enums';
+import { targetProgress } from '@/lib/sales-target';
 import { TaskStatusBadge, TaskPriorityBadge } from '@/components/domain/task-badges';
 import { DashboardBoardBar } from '@/components/domain/dashboard-board-bar';
 import { DashboardLayoutGrid, type DashboardGridItemData } from '@/components/domain/dashboard-layout-grid';
@@ -653,16 +654,35 @@ export default async function DashboardPage({
                 </CardHeader>
                 <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div>
-                    <div className="hint" style={{ marginBottom: 6 }}>Doanh số tháng này theo nhân viên KD</div>
+                    <div className="row-between" style={{ marginBottom: 6 }}>
+                      <span className="hint">Doanh số tháng này theo nhân viên KD</span>
+                      <Link href="/sales/targets" className="hint" style={{ color: 'var(--brand)' }}>Chỉ tiêu →</Link>
+                    </div>
                     {sales.kpis.bySalesperson.length === 0 ? (
                       <div className="hint">Chưa có đơn trong tháng.</div>
                     ) : (
-                      sales.kpis.bySalesperson.map((r) => (
-                        <div key={r.employeeId ?? 'none'} className="row-between" style={{ padding: '5px 0', fontSize: 13 }}>
-                          <span className="truncate-2">{r.name} <span className="hint">· {r.orders} đơn</span></span>
-                          <strong style={{ whiteSpace: 'nowrap' }}>{money(r.billed)}</strong>
-                        </div>
-                      ))
+                      sales.kpis.bySalesperson.map((r) => {
+                        const p = targetProgress(r.billed, r.target, sales.kpis.monthDay.day, sales.kpis.monthDay.daysInMonth);
+                        return (
+                          <div key={r.employeeId ?? 'none'} style={{ padding: '6px 0' }}>
+                            <div className="row-between" style={{ fontSize: 13, gap: 8 }}>
+                              <span className="truncate-2">{r.name} <span className="hint">· {r.orders} đơn</span></span>
+                              <strong style={{ whiteSpace: 'nowrap' }} className="tnum">
+                                {money(r.billed)}
+                                {p.pct !== null && <span className="hint" style={{ fontWeight: 500 }}> · {Math.round(p.pct * 100)}%</span>}
+                              </strong>
+                            </div>
+                            {p.pct !== null && (
+                              <div style={{ marginTop: 5 }} title={`Chỉ tiêu ${money(r.target ?? 0)} · dự báo cuối tháng ${money(p.forecast)} (${Math.round((p.forecastPct ?? 0) * 100)}%)`}>
+                                <Progress
+                                  value={Math.min(100, Math.round(p.pct * 100))}
+                                  tone={p.pct >= 1 ? 'var(--success)' : (p.forecastPct ?? 0) >= 1 ? 'var(--brand)' : 'var(--warning)'}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                   <div>

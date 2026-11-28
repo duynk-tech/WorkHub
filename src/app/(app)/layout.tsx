@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { prisma } from '@/lib/prisma';
 import { getAuthContext, can } from '@/server/auth/context';
 import { NAV_SECTIONS } from '@/lib/nav';
 import { AppShell } from '@/components/layout/app-shell';
+import { loadShellLive } from '@/server/modules/notify/live';
 import { getAppBranding, getPrintWatermarkConfig } from '@/server/modules/settings/branding';
 import { getDisabledReportKeys } from '@/server/modules/report/config';
 import { getDisabledMenuHrefs } from '@/server/modules/settings/menus';
@@ -21,16 +21,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }))
     .filter((s) => s.items.length > 0);
 
-  const [pendingApprovals, myTasks, notifications, unreadCount, branding, printWatermark, disabledReports, disabledMenus] = await Promise.all([
-    prisma.approvalTask.count({ where: { approverId: ctx.employeeId, status: 'PENDING' } }),
-    prisma.task.count({ where: { assigneeId: ctx.employeeId, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] } } }),
-    prisma.inAppNotification.findMany({
-      where: { userId: ctx.userId },
-      orderBy: { createdAt: 'desc' },
-      take: 12,
-      select: { id: true, title: true, body: true, linkUrl: true, readAt: true, createdAt: true },
-    }),
-    prisma.inAppNotification.count({ where: { userId: ctx.userId, readAt: null } }),
+  const [live, branding, printWatermark, disabledReports, disabledMenus] = await Promise.all([
+    loadShellLive(ctx),
     getAppBranding(),
     getPrintWatermarkConfig(),
     getDisabledReportKeys(),
@@ -57,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       logoText={branding.logoText}
       printWatermark={printWatermark}
       sections={visibleSections}
-      badges={{ pendingApprovals, myTasks }}
+      badges={live.badges}
       user={{
         fullName: ctx.fullName,
         username: ctx.username,
@@ -67,8 +59,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         roleNames: ctx.roleNames,
         zaloLinked: ctx.zaloLinked,
       }}
-      notifications={notifications}
-      unreadCount={unreadCount}
+      notifications={live.notifications}
+      unreadCount={live.unreadCount}
     >
       {children}
     </AppShell>

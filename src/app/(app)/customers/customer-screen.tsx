@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Building2,
+  FileSpreadsheet,
   Plus,
   Search,
   ExternalLink,
@@ -17,6 +18,7 @@ import {
   Phone,
 } from 'lucide-react';
 import { Card, Button, Input, Badge, ScrollTabs, ConfirmDialog } from '@/components/ui';
+import { ImportExcelModal } from '@/components/domain/import-excel-modal';
 import { UrlPagination, useDebouncedSearch, useUrlParams } from '@/components/ui/url-state';
 import type { PageMeta } from '@/lib/list-query';
 import { useToast } from '@/components/ui/toast';
@@ -76,6 +78,7 @@ export function CustomerScreen({
   const { setParams } = useUrlParams();
   const search = useDebouncedSearch();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
 
   const [customerToDelete, setCustomerToDelete] = useState<any>(null);
@@ -115,10 +118,16 @@ export function CustomerScreen({
         </div>
 
         {canManage && activeTab === 'list' && (
-          <Button variant="primary" onClick={() => setCreateModalOpen(true)}>
-            <Plus style={{ width: 16, height: 16, marginRight: 6 }} /> Thêm khách hàng mới
-          </Button>
+          <div className="toolbar">
+            <Button variant="secondary" onClick={() => setImportOpen(true)}>
+              <FileSpreadsheet /> Nhập Excel
+            </Button>
+            <Button variant="primary" onClick={() => setCreateModalOpen(true)}>
+              <Plus /> Thêm khách hàng mới
+            </Button>
+          </div>
         )}
+        <ImportExcelModal kind="customers" open={importOpen} onClose={() => setImportOpen(false)} />
       </div>
 
       {/* 2. Tabs */}
