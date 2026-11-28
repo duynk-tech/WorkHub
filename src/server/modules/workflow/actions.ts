@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requirePermission } from '@/server/auth/context';
 import { simulateWorkflow, type WorkflowContext } from './engine';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface Result { ok: boolean; message: string; id?: number }
 
@@ -119,12 +120,10 @@ export async function saveWorkflowAction(id: number | null, raw: unknown): Promi
     return def;
   });
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: ctx.userId, entityType: 'WorkflowDefinition', entityId: String(saved.id),
-      action: id ? 'UPDATE' : 'CREATE', diffJson: { code: d.code, steps: d.steps.length } as never,
-    },
-  });
+      action: id ? 'UPDATE' : 'CREATE', diff: { code: d.code, steps: d.steps.length } as never,
+    });
 
   revalidatePath('/settings/workflows');
   return { ok: true, message: id ? 'Đã cập nhật quy trình duyệt' : 'Đã tạo quy trình duyệt', id: saved.id };
@@ -140,9 +139,7 @@ export async function deleteWorkflowAction(id: number): Promise<Result> {
   if (leaveTypeCount > 0) return { ok: false, message: `Còn ${leaveTypeCount} loại nghỉ phép đang dùng quy trình này` };
 
   await prisma.workflowDefinition.delete({ where: { id } });
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'WorkflowDefinition', entityId: String(id), action: 'DELETE' },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'WorkflowDefinition', entityId: String(id), action: 'DELETE' });
 
   revalidatePath('/settings/workflows');
   return { ok: true, message: 'Đã xóa quy trình duyệt' };

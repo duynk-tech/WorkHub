@@ -18,10 +18,12 @@ import { approveLeaveAction } from '@/server/modules/leave/actions';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function ApprovalScreen({
-  pending, history, leaves, stats, showHistory,
+  pending, history, leaves, stats, showHistory, requesters = [],
 }: {
   pending: any[]; history: any[]; leaves: any[]; stats: Record<string, number>; showHistory: boolean;
+  requesters?: { id: number; fullName: string; avatarUrl: string | null; code: string }[];
 }) {
+  const requesterById = new Map(requesters.map((r) => [r.id, r]));
   const router = useRouter();
   const toast = useToast();
   const [busy, startTransition] = useTransition();
@@ -83,9 +85,11 @@ export function ApprovalScreen({
         ) : (
           <div className="stack" style={{ gap: 12 }}>
             {pending.map((task) => {
-              const leave = leaveById.get(task.instance.entityId);
-              if (!leave) return null;
+              const leave = task.instance.entityType === 'LEAVE' ? leaveById.get(task.instance.entityId) : null;
               const overdue = task.dueAt && new Date(task.dueAt) < new Date();
+              // Loại phiếu khác đơn nghỉ: hiện thông tin chung và đường dẫn về màn xử lý gốc,
+              // thay vì ẩn đi (trước đây phiếu vẫn được đếm nhưng không thấy ở đâu)
+              if (!leave) return <GenericApprovalCard key={task.id} task={task} requester={requesterById.get(task.instance.requesterId)} overdue={Boolean(overdue)} />;
 
               return (
                 <Card key={task.id} hover>
@@ -97,6 +101,7 @@ export function ApprovalScreen({
                           <Badge style={{ background: `${leave.leaveType.color}1f`, color: leave.leaveType.color }}>{leave.leaveType.name}</Badge>
                           <Badge tone="outline">Bước {task.stepOrder}: {task.step.name}</Badge>
                           {overdue && <Badge tone="danger" dot>Quá hạn SLA</Badge>}
+                          {task.delegatedFrom && <Badge tone="warning">Chuyển từ {task.delegatedFrom.fullName} do quá SLA</Badge>}
                         </div>
 
                         <div className="row" style={{ gap: 11, marginBottom: 10 }}>
@@ -207,5 +212,49 @@ export function ApprovalScreen({
         </div>
       </Modal>
     </div>
+  );
+}
+
+const ENTITY_LABELS: Record<string, { label: string; href?: (id: number) => string }> = {
+  LEAVE: { label: 'Đơn nghỉ phép', href: (id) => `/leaves/${id}` },
+  TASK_CLOSE: { label: 'Đóng công việc', href: (id) => `/tasks/${id}` },
+  OVERTIME: { label: 'Đăng ký làm thêm giờ', href: () => '/attendance' },
+  ATTENDANCE_ADJUST: { label: 'Điều chỉnh chấm công', href: () => '/attendance' },
+};
+
+function GenericApprovalCard({ task, requester, overdue }: { task: any; requester?: { fullName: string; avatarUrl: string | null; code: string }; overdue: boolean }) {
+  const meta = ENTITY_LABELS[task.instance.entityType] ?? { label: task.instance.entityType };
+  return (
+    <Card>
+      <CardBody>
+        <div className="row-between" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div className="row" style={{ gap: 8, marginBottom: 9, flexWrap: 'wrap' }}>
+              <Badge tone="outline">{meta.label} #{task.instance.entityId}</Badge>
+              <Badge tone="outline">Bước {task.stepOrder}: {task.step.name}</Badge>
+              {overdue && <Badge tone="danger" dot>Quá hạn SLA</Badge>}
+              {task.delegatedFrom && <Badge tone="warning">Chuyển từ {task.delegatedFrom.fullName} do quá SLA</Badge>}
+            </div>
+            {requester && (
+              <div className="row" style={{ gap: 11, marginBottom: 8 }}>
+                <Avatar name={requester.fullName} src={requester.avatarUrl} size="lg" />
+                <div>
+                  <div style={{ fontWeight: 620, color: 'var(--text-strong)', fontSize: 14.5 }}>{requester.fullName}</div>
+                  <div className="hint">{requester.code} · gửi {fmtRelative(task.instance.startedAt)}</div>
+                </div>
+              </div>
+            )}
+            <div className="hint">
+              {task.dueAt ? `Hạn xử lý: ${fmtDateTime(task.dueAt)} · ` : ''}Loại phiếu này được duyệt tại màn hình gốc.
+            </div>
+          </div>
+          {meta.href && (
+            <Link href={meta.href(task.instance.entityId)} className="btn btn-secondary btn-sm">
+              <ExternalLink /> Mở để xử lý
+            </Link>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 }

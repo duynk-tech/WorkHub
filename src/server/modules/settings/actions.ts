@@ -37,6 +37,7 @@ import {
 import { runAiAgentTest } from '@/server/modules/zalo/ai-agent';
 import { PRESET_LLM_MODELS, type LlmModelItem } from '@/lib/llm-models';
 import type { PromptVariable, PromptTemplate, AiAgentTestResult, AiAgentTestStep } from '@/lib/ai-prompt';
+import { writeAudit } from '@/server/lib/audit';
 export type { LlmModelItem, PromptVariable, PromptTemplate, AiAgentTestResult, AiAgentTestStep };
 
 export interface Result { ok: boolean; message: string }
@@ -126,10 +127,10 @@ export async function saveSettingsAction(group: string, values: Record<string, u
         create: { key, valueJson: stored as never, groupName: group, isSecret },
       });
     }
-    await tx.auditLog.create({ data: {
+    await writeAudit({
       actorId: ctx.userId, entityType: 'SystemSetting', entityId: group, action: 'UPDATE',
-      diffJson: Object.fromEntries(entries.map(([key, value]) => [key, SECRET_KEYS.has(key) ? '***' : value])) as never,
-    } });
+      diff: Object.fromEntries(entries.map(([key, value]) => [key, SECRET_KEYS.has(key) ? '***' : value])) as never,
+    }, tx);
   });
 
   invalidateSettingsCache();
@@ -596,15 +597,13 @@ export async function resetDemoDataAction(options?: { clean?: boolean }): Promis
     const shouldClean = options?.clean ?? true;
     await runFullDemoSeed(prisma, { clean: shouldClean });
 
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'SystemDatabase',
         entityId: 'DEMO_SEED',
         action: 'UPDATE',
-        diffJson: { clean: shouldClean, timestamp: new Date().toISOString() } as never,
-      },
-    });
+        diff: { clean: shouldClean, timestamp: new Date().toISOString() } as never,
+      });
 
     // Revalidate toàn bộ các đường dẫn chính
     revalidatePath('/', 'layout');
@@ -708,15 +707,13 @@ export async function clearSalesAndPurchaseDocumentsAction(): Promise<Result> {
       };
     });
 
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'SystemDatabase',
         entityId: 'CLEAR_SALES_AND_PURCHASE_DOCUMENTS',
         action: 'DELETE',
-        diffJson: { ...deleted, timestamp: new Date().toISOString() } as never,
-      },
-    });
+        diff: { ...deleted, timestamp: new Date().toISOString() } as never,
+      });
 
     for (const path of ['/sales', '/customers', '/quotations', '/reports', '/spare-parts', '/settings']) {
       revalidatePath(path);

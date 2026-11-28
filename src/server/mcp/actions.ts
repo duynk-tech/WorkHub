@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requirePermission } from '@/server/auth/context';
 import { generateApiKey, hmacSha256 } from '@/lib/crypto';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface Result { ok: boolean; message: string }
 
@@ -29,12 +30,10 @@ export async function createMcpClientAction(data: {
     },
   });
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: ctx.userId, entityType: 'McpClient', entityId: String(client.id), action: 'CREATE',
-      diffJson: { name: data.name, readOnly: data.readOnly, actAsUserId: data.actAsUserId } as never,
-    },
-  });
+      diff: { name: data.name, readOnly: data.readOnly, actAsUserId: data.actAsUserId } as never,
+    });
 
   revalidatePath('/settings/integrations');
   return { ok: true, message: 'Đã tạo MCP client — hãy sao chép API key ngay, khóa chỉ hiện một lần', apiKey: key };
@@ -43,9 +42,7 @@ export async function createMcpClientAction(data: {
 export async function toggleMcpClientAction(id: number, isActive: boolean): Promise<Result> {
   const ctx = await requirePermission('FEATURE_MCP_MANAGE');
   await prisma.mcpClient.update({ where: { id }, data: { isActive } });
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'McpClient', entityId: String(id), action: isActive ? 'ENABLE' : 'DISABLE' },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'McpClient', entityId: String(id), action: isActive ? 'ENABLE' : 'DISABLE' });
   revalidatePath('/settings/integrations');
   return { ok: true, message: isActive ? 'Đã kích hoạt client' : 'Đã thu hồi quyền truy cập của client' };
 }
@@ -53,9 +50,7 @@ export async function toggleMcpClientAction(id: number, isActive: boolean): Prom
 export async function deleteMcpClientAction(id: number): Promise<Result> {
   const ctx = await requirePermission('FEATURE_MCP_MANAGE');
   await prisma.mcpClient.delete({ where: { id } });
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'McpClient', entityId: String(id), action: 'DELETE' },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'McpClient', entityId: String(id), action: 'DELETE' });
   revalidatePath('/settings/integrations');
   return { ok: true, message: 'Đã xóa MCP client' };
 }

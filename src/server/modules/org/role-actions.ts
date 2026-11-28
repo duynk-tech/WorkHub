@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requirePermission } from '@/server/auth/context';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface Result { ok: boolean; message: string }
 
@@ -57,13 +58,11 @@ export async function saveRoleAction(id: number | null, raw: unknown): Promise<R
       });
     }
 
-    await tx.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId, entityType: 'Role', entityId: String(role.id),
         action: id ? 'UPDATE' : 'CREATE',
-        diffJson: { code, name, dataScope, permissionCount: permissions.length } as never,
-      },
-    });
+        diff: { code, name, dataScope, permissionCount: permissions.length } as never,
+      }, tx);
   });
 
   revalidatePath('/settings/roles');
@@ -78,9 +77,7 @@ export async function deleteRoleAction(id: number): Promise<Result> {
   if (role._count.users > 0) return { ok: false, message: `Vai trò đang được gán cho ${role._count.users} tài khoản` };
 
   await prisma.role.delete({ where: { id } });
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'Role', entityId: String(id), action: 'DELETE' },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'Role', entityId: String(id), action: 'DELETE' });
 
   revalidatePath('/settings/roles');
   return { ok: true, message: 'Đã xóa vai trò' };

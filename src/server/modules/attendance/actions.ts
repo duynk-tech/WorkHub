@@ -8,6 +8,7 @@ import { canTouchEmployee } from '@/server/auth/scope';
 import { getSetting } from '@/server/modules/settings/service';
 import { performCheckIn, performCheckOut, checkGeofence, rollupDay } from './service';
 import { dateOnly } from '@/lib/date';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface CheckResult { ok: boolean; message: string }
 
@@ -88,12 +89,10 @@ export async function adjustAttendanceAction(payload: AdjustPayload): Promise<Ch
     },
   });
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: ctx.userId, entityType: 'AttendanceRecord', entityId: String(record.id), action: 'ADJUST',
-      diffJson: { before: { checkInAt: record.checkInAt, checkOutAt: record.checkOutAt, status: record.status }, after: payload } as never,
-    },
-  });
+      diff: { before: { checkInAt: record.checkInAt, checkOutAt: record.checkOutAt, status: record.status }, after: payload } as never,
+    });
 
   revalidatePath('/attendance');
   return { ok: true, message: 'Đã cập nhật dữ liệu chấm công' };
@@ -122,12 +121,10 @@ export async function importAttendanceAction(payload: ImportPayload) {
   const { importAttendance } = await import('./service');
   const result = await importAttendance(payload.rows, payload.fileName, ctx.employeeId);
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: ctx.userId, entityType: 'AttendanceImportBatch', entityId: String(result.batchId),
-      action: 'IMPORT', diffJson: { fileName: payload.fileName, ok: result.ok, failed: result.failed } as never,
-    },
-  });
+      action: 'IMPORT', diff: { fileName: payload.fileName, ok: result.ok, failed: result.failed } as never,
+    });
 
   revalidatePath('/attendance');
   return {

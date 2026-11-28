@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requirePermission } from '@/server/auth/context';
 import { generateAssetCode } from './service';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface Result {
   ok: boolean;
@@ -103,15 +104,13 @@ export async function saveAssetAction(id: number | null, raw: unknown): Promise<
         data: payload,
       });
 
-      await prisma.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(id),
           action: 'UPDATE',
-          diffJson: payload as never,
-        },
-      });
+          diff: payload as never,
+        });
 
       revalidatePath('/assets');
       revalidatePath(`/assets/${id}`);
@@ -122,15 +121,13 @@ export async function saveAssetAction(id: number | null, raw: unknown): Promise<
       data: payload,
     });
 
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'Asset',
         entityId: String(asset.id),
         action: 'CREATE',
-        diffJson: payload as never,
-      },
-    });
+        diff: payload as never,
+      });
 
     revalidatePath('/assets');
     return { ok: true, message: `Đã tạo thiết bị ${asset.assetCode}`, id: asset.id };
@@ -193,15 +190,13 @@ export async function assignAssetAction(
         },
       });
 
-      await tx.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(assetId),
           action: 'ASSIGN',
-          diffJson: data as never,
-        },
-      });
+          diff: data as never,
+        }, tx);
     });
 
     revalidatePath('/assets');
@@ -264,15 +259,13 @@ export async function revokeAssetAction(
         },
       });
 
-      await tx.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(assetId),
           action: 'REVOKE',
-          diffJson: data as never,
-        },
-      });
+          diff: data as never,
+        }, tx);
     });
 
     revalidatePath('/assets');
@@ -330,15 +323,13 @@ export async function addUpgradeAction(
         });
       }
 
-      await tx.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(assetId),
           action: 'UPGRADE',
-          diffJson: data as never,
-        },
-      });
+          diff: data as never,
+        }, tx);
     });
 
     revalidatePath('/assets');
@@ -388,15 +379,13 @@ export async function addMaintenanceAction(
         data: { status: nextStatus },
       });
 
-      await tx.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(assetId),
           action: 'MAINTENANCE_START',
-          diffJson: data as never,
-        },
-      });
+          diff: data as never,
+        }, tx);
     });
 
     revalidatePath('/assets');
@@ -443,15 +432,13 @@ export async function completeMaintenanceAction(
         data: { status: finalStatus },
       });
 
-      await tx.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(record.assetId),
           action: 'MAINTENANCE_COMPLETE',
-          diffJson: data as never,
-        },
-      });
+          diff: data as never,
+        }, tx);
     });
 
     revalidatePath('/assets');
@@ -514,15 +501,13 @@ export async function liquidateAssetAction(
         },
       });
 
-      await tx.auditLog.create({
-        data: {
+      await writeAudit({
           actorId: ctx.userId,
           entityType: 'Asset',
           entityId: String(assetId),
           action: 'LIQUIDATE',
-          diffJson: data as never,
-        },
-      });
+          diff: data as never,
+        }, tx);
     });
 
     revalidatePath('/assets');
@@ -541,15 +526,13 @@ export async function deleteAssetAction(assetId: number): Promise<Result> {
 
   try {
     await prisma.asset.delete({ where: { id: assetId } });
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'Asset',
         entityId: String(assetId),
         action: 'DELETE',
-        diffJson: { assetCode: asset.assetCode, name: asset.name } as never,
-      },
-    });
+        diff: { assetCode: asset.assetCode, name: asset.name } as never,
+      });
 
     revalidatePath('/assets');
     return { ok: true, message: `Đã xóa thiết bị ${asset.assetCode}` };

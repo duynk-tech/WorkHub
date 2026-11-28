@@ -7,6 +7,7 @@ import { requirePermission } from '@/server/auth/context';
 import {
   createDepartment, updateDepartment, deleteDepartment, rebuildTreePaths, verifyTreeIntegrity,
 } from './department-service';
+import { writeAudit } from '@/server/lib/audit';
 
 const schema = z.object({
   code: z.string().min(1, 'Nhập mã phòng ban').max(64),
@@ -39,12 +40,10 @@ export async function saveDepartmentAction(id: number | null, raw: DepartmentFor
 
   try {
     const result = id ? await updateDepartment(id, input) : await createDepartment(input);
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId, entityType: 'Department', entityId: String(id ?? (result as { id?: number })?.id ?? ''),
-        action: id ? 'UPDATE' : 'CREATE', diffJson: input as never,
-      },
-    });
+        action: id ? 'UPDATE' : 'CREATE', diff: input as never,
+      });
     revalidatePath('/departments');
     return { ok: true, message: id ? 'Đã cập nhật phòng ban' : 'Đã tạo phòng ban mới' };
   } catch (e) {
@@ -56,9 +55,7 @@ export async function deleteDepartmentAction(id: number): Promise<Result> {
   const ctx = await requirePermission('FEATURE_DEPARTMENT_MANAGE');
   try {
     await deleteDepartment(id);
-    await prisma.auditLog.create({
-      data: { actorId: ctx.userId, entityType: 'Department', entityId: String(id), action: 'DELETE' },
-    });
+    await writeAudit({ actorId: ctx.userId, entityType: 'Department', entityId: String(id), action: 'DELETE' });
     revalidatePath('/departments');
     return { ok: true, message: 'Đã xóa phòng ban' };
   } catch (e) {

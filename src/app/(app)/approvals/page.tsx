@@ -17,7 +17,10 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
       take: 200,
       include: {
         step: { select: { name: true, slaHours: true, approverType: true, mode: true } },
-        instance: { select: { entityType: true, entityId: true, requesterId: true } },
+        instance: {
+          select: { entityType: true, entityId: true, requesterId: true, startedAt: true },
+        },
+        delegatedFrom: { select: { fullName: true } },
       },
     }),
     showHistory
@@ -54,8 +57,18 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
       })
     : [];
 
+  // Người nộp của các phiếu không phải đơn nghỉ (đơn nghỉ đã kèm thông tin nhân viên)
+  const otherRequesterIds = [...new Set(pendingTasks.filter((t) => t.instance.entityType !== 'LEAVE').map((t) => t.instance.requesterId))];
+  const requesters = otherRequesterIds.length
+    ? await prisma.employee.findMany({
+        where: { id: { in: otherRequesterIds } },
+        select: { id: true, fullName: true, avatarUrl: true, code: true },
+      })
+    : [];
+
   return (
     <ApprovalScreen
+      requesters={requesters}
       pending={JSON.parse(JSON.stringify(pendingTasks))}
       history={JSON.parse(JSON.stringify(historyTasks))}
       leaves={JSON.parse(JSON.stringify(leaves))}

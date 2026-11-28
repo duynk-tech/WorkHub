@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { createHash } from 'node:crypto';
+import { writeAudit } from '@/server/lib/audit';
 
 export const quickSaleSchema = z.object({
   note: z.string().max(2000).optional(), invoiceNo: z.string().max(32).optional(), invoiceSerial: z.string().max(32).optional(), invoiceDate: z.string().date().optional(),
@@ -84,7 +85,7 @@ export async function completeQuickSale(raw: unknown, userId: number) {
           if (!amount) continue;
           await tx.customerPayment.create({ data: { paymentCode: `${method === 'CASH' ? 'C' : 'T'}-${code}`, customerId: customer.id, orderId: order.id, amount, method, paidAt: now, createdById: userId, allocationVersion: 1, allocations: { create: { orderId: order.id, amount } } } });
         }
-        await tx.auditLog.create({ data: { entityType: 'CustomerOrder', entityId: String(order.id), action: 'QUICK_SALE', diffJson: { userId, orderCode: code, total, warehouseId: input.warehouseId } } });
+        await writeAudit({ entityType: 'CustomerOrder', entityId: String(order.id), action: 'QUICK_SALE', diff: { userId, orderCode: code, total, warehouseId: input.warehouseId } }, tx);
         return { id: order.id, orderCode: order.orderCode };
       }, { isolationLevel: 'Serializable' });
     } catch (error) {

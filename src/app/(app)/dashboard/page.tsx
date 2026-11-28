@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
@@ -493,8 +494,9 @@ export default async function DashboardPage({
     useCustomBoard ? widgetSet.has(key) : tab === defaultTab;
 
   // Khi đang dùng bảng tùy chỉnh: gom từng widget vào bản đồ để DashboardLayoutGrid render đúng thứ tự & độ rộng cột đã thiết kế
+  // Bản đồ widget dùng chung cho bảng tùy chỉnh lẫn các tab mặc định (trước đây mỗi nơi tự vẽ một bản)
   const customWidgets: Record<string, React.ReactNode> = {};
-  if (useCustomBoard) {
+  {
     if (sales) {
       customWidgets.sales_stats = (
         <div className="grid-stats">
@@ -641,6 +643,53 @@ export default async function DashboardPage({
             </Link>
           ))}
         </ListCard>
+      );
+      customWidgets.sales_kpis = (
+        <Card>
+                <CardHeader>
+                  <div>
+                    <CardTitle>Hiệu quả kinh doanh</CardTitle>
+                    <div className="card-subtitle">
+                      {sales.kpis.quotes.winRate !== null
+                        ? `Chốt ${Math.round(sales.kpis.quotes.winRate * 100)}% báo giá 90 ngày qua`
+                        : 'Chưa có báo giá có kết quả trong 90 ngày'}
+                      {sales.kpis.quotes.avgDaysToWin !== null && ` · trung bình ${sales.kpis.quotes.avgDaysToWin} ngày để chốt`}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <div className="hint" style={{ marginBottom: 6 }}>Doanh số tháng này theo nhân viên KD</div>
+                    {sales.kpis.bySalesperson.length === 0 ? (
+                      <div className="hint">Chưa có đơn trong tháng.</div>
+                    ) : (
+                      sales.kpis.bySalesperson.map((r) => (
+                        <div key={r.employeeId ?? 'none'} className="row-between" style={{ padding: '5px 0', fontSize: 13 }}>
+                          <span className="truncate-2">{r.name} <span className="hint">· {r.orders} đơn</span></span>
+                          <strong style={{ whiteSpace: 'nowrap' }}>{money(r.billed)}</strong>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div>
+                    <div className="hint" style={{ marginBottom: 6 }}>Tuổi nợ phải thu</div>
+                    {([
+                      ['current', 'Chưa tới hạn'],
+                      ['d1to30', 'Quá 1–30 ngày'],
+                      ['d31to60', 'Quá 31–60 ngày'],
+                      ['d61to90', 'Quá 61–90 ngày'],
+                      ['over90', 'Quá trên 90 ngày'],
+                    ] as const).map(([k, label]) => (
+                      <div key={k} className="row-between" style={{ padding: '4px 0', fontSize: 13 }}>
+                        <span>{label}</span>
+                        <strong style={{ whiteSpace: 'nowrap', color: k === 'current' ? undefined : sales.kpis.aging[k] > 0 ? 'var(--danger)' : undefined }}>
+                          {money(sales.kpis.aging[k])}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
       );
     }
 
@@ -899,6 +948,29 @@ export default async function DashboardPage({
           ))}
         </ListCard>
       );
+      customWidgets.hr_leaves_upcoming = (
+        <Card>
+                <CardHeader>
+                  <CardTitle>Lịch nghỉ sắp tới</CardTitle>
+                </CardHeader>
+                <CardBody style={{ padding: upcomingLeaves.length ? '6px 8px' : undefined }}>
+                  {upcomingLeaves.length === 0 ? (
+                    <EmptyState icon={<Plane size={20} />} title="Không có lịch nghỉ sắp tới" />
+                  ) : (
+                    upcomingLeaves.map((l) => (
+                      <Link key={l.id} href={`/leaves/${l.id}`} className="list-row">
+                        <Avatar name={l.employee.fullName} src={l.employee.avatarUrl} size="sm" />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 540, color: 'var(--text-strong)' }}>{l.employee.fullName}</div>
+                          <div className="hint">{fmtDate(l.startDate)} → {fmtDate(l.endDate)} · {formatDays(l.totalDays)} ngày</div>
+                        </div>
+                        <Badge style={{ background: `${l.leaveType.color}1f`, color: l.leaveType.color }}>{l.leaveType.name}</Badge>
+                      </Link>
+                    ))
+                  )}
+                </CardBody>
+              </Card>
+      );
     }
   }
 
@@ -962,710 +1034,83 @@ export default async function DashboardPage({
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -4 }}>{active.hint}</div>
       )}
 
-      {!useCustomBoard && sales && (
-        <>
-          {showWidget('sales_stats', 'sales') && (
-          <div className="grid-stats">
-            <StatCard
-              href="/customers" label="Đơn hàng chưa hoàn tất" value={sales.openOrders} icon={<ShoppingCart size={16} />}
-              hint={sales.awaitingStock > 0 ? `${sales.awaitingStock} đơn đang chờ hàng hoặc chờ giao` : 'Không có đơn nào tồn đọng'}
-            />
-            <StatCard
-              href="/customers" label="Báo giá chờ khách chốt" value={sales.quotations} icon={<FileText size={16} />}
-              hint={sales.quotations > 0 ? 'Nên gọi lại để chốt' : 'Đã xử lý hết'}
-            />
-            <StatCard
-              href="/reports" label="Còn phải thu" value={money(sales.outstanding)} icon={<Wallet size={16} />}
-              hint={sales.debtors > 0 ? `${sales.debtors} khách còn nợ` : 'Không có công nợ'}
-            />
-            <StatCard
-              href="/reports" label="Nợ đã quá hạn" value={money(sales.overdue)} icon={<AlertTriangle size={16} />}
-              tone={sales.overdue > 0 ? 'var(--danger)' : undefined}
-              hint={sales.overdue > 0 ? 'Cần nhắc khách thanh toán' : 'Không có khoản nào trễ hạn'}
-            />
-          </div>
-          )}
-
-          {showWidget('sales_chart', 'sales') && (
-          <MonthlyChartCard
-            title="Doanh thu 6 tháng gần nhất"
-            subtitle="Giá trị đơn đã ghi nhận so với tiền thực thu, không tính đơn đã hủy"
-            data={sales.revenueByMonth}
-            series={[
-              { key: 'billed', name: 'Giá trị đơn', color: '#2563eb' },
-              { key: 'collected', name: 'Đã thu', color: '#166534' },
-            ]}
-            asMoney
-          />
-          )}
-
-          {(showWidget('sales_trend_area', 'sales') || showWidget('sales_status_pie', 'sales')) && (
-          <div className={showWidget('sales_trend_area', 'sales') && showWidget('sales_status_pie', 'sales') ? 'grid-2' : 'stack'}>
-            {showWidget('sales_trend_area', 'sales') && (
-            <MonthlyChartCard
-              title="Xu hướng Doanh thu & Thực thu"
-              subtitle="Biểu đồ miền 6 tháng gần nhất"
-              data={sales.revenueByMonth}
-              series={[
-                { key: 'billed', name: 'Giá trị đơn', color: '#2563eb' },
-                { key: 'collected', name: 'Đã thu', color: '#16a34a' },
-              ]}
-              asMoney
-              variant="area"
-            />
-            )}
-            {showWidget('sales_status_pie', 'sales') && (
-            <DonutChartCard
-              title="Cơ cấu đơn hàng theo trạng thái"
-              subtitle="Phân bổ toàn bộ đơn bán hàng"
-              data={sales.orderStatusPie}
-              centerLabel="Đơn hàng"
-            />
-            )}
-          </div>
-          )}
-
-          {(showWidget('sales_orders', 'sales') || showWidget('sales_care', 'sales') || showWidget('sales_quotations', 'sales')) && (
-          <div className="grid-2">
-            {showWidget('sales_orders', 'sales') && (
-            <ListCard
-              title="Đơn hàng"
-              subtitle={`${sales.openOrders} đơn chưa hoàn tất`}
-              href="/customers"
-              empty={<EmptyState icon={<ShoppingCart size={20} />} title="Không có đơn nào đang chạy" description="Mọi đơn hàng đã hoàn tất hoặc đã hủy." />}
-              count={sales.openOrderList.length}
-            >
-              {sales.openOrderList.map((o) => {
-                const total = Number(o.totalAmount ?? o.goodsAmount ?? 0);
-                const left = Math.max(0, total - Number(o.paidAmount || 0));
-                return (
-                  <Link key={o.id} href={`/customers/${o.customer.id}`} className="list-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                        <span className="mono-code">{o.orderCode}</span>
-                        <StatusChip cfg={CUSTOMER_ORDER_STATUSES[o.status]} fallback={o.status} />
-                      </div>
-                      <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                        {o.customer.name}
-                      </div>
-                      <div className="hint" style={{ marginTop: 4 }}>
-                        {fmtDate(o.orderDate)}
-                        {left > 0 ? ` · còn thu ${money(left)}` : ' · đã thu đủ'}
-                      </div>
-                    </div>
-                    <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>
-                      {money(total)}
-                    </div>
-                  </Link>
-                );
-              })}
-            </ListCard>
-            )}
-
-            {(showWidget('sales_care', 'sales') || showWidget('sales_quotations', 'sales')) && (
-            <div className="stack">
-              {showWidget('sales_care', 'sales') && (
-              <ListCard
-                title="Khách hàng tới hạn bảo hành"
-                subtitle={
-                  sales.careCustomers > 0
-                    ? `${sales.careCustomers} khách · ${sales.careMachines} máy tới hạn trong 30 ngày`
-                    : 'Cửa sổ 30 ngày'
-                }
-                href="/customers?within=30"
-                count={sales.careList.length}
-                empty={<EmptyState icon={<ShieldCheck size={20} />} title="Không có khách nào tới hạn" description="Trong 30 ngày tới không có máy nào hết bảo hành hay đến kỳ bảo dưỡng." />}
-              >
-                {sales.careList.map((c) => {
-                  const late = c.soonestDays < 0;
-                  // Gom lý do của mọi máy để một dòng nói đủ việc phải làm khi gọi
-                  const reasons = [...new Set(c.machines.flatMap((m) => m.reasons))];
-                  return (
-                    <Link key={c.customerId} href={`/customers/${c.customerId}`} className="list-row">
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                          {c.code && <span className="mono-code">{c.code}</span>}
-                          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.phone || '—'}</span>
-                        </div>
-                        <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                          {c.name}
-                        </div>
-                        <div className="row" style={{ gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                          {reasons.map((r) => (
-                            <StatusChip key={r} cfg={CARE_REASONS[r]} />
-                          ))}
-                          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{c.machines.length} máy</span>
-                        </div>
-                      </div>
-                      <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                        <div style={{
-                          fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-                          color: late ? 'var(--danger)' : 'var(--warning)',
-                        }}>
-                          {late ? `Trễ ${Math.abs(c.soonestDays)} ngày` : `Còn ${c.soonestDays} ngày`}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 3 }}>
-                          {c.machines[0]?.machineCode}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </ListCard>
-              )}
-
-              {showWidget('sales_quotations', 'sales') && (
-              <ListCard
-                title="Công nợ"
-                subtitle={sales.debtors > 0 ? `${sales.debtors} khách · ${money(sales.outstanding)}` : 'Không có công nợ'}
-                href="/reports"
-                count={sales.debtList.length}
-                empty={<EmptyState icon={<Wallet size={20} />} title="Không có công nợ" description="Khách đã thanh toán hết các đơn đã giao." />}
-              >
-                {sales.debtList.map((d) => (
-                  <Link key={d.customerId} href={`/customers/${d.customerId}`} className="list-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                        {d.name}
-                      </div>
-                      <div className="hint" style={{ marginTop: 3 }}>
-                        {d.orderCount} đơn
-                        {d.maxOverdueDays > 0 ? ` · trễ nhất ${d.maxOverdueDays} ngày` : ' · trong hạn'}
-                      </div>
-                    </div>
-                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>
-                        {money(d.outstanding)}
-                      </div>
-                      {d.overdue > 0 && (
-                        <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3, whiteSpace: 'nowrap' }}>
-                          quá hạn {money(d.overdue)}
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </ListCard>
-              )}
-
-              {showWidget('sales_quotations', 'sales') && (
-              <Card>
-                <CardHeader>
-                  <div>
-                    <CardTitle>Hiệu quả kinh doanh</CardTitle>
-                    <div className="card-subtitle">
-                      {sales.kpis.quotes.winRate !== null
-                        ? `Chốt ${Math.round(sales.kpis.quotes.winRate * 100)}% báo giá 90 ngày qua`
-                        : 'Chưa có báo giá có kết quả trong 90 ngày'}
-                      {sales.kpis.quotes.avgDaysToWin !== null && ` · trung bình ${sales.kpis.quotes.avgDaysToWin} ngày để chốt`}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardBody style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div>
-                    <div className="hint" style={{ marginBottom: 6 }}>Doanh số tháng này theo nhân viên KD</div>
-                    {sales.kpis.bySalesperson.length === 0 ? (
-                      <div className="hint">Chưa có đơn trong tháng.</div>
-                    ) : (
-                      sales.kpis.bySalesperson.map((r) => (
-                        <div key={r.employeeId ?? 'none'} className="row-between" style={{ padding: '5px 0', fontSize: 13 }}>
-                          <span className="truncate-2">{r.name} <span className="hint">· {r.orders} đơn</span></span>
-                          <strong style={{ whiteSpace: 'nowrap' }}>{money(r.billed)}</strong>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div>
-                    <div className="hint" style={{ marginBottom: 6 }}>Tuổi nợ phải thu</div>
-                    {([
-                      ['current', 'Chưa tới hạn'],
-                      ['d1to30', 'Quá 1–30 ngày'],
-                      ['d31to60', 'Quá 31–60 ngày'],
-                      ['d61to90', 'Quá 61–90 ngày'],
-                      ['over90', 'Quá trên 90 ngày'],
-                    ] as const).map(([k, label]) => (
-                      <div key={k} className="row-between" style={{ padding: '4px 0', fontSize: 13 }}>
-                        <span>{label}</span>
-                        <strong style={{ whiteSpace: 'nowrap', color: k === 'current' ? undefined : sales.kpis.aging[k] > 0 ? 'var(--danger)' : undefined }}>
-                          {money(sales.kpis.aging[k])}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                </CardBody>
-              </Card>
-              )}
-            </div>
-            )}
-          </div>
-          )}
-        </>
-      )}
-
-      {!useCustomBoard && stock && (
-        <>
-          {(showWidget('stock_stats', 'stock') || showWidget('purchase_stats', 'stock')) && (
-          <div className="grid-stats">
-            {showWidget('purchase_stats', 'stock') && (
-            <StatCard
-              href="/purchases"
-              label="Đơn hàng đang về" value={stock.incoming} icon={<Truck size={16} />}
-              hint={stock.incoming > 0 ? 'Theo dõi tiến trình để nhập kho đúng hạn' : 'Không có lô hàng nào đang về'}
-            />
-            )}
-            {showWidget('stock_stats', 'stock') && (
-            <>
-            <StatCard
-              href="/spare-parts"
-              label="Giá trị tồn kho" value={money(stock.stockValue)} icon={<Warehouse size={16} />}
-              hint={`${stock.skuCount} mã đang hoạt động · theo giá vốn bình quân`}
-            />
-            <StatCard
-              href="/spare-parts"
-              label="Mã dưới mức an toàn" value={stock.lowStock} icon={<PackageSearch size={16} />}
-              tone={stock.lowStock > 0 ? 'var(--warning)' : undefined}
-              hint={stock.lowStock > 0 ? 'Cân nhắc đặt bổ sung' : 'Tồn kho đang đủ'}
-            />
-            <StatCard
-              href="/spare-parts?tab=machines"
-              label="Thiết bị tại khách" value={stock.machines} icon={<Utensils size={16} />}
-              hint={stock.machines > 0 ? 'Hồ sơ thiết bị đang theo dõi bảo hành, bảo dưỡng' : 'Chưa khai thiết bị nào'}
-            />
-            </>
-            )}
-          </div>
-          )}
-
-          {showWidget('purchase_chart', 'stock') && (
-          <MonthlyChartCard
-            title="Nhập – Xuất kho 6 tháng gần nhất"
-            subtitle="Giá trị hàng theo giá vốn, chỉ tính phiếu đã hoàn tất (phiếu điều chuyển không tính)"
-            data={stock.flowByMonth}
-            series={[
-              { key: 'in', name: 'Nhập kho', color: '#166534' },
-              { key: 'out', name: 'Xuất kho', color: '#d97706' },
-            ]}
-            asMoney
-          />
-          )}
-
-          {(showWidget('purchase_orders', 'stock') || showWidget('stock_low', 'stock') || showWidget('stock_transactions', 'stock')) && (
-          <div className="grid-2">
-            {showWidget('purchase_orders', 'stock') && (
-            <ListCard
-              title="Đơn hàng đang về"
-              subtitle={stock.incoming > 0 ? `${stock.incoming} phiếu chưa nhập kho` : 'Không có lô hàng nào đang về'}
-              href="/spare-parts?tab=orders"
-              count={stock.incomingList.length}
-              empty={<EmptyState icon={<Truck size={20} />} title="Không có lô hàng nào đang về" description="Mọi phiếu đặt hàng đã nhập kho hoặc đã hoàn tất." />}
-            >
-              {stock.incomingList.map((o) => {
-                const cfg = PO_STATUSES[o.status];
-                const owed = Math.max(0, Number(o.totalVnd || 0) - Number(o.paidAmount || 0));
-                return (
-                  <Link key={o.id} href="/spare-parts?tab=orders" className="list-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                        <span className="mono-code">{o.orderCode}</span>
-                        <StatusChip cfg={cfg} fallback={o.status} />
-                      </div>
-                      <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                        {o.supplier} · {o.totalItemsQty} đv
-                      </div>
-                      <div className="hint" style={{ marginTop: 4 }}>
-                        {o.etaDate ? `Dự kiến về ${fmtDate(o.etaDate)}` : 'Chưa có ngày dự kiến'}
-                        {owed > 0 ? ` · còn nợ ${money(owed)}` : ' · đã trả đủ'}
-                      </div>
-                      {cfg && cfg.step > 0 && (
-                        <div style={{ marginTop: 7 }}>
-                          <Progress value={Math.round((cfg.step / 8) * 100)} tone={cfg.color} />
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>
-                      {money(Number(o.totalVnd || 0))}
-                    </div>
-                  </Link>
-                );
-              })}
-            </ListCard>
-            )}
-
-            {(showWidget('stock_low', 'stock') || showWidget('stock_transactions', 'stock')) && (
-            <div className="stack">
-              {showWidget('stock_low', 'stock') && (
-              <ListCard
-                title="Tồn dưới mức an toàn"
-                subtitle={stock.lowStock > 0 ? `${stock.lowStock} mã cần đặt bổ sung` : 'Tồn kho đang đủ'}
-                href="/spare-parts"
-                count={stock.lowStockList.length}
-                empty={<EmptyState icon={<PackageSearch size={20} />} title="Tồn kho đang đủ" description="Không có mã nào xuống dưới mức an toàn." />}
-              >
-                {stock.lowStockList.map((i) => (
-                  <Link key={i.id} href="/spare-parts" className="list-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                        <span className="mono-code">{i.itemCode}</span>
-                      </div>
-                      <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                        {i.name}
-                      </div>
-                    </div>
-                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning)', whiteSpace: 'nowrap' }}>
-                        {i.onHand} / {i.min} {i.unit}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 3 }}>tồn / mức an toàn</div>
-                    </div>
-                  </Link>
-                ))}
-              </ListCard>
-              )}
-
-              {showWidget('stock_transactions', 'stock') && (
-              <ListCard
-                title="Phiếu kho gần đây"
-                subtitle={stock.pendingApproval > 0 ? `${stock.pendingApproval} phiếu đang chờ duyệt` : 'Không có phiếu nào chờ duyệt'}
-                href="/spare-parts?tab=transactions"
-                count={stock.recentDocs.length}
-                empty={<EmptyState icon={<ClipboardCheck size={20} />} title="Chưa có phiếu kho nào" />}
-              >
-                {stock.recentDocs.map((d) => {
-                  const cfg = TRANSACTION_TYPES[d.type];
-                  return (
-                    <Link key={d.id} href="/spare-parts?tab=transactions" className="list-row">
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                          <span className="mono-code">{d.transCode}</span>
-                          <StatusChip cfg={cfg} fallback={d.type} />
-                          {d.status === 'PENDING_APPROVAL' && (
-                            <Badge style={{ background: '#fef3c7', color: '#92400e' }}>Chờ duyệt</Badge>
-                          )}
-                        </div>
-                        <div className="hint">{fmtDate(d.transDate)}{d.partnerName ? ` · ${d.partnerName}` : ''}</div>
-                      </div>
-                      <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, color: 'var(--text-strong)', whiteSpace: 'nowrap' }}>
-                        {money(Number(d.totalValue || 0))}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </ListCard>
-              )}
-            </div>
-            )}
-          </div>
-          )}
-        </>
-      )}
-
-      {!useCustomBoard && service && (
-        <>
-          {showWidget('service_stats', 'service') && (
-          <div className="grid-stats">
-            <StatCard
-              href="/tickets" label="Sự cố chờ tiếp nhận" value={service.open} icon={<Wrench size={16} />}
-              hint={service.open > 0 ? 'Cần phân công kỹ thuật viên' : 'Đã tiếp nhận hết'}
-            />
-            <StatCard
-              href="/tickets" label="Đang xử lý" value={service.inProgress} icon={<TimerReset size={16} />}
-              hint={service.inProgress > 0 ? 'Kỹ thuật đang làm' : 'Không có ca nào đang làm'}
-            />
-            <StatCard
-              href="/tickets" label="Đã xong trong tháng" value={service.resolvedThisMonth} icon={<CheckSquare size={16} />}
-              tone="var(--success)"
-              hint="Phiếu đã hoàn tất hoặc đã đóng"
-            />
-          </div>
-          )}
-
-          {(showWidget('service_chart', 'service') || showWidget('service_status_pie', 'service')) && (
-          <div className={showWidget('service_chart', 'service') && showWidget('service_status_pie', 'service') ? 'grid-2' : 'stack'}>
-            {showWidget('service_chart', 'service') && (
-            <MonthlyChartCard
-              title="Sự cố 6 tháng gần nhất"
-              subtitle="Số phiếu tiếp nhận so với số phiếu xử lý xong trong cùng tháng"
-              data={service.ticketsByMonth}
-              series={[
-                { key: 'opened', name: 'Tiếp nhận', color: '#2563eb' },
-                { key: 'resolved', name: 'Xử lý xong', color: '#166534' },
-              ]}
-            />
-            )}
-            {showWidget('service_status_pie', 'service') && (
-            <DonutChartCard
-              title="Cơ cấu phiếu sự cố"
-              subtitle="Phân bổ phiếu bảo trì theo trạng thái"
-              data={service.ticketStatusPie}
-              centerLabel="Phiếu"
-            />
-            )}
-          </div>
-          )}
-
-          {showWidget('service_tickets', 'service') && (
-          <div className="grid-2">
-            <ListCard
-              title="Sự cố đang mở"
-              subtitle={`${service.open + service.inProgress} phiếu · mới nhất lên đầu`}
-              href="/tickets"
-              count={service.openList.length}
-              empty={<EmptyState icon={<Wrench size={20} />} title="Không có sự cố nào đang mở" description="Toàn bộ phiếu đã được xử lý xong." />}
-            >
-              {service.openList.map((t) => (
-                  <Link key={t.id} href={`/tickets/${t.id}`} className="list-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                        <span className="mono-code">{t.ticketCode}</span>
-                        <StatusChip cfg={TICKET_PRIORITIES[t.priority]} fallback={t.priority} />
-                      </div>
-                      <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                        {t.title}
-                      </div>
-                      <div className="row" style={{ gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
-                        <StatusChip cfg={TICKET_STATUSES[t.status]} fallback={t.status} />
-                        <span className="hint">{t.customer?.name || t.equipment?.name}</span>
-                      </div>
-                    </div>
-                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                      {t.assignedTo && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
-                          <Avatar name={t.assignedTo.fullName} src={t.assignedTo.avatarUrl} size="sm" />
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-              ))}
-            </ListCard>
-
-            <ListCard
-              title="Vừa xử lý xong"
-              subtitle={`${service.resolvedThisMonth} phiếu hoàn tất trong tháng`}
-              href="/tickets"
-              count={service.resolvedList.length}
-              empty={<EmptyState icon={<CheckSquare size={20} />} title="Chưa có phiếu nào hoàn tất" description="Tháng này chưa đóng phiếu sự cố nào." />}
-            >
-              {service.resolvedList.map((t) => (
-                <Link key={t.id} href={`/tickets/${t.id}`} className="list-row">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                      <span className="mono-code">{t.ticketCode}</span>
-                      <StatusChip cfg={TICKET_STATUSES[t.status]} fallback={t.status} />
-                    </div>
-                    <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">
-                      {t.title}
-                    </div>
-                    <div className="hint" style={{ marginTop: 4 }}>
-                      {t.customer?.name || t.equipment?.name}
-                      {t.resolvedAt ? ` · xong ${fmtDate(t.resolvedAt)}` : ''}
-                    </div>
-                  </div>
-                  {t.assignedTo && <Avatar name={t.assignedTo.fullName} src={t.assignedTo.avatarUrl} size="sm" />}
-                </Link>
-              ))}
-            </ListCard>
-          </div>
-          )}
-        </>
-      )}
-
-
-      {!useCustomBoard && showWork && showWidget('work_stats', 'work') && (
-      <div className="grid-stats">
-        <StatCard
-          href="/tasks" label="Việc đang mở của tôi" value={myOpenTasks} icon={<ListChecks size={16} />}
-          hint={myOpenTasks === 0 ? 'Không còn việc tồn đọng' : 'Đang chờ bạn xử lý'}
+      {!useCustomBoard && (
+        <DefaultTabLayout
+          tab={tab}
+          widgets={customWidgets}
+          visible={(key) => showWidget(key, tab) && customWidgets[key] !== undefined}
         />
-        <StatCard
-          href="/tasks" label="Việc quá hạn" value={myOverdue} icon={<AlertTriangle size={16} />}
-          tone={myOverdue > 0 ? 'var(--danger)' : undefined}
-          hint={myOverdue > 0 ? 'Cần xử lý ngay' : 'Không có việc trễ hạn'}
-        />
-        <StatCard
-          href="/approvals" label="Đơn chờ bạn duyệt" value={pendingApprovals} icon={<CheckSquare size={16} />}
-          tone={pendingApprovals > 0 ? 'var(--warning)' : undefined}
-          hint={pendingApprovals > 0 ? 'Có đơn đang chờ quyết định' : 'Đã xử lý hết'}
-        />
-        <StatCard
-          href="/leaves" label={`Phép còn lại ${year}`} value={formatDays(remaining)} icon={<CalendarDays size={16} />}
-          tone="var(--success)"
-          hint={balance ? `Đã dùng ${formatDays(balance.usedDays)} · Chờ duyệt ${formatDays(balance.pendingDays)}` : 'Chưa thiết lập quỹ phép'}
-        />
-      </div>
-      )}
-
-      {!useCustomBoard && showWork && showWidget('work_status_pie', 'work') && (
-        <DonutChartCard
-          title={`Cơ cấu công việc ${ctx.dataScope === 'SELF' ? 'của tôi' : 'trong phạm vi'}`}
-          subtitle={`Tổng ${totalTeamTasks} công việc theo trạng thái`}
-          centerLabel="Công việc"
-          data={[
-            { name: 'Chờ làm', value: statusCount('TODO'), color: '#94a3b8' },
-            { name: 'Đang làm', value: statusCount('IN_PROGRESS'), color: '#2563eb' },
-            { name: 'Chờ nghiệm thu', value: statusCount('REVIEW'), color: '#d97706' },
-            { name: 'Hoàn thành', value: statusCount('DONE'), color: '#16a34a' },
-            { name: 'Bị chặn', value: statusCount('BLOCKED'), color: '#dc2626' },
-          ]}
-        />
-      )}
-
-      {!useCustomBoard && showWork && (showWidget('work_tasks', 'work') || showWidget('work_team', 'work') || showWidget('hr_leaves', 'work')) && (
-      <div className="grid-2">
-        {showWidget('work_tasks', 'work') && (
-        <div className="stack">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Công việc của tôi</CardTitle>
-                <div className="card-subtitle">Sắp xếp theo hạn gần nhất</div>
-              </div>
-              <Link href="/tasks" className="btn btn-ghost btn-sm">Xem tất cả <ArrowRight /></Link>
-            </CardHeader>
-            <CardBody style={{ padding: myTasks.length ? '6px 8px' : undefined }}>
-              {myTasks.length === 0 ? (
-                <EmptyState icon={<ListChecks size={20} />} title="Không có việc nào đang mở" description="Bạn đã hoàn thành hết công việc được giao." />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {myTasks.map((t) => {
-                    const overdue = t.dueDate && t.dueDate < new Date();
-                    return (
-                      <Link key={t.id} href={`/tasks/${t.id}`} className="list-row">
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="row" style={{ gap: 7, marginBottom: 3 }}>
-                            <span style={{ fontSize: 11.5, color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{t.code}</span>
-                            <TaskPriorityBadge priority={t.priority} />
-                          </div>
-                          <div style={{ fontSize: 13.5, fontWeight: 540, color: 'var(--text-strong)' }} className="truncate-2">{t.title}</div>
-                          <div className="row" style={{ gap: 9, marginTop: 5 }}>
-                            <TaskStatusBadge status={t.status} />
-                            {t.dueDate && (
-                              <span style={{
-                                fontSize: 11.5,
-                                color: overdue ? 'var(--danger)' : 'var(--text-muted)',
-                                fontWeight: overdue ? 600 : 400,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                whiteSpace: 'nowrap'
-                              }}>
-                                <Clock size={11} style={{ flexShrink: 0 }} />
-                                <span>{fmtDate(t.dueDate)}</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ width: 62, flexShrink: 0 }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right', marginBottom: 4 }}>{t.progress}%</div>
-                          <Progress value={t.progress} />
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-        )}
-
-        {(showWidget('hr_leaves', 'work') || showWidget('work_team', 'work')) && (
-        <div className="stack">
-          {showWidget('hr_leaves', 'work') && (
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Nghỉ phép hôm nay</CardTitle>
-                <div className="card-subtitle">{onLeaveToday.length} nhân sự vắng mặt</div>
-              </div>
-              <Link href="/leaves" className="btn btn-ghost btn-sm">Chi tiết <ArrowRight /></Link>
-            </CardHeader>
-            <CardBody style={{ padding: onLeaveToday.length ? '6px 8px' : undefined }}>
-              {onLeaveToday.length === 0 ? (
-                <EmptyState icon={<Users size={20} />} title="Không ai nghỉ hôm nay" description="Toàn bộ nhân sự trong phạm vi của bạn đều có mặt." />
-              ) : (
-                onLeaveToday.map((d) => (
-                  <div key={d.id} className="list-row" style={{ cursor: 'default' }}>
-                    <Avatar name={d.request.employee.fullName} src={d.request.employee.avatarUrl} size="sm" />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 540, color: 'var(--text-strong)' }}>{d.request.employee.fullName}</div>
-                      <div className="hint">{d.request.employee.department?.name ?? '—'}</div>
-                    </div>
-                    <Badge style={{ background: `${d.request.leaveType.color}1f`, color: d.request.leaveType.color }}>
-                      {d.request.leaveType.name}
-                    </Badge>
-                    {Number(d.portion) < 1 && <Badge tone="outline">Nửa ngày</Badge>}
-                  </div>
-                ))
-              )}
-            </CardBody>
-          </Card>
-          )}
-
-          {showWidget('work_team', 'work') && (
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Tiến độ công việc {ctx.dataScope === 'SELF' ? 'của tôi' : 'trong phạm vi'}</CardTitle>
-                <div className="card-subtitle">Tổng {totalTeamTasks} công việc</div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              {totalTeamTasks === 0 ? (
-                <EmptyState icon={<CircleDot size={20} />} title="Chưa có dữ liệu công việc" />
-              ) : (
-                <div className="stack" style={{ gap: 11 }}>
-                  {[
-                    { key: 'TODO', label: 'Chờ làm', color: 'var(--text-faint)' },
-                    { key: 'IN_PROGRESS', label: 'Đang làm', color: 'var(--info)' },
-                    { key: 'REVIEW', label: 'Chờ duyệt', color: 'var(--warning)' },
-                    { key: 'DONE', label: 'Hoàn thành', color: 'var(--success)' },
-                    { key: 'BLOCKED', label: 'Bị chặn', color: 'var(--danger)' },
-                  ].map((s) => {
-                    const c = statusCount(s.key);
-                    const pct = totalTeamTasks ? Math.round((c / totalTeamTasks) * 100) : 0;
-                    return (
-                      <div key={s.key}>
-                        <div className="row-between" style={{ marginBottom: 5 }}>
-                          <span style={{ fontSize: 12.5, color: 'var(--text-base)' }}>{s.label}</span>
-                          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }} className="tnum">{c} · {pct}%</span>
-                        </div>
-                        <Progress value={pct} tone={s.color} />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-          )}
-
-          {showWidget('hr_leaves', 'work') && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Lịch nghỉ sắp tới</CardTitle>
-            </CardHeader>
-            <CardBody style={{ padding: upcomingLeaves.length ? '6px 8px' : undefined }}>
-              {upcomingLeaves.length === 0 ? (
-                <EmptyState icon={<Plane size={20} />} title="Không có lịch nghỉ sắp tới" />
-              ) : (
-                upcomingLeaves.map((l) => (
-                  <Link key={l.id} href={`/leaves/${l.id}`} className="list-row">
-                    <Avatar name={l.employee.fullName} src={l.employee.avatarUrl} size="sm" />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 540, color: 'var(--text-strong)' }}>{l.employee.fullName}</div>
-                      <div className="hint">{fmtDate(l.startDate)} → {fmtDate(l.endDate)} · {formatDays(l.totalDays)} ngày</div>
-                    </div>
-                    <Badge style={{ background: `${l.leaveType.color}1f`, color: l.leaveType.color }}>{l.leaveType.name}</Badge>
-                  </Link>
-                ))
-              )}
-            </CardBody>
-          </Card>
-          )}
-        </div>
-        )}
-      </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Bố cục cố định của các tab mặc định, sắp từ cùng bản đồ widget với bảng tùy chỉnh.
+ * Mỗi hàng là danh sách cột; mỗi cột là danh sách widget xếp chồng.
+ */
+const DEFAULT_LAYOUTS: Record<string, string[][][]> = {
+  sales: [
+    [['sales_stats']],
+    [['sales_chart']],
+    [['sales_trend_area'], ['sales_status_pie']],
+    [['sales_orders'], ['sales_care', 'sales_quotations', 'sales_kpis']],
+  ],
+  stock: [
+    [['purchase_stats'], ['stock_stats']],
+    [['purchase_chart']],
+    [['purchase_orders'], ['stock_low', 'stock_transactions']],
+  ],
+  service: [
+    [['service_stats']],
+    [['service_chart'], ['service_status_pie']],
+    [['service_tickets']],
+  ],
+  work: [
+    [['work_stats']],
+    [['work_status_pie']],
+    [['work_tasks'], ['hr_leaves', 'work_team', 'hr_leaves_upcoming']],
+  ],
+};
+
+/** Widget phụ chỉ hiện khi widget chính của nó được bật. */
+const COMPANION_OF: Record<string, string> = { sales_kpis: 'sales_quotations', hr_leaves_upcoming: 'hr_leaves' };
+
+function DefaultTabLayout({
+  tab,
+  widgets,
+  visible,
+}: {
+  tab: string;
+  widgets: Record<string, React.ReactNode>;
+  visible: (key: string) => boolean;
+}) {
+  const isOn = (key: string) => (COMPANION_OF[key] ? visible(COMPANION_OF[key]) && widgets[key] !== undefined : visible(key));
+  const rows = (DEFAULT_LAYOUTS[tab] ?? [])
+    .map((row) => row.map((col) => col.filter(isOn)).filter((col) => col.length > 0))
+    .filter((row) => row.length > 0);
+
+  return (
+    <>
+      {rows.map((row, ri) => {
+        const cols = row.map((col) =>
+          col.length === 1 ? (
+            <Fragment key={col[0]}>{widgets[col[0]]}</Fragment>
+          ) : (
+            <div key={col.join('+')} className="stack">
+              {col.map((k) => <Fragment key={k}>{widgets[k]}</Fragment>)}
+            </div>
+          ),
+        );
+        if (cols.length === 1) return <Fragment key={ri}>{cols[0]}</Fragment>;
+        // Hai thẻ ngang hàng: thẻ thống kê nằm chung một lưới, còn lại chia đôi
+        const allStats = row.every((col) => col.every((k) => k.endsWith('_stats')));
+        return (
+          <div key={ri} className={allStats ? 'stack' : 'grid-2'}>
+            {cols}
+          </div>
+        );
+      })}
+    </>
   );
 }

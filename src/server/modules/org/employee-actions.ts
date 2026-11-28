@@ -7,6 +7,7 @@ import { requirePermission } from '@/server/auth/context';
 import { canTouchEmployee } from '@/server/auth/scope';
 import { hashPassword, checkPasswordStrength } from '@/server/auth/password';
 import { createEmployee, updateEmployee, type EmployeeInput } from './employee-service';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface Result { ok: boolean; message: string }
 
@@ -39,12 +40,10 @@ export async function saveEmployeeAction(id: number | null, raw: unknown): Promi
   try {
     const input = parsed.data as EmployeeInput;
     const result = id ? await updateEmployee(id, input) : await createEmployee(input);
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId, entityType: 'Employee', entityId: String(result.id),
-        action: id ? 'UPDATE' : 'CREATE', diffJson: input as never,
-      },
-    });
+        action: id ? 'UPDATE' : 'CREATE', diff: input as never,
+      });
     revalidatePath('/employees');
     revalidatePath('/departments');
     return { ok: true, message: id ? 'Đã cập nhật hồ sơ nhân sự' : 'Đã thêm nhân sự mới' };
@@ -84,9 +83,7 @@ export async function createAccountAction(raw: unknown): Promise<Result> {
     },
   });
 
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'User', entityId: String(user.id), action: 'CREATE_ACCOUNT', diffJson: { username, roleIds } as never },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'User', entityId: String(user.id), action: 'CREATE_ACCOUNT', diff: { username, roleIds } as never });
 
   revalidatePath('/employees');
   revalidatePath('/settings/accounts');
@@ -110,9 +107,7 @@ export async function updateAccountRolesAction(userId: number, roleIds: number[]
     prisma.userRole.createMany({ data: roleIds.map((roleId) => ({ userId, roleId })) }),
   ]);
 
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'User', entityId: String(userId), action: 'UPDATE_ROLES', diffJson: { roleIds } as never },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'User', entityId: String(userId), action: 'UPDATE_ROLES', diff: { roleIds } as never });
 
   revalidatePath('/settings/accounts');
   return { ok: true, message: 'Đã cập nhật vai trò' };
@@ -123,9 +118,7 @@ export async function toggleAccountActiveAction(userId: number, isActive: boolea
   if (userId === ctx.userId && !isActive) return { ok: false, message: 'Không thể tự vô hiệu hóa tài khoản của bạn' };
 
   await prisma.user.update({ where: { id: userId }, data: { isActive, failedAttempts: 0, lockedUntil: null } });
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'User', entityId: String(userId), action: isActive ? 'ENABLE' : 'DISABLE' },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'User', entityId: String(userId), action: isActive ? 'ENABLE' : 'DISABLE' });
 
   revalidatePath('/settings/accounts');
   return { ok: true, message: isActive ? 'Đã kích hoạt tài khoản' : 'Đã vô hiệu hóa tài khoản' };
@@ -141,9 +134,7 @@ export async function resetPasswordAction(userId: number, newPassword: string): 
     data: { passwordHash: await hashPassword(newPassword), mustChangePassword: true, failedAttempts: 0, lockedUntil: null },
   });
 
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'User', entityId: String(userId), action: 'RESET_PASSWORD' },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'User', entityId: String(userId), action: 'RESET_PASSWORD' });
 
   revalidatePath('/settings/accounts');
   return { ok: true, message: 'Đã đặt lại mật khẩu, người dùng phải đổi ở lần đăng nhập tới' };

@@ -10,6 +10,8 @@ export interface AuditEntry {
   action: string;
   diff?: unknown;
   source?: RecordSource;
+  ip?: string | null;
+  userAgent?: string | null;
 }
 
 /**
@@ -25,6 +27,8 @@ export function writeAudit(entry: AuditEntry, db: AuditClient = prisma) {
       action: entry.action,
       diffJson: entry.diff === undefined ? undefined : (JSON.parse(JSON.stringify(entry.diff)) as Prisma.InputJsonValue),
       ...(entry.source ? { source: entry.source } : {}),
+      ...(entry.ip ? { ip: entry.ip.slice(0, 64) } : {}),
+      ...(entry.userAgent ? { userAgent: entry.userAgent.slice(0, 255) } : {}),
     },
   });
 }

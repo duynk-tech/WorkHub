@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { uploadFile } from '@/lib/storage';
 import { requireAuth } from '@/server/auth/context';
+import { writeAudit } from '@/server/lib/audit';
 
 const MAX_AVATAR_SIZE = 4 * 1024 * 1024; // 4MB (dưới trần 4.5MB của Vercel Serverless)
 
@@ -86,15 +87,13 @@ export async function uploadAvatarAction(formData: FormData): Promise<ProfileAct
       data: { avatarUrl },
     });
 
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'Employee',
         entityId: String(ctx.employeeId),
         action: 'UPDATE_AVATAR',
-        diffJson: { avatarUrl } as never,
-      },
-    });
+        diff: { avatarUrl } as never,
+      });
 
     revalidatePath('/profile');
     revalidatePath('/', 'layout');
@@ -116,15 +115,13 @@ export async function setAvatarUrlAction(url: string | null): Promise<ProfileAct
       data: { avatarUrl: url },
     });
 
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'Employee',
         entityId: String(ctx.employeeId),
         action: url ? 'UPDATE_AVATAR' : 'REMOVE_AVATAR',
-        diffJson: { avatarUrl: url } as never,
-      },
-    });
+        diff: { avatarUrl: url } as never,
+      });
 
     revalidatePath('/profile');
     revalidatePath('/', 'layout');
@@ -185,15 +182,13 @@ export async function updateContactInfoAction(data: {
       },
     });
 
-    await prisma.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: ctx.userId,
         entityType: 'Employee',
         entityId: String(ctx.employeeId),
         action: 'UPDATE_PROFILE',
-        diffJson: { phone, email, gender, dateOfBirth } as never,
-      },
-    });
+        diff: { phone, email, gender, dateOfBirth } as never,
+      });
 
     revalidatePath('/profile');
     revalidatePath('/', 'layout');

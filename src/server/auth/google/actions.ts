@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { sha256 } from '@/lib/crypto';
 import { verifyPassword } from '@/server/auth/password';
 import { beginGoogleFlow } from './service';
+import { writeAudit } from '@/server/lib/audit';
 type State = { error?: string; success?: string };
 async function verifyCurrentPassword(form: FormData) {
   const ctx = await requireAuth();
@@ -31,7 +32,7 @@ export async function unlinkGoogleAction(_state: State, form: FormData): Promise
   if (!user) return { error: 'Mật khẩu không đúng' };
   await prisma.$transaction(async (tx) => {
     await tx.externalIdentity.deleteMany({ where: { userId: user.id, provider: 'google' } });
-    await tx.auditLog.create({ data: { actorId: user.id, entityType: 'User', entityId: String(user.id), action: 'UNLINK_GOOGLE' } });
+    await writeAudit({ actorId: user.id, entityType: 'User', entityId: String(user.id), action: 'UNLINK_GOOGLE' }, tx);
   });
   revalidatePath('/profile');
   return { success: 'Đã hủy liên kết Google' };

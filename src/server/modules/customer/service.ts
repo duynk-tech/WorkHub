@@ -21,6 +21,7 @@ import type {
   SaveCustomerQuotationInput,
   SaveCustomerPaymentInput,
 } from './types';
+import { writeAudit } from '@/server/lib/audit';
 
 /**
  * Mã khách hàng CUS-YYYY-XXXX, cùng khuôn với PO, ORD, BG và các chứng từ khác.
@@ -1686,7 +1687,7 @@ export async function recordCustomerPayment(input: SaveCustomerPaymentInput, use
       if (order.stockIssuedAt && orderDebt(order).remaining <= 0) await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'COMPLETED' } });
     }
     // This audit identifies new unallocated deposits, distinguishing them from legacy payments.
-    await tx.auditLog.create({ data: { actorId: userId || null, entityType: 'CustomerPayment', entityId: String(payment.id), action: 'ALLOCATE', diffJson: { allocations, amount } } });
+    await writeAudit({ actorId: userId || null, entityType: 'CustomerPayment', entityId: String(payment.id), action: 'ALLOCATE', diff: { allocations, amount } }, tx);
     return { ...payment, unappliedAmount: unapplied };
   }, { isolationLevel: 'Serializable' }),
   );
@@ -1709,7 +1710,7 @@ export async function deleteCustomerPayment(id: number, actorId?: number) {
       const order = await tx.customerOrder.findUniqueOrThrow({ where: { id: allocation.orderId } });
       if (order.status === 'COMPLETED' && order.stockIssuedAt && orderDebt(order).remaining > 0) await tx.customerOrder.update({ where: { id: order.id }, data: { status: 'DELIVERED' } });
     }
-    await tx.auditLog.create({ data: { actorId: actorId || null, entityType: 'CustomerPayment', entityId: String(id), action: 'REVERSE', diffJson: { paymentCode: payment.paymentCode, amount: Number(payment.amount), allocations } } });
+    await writeAudit({ actorId: actorId || null, entityType: 'CustomerPayment', entityId: String(id), action: 'REVERSE', diff: { paymentCode: payment.paymentCode, amount: Number(payment.amount), allocations } }, tx);
     return tx.customerPayment.delete({ where: { id } });
   }, { isolationLevel: 'Serializable' });
 }
@@ -2022,15 +2023,13 @@ export async function createCustomerReturn(input: SaveCustomerReturnInput, userI
       }
     }
 
-    await tx.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: userId || null,
         entityType: 'CustomerReturn',
         entityId: String(record.id),
         action: 'CREATE',
-        diffJson: { returnCode: record.returnCode, orderId: input.orderId || null, goodsValue: totalValue - returnVat, vatValue: returnVat, settlementValue, settlement: input.settlement || 'CREDIT', stockReceived: Boolean(hasRestockable && input.warehouseId), returnedEquipmentIds: equipmentReturns.map((item) => item.equipmentId) },
-      },
-    });
+        diff: { returnCode: record.returnCode, orderId: input.orderId || null, goodsValue: totalValue - returnVat, vatValue: returnVat, settlementValue, settlement: input.settlement || 'CREDIT', stockReceived: Boolean(hasRestockable && input.warehouseId), returnedEquipmentIds: equipmentReturns.map((item) => item.equipmentId) },
+      }, tx);
     return { ...record, refundedAmount };
   }, { isolationLevel: 'Serializable' }),
   );
@@ -2126,15 +2125,13 @@ export async function deleteCustomerReturn(id: number, actorId?: number) {
       }
     }
 
-    await tx.auditLog.create({
-      data: {
+    await writeAudit({
         actorId: actorId || null,
         entityType: 'CustomerReturn',
         entityId: String(record.id),
         action: 'REVERSE',
-        diffJson: { returnCode: record.returnCode, orderId: record.orderId, totalValue: Number(record.totalValue), reversedReceipts: receipts.map((receipt) => receipt.transCode) },
-      },
-    });
+        diff: { returnCode: record.returnCode, orderId: record.orderId, totalValue: Number(record.totalValue), reversedReceipts: receipts.map((receipt) => receipt.transCode) },
+      }, tx);
     return tx.customerReturn.delete({ where: { id } });
   }, { isolationLevel: 'Serializable' });
 }

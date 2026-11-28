@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { sha256 } from '@/lib/crypto';
 import { readSessionCookie, createSessionCookie } from '@/server/auth/session';
 import { safeRedirectPath } from '@/lib/safe-redirect';
+import { writeAudit } from '@/server/lib/audit';
 export async function GET(req: NextRequest) {
   let linking = false;
   try {
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
         if (!existing) await tx.externalIdentity.create({ data: { userId: user.id, provider: 'google', ...identity } });
       }
       await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), lastLoginIp: ip, failedAttempts: 0 } });
-      await tx.auditLog.create({ data: { actorId: user.id, entityType: 'User', entityId: String(user.id), action: flow.linkUserId ? 'LINK_GOOGLE' : 'LOGIN_GOOGLE', ip } });
+      await writeAudit({ actorId: user.id, entityType: 'User', entityId: String(user.id), action: flow.linkUserId ? 'LINK_GOOGLE' : 'LOGIN_GOOGLE', ip }, tx);
     });
     await createSessionCookie({ userId: user.id, username: user.username, credentialVersion: sha256(user.passwordHash) });
     return NextResponse.redirect(new URL(flow.linkUserId ? '/profile?google=linked' : safeRedirectPath(flow.next), req.url));

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword, checkPasswordStrength } from '@/server/auth/password';
 import { createSessionCookie } from '@/server/auth/session';
 import { setSetting } from '@/server/modules/settings/service';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface InstallResult { ok: boolean; message: string }
 
@@ -110,9 +111,7 @@ export async function runInstallAction(payload: InstallPayload): Promise<Install
       create: { employeeId: employee.id, year: new Date().getFullYear() },
     });
 
-    await prisma.auditLog.create({
-      data: { actorId: user.id, entityType: 'System', entityId: 'install', action: 'CREATE', diffJson: { withDemo: payload.withDemo } as never },
-    });
+    await writeAudit({ actorId: user.id, entityType: 'System', entityId: 'install', action: 'CREATE', diff: { withDemo: payload.withDemo } as never });
 
     await createSessionCookie({ userId: user.id, username: user.username, credentialVersion: sha256(user.passwordHash) });
     return { ok: true, message: 'Cài đặt hoàn tất' };

@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { profileSchema, contactSchema, activitySchema } from './workspace-schema';
 import { customerInsights, customerCsv } from '@/lib/customer-insights';
 import { z } from 'zod';
+import { writeAudit } from '@/server/lib/audit';
 async function access(customerId: number, write: boolean) {
   z.number().int().positive().parse(customerId);
   const ctx = await requireAuth();
@@ -41,7 +42,7 @@ export async function saveCustomerWorkspaceAction(customerId: number, kind: 'pro
         const count = await tx.customerCareActivity.updateMany({ where: { id, customerId, completedAt: null }, data: { completedAt: new Date() } });
         if (!count.count) throw new Error('Công việc không tồn tại hoặc đã hoàn thành.');
       } else throw new Error('Thao tác không hợp lệ.');
-      await tx.auditLog.create({ data: { actorId: ctx.userId, entityType: 'Customer', entityId: String(customerId), action: `WORKSPACE_${kind.toUpperCase()}` } });
+      await writeAudit({ actorId: ctx.userId, entityType: 'Customer', entityId: String(customerId), action: `WORKSPACE_${kind.toUpperCase()}` }, tx);
     }, { isolationLevel: 'Serializable' });
     revalidatePath(`/customers/${customerId}`);
     return { ok: true, message: 'Đã lưu.' };
@@ -52,7 +53,7 @@ export async function exportCustomerReportAction(customerId: number) {
   if (!can(ctx, 'FEATURE_REPORT_EXPORT')) throw new Error('Không có quyền xuất báo cáo.');
   const customer = await prisma.customer.findUniqueOrThrow({ where: { id: customerId }, include: { orders: { include: { items: true } }, payments: { include: { allocations: true } }, returns: { include: { items: true } } } });
   const report = customerInsights(customer);
-  await prisma.auditLog.create({ data: { actorId: ctx.userId, entityType: 'Customer', entityId: String(customerId), action: 'EXPORT_REPORT' } });
+  await writeAudit({ actorId: ctx.userId, entityType: 'Customer', entityId: String(customerId), action: 'EXPORT_REPORT' });
   return customerCsv([
     ['BÁO CÁO KHÁCH HÀNG', customer.name], ['Ngày xuất', new Date().toISOString()],
     ['Công nợ hiện tại, không phải số dư lịch sử'], ['Tiền dư chưa phân bổ (phiếu mới)', report.unapplied], ['Phiếu cũ cần đối soát phân bổ', report.legacyPayments],
@@ -78,7 +79,7 @@ export async function allocateCustomerCreditAction(customerId: number, raw: unkn
       if (existing) await tx.customerPaymentAllocation.update({ where: { id: existing.id }, data: { amount: { increment: input.amount } } });
       else await tx.customerPaymentAllocation.create({ data: { paymentId: payment.id, orderId: order.id, amount: input.amount } });
       await tx.customerOrder.update({ where: { id: order.id }, data: { paidAmount: { increment: input.amount }, ...(order.stockIssuedAt && input.amount === remaining ? { status: 'COMPLETED' } : {}) } });
-      await tx.auditLog.create({ data: { actorId: ctx.userId, entityType: 'CustomerPayment', entityId: String(payment.id), action: 'ALLOCATE_CREDIT', diffJson: input } });
+      await writeAudit({ actorId: ctx.userId, entityType: 'CustomerPayment', entityId: String(payment.id), action: 'ALLOCATE_CREDIT', diff: input }, tx);
     }, { isolationLevel: 'Serializable' });
     revalidatePath(`/customers/${customerId}`); revalidatePath('/sales'); revalidatePath('/reports');
     return { ok: true, message: 'Đã phân bổ tiền vào đơn.' };

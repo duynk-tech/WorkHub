@@ -25,6 +25,7 @@ import {
   formatStockCostMetrics,
   parseStockCostMetrics,
 } from './types';
+import { writeAudit } from '@/server/lib/audit';
 
 export { calculateSellingPriceFromMargin };
 
@@ -2026,7 +2027,7 @@ export async function recordSupplierPayment(
       allocations: { create: allocations },
     } });
     for (const allocation of allocations) await tx.sparePartOrder.update({ where: { id: allocation.orderId }, data: { paidAmount: { increment: allocation.amount } } });
-    await tx.auditLog.create({ data: { actorId: userId || null, entityType: 'SupplierPayment', entityId: String(payment.id), action: 'ALLOCATE', diffJson: { allocations, amount } } });
+    await writeAudit({ actorId: userId || null, entityType: 'SupplierPayment', entityId: String(payment.id), action: 'ALLOCATE', diff: { allocations, amount } }, tx);
     return { ...payment, unappliedAmount: unapplied };
   }, { isolationLevel: 'Serializable' }),
   );
@@ -2046,7 +2047,7 @@ export async function deleteSupplierPayment(id: number, actorId?: number) {
       const updated = await tx.sparePartOrder.updateMany({ where: { id: allocation.orderId, paidAmount: { gte: allocation.amount } }, data: { paidAmount: { decrement: allocation.amount } } });
       if (updated.count !== 1) throw new Error('Công nợ không khớp phân bổ. Cần đối soát trước khi hủy.');
     }
-    await tx.auditLog.create({ data: { actorId: actorId || null, entityType: 'SupplierPayment', entityId: String(id), action: 'REVERSE', diffJson: { paymentCode: payment.paymentCode, amount: Number(payment.amount), allocations } } });
+    await writeAudit({ actorId: actorId || null, entityType: 'SupplierPayment', entityId: String(id), action: 'REVERSE', diff: { paymentCode: payment.paymentCode, amount: Number(payment.amount), allocations } }, tx);
     return tx.supplierPayment.delete({ where: { id } });
   }, { isolationLevel: 'Serializable' });
 }

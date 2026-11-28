@@ -77,6 +77,14 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
     dataSource: 'sales',
   },
   {
+    key: 'sales_kpis',
+    label: 'Hiệu quả kinh doanh',
+    description: 'Doanh số tháng theo nhân viên KD, tuổi nợ phải thu và tỉ lệ chốt báo giá',
+    group: 'Kinh doanh',
+    requiredPermissions: ['FEATURE_CUSTOMER_MANAGE'],
+    dataSource: 'sales',
+  },
+  {
     key: 'sales_care',
     label: 'Khách hàng cần chăm sóc',
     description: 'Gợi ý liên hệ định kỳ, sắp hết bảo hành hoặc quá hạn công nợ',

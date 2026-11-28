@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyPassword, hashPassword, checkPasswordStrength } from '@/server/auth/password';
 import { createSessionCookie, destroySessionCookie } from '@/server/auth/session';
 import { getAuthContext, requireAuth } from '@/server/auth/context';
+import { writeAudit } from '@/server/lib/audit';
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 10;
@@ -81,12 +82,10 @@ export async function loginAction(_prev: ActionState, formData: FormData): Promi
     data: { failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date(), lastLoginIp: ip },
   });
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: user.id, entityType: 'User', entityId: String(user.id), action: 'LOGIN',
       ip, userAgent: hdrs.get('user-agent')?.slice(0, 250) ?? null,
-    },
-  });
+    });
 
   await createSessionCookie({ userId: user.id, username: user.username, credentialVersion: sha256(user.passwordHash) });
 
@@ -139,9 +138,7 @@ export async function changePasswordAction(_prev: ActionState, formData: FormDat
     data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false },
   });
 
-  await prisma.auditLog.create({
-    data: { actorId: user.id, entityType: 'User', entityId: String(user.id), action: 'CHANGE_PASSWORD' },
-  });
+  await writeAudit({ actorId: user.id, entityType: 'User', entityId: String(user.id), action: 'CHANGE_PASSWORD' });
 
   return { success: 'Đã đổi mật khẩu thành công' };
 }

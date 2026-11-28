@@ -13,6 +13,7 @@ import {
   calculateLeaveDays, generateLeaveCode, adjustBalance, findOverlapping, getOrCreateBalance, remainingDays,
 } from './service';
 import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
+import { writeAudit } from '@/server/lib/audit';
 
 export interface Result { ok: boolean; message: string; id?: number }
 
@@ -343,12 +344,10 @@ export async function approveLeaveAction(approvalTaskId: number, decision: 'APPR
     }
   }
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: ctx.userId, entityType: 'LeaveRequest', entityId: String(result.entityId ?? ''),
-      action: decision === 'APPROVE' ? 'APPROVE' : 'REJECT', diffJson: { comment } as never,
-    },
-  });
+      action: decision === 'APPROVE' ? 'APPROVE' : 'REJECT', diff: { comment } as never,
+    });
 
   revalidatePath('/approvals');
   revalidatePath('/leaves');
@@ -447,20 +446,18 @@ export async function deleteLeaveAction(requestId: number): Promise<Result> {
     }
   });
 
-  await prisma.auditLog.create({
-    data: {
+  await writeAudit({
       actorId: ctx.userId,
       entityType: 'LeaveRequest',
       entityId: String(requestId),
       action: 'DELETE',
-      diffJson: {
+      diff: {
         code: request.code,
         status: request.status,
         employeeId: request.employeeId,
         totalDays: Number(request.totalDays),
       } as never,
-    },
-  }).catch(() => null);
+    }).catch(() => null);
 
   revalidatePath('/leaves');
   revalidatePath('/approvals');
@@ -491,9 +488,7 @@ export async function updateBalanceAction(raw: unknown): Promise<Result> {
     },
   });
 
-  await prisma.auditLog.create({
-    data: { actorId: ctx.userId, entityType: 'LeaveBalance', entityId: String(balance.id), action: 'UPDATE', diffJson: d as never },
-  });
+  await writeAudit({ actorId: ctx.userId, entityType: 'LeaveBalance', entityId: String(balance.id), action: 'UPDATE', diff: d as never });
 
   revalidatePath('/leaves');
   return { ok: true, message: 'Đã cập nhật quỹ phép' };
