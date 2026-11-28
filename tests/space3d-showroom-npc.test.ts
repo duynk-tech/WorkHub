@@ -38,3 +38,29 @@ describe('NPC showroom', () => {
     }
   });
 });
+
+describe('NPC kho hàng', () => {
+  const objs = templateFor('WAREHOUSE', { widthM: 40, depthM: 30, departments: [] });
+  const spots = findNpcSpots(objs);
+  it('có thủ kho, soạn hàng, bốc xếp trong mặt bằng; không có NPC showroom/quán', () => {
+    for (const r of ['storekeeper', 'picker', 'loader'] as const) {
+      expect(spots[r]).toBeDefined();
+      expect(Math.abs(spots[r]!.x)).toBeLessThan(20);
+      expect(Math.abs(spots[r]!.z)).toBeLessThan(15);
+    }
+    expect(spots.receptionist).toBeUndefined();
+    expect(spots.barista).toBeUndefined();
+  });
+  it('soạn hàng đi tuần trước các kệ cùng dãy, không đứng trong thân kệ', async () => {
+    const { pickerPatrol } = await import('@/lib/space-3d-npc');
+    const patrol = pickerPatrol(objs, spots.picker!);
+    expect(patrol.length).toBeGreaterThan(0);
+    const racks = objs.filter((o) => o.kind === 'RACK');
+    for (const p of [...patrol, spots.picker!]) {
+      for (const r of racks) {
+        const inside = Math.abs(p.x - r.posX) < r.widthM / 2 && Math.abs(p.z - r.posZ) < r.depthM / 2;
+        expect(inside).toBe(false);
+      }
+    }
+  });
+});

@@ -6,7 +6,7 @@ import type { SpaceObject } from './space-3d-types';
 import { SEATABLE_KINDS, isStaffSeat, seatsFor, type Seat } from './space-3d-layout';
 import { findServeSpot } from './space-3d-cafe-menu';
 
-export type NpcRole = 'barista' | 'vendor' | 'waiter' | 'guard' | 'receptionist' | 'demo' | 'consultant' | 'labtech';
+export type NpcRole = 'barista' | 'vendor' | 'waiter' | 'guard' | 'receptionist' | 'demo' | 'consultant' | 'labtech' | 'storekeeper' | 'picker' | 'loader';
 
 export interface NpcSpot {
   x: number;
@@ -83,7 +83,38 @@ export function findNpcSpots(objects: Placed[]): Partial<Record<NpcRole, NpcSpot
     const p = localToWorld(counter, -counter.widthM * 0.3, counter.depthM / 2 + 0.9);
     out.consultant = { ...p, rotY: counter.rotY };
   }
+  // ── Kho hàng (chỉ khi có kệ pallet) ──
+  const racks = objects.filter((o) => o.kind === 'RACK');
+  if (racks.length) {
+    const desk = objects
+      .filter((o) => o.kind === 'DESK')
+      .sort((a, b) => Math.hypot(a.posX, a.posZ) - Math.hypot(b.posX, b.posZ))[0];
+    if (desk) {
+      // Thủ kho đứng cạnh bàn (không chiếm ghế của nhân viên thật), quay ra kho
+      const p = localToWorld(desk, -(desk.widthM / 2 + 0.45), 0.55);
+      out.storekeeper = { ...p, rotY: desk.rotY + Math.PI };
+    }
+    const r0 = [...racks].sort((a, b) => a.posX - b.posX || b.posZ - a.posZ)[0];
+    const p = localToWorld(r0, r0.widthM * 0.3, r0.depthM / 2 + 1.1);
+    out.picker = { ...p, rotY: r0.rotY + Math.PI };
+    const pallet = objects.filter((o) => o.kind === 'PALLET_STACK').sort((a, b) => b.posZ - a.posZ || a.posX - b.posX)[0];
+    if (pallet) {
+      const q = localToWorld(pallet, pallet.widthM / 2 + 0.45, 0);
+      out.loader = { ...q, rotY: pallet.rotY - Math.PI / 2 };
+    }
+  }
   return out;
+}
+
+/** Lộ trình công nhân soạn hàng: đi dọc lối trước các kệ cùng dãy (tối đa 3 kệ), rồi quay về */
+export function pickerPatrol(objects: Placed[], home: NpcSpot): { x: number; z: number }[] {
+  const racks = objects.filter((o) => o.kind === 'RACK');
+  const near = racks.filter((o) => Math.abs(o.posX - home.x) < o.widthM / 2 + 1);
+  return near
+    .map((o) => localToWorld(o, -o.widthM * 0.25, o.depthM / 2 + 1.1))
+    .filter((p) => Math.hypot(p.x - home.x, p.z - home.z) > 1)
+    .sort((a, b) => Math.abs(a.z - home.z) - Math.abs(b.z - home.z))
+    .slice(0, 3);
 }
 
 /** Lộ trình đi tuần của tư vấn viên: trước các quầy máy cùng dãy (tối đa 3 quầy gần nhất) */
@@ -126,6 +157,9 @@ export const NPC_PROFILES: Record<NpcRole, { name: string; title: string }> = {
   demo: { name: 'Anh Khoa', title: 'Barista' },
   consultant: { name: 'Anh Minh', title: 'Tư vấn thiết bị' },
   labtech: { name: 'Chị Hạnh', title: 'R&D Lab' },
+  storekeeper: { name: 'Anh Tâm', title: 'Thủ kho' },
+  picker: { name: 'Anh Lộc', title: 'Soạn hàng' },
+  loader: { name: 'Anh Phúc', title: 'Bốc xếp' },
 };
 
 // ───────────── Khách quen ngồi quán (NPC) ─────────────

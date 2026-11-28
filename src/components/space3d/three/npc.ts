@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Avatar3DConfig, SpaceStructure } from '@/lib/space-3d-types';
-import { NPC_PROFILES, consultantPatrol, findNpcSpots, localToWorld, pickPatronSeats, serveRoute, type NpcRole, type NpcSpot, type PatronSeat } from '@/lib/space-3d-npc';
+import { NPC_PROFILES, consultantPatrol, findNpcSpots, pickerPatrol, localToWorld, pickPatronSeats, serveRoute, type NpcRole, type NpcSpot, type PatronSeat } from '@/lib/space-3d-npc';
 import { DEFAULT_CAFE_MENU } from '@/lib/space-3d-cafe-menu';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { sharedMat } from './materials';
@@ -33,6 +33,9 @@ const LOOKS: Record<NpcRole, Avatar3DConfig> = {
   demo: { outfitStyle: 'shirt', outfitColor: '#111827', pantsColor: '#1f2937', bottomStyle: 'pants', hairStyle: 'slick', hairColor: '#1c1917', skinTone: '#e4b48d', hasGlasses: false },
   consultant: { outfitStyle: 'uniform', outfitColor: '#1e3a8a', pantsColor: '#334155', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#111111', skinTone: '#e8b994', hasGlasses: true },
   labtech: { outfitStyle: 'shirt', outfitColor: '#f8fafc', pantsColor: '#e5e7eb', bottomStyle: 'pants', hairStyle: 'ponytail', hairColor: '#2b1b14', skinTone: '#f6d5bd', hasGlasses: false },
+  storekeeper: { outfitStyle: 'polo', outfitColor: '#1e3a8a', pantsColor: '#1f2937', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#111111', skinTone: '#d9a77f', hasGlasses: true },
+  picker: { outfitStyle: 'shirt', outfitColor: '#475569', pantsColor: '#1e293b', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#1c1917', skinTone: '#c98f65', hasGlasses: false },
+  loader: { outfitStyle: 'polo', outfitColor: '#334155', pantsColor: '#3f3f46', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#111111', skinTone: '#b97f56', hasGlasses: false },
 };
 
 // ───────────── Phụ kiện ─────────────
@@ -87,6 +90,43 @@ function addHairnet(av: AnimatedAvatar) {
   net.position.y = 0.025;
   net.rotation.x = -0.15;
   av.headGroup.add(net);
+}
+/** Áo phản quang (gilê vàng neon + 2 sọc bạc) — trước & sau thân */
+function addSafetyVest(av: AnimatedAvatar) {
+  const neon = sharedMat('npc:vest', () => new THREE.MeshStandardMaterial({ color: '#d4f20a', roughness: 0.6, emissive: '#3a4a00', emissiveIntensity: 0.25 }));
+  const strip = sharedMat('npc:vestStrip', () => new THREE.MeshStandardMaterial({ color: '#e5e7eb', metalness: 0.6, roughness: 0.25 }));
+  for (const sz of [1, -1]) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.012), neon);
+    panel.position.set(0, 1.08, sz * 0.13);
+    av.group.add(panel);
+    for (const y of [0.98, 1.12]) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.302, 0.025, 0.014), strip);
+      st.position.set(0, y, sz * 0.131);
+      av.group.add(st);
+    }
+  }
+}
+/** Mũ bảo hộ nhựa (vàng / trắng) có vành */
+function addHardHat(av: AnimatedAvatar, color: string) {
+  const mat = sharedMat(`npc:hat:${color}`, () => new THREE.MeshStandardMaterial({ color, roughness: 0.35 }));
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.15, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), mat);
+  dome.scale.set(1, 0.85, 1.1);
+  dome.position.y = 0.05;
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.175, 0.18, 0.012, 22), mat);
+  brim.scale.set(1, 1, 1.15);
+  brim.position.set(0, 0.05, 0.015);
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.26), mat);
+  ridge.position.set(0, 0.175, 0);
+  av.headGroup.add(dome, brim, ridge);
+}
+/** Thùng carton bưng trước ngực */
+function makeCarton(): THREE.Mesh {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.28, 0.3),
+    sharedMat('npc:carton', () => new THREE.MeshStandardMaterial({ color: '#b0875a', roughness: 0.85 })),
+  );
+  m.position.set(0, 1.0, 0.33);
+  return m;
 }
 function addGuardCap(av: AnimatedAvatar) {
   const olive = sharedMat('npc:guardCap', () => new THREE.MeshStandardMaterial({ color: '#3f4a2f', roughness: 0.7 }));
@@ -158,6 +198,8 @@ interface Npc {
   stuckTime: number;
   /** Điểm đi tuần (ngoài bảo vệ) */
   patrol?: { x: number; z: number }[];
+  /** Thùng hàng đang bưng (công nhân soạn hàng) */
+  carton?: THREE.Mesh;
 }
 
 export interface NpcPerson {
@@ -277,7 +319,7 @@ export class NpcSystem {
     if (!enabled) return;
     this.buildPatrons(structures);
     const spots = findNpcSpots(structures);
-    for (const role of ['barista', 'vendor', 'waiter', 'guard', 'receptionist', 'demo', 'consultant', 'labtech'] as NpcRole[]) {
+    for (const role of ['barista', 'vendor', 'waiter', 'guard', 'receptionist', 'demo', 'consultant', 'labtech', 'storekeeper', 'picker', 'loader'] as NpcRole[]) {
       const home = spots[role];
       if (!home) continue;
       const p = NPC_PROFILES[role];
@@ -286,6 +328,10 @@ export class NpcSystem {
       if (role === 'vendor') addKhanRan(av);
       if (role === 'guard') addGuardCap(av);
       if (role === 'demo') addApron(av, '#3f2a1d');
+      if (role === 'storekeeper' || role === 'picker' || role === 'loader') {
+        addSafetyVest(av);
+        addHardHat(av, role === 'storekeeper' ? '#f8fafc' : '#facc15');
+      }
       if (role === 'labtech') {
         addApron(av, '#f1f5f9');
         addHairnet(av);
@@ -305,8 +351,10 @@ export class NpcSystem {
         greeted: new Map(),
         nextPatrolAt: 20 + Math.random() * 30,
         stuckTime: 0,
-        patrol: role === 'consultant' ? consultantPatrol(structures, home) : undefined,
+        patrol: role === 'consultant' ? consultantPatrol(structures, home) : role === 'picker' ? pickerPatrol(structures, home) : undefined,
+        carton: role === 'picker' ? makeCarton() : undefined,
       };
+      if (npc.carton) av.group.add(npc.carton);
       if (role === 'waiter') {
         npc.tray = makeTray();
         npc.tray.position.set(0, -0.36, 0.08);
@@ -414,6 +462,9 @@ export class NpcSystem {
         demo: 'Mời anh/chị ngồi thử ly espresso từ máy mới nha!',
         consultant: 'Anh/chị cần tư vấn máy nào cứ hỏi em ạ!',
         labtech: 'Đây là phòng R&D kem & socola, mời anh/chị xem ạ!',
+        storekeeper: 'Anh/chị cần xuất nhập hàng gì cứ báo em nha!',
+        picker: 'Chú ý làn xe nâng nha anh/chị!',
+        loader: 'Chào anh/chị!',
       };
       this.say(n, lines[n.role as Exclude<NpcRole, 'waiter'>], now);
     }
@@ -443,16 +494,21 @@ export class NpcSystem {
     }
     if (n.mode === 'walk') {
       if (this.step(n, dt, 1.0, push)) n.mode = 'work';
+      if (n.carton) this.holdCarton(n);
       return;
     }
     // Tại chỗ: quay về hướng làm việc + động tác nghề
     this.faceToward(n, g.x + Math.sin(n.home.rotY), g.z + Math.cos(n.home.rotY), 1 - Math.exp(-dt * 3));
     if (n.home.sitY !== undefined) poseSit(n.av, n.home.sitY);
     else relaxPose(n.av);
-    if (n.role === 'barista' || n.role === 'vendor' || n.role === 'demo' || n.role === 'labtech') {
+    if (n.carton) {
+      this.holdCarton(n);
+      return;
+    }
+    if (n.role === 'barista' || n.role === 'vendor' || n.role === 'demo' || n.role === 'labtech' || n.role === 'loader') {
       const cyc = (now + (n.role === 'vendor' ? 3 : n.role === 'labtech' ? 5 : 0)) % 9;
       if (cyc < 6) poseEmote(n.av, 'brew', cyc / 6, now);
-    } else if (n.role === 'receptionist' || n.role === 'consultant') {
+    } else if (n.role === 'receptionist' || n.role === 'consultant' || n.role === 'storekeeper') {
       // Lễ tân / tư vấn: thỉnh thoảng gật đầu nhẹ như đang trao đổi
       const cyc = (now + (n.role === 'consultant' ? 4 : 0)) % 11;
       if (cyc < 1.6) poseEmote(n.av, 'nod', cyc / 1.6, now);
@@ -542,6 +598,15 @@ export class NpcSystem {
     r.rotation.x += (-0.25 - r.rotation.x) * 0.25;
     e.rotation.x += (-1.3 - e.rotation.x) * 0.25;
     if (n.tray) n.tray.rotation.x = -(r.rotation.x + e.rotation.x);
+  }
+
+  /** Hai tay đưa ra trước đỡ thùng hàng (ghi đè vung tay khi đi) */
+  private holdCarton(n: Npc) {
+    const k = 0.3;
+    for (const arm of [n.av.leftArm, n.av.rightArm]) arm.rotation.x += (-0.55 - arm.rotation.x) * k;
+    n.av.leftArm.rotation.z += (0.12 - n.av.leftArm.rotation.z) * k;
+    n.av.rightArm.rotation.z += (-0.12 - n.av.rightArm.rotation.z) * k;
+    for (const el of [n.av.leftElbow, n.av.rightElbow]) el.rotation.x += (-1.0 - el.rotation.x) * k;
   }
 
   /** Đơn đã được bưng tới (để không bưng lại) */

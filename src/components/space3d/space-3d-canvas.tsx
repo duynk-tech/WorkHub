@@ -56,7 +56,7 @@ import { resolveMerchItems } from '@/lib/space-3d-merch';
 import { SPACE_OBJECT_DEF_MAP } from '@/lib/space-3d-catalog';
 import { SEATABLE_KINDS, clampInside, findCollisions, isStaffSeat, pickSeat, seatActivity, seatsFor, snap, type Seat, type SeatActivity } from '@/lib/space-3d-layout';
 import { buildProductGroup } from './three/products';
-import { createEpoxyTextures, windUniform } from './three/materials';
+import { createConcreteTextures, createEpoxyTextures, windUniform } from './three/materials';
 import { freezeStaticDescendants, mergeStaticGroup } from './three/merge';
 import { createRenderPipeline, type RenderPipeline } from './three/pipeline';
 import { buildPortal, inPortalZone, portalFor, portalSpawn, type PortalTarget } from './three/portals';
@@ -600,7 +600,9 @@ export function Space3DCanvas({
     scene.add(fillLight);
 
     // Sàn Epoxy bóng (clearcoat phản chiếu environment + đèn); màu sàn do rig Ngày/Đêm điều khiển
-    const floorTex = createEpoxyTextures(sceneKind === 'WAREHOUSE', Math.round((widthM + 4) / 2));
+    // Kho: bê tông mài tấm 6m (loang, vệt bánh xe nâng); Showroom: epoxy bóng
+    const floorTex =
+      sceneKind === 'WAREHOUSE' ? createConcreteTextures(widthM + 0.2, depthM + 0.2) : createEpoxyTextures(false, Math.round((widthM + 4) / 2));
     const isCafe = sceneKind === 'CAFE';
     const isOffice = sceneKind === 'OFFICE';
     const isWarehouse = sceneKind === 'WAREHOUSE';
@@ -618,10 +620,10 @@ export function Space3DCanvas({
       // Khe ván / sợi thảm nổi khối dưới ánh đèn
       bumpMap: floorMapOverride ?? null,
       bumpScale: isCafe ? 0.9 : 1.4,
-      roughness: isOffice ? 0.95 : isCafe ? 0.5 : 0.42,
+      roughness: isOffice ? 0.95 : isCafe ? 0.5 : isWarehouse ? 0.62 : 0.42,
       metalness: 0,
-      clearcoat: isOffice ? 0 : isCafe ? 0.35 : 0.65,
-      clearcoatRoughness: isCafe ? 0.3 : 0.14,
+      clearcoat: isOffice ? 0 : isCafe ? 0.35 : isWarehouse ? 0.3 : 0.65,
+      clearcoatRoughness: isCafe ? 0.3 : isWarehouse ? 0.35 : 0.14,
     });
     const floorMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(widthM + (isCafe || isOffice || isWarehouse ? 0.2 : 4), depthM + (isCafe || isOffice || isWarehouse ? 0.2 : 6)),
@@ -2434,8 +2436,8 @@ export function Space3DCanvas({
     }
     obj.instancedGroup.updateMatrixWorld(true);
     obj.instancedGroup.matrixWorldAutoUpdate = editMode;
-    // NPC quán cà phê & showroom theo bố cục (tắt khi đang thiết kế)
-    obj.npcs.rebuild(structures, (sceneKind === 'CAFE' || sceneKind === 'SHOWROOM') && !editMode);
+    // NPC quán cà phê, showroom & kho theo bố cục (tắt khi đang thiết kế)
+    obj.npcs.rebuild(structures, (sceneKind === 'CAFE' || sceneKind === 'SHOWROOM' || sceneKind === 'WAREHOUSE') && !editMode);
     // Lá đa rơi lả tả quanh cây đa
     if (obj.leaves) {
       obj.scene.remove(obj.leaves.mesh);

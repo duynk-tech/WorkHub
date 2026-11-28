@@ -55,7 +55,7 @@ const EditorToolbar = dynamic(() => import('./editor/space-editor-panels').then(
 const LibraryPanel = dynamic(() => import('./editor/space-editor-panels').then((m) => m.LibraryPanel), { ssr: false });
 const InspectorPanel = dynamic(() => import('./editor/space-editor-panels').then((m) => m.InspectorPanel), { ssr: false });
 import { normalizeSceneKind } from '@/lib/space-3d-catalog';
-import { templateFor } from '@/lib/space-3d-templates';
+import { DEFAULT_SCENE_SIZE, templateFor } from '@/lib/space-3d-templates';
 import { resolveMerchItems } from '@/lib/space-3d-merch';
 import { DEMO_PRODUCT_MAP } from '@/lib/space-3d-demo-products';
 import { getOrCreateGuestKey, guestNumericId } from '@/lib/space-3d-guest';
@@ -238,7 +238,15 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const searchParams = useSearchParams();
   const arriveViaPortal = searchParams.get('via') === 'portal';
   // Chỉ để xem trước mẫu bố trí khi phát triển: ?debug=1&tpl=1 dựng mẫu mới nhất thay bố cục đã lưu (không ghi gì)
-  const previewTemplate = searchParams.get('debug') === '1' && searchParams.get('tpl') === '1';
+  const tplParam = searchParams.get('debug') === '1' ? searchParams.get('tpl') : null;
+  const previewTemplate = Boolean(tplParam);
+  // Bản dev: ?debug=1&tpl=WAREHOUSE|OFFICE|… dựng thử cảnh loại khác (kể cả cảnh chỉ dành cho nhân viên) theo mẫu
+  const previewKind =
+    process.env.NODE_ENV === 'development' && tplParam && tplParam !== '1' ? normalizeSceneKind(tplParam.toUpperCase()) : null;
+  const viewScene = useMemo(
+    () => (previewKind ? { kind: previewKind, ...DEFAULT_SCENE_SIZE[previewKind] } : { kind: data.activeScene.kind, widthM: data.activeScene.widthM, depthM: data.activeScene.depthM }),
+    [previewKind, data.activeScene.kind, data.activeScene.widthM, data.activeScene.depthM],
+  );
   const [pending, startTransition] = useTransition();
 
   // Guest entry overlay + Persistent Staff Avatar customizer
@@ -733,11 +741,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const structures = layout.objects;
   // Lối đi bộ sang cảnh bên cạnh luôn thông thoáng (dời cột dây đèn cắm giữa lối khi dựng)
   const canvasStructures = useMemo(() => {
-    const { kind, widthM, depthM } = data.activeScene;
+    const { kind, widthM, depthM } = viewScene;
     const base = previewTemplate ? (templateFor(normalizeSceneKind(kind), { widthM, depthM, departments: data.departments }) as SpaceStructure[]) : structures;
     const portal = portalFor(kind, widthM, depthM);
     return portal ? clearPortalPath(base, portal, widthM, depthM) : base;
-  }, [structures, previewTemplate, data.activeScene, data.departments]);
+  }, [structures, previewTemplate, viewScene, data.departments]);
   useEffect(() => {
     const calc = () => {
       const isStaffUser = Boolean(data.currentUser);
@@ -1290,9 +1298,9 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         onReady={() => setSceneReady(true)}
         onPortal={walkThroughPortal}
         arriveViaPortal={arriveViaPortal}
-        sceneKind={data.activeScene.kind}
-        widthM={data.activeScene.widthM}
-        depthM={data.activeScene.depthM}
+        sceneKind={viewScene.kind}
+        widthM={viewScene.widthM}
+        depthM={viewScene.depthM}
         branding={data.branding}
         structures={canvasStructures}
         placements={placements}
