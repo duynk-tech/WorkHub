@@ -8,3 +8,8 @@ CREATE INDEX IF NOT EXISTS "Customer_name_trgm_idx"  ON "Customer" USING gin ("n
 CREATE INDEX IF NOT EXISTS "Customer_phone_trgm_idx" ON "Customer" USING gin ("phone" gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS "Task_title_trgm_idx"     ON "Task"     USING gin ("title" gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS "CustomerOrder_orderCode_trgm_idx" ON "CustomerOrder" USING gin ("orderCode" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "CustomerQuotation_quoteCode_trgm_idx" ON "CustomerQuotation" USING gin ("quoteCode" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "InventoryItem_name_trgm_idx" ON "InventoryItem" USING gin ("name" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "InventoryItem_itemCode_trgm_idx" ON "InventoryItem" USING gin ("itemCode" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "ServiceTicket_title_trgm_idx" ON "ServiceTicket" USING gin ("title" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "Employee_fullName_trgm_idx" ON "Employee" USING gin ("fullName" gin_trgm_ops);

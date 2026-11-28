@@ -2007,3 +2007,11 @@ body:has(.modal-overlay) .ai-mini-root { opacity: 0; pointer-events: none; }
 .saved-view-chip .saved-view-remove { padding: 0 8px 0 4px; color: var(--text-faint); }
 .saved-view-chip[data-active] { border-color: var(--brand); background: var(--brand-soft); }
 .saved-view-chip[data-active] > button { color: var(--brand); font-weight: 500; }
+
+/* Kết quả tìm kiếm nhanh ở topbar */
+.search-group-label { padding: 8px 12px 4px; font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.search-option { width: 100%; text-align: left; }
+.search-option[data-active] { background: var(--brand-soft); color: var(--brand); }
+.search-option-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-strong); }
+.search-option-sub { display: block; font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-search-dropdown { max-height: min(70vh, 520px); overflow-y: auto; }

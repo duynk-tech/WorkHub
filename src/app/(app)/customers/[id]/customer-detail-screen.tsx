@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CUSTOMER_TABS } from '@/lib/customer-tabs';
 import { ArrowLeft, Building2, Phone, Mail, MapPin, Edit2, Package, ShoppingCart, LayoutDashboard, CreditCard, UserCheck } from 'lucide-react';
 import { Card, Button, ConfirmDialog, ScrollTabs } from '@/components/ui';
+import { CustomerHistoryButton } from '@/components/domain/entity-history';
 import { CustomerModal, CustomerLocationModal } from '@/components/domain/customer-modals';
 import { CustomerQuotationModal, CustomerQuotationPrintModal } from '@/components/domain/customer-quotation-modal';
 import { OrderFulfillmentModal } from '@/components/domain/order-fulfillment-modal';
@@ -73,7 +74,7 @@ export function CustomerDetailScreen(props: CustomerDetailProps) {
 
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-strong)' }}>
+                <h1 className="page-title">
                   {customer.name}
                 </h1>
                 <span
@@ -116,13 +117,14 @@ export function CustomerDetailScreen(props: CustomerDetailProps) {
             </div>
           </div>
 
-          {canManage && (
-            <div>
+          <div className="toolbar">
+            <CustomerHistoryButton customerId={customer.id} />
+            {canManage && (
               <Button size="sm" variant="secondary" onClick={() => setEditCustomerModalOpen(true)}>
-                <Edit2 size={13} style={{ marginRight: 6 }} /> Sửa thông tin
+                <Edit2 /> Sửa thông tin
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
       </Card>

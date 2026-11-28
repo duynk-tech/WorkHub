@@ -32,3 +32,24 @@ export function writeAudit(entry: AuditEntry, db: AuditClient = prisma) {
     },
   });
 }
+
+const normalize = (v: unknown) => {
+  if (v === undefined || v === '') return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'object' && v !== null && 'toString' in v && (v as { constructor?: { name?: string } }).constructor?.name === 'Decimal') return Number(String(v));
+  return v;
+};
+
+/**
+ * Các trường đã đổi giữa hai bản ghi: { field: { from, to } }. Ngày so theo ngày,
+ * Decimal so theo số — để lịch sử chỉ hiện thay đổi thật, không hiện "0.00 → 0".
+ */
+export function diffFields<T extends Record<string, unknown>>(before: Partial<T> | null | undefined, after: Partial<T> | null | undefined, keys: readonly (keyof T & string)[]) {
+  const out: Record<string, { from: unknown; to: unknown }> = {};
+  for (const k of keys) {
+    const a = normalize(before?.[k]);
+    const b = normalize(after?.[k]);
+    if (JSON.stringify(a) !== JSON.stringify(b)) out[k] = { from: a, to: b };
+  }
+  return out;
+}

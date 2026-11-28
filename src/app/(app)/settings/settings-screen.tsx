@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Save, MessageCircle, Send, Building2, CalendarDays, Clock, Plus, Trash2, Copy,
-  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle, SlidersHorizontal, LayoutGrid,
+  RefreshCw, Plane, Check, Sparkles, Eye, EyeOff, BarChart3, Upload, Database, AlertTriangle, SlidersHorizontal, LayoutGrid, Download,
 } from 'lucide-react';
 import {
   Button, Card, CardBody, CardHeader, CardTitle, Badge, Field, Input, Select, Switch,
@@ -935,6 +935,24 @@ export function SettingsScreen({
               </div>
             </CardBody>
           </Card>)}
+
+          {/* Sao lưu toàn bộ dữ liệu nghiệp vụ ra Excel (chỉ admin) */}
+          {tab === 'data' && permissions.isAdmin && (
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Download size={18} style={{ color: 'var(--brand)' }} /> Sao lưu dữ liệu
+                  </CardTitle>
+                  <div className="card-subtitle">
+                    Tải một file Excel gồm khách hàng, đơn bán, báo giá, phiếu thu, phụ tùng, tồn kho, nhân sự và công việc.
+                    Không chứa mật khẩu hay cấu hình bí mật. Tối đa 1 lần mỗi 10 phút.
+                  </div>
+                </div>
+                <a href="/api/admin/export-all" className="btn btn-secondary btn-sm"><Download size={14} /> Tải bản sao lưu</a>
+              </CardHeader>
+            </Card>
+          )}
 
           {/* Card Quản trị Dữ liệu mẫu (Demo Data Seed & Clean) */}
           {tab === 'data' && (<Card>

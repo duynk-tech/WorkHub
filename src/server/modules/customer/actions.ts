@@ -1,6 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { writeAudit, diffFields } from '@/server/lib/audit';
+import { prisma } from '@/lib/prisma';
 import { requireAuth, can } from '@/server/auth/context';
 import { canViewModule, NO_ACCESS_MESSAGE } from '@/server/auth/module-access';
 import { customerInputSchema, firstZodMessage } from './schemas';
@@ -25,6 +27,14 @@ import type {
 } from './types';
 import type { SaveCustomerReturnInput } from './service';
 
+/** Trường được theo dõi trong lịch sử thay đổi (màn "Lịch sử" ở hồ sơ khách). */
+const CUSTOMER_AUDIT_KEYS = ['name', 'code', 'contactName', 'phone', 'email', 'address', 'notes'] as const;
+const CUSTOMER_AUDIT_SELECT = { name: true, code: true, contactName: true, phone: true, email: true, address: true, notes: true } as const;
+const ORDER_AUDIT_KEYS = ['status', 'totalAmount', 'orderDate', 'deliveryDate', 'dueDate', 'salespersonId', 'notes'] as const;
+const ORDER_AUDIT_SELECT = { orderCode: true, status: true, totalAmount: true, orderDate: true, deliveryDate: true, dueDate: true, salespersonId: true, notes: true } as const;
+const QUOTE_AUDIT_KEYS = ['status', 'totalAmount', 'validUntil', 'salespersonId', 'notes'] as const;
+const QUOTE_AUDIT_SELECT = { quoteCode: true, status: true, totalAmount: true, validUntil: true, salespersonId: true, notes: true } as const;
+
 export async function saveCustomerAction(id: number | null, input: SaveCustomerInput) {
   const ctx = await requireAuth();
   if (!can(ctx, 'FEATURE_CUSTOMER_MANAGE')) {
@@ -35,7 +45,12 @@ export async function saveCustomerAction(id: number | null, input: SaveCustomerI
   if (!parsed.success) return { ok: false, message: firstZodMessage(parsed.error) };
 
   try {
+    const before = id ? await prisma.customer.findUnique({ where: { id }, select: CUSTOMER_AUDIT_SELECT }) : null;
     const customer = await saveCustomer(id, parsed.data);
+    await writeAudit({
+      actorId: ctx.userId, entityType: 'Customer', entityId: customer.id, action: id ? 'UPDATE' : 'CREATE',
+      diff: diffFields(before, customer, CUSTOMER_AUDIT_KEYS),
+    });
     revalidatePath('/customers');
     if (id) revalidatePath(`/customers/${id}`);
     revalidatePath('/spare-parts');
@@ -70,10 +85,17 @@ export async function saveCustomerOrderAction(id: number | null, input: SaveCust
   }
 
   try {
+    const before = id ? await prisma.customerOrder.findUnique({ where: { id }, select: ORDER_AUDIT_SELECT }) : null;
     const order = await saveCustomerOrder(id, input);
+    if (order?.id) {
+      const after = await prisma.customerOrder.findUnique({ where: { id: order.id }, select: ORDER_AUDIT_SELECT });
+      await writeAudit({
+        actorId: ctx.userId, entityType: 'CustomerOrder', entityId: order.id, action: id ? 'UPDATE' : 'CREATE',
+        diff: { orderCode: after?.orderCode, changes: diffFields(before, after, ORDER_AUDIT_KEYS) },
+      });
+    }
     // Đơn mới chưa có nhân viên KD phụ trách thì gán cho người lập (dùng cho KPI theo người)
     if (!id && order?.id) {
-      const { prisma } = await import('@/lib/prisma');
       await prisma.customerOrder.updateMany({ where: { id: order.id, salespersonId: null }, data: { salespersonId: ctx.employeeId } });
     }
     revalidatePath('/customers');
@@ -110,6 +132,7 @@ export async function cancelCustomerOrderAction(id: number) {
 
   try {
     await cancelCustomerOrder(id);
+    await writeAudit({ actorId: ctx.userId, entityType: 'CustomerOrder', entityId: id, action: 'CANCEL' });
     revalidatePath('/sales');
     revalidatePath('/customers');
     return { ok: true, message: 'Đã hủy đơn hàng' };
@@ -129,12 +152,19 @@ export async function saveCustomerQuotationAction(
   }
 
   try {
+    const before = id ? await prisma.customerQuotation.findUnique({ where: { id }, select: QUOTE_AUDIT_SELECT }) : null;
     const quotation = await saveCustomerQuotation(id, {
       ...input,
       createdById: input.createdById ?? ctx.employeeId,
     });
+    if (quotation?.id) {
+      const after = await prisma.customerQuotation.findUnique({ where: { id: quotation.id }, select: QUOTE_AUDIT_SELECT });
+      await writeAudit({
+        actorId: ctx.userId, entityType: 'CustomerQuotation', entityId: quotation.id, action: id ? 'UPDATE' : 'CREATE',
+        diff: { quoteCode: after?.quoteCode, changes: diffFields(before, after, QUOTE_AUDIT_KEYS) },
+      });
+    }
     if (!id && quotation?.id) {
-      const { prisma } = await import('@/lib/prisma');
       await prisma.customerQuotation.updateMany({ where: { id: quotation.id, salespersonId: null }, data: { salespersonId: ctx.employeeId } });
     }
     revalidatePath(`/customers/${input.customerId}`);

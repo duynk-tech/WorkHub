@@ -86,6 +86,7 @@ export function AppShell({
             unreadCount={live.unreadCount}
             onOpenMobileMenu={() => setMobileOpen(true)}
             onToggleSidebar={toggleCollapsed}
+            navLinks={sections.flatMap((sec) => sec.items.map((i) => ({ href: i.href, label: i.label })))}
           />
           <main className="app-content">{children}</main>
         </div>

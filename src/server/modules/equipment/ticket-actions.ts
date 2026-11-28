@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { writeAudit } from '@/server/lib/audit';
 import { requireAuth, can } from '@/server/auth/context';
 import { canViewModule, NO_ACCESS_MESSAGE } from '@/server/auth/module-access';
 import { ticketInputSchema } from './ticket-schema';
@@ -55,6 +56,7 @@ export async function saveTicketAction(id: number | null, input: SaveTicketInput
 
   try {
     const ticket = await saveServiceTicket(id, input);
+    await writeAudit({ actorId: ctx.userId, entityType: 'ServiceTicket', entityId: ticket.id, action: id ? 'UPDATE' : 'CREATE', diff: { ticketCode: ticket.ticketCode, customerId: ticket.customerId } });
     revalidatePath('/tickets');
     revalidatePath('/spare-parts');
     if (input.customerId) revalidatePath(`/customers/${input.customerId}`);
@@ -77,6 +79,7 @@ export async function assignTicketAction(id: number, assignedToId: number) {
 
   try {
     const ticket = await assignServiceTicket(id, assignedToId);
+    await writeAudit({ actorId: ctx.userId, entityType: 'ServiceTicket', entityId: id, action: 'ASSIGN', diff: { ticketCode: ticket.ticketCode, customerId: ticket.customerId, assignedTo: ticket.assignedTo?.fullName ?? null } });
     revalidatePath('/tickets');
     return {
       ok: true,
@@ -97,6 +100,7 @@ export async function updateTicketStatusAction(id: number, status: string, resol
 
   try {
     const ticket = await updateTicketStatus(id, status, resolutionNote);
+    await writeAudit({ actorId: ctx.userId, entityType: 'ServiceTicket', entityId: id, action: 'STATUS', diff: { ticketCode: ticket.ticketCode, customerId: ticket.customerId, status, resolutionNote: resolutionNote ?? null } });
     revalidatePath('/tickets');
     revalidatePath('/spare-parts');
     if (ticket.customerId) revalidatePath(`/customers/${ticket.customerId}`);
