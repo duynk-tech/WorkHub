@@ -2434,8 +2434,8 @@ export function Space3DCanvas({
     }
     obj.instancedGroup.updateMatrixWorld(true);
     obj.instancedGroup.matrixWorldAutoUpdate = editMode;
-    // NPC quán cà phê theo bố cục (tắt khi đang thiết kế)
-    obj.npcs.rebuild(structures, sceneKind === 'CAFE' && !editMode);
+    // NPC quán cà phê & showroom theo bố cục (tắt khi đang thiết kế)
+    obj.npcs.rebuild(structures, (sceneKind === 'CAFE' || sceneKind === 'SHOWROOM') && !editMode);
     // Lá đa rơi lả tả quanh cây đa
     if (obj.leaves) {
       obj.scene.remove(obj.leaves.mesh);

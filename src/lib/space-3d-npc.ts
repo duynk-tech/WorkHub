@@ -6,16 +6,18 @@ import type { SpaceObject } from './space-3d-types';
 import { SEATABLE_KINDS, isStaffSeat, seatsFor, type Seat } from './space-3d-layout';
 import { findServeSpot } from './space-3d-cafe-menu';
 
-export type NpcRole = 'barista' | 'vendor' | 'waiter' | 'guard';
+export type NpcRole = 'barista' | 'vendor' | 'waiter' | 'guard' | 'receptionist' | 'demo' | 'consultant' | 'labtech';
 
 export interface NpcSpot {
   x: number;
   z: number;
   /** Hướng mặt (rad) */
   rotY: number;
+  /** Ngồi làm việc (độ cao mặt ghế) — vd. lễ tân ngồi ghế xoay sau quầy */
+  sitY?: number;
 }
 
-type Placed = Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'rotY' | 'widthM' | 'depthM'>;
+type Placed = Pick<SpaceObject, 'kind' | 'posX' | 'posZ' | 'rotY' | 'widthM' | 'depthM'> & { variant?: string };
 
 /** Điểm cục bộ (lx, lz) của vật thể → toạ độ thế giới */
 export function localToWorld(o: Placed, lx: number, lz: number): { x: number; z: number } {
@@ -48,7 +50,52 @@ export function findNpcSpots(objects: Placed[]): Partial<Record<NpcRole, NpcSpot
     const p = localToWorld(gate, gate.widthM / 2 + 0.2, -1.4);
     out.guard = { ...p, rotY: gate.rotY - Math.PI / 2 };
   }
+  // ── Showroom ──
+  const desk = objects.find((o) => o.kind === 'RECEPTION_DESK');
+  if (desk) {
+    // Lễ tân đứng sau quầy, lệch cạnh ghế xoay, nhìn ra cửa
+    // Ngồi ghế xoay ngay sau quầy (nếu có), không thì đứng sau quầy
+    const chair = objects
+      .filter((o) => o.kind === 'OFFICE_CHAIR' && 'heightM' in o)
+      .map((o) => ({ o, d: Math.hypot(o.posX - desk.posX, o.posZ - desk.posZ) }))
+      .filter((e) => e.d < 2.5)
+      .sort((a, b) => a.d - b.d)[0]?.o;
+    const seat = chair ? seatsFor(chair as Parameters<typeof seatsFor>[0])[0] : undefined;
+    if (seat) out.receptionist = { x: seat.x, z: seat.z, rotY: seat.rotY, sitY: seat.y };
+    else {
+      const p = localToWorld(desk, desk.widthM * 0.25, -(desk.depthM / 2 + 0.35));
+      out.receptionist = { ...p, rotY: desk.rotY };
+    }
+  }
+  const demo = objects.find((o) => o.kind === 'DEMO_BAR');
+  if (demo) {
+    const p = localToWorld(demo, demo.widthM * 0.3, -(demo.depthM / 2 + 0.4));
+    out.demo = { ...p, rotY: demo.rotY };
+  }
+  const choc = objects.find((o) => o.kind === 'LAB_COUNTER' && o.variant === 'chocolate');
+  if (choc) {
+    const p = localToWorld(choc, choc.widthM * 0.15, -(choc.depthM / 2 + 0.4));
+    out.labtech = { ...p, rotY: choc.rotY };
+  }
+  const counter = objects.filter((o) => o.kind === 'DISPLAY_COUNTER').sort((a, b) => b.posZ - a.posZ)[0];
+  if (counter) {
+    // Tư vấn viên đứng trước quầy máy gần lối vào nhất, quay ra lối đi chờ khách
+    const p = localToWorld(counter, -counter.widthM * 0.3, counter.depthM / 2 + 0.9);
+    out.consultant = { ...p, rotY: counter.rotY };
+  }
   return out;
+}
+
+/** Lộ trình đi tuần của tư vấn viên: trước các quầy máy cùng dãy (tối đa 3 quầy gần nhất) */
+export function consultantPatrol(objects: Placed[], home: NpcSpot): { x: number; z: number }[] {
+  const fronts = objects
+    .filter((o) => o.kind === 'DISPLAY_COUNTER')
+    .map((o) => ({ o, p: localToWorld(o, 0, o.depthM / 2 + 0.9) }))
+    .filter(({ p }) => Math.abs(p.x - home.x) < 1.2)
+    .sort((a, b) => Math.abs(a.p.z - home.z) - Math.abs(b.p.z - home.z))
+    .slice(1, 3)
+    .map(({ p }) => p);
+  return fronts;
 }
 
 /**
@@ -75,6 +122,10 @@ export const NPC_PROFILES: Record<NpcRole, { name: string; title: string }> = {
   vendor: { name: 'Chị Ba', title: 'Bánh quê' },
   waiter: { name: 'Bé Na', title: 'Phục vụ' },
   guard: { name: 'Chú Sáu', title: 'Bảo vệ' },
+  receptionist: { name: 'Chị Vy', title: 'Lễ tân' },
+  demo: { name: 'Anh Khoa', title: 'Barista' },
+  consultant: { name: 'Anh Minh', title: 'Tư vấn thiết bị' },
+  labtech: { name: 'Chị Hạnh', title: 'R&D Lab' },
 };
 
 // ───────────── Khách quen ngồi quán (NPC) ─────────────

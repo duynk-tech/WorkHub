@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Avatar3DConfig, SpaceStructure } from '@/lib/space-3d-types';
-import { NPC_PROFILES, findNpcSpots, localToWorld, pickPatronSeats, serveRoute, type NpcRole, type NpcSpot, type PatronSeat } from '@/lib/space-3d-npc';
+import { NPC_PROFILES, consultantPatrol, findNpcSpots, localToWorld, pickPatronSeats, serveRoute, type NpcRole, type NpcSpot, type PatronSeat } from '@/lib/space-3d-npc';
 import { DEFAULT_CAFE_MENU } from '@/lib/space-3d-cafe-menu';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { sharedMat } from './materials';
@@ -29,10 +29,14 @@ const LOOKS: Record<NpcRole, Avatar3DConfig> = {
   vendor: { outfitStyle: 'shirt', outfitColor: '#7c4a2d', pantsColor: '#1f1f1f', bottomStyle: 'pants', hairStyle: 'bun', hairColor: '#1c1310', skinTone: '#e4b48d', hasGlasses: false },
   waiter: { outfitStyle: 'polo', outfitColor: '#8a5a35', pantsColor: '#1f1f1f', bottomStyle: 'pants', hairStyle: 'ponytail', hairColor: '#2b1b14', skinTone: '#f3cfb3', hasGlasses: false },
   guard: { outfitStyle: 'shirt', outfitColor: '#4d5d3a', pantsColor: '#3a4630', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#111111', skinTone: '#d9a77f', hasGlasses: false },
+  receptionist: { outfitStyle: 'uniform', outfitColor: '#1e3a8a', pantsColor: '#1f2937', bottomStyle: 'skirt', hairStyle: 'bun', hairColor: '#1c1310', skinTone: '#f3cfb3', hasGlasses: false },
+  demo: { outfitStyle: 'shirt', outfitColor: '#111827', pantsColor: '#1f2937', bottomStyle: 'pants', hairStyle: 'slick', hairColor: '#1c1917', skinTone: '#e4b48d', hasGlasses: false },
+  consultant: { outfitStyle: 'uniform', outfitColor: '#1e3a8a', pantsColor: '#334155', bottomStyle: 'pants', hairStyle: 'short', hairColor: '#111111', skinTone: '#e8b994', hasGlasses: true },
+  labtech: { outfitStyle: 'shirt', outfitColor: '#f8fafc', pantsColor: '#e5e7eb', bottomStyle: 'pants', hairStyle: 'ponytail', hairColor: '#2b1b14', skinTone: '#f6d5bd', hasGlasses: false },
 };
 
 // ───────────── Phụ kiện ─────────────
-const apronMat = () => sharedMat('npc:apron', () => new THREE.MeshStandardMaterial({ color: '#5b3a22', roughness: 0.8 }));
+const apronMat = (color = '#5b3a22') => sharedMat(`npc:apron:${color}`, () => new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
 function khanRanTex() {
   const c = document.createElement('canvas');
   c.width = 128;
@@ -55,11 +59,11 @@ function khanRanTex() {
 }
 const khanRanMat = () => sharedMat('npc:khanran', () => new THREE.MeshStandardMaterial({ map: khanRanTex(), roughness: 0.85, side: THREE.DoubleSide }));
 
-function addApron(av: AnimatedAvatar) {
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.5, 0.012), apronMat());
+function addApron(av: AnimatedAvatar, color?: string) {
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.5, 0.012), apronMat(color));
   apron.position.set(0, 0.86, 0.128);
   apron.rotation.x = 0.04;
-  const bib = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.012), apronMat());
+  const bib = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.012), apronMat(color));
   bib.position.set(0, 1.2, 0.118);
   av.group.add(apron, bib);
 }
@@ -72,6 +76,17 @@ function addKhanRan(av: AnimatedAvatar) {
   const knot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), khanRanMat());
   knot.position.set(0, 0.03, -0.14);
   av.headGroup.add(cap, knot);
+}
+/** Mũ trùm tóc vải trắng (phòng Lab thực phẩm) */
+function addHairnet(av: AnimatedAvatar) {
+  const net = new THREE.Mesh(
+    new THREE.SphereGeometry(0.145, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
+    sharedMat('npc:hairnet', () => new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.95 })),
+  );
+  net.scale.set(1, 0.9, 1.08);
+  net.position.y = 0.025;
+  net.rotation.x = -0.15;
+  av.headGroup.add(net);
 }
 function addGuardCap(av: AnimatedAvatar) {
   const olive = sharedMat('npc:guardCap', () => new THREE.MeshStandardMaterial({ color: '#3f4a2f', roughness: 0.7 }));
@@ -141,6 +156,8 @@ interface Npc {
   carrying?: { orderId: number; cups: THREE.Group };
   nextPatrolAt: number;
   stuckTime: number;
+  /** Điểm đi tuần (ngoài bảo vệ) */
+  patrol?: { x: number; z: number }[];
 }
 
 export interface NpcPerson {
@@ -168,7 +185,10 @@ export class NpcSystem {
 
   /** Ghế khách NPC đang ngồi (người chơi không ngồi chồng lên) */
   get occupiedSeats(): { x: number; z: number }[] {
-    return this.patrons.map((p) => ({ x: p.seat.seat.x, z: p.seat.seat.z }));
+    return [
+      ...this.patrons.map((p) => ({ x: p.seat.seat.x, z: p.seat.seat.z })),
+      ...this.npcs.filter((n) => n.home.sitY !== undefined).map((n) => ({ x: n.home.x, z: n.home.z })),
+    ];
   }
 
   /** Khách quen: chọn bàn theo ngày (mọi máy cùng ngày thấy giống nhau), ngồi trò chuyện & nhâm nhi */
@@ -257,7 +277,7 @@ export class NpcSystem {
     if (!enabled) return;
     this.buildPatrons(structures);
     const spots = findNpcSpots(structures);
-    for (const role of ['barista', 'vendor', 'waiter', 'guard'] as NpcRole[]) {
+    for (const role of ['barista', 'vendor', 'waiter', 'guard', 'receptionist', 'demo', 'consultant', 'labtech'] as NpcRole[]) {
       const home = spots[role];
       if (!home) continue;
       const p = NPC_PROFILES[role];
@@ -265,6 +285,11 @@ export class NpcSystem {
       if (role === 'barista' || role === 'waiter') addApron(av);
       if (role === 'vendor') addKhanRan(av);
       if (role === 'guard') addGuardCap(av);
+      if (role === 'demo') addApron(av, '#3f2a1d');
+      if (role === 'labtech') {
+        addApron(av, '#f1f5f9');
+        addHairnet(av);
+      }
       av.group.position.set(home.x, 0, home.z);
       av.group.rotation.y = home.rotY;
       const npc: Npc = {
@@ -280,6 +305,7 @@ export class NpcSystem {
         greeted: new Map(),
         nextPatrolAt: 20 + Math.random() * 30,
         stuckTime: 0,
+        patrol: role === 'consultant' ? consultantPatrol(structures, home) : undefined,
       };
       if (role === 'waiter') {
         npc.tray = makeTray();
@@ -384,13 +410,18 @@ export class NpcSystem {
         barista: 'Chào anh/chị, uống gì cứ gọi em nha!',
         vendor: 'Bánh quê nóng giòn nè, ghé ăn thử nha!',
         guard: 'Mời anh/chị vào ạ!',
+        receptionist: 'Chào mừng anh/chị đến TIM Corp! Em hỗ trợ gì được ạ?',
+        demo: 'Mời anh/chị ngồi thử ly espresso từ máy mới nha!',
+        consultant: 'Anh/chị cần tư vấn máy nào cứ hỏi em ạ!',
+        labtech: 'Đây là phòng R&D kem & socola, mời anh/chị xem ạ!',
       };
       this.say(n, lines[n.role as Exclude<NpcRole, 'waiter'>], now);
     }
     if (n.mode === 'greet') {
       if (visitor) this.faceToward(n, visitor.x, visitor.z, 1 - Math.exp(-dt * 6));
-      relaxPose(n.av);
-      poseEmote(n.av, n.role === 'guard' ? 'bow' : 'wave', Math.min(1, 1 - (n.greetUntil - now) / 2.2), now);
+      if (n.home.sitY !== undefined) poseSit(n.av, n.home.sitY);
+      else relaxPose(n.av);
+      poseEmote(n.av, n.role === 'guard' || n.home.sitY !== undefined ? (n.home.sitY !== undefined ? 'nod' : 'bow') : 'wave', Math.min(1, 1 - (n.greetUntil - now) / 2.2), now);
       if (now > n.greetUntil) n.mode = 'work';
       return;
     }
@@ -404,16 +435,27 @@ export class NpcSystem {
       n.mode = 'walk';
       n.nextPatrolAt = now + 40 + Math.random() * 40;
     }
+    // Tư vấn viên đi dọc dãy quầy máy rồi về chỗ
+    if (n.patrol?.length && n.mode === 'work' && now > n.nextPatrolAt) {
+      n.path = [...n.patrol, { x: n.home.x, z: n.home.z }];
+      n.mode = 'walk';
+      n.nextPatrolAt = now + 35 + Math.random() * 30;
+    }
     if (n.mode === 'walk') {
-      if (this.step(n, dt, 1.1, push)) n.mode = 'work';
+      if (this.step(n, dt, 1.0, push)) n.mode = 'work';
       return;
     }
     // Tại chỗ: quay về hướng làm việc + động tác nghề
     this.faceToward(n, g.x + Math.sin(n.home.rotY), g.z + Math.cos(n.home.rotY), 1 - Math.exp(-dt * 3));
-    relaxPose(n.av);
-    if (n.role !== 'guard') {
-      const cyc = (now + (n.role === 'vendor' ? 3 : 0)) % 9;
+    if (n.home.sitY !== undefined) poseSit(n.av, n.home.sitY);
+    else relaxPose(n.av);
+    if (n.role === 'barista' || n.role === 'vendor' || n.role === 'demo' || n.role === 'labtech') {
+      const cyc = (now + (n.role === 'vendor' ? 3 : n.role === 'labtech' ? 5 : 0)) % 9;
       if (cyc < 6) poseEmote(n.av, 'brew', cyc / 6, now);
+    } else if (n.role === 'receptionist' || n.role === 'consultant') {
+      // Lễ tân / tư vấn: thỉnh thoảng gật đầu nhẹ như đang trao đổi
+      const cyc = (now + (n.role === 'consultant' ? 4 : 0)) % 11;
+      if (cyc < 1.6) poseEmote(n.av, 'nod', cyc / 1.6, now);
     }
   }
 
