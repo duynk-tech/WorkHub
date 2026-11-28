@@ -784,6 +784,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   /** Pantry: đứng gần quầy bếp / bình nước; đang cầm ly */
   const [pantryNear, setPantryNear] = useState(false);
   const [holding, setHolding] = useState<string | null>(null);
+  /** Ly đã phục vụ mà mình đã cầm lên khỏi bàn (ẩn khỏi bàn ở máy mình) */
+  const [pickedOrders, setPickedOrders] = useState<Set<number>>(() => new Set());
   const holdTimerRef = useRef<number | null>(null);
   /** Chỗ ngồi: đã có người / tổng (khách không tính ghế nhân viên) */
   const [seatStats, setSeatStats] = useState<{ used: number; total: number } | null>(null);
@@ -1331,7 +1333,20 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         typingRef={realtime.typingRef}
         emoteRef={realtime.emoteRef}
         selfRealtimeId={realtimeSelf?.employeeId ?? null}
-        drinkOrders={isCafe ? drinkOrders : undefined}
+        drinkOrders={isCafe ? (pickedOrders.size ? drinkOrders.filter((o) => !pickedOrders.has(o.id)) : drinkOrders) : undefined}
+        onPickDrink={(orderId) => {
+          const o = drinkOrders.find((x) => x.id === orderId);
+          if (!o || !o.lines[0]) return;
+          if (o.customerRid !== myRid) {
+            showToast(false, 'Ly này của khách khác');
+            return;
+          }
+          // Cầm ly lên mang theo (ngồi xuống cạnh bàn khác sẽ tự đặt ly xuống trước mặt)
+          realtime.sendHold(o.lines[0].code);
+          setHolding(o.lines[0].code);
+          setPickedOrders((prev) => new Set(prev).add(orderId));
+          if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
+        }}
         cafeMenu={cafeMenu}
         realtimeLive={realtimeLive}
         onSelectRemotePlayer={(id) => {

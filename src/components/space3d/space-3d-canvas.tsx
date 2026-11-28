@@ -46,7 +46,7 @@ import { localToWorld } from '@/lib/space-3d-npc';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
 import { buildDrink, buildOrderDrinks } from './three/props/drinks';
-import { DEFAULT_CAFE_MENU } from '@/lib/space-3d-cafe-menu';
+import { DEFAULT_CAFE_MENU, findServeSpot } from '@/lib/space-3d-cafe-menu';
 import { PANTRY_KINDS } from './three/props/office-extras';
 import { setDeskScreenOn } from './three/props/office-extras';
 import { createCafeEnvironment, createOfficeEnvironment, createWarehouseEnvironment } from './three/environments';
@@ -164,6 +164,8 @@ interface Props {
   onNpcArrive?: (orderId: number) => void;
   /** Trạng thái ngồi thay đổi (hiện nút "Đứng dậy") */
   onSittingChange?: (sitting: boolean) => void;
+  /** Bấm vào ly nước của mình trên bàn → cầm ly lên mang theo */
+  onPickDrink?: (orderId: number) => void;
   /** Kho: đứng cạnh xe nâng ('near') / đang lái ('driving') → hiện hướng dẫn phím */
   onForkliftHint?: (state: 'near' | 'driving' | null) => void;
   /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
@@ -342,6 +344,7 @@ export function Space3DCanvas({
   onNpcArrive,
   onSittingChange,
   onForkliftHint,
+  onPickDrink,
   seatCommand = null,
   onReady,
   onPortal,
@@ -401,6 +404,7 @@ export function Space3DCanvas({
     remoteRoster,
     onSittingChange,
     onForkliftHint,
+    onPickDrink,
   });
   stateRef.current = {
     editMode,
@@ -447,6 +451,7 @@ export function Space3DCanvas({
     remoteRoster,
     onSittingChange,
     onForkliftHint,
+    onPickDrink,
   };
 
   const sceneObjRef = useRef<{
@@ -1104,6 +1109,17 @@ export function Space3DCanvas({
         }
       }
 
+      // 2b. Click vào ly nước trên bàn → cầm lên mang theo (chỉ ly của mình — kiểm tra ở giao diện)
+      if (stateRef.current.onPickDrink && sceneObjRef.current) {
+        const hit = raycaster.intersectObjects(sceneObjRef.current.drinksGroup.children, true)[0];
+        let o: THREE.Object3D | null = hit?.object ?? null;
+        while (o && o.userData?.orderId === undefined) o = o.parent;
+        if (o && hit.distance < 12) {
+          stateRef.current.onPickDrink(o.userData.orderId as number);
+          return;
+        }
+      }
+
       // 2a. Click vào ghế / sofa / ghế bar → đi tới và ngồi xuống
       {
         const seatObjId = pickObject();
@@ -1418,9 +1434,29 @@ export function Space3DCanvas({
         }
       }
     };
-    (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void; dutySit: () => boolean } }).seatApi = {
+    (sceneObjRef.current as unknown as { seatApi?: { sit: () => void; stand: () => void; dutySit: () => boolean; sitNearest: () => boolean } }).seatApi = {
       dutySit,
       sit: sitOnCandidate,
+      /** Ngồi ngay vào chỗ ngồi gần nhất (≤ 2m) — dùng cho kiểm thử tự động (?debug=1) */
+      sitNearest: () => {
+        const pl = sceneObjRef.current?.player ?? player;
+        let best: Seat | null = null;
+        let bd = 2;
+        for (const o of stateRef.current.structures) {
+          if (!SEATABLE_KINDS.has(o.kind)) continue;
+          for (const st of seatsFor(o)) {
+            const d = Math.hypot(st.x - pl.group.position.x, st.z - pl.group.position.z);
+            if (d < bd) {
+              bd = d;
+              best = st;
+            }
+          }
+        }
+        if (!best) return false;
+        standUp();
+        setSitting(best);
+        return true;
+      },
       stand: () => {
         standUp();
         pendingSeat = null;
@@ -1471,7 +1507,20 @@ export function Space3DCanvas({
     };
 
     // ── Cầm ly nước (pantry): gắn ly vào bàn tay phải, giữ ly luôn thẳng đứng ──
-    const heldCups = new Map<number, { code: string; cup: THREE.Group; av: AnimatedAvatar }>();
+    const heldCups = new Map<number, { code: string; cup: THREE.Group; av: AnimatedAvatar; seatKey?: string; spot?: { x: number; y: number; z: number } | null }>();
+    /** Ly đang cầm được đặt xuống bàn khi ngồi (nhấc lên lúc uống, cầm theo khi đứng dậy) */
+    const tableCups = new THREE.Group();
+    scene.add(tableCups);
+    const cupToHand = (h: { cup: THREE.Group; av: AnimatedAvatar }) => {
+      if (h.cup.parent === h.av.rightElbow) return;
+      h.av.rightElbow.add(h.cup);
+      h.cup.position.set(0, -0.36, 0.05);
+    };
+    const cupToTable = (h: { cup: THREE.Group }, spot: { x: number; y: number; z: number }) => {
+      if (h.cup.parent !== tableCups) tableCups.add(h.cup);
+      h.cup.position.set(spot.x, spot.y, spot.z);
+      h.cup.rotation.set(0, 0, 0);
+    };
     let pantryNear = false;
     const syncHeld = (id: number, av: AnimatedAvatar, code: string | null) => {
       const cur = heldCups.get(id);
@@ -2099,11 +2148,30 @@ export function Space3DCanvas({
           for (const id of [...heldCups.keys()]) if (id !== selfRid && !sceneObjRef.current.remoteAvatars.has(id)) syncHeld(id, heldCups.get(id)!.av, null);
         }
         for (const [id, h] of heldCups) {
+          // Đang ngồi cạnh bàn → đặt ly xuống mặt bàn trước mặt; đứng dậy → cầm ly theo
+          let seated = false;
+          if (id === selfRid) seated = Boolean(sitting) && sitT > 0.6;
+          else seated = (stateRef.current.remoteStateRef?.current.get(id)?.sit ?? 0) > 0;
+          const gp = h.av.group.position;
+          const key = seated ? `${gp.x.toFixed(1)}:${gp.z.toFixed(1)}` : '';
+          if (key !== (h.seatKey ?? '')) {
+            h.seatKey = key;
+            const r = h.av.group.rotation.y;
+            const sp = seated ? findServeSpot(stateRef.current.structures, gp.x + Math.sin(r) * 0.45, gp.z + Math.cos(r) * 0.45, 0.7) : null;
+            h.spot = sp ? { x: sp.x, y: sp.y, z: sp.z } : null;
+          }
           // Thỉnh thoảng nâng ly uống (chu kỳ ~25s, lệch pha theo id)
           const cyc = (totalTime + Math.abs(id % 11) * 2.1) % 25;
           const sipping = cyc < 2;
+          if (seated && h.spot && !(sipping && cyc > 0.3 && cyc < 1.7)) {
+            cupToTable(h, h.spot);
+            if (sipping) poseEmote(h.av, 'sip', cyc / 2, totalTime);
+            continue;
+          }
+          cupToHand(h);
           if (sipping) poseEmote(h.av, 'sip', cyc / 2, totalTime);
-          poseHold(h.av, h.cup, sipping);
+          if (!seated || !h.spot) poseHold(h.av, h.cup, sipping);
+          else h.cup.rotation.x = -(h.av.rightArm.rotation.x + h.av.rightElbow.rotation.x);
         }
       }
       // Gần pantry → hiện nút "Lấy nước"
@@ -2683,6 +2751,7 @@ export function Space3DCanvas({
       if (obj.drinkMeshes.has(o.id)) continue;
       const g = buildOrderDrinks(o, cafeMenu ?? []);
       if (!g) continue;
+      g.userData.orderId = o.id;
       obj.drinksGroup.add(g);
       obj.drinkMeshes.set(o.id, g);
     }
