@@ -177,6 +177,8 @@ export function buildSpaceObject(o: SpaceObject, ctx: BuildContext): BuiltObject
   // Gian hàng giữ mesh tương tác (boothId) — merge vẫn bỏ qua các mesh này
   const merged = mergeStaticGroup(raw);
   if (raw.userData.noShadowCast) merged.traverse((c) => (c.castShadow = false));
+  // Xe lái được: cả nhánh là bộ phận động (không gộp lô tĩnh toàn cảnh, ma trận cập nhật tự động)
+  if (raw.userData.vehicle) merged.userData.dynamic = true;
   root.add(merged);
   if (def?.walkTarget) {
     const sp = standPoint(o);

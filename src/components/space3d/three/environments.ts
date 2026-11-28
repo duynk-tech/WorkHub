@@ -266,7 +266,7 @@ export function createOfficeEnvironment(widthM: number, depthM: number, companyN
 
 // ───────────────────────── Nhà kho công nghiệp ─────────────────────────
 
-function corrugatedTex(key: string, base: string, rib: string, horizontal = false, repeat: [number, number] = [1, 1]): THREE.CanvasTexture {
+export function corrugatedTex(key: string, base: string, rib: string, horizontal = false, repeat: [number, number] = [1, 1]): THREE.CanvasTexture {
   return sharedTexture(`corr:${key}:${repeat.join('x')}`, () => {
     const c = document.createElement('canvas');
     c.width = 256;

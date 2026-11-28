@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { SpaceKind, SpaceStructure } from '@/lib/space-3d-types';
 import { labelTex } from './props/textures';
 import { buildTreeRow } from './props/garden';
+import { corrugatedTex } from './environments';
+import { M as K } from './props/kit';
 import {
   applyWindSway,
   createCarpetTexture,
@@ -430,7 +432,8 @@ export function createExhibitionHallEnvironment(
     }
   }
 
-  // 4. Tường kính Curtain Wall 2 bên hông (nhìn xuyên ra hàng cây xanh bên ngoài)
+  // 4. VỎ NHÀ XƯỞNG: showroom nằm trong khu nhà xưởng lớn → tường panel cách nhiệt bao quanh (hông + hậu + đầu hồi),
+  //    dải cửa sổ lấy sáng phía trên, mặt tiền kính ở giữa; tường trái chừa ô kính trước lối đi bộ sang quán cà phê.
   const glassMat = sharedMat('curtainGlass', () =>
     new THREE.MeshPhysicalMaterial({
       color: '#cfe8fb',
@@ -445,37 +448,172 @@ export function createExhibitionHallEnvironment(
     }),
   );
   const mullionMat = M.aluminum();
-  for (const px of [-halfW, halfW]) {
-    const glassWall = new THREE.Mesh(new THREE.BoxGeometry(0.06, hallH - 0.4, halfD * 2), glassMat);
-    glassWall.position.set(px, hallH * 0.5, 0);
-    glassWall.userData.occluder = true;
-    glassWall.renderOrder = 2;
-    env.add(glassWall);
-    // Khung nhôm curtain wall: đố đứng mỗi 2.4m + 2 đố ngang
-    for (let z = -halfD; z <= halfD + 0.01; z += 2.4) {
-      const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.1, hallH - 0.4, 0.08), mullionMat);
-      mullion.position.set(px, hallH * 0.5, z);
-      env.add(mullion);
+  const wallTop = eaveH;
+  const bandY0 = 4.5; // dải cửa sổ lấy sáng 4.5 → 5.9m
+  const bandY1 = 5.9;
+  // 1 vật liệu panel dùng chung cho mọi đoạn tường (gộp còn 1 draw call); lặp sóng tôn theo chiều dài qua toạ độ UV
+  const sharedPanel = sharedMat('srPanel', () =>
+    new THREE.MeshStandardMaterial({ map: corrugatedTex('sr:panel', '#e6e9ed', 'rgba(120,132,146,0.28)', false, [1, 1]), roughness: 0.6, metalness: 0.25 }),
+  );
+  const panelMat = (_key: string, _len: number) => sharedPanel;
+  /** Nhân toạ độ U của hộp để sóng tôn lặp mỗi 2.4m theo chiều dài */
+  const scaleU = (geo: THREE.BufferGeometry, len: number) => {
+    const uv = geo.attributes.uv as THREE.BufferAttribute;
+    const k = Math.max(1, len / 2.4);
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * k);
+    return geo;
+  };
+  const plinthMat = K.paint('#8b929b', 0.85);
+  const glassBand = sharedMat('srBand', () => {
+    const m = new THREE.MeshStandardMaterial({ color: '#dbeafe', emissive: '#e8f3ff', emissiveIntensity: 0.55, transparent: true, opacity: 0.75, roughness: 0.1 });
+    registerEmissive({ mat: m, day: 0.55, night: 0.04, mode: 'emissive' });
+    return m;
+  });
+  /** Đoạn tường panel đặc dọc trục (theo X nếu alongX, theo Z nếu không), có chân tường bê tông + dải cửa sổ */
+  const wallRun = (alongX: boolean, fixed: number, a: number, b: number, key: string, withBand = true) => {
+    const len = b - a;
+    if (len < 0.05) return;
+    const mid = (a + b) / 2;
+    const place = (m: THREE.Mesh, y: number) => {
+      if (alongX) m.position.set(mid, y, fixed);
+      else m.position.set(fixed, y, mid);
+      m.castShadow = false;
+      m.receiveShadow = true;
+      m.userData.occluder = true;
+      env.add(m);
+    };
+    const geo = (h: number, t = 0.16) => scaleU(alongX ? new THREE.BoxGeometry(len, h, t) : new THREE.BoxGeometry(t, h, len), len);
+    place(new THREE.Mesh(geo(0.6, 0.22), plinthMat), 0.3);
+    if (withBand) {
+      place(new THREE.Mesh(geo(bandY0 - 0.6), panelMat(key, len)), 0.6 + (bandY0 - 0.6) / 2);
+      const band = new THREE.Mesh(geo(bandY1 - bandY0, 0.06), glassBand);
+      place(band, (bandY0 + bandY1) / 2);
+      band.userData.occluder = false;
+      place(new THREE.Mesh(geo(wallTop - bandY1), panelMat(key + 't', len)), (bandY1 + wallTop) / 2);
+      // Đố nhôm dải cửa sổ mỗi 3m
+      for (let t = a; t <= b + 0.01; t += 3) {
+        const mul = new THREE.Mesh(alongX ? new THREE.BoxGeometry(0.08, bandY1 - bandY0, 0.1) : new THREE.BoxGeometry(0.1, bandY1 - bandY0, 0.08), mullionMat);
+        if (alongX) mul.position.set(t, (bandY0 + bandY1) / 2, fixed);
+        else mul.position.set(fixed, (bandY0 + bandY1) / 2, t);
+        env.add(mul);
+      }
+    } else {
+      place(new THREE.Mesh(geo(wallTop - 0.6), panelMat(key, len)), 0.6 + (wallTop - 0.6) / 2);
     }
-    for (const y of [0.25, 2.6, hallH - 0.45]) {
-      const transom = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, halfD * 2), mullionMat);
-      transom.position.set(px, y, 0);
-      env.add(transom);
+  };
+  /** Ô kính cao suốt tầng (mặt tiền / lối sang quán) có khung nhôm */
+  const glassRun = (alongX: boolean, fixed: number, a: number, b: number, top: number) => {
+    const len = b - a;
+    const mid = (a + b) / 2;
+    const g = new THREE.Mesh(alongX ? new THREE.BoxGeometry(len, top - 0.25, 0.06) : new THREE.BoxGeometry(0.06, top - 0.25, len), glassMat);
+    if (alongX) g.position.set(mid, 0.25 + (top - 0.25) / 2, fixed);
+    else g.position.set(fixed, 0.25 + (top - 0.25) / 2, mid);
+    g.renderOrder = 2;
+    g.userData.occluder = true;
+    env.add(g);
+    const n = Math.max(1, Math.round(len / 2.4));
+    for (let i = 0; i <= n; i++) {
+      const t = a + (len / n) * i;
+      const mul = new THREE.Mesh(alongX ? new THREE.BoxGeometry(0.1, top, 0.1) : new THREE.BoxGeometry(0.1, top, 0.1), mullionMat);
+      if (alongX) mul.position.set(t, top / 2, fixed);
+      else mul.position.set(fixed, top / 2, t);
+      env.add(mul);
     }
+    for (const y of [0.25, 2.6, top]) {
+      const tr = new THREE.Mesh(alongX ? new THREE.BoxGeometry(len, 0.08, 0.1) : new THREE.BoxGeometry(0.1, 0.08, len), mullionMat);
+      if (alongX) tr.position.set(mid, y, fixed);
+      else tr.position.set(fixed, y, mid);
+      env.add(tr);
+    }
+  };
+  const portalZ = sceneKind === 'SHOWROOM' ? depthM * 0.32 : null;
+  // Hông phải: đặc suốt
+  wallRun(false, halfW, -halfD, halfD, 'side');
+  // Hông trái: đặc, chừa ô kính trước lối đi bộ sang quán
+  if (portalZ !== null) {
+    const g0 = portalZ - 2.4;
+    const g1 = Math.min(halfD, portalZ + 2.4);
+    wallRun(false, -halfW, -halfD, g0, 'sideL');
+    glassRun(false, -halfW, g0, g1, wallTop);
+    wallRun(false, -halfW, g1, halfD, 'sideL2');
+  } else {
+    wallRun(false, -halfW, -halfD, halfD, 'side');
+  }
+  // Tường hậu
+  wallRun(true, -halfD, -halfW, halfW, 'back');
+  // Mặt tiền: panel hai bên, kính giữa (rộng ~ cổng chào), dầm panel trên kính
+  const shopHalf = Math.min(8, halfW * 0.45);
+  wallRun(true, halfD, -halfW, -shopHalf, 'front', false);
+  wallRun(true, halfD, shopHalf, halfW, 'front', false);
+  glassRun(true, halfD, -shopHalf, shopHalf, bandY0);
+  {
+    const head = new THREE.Mesh(scaleU(new THREE.BoxGeometry(shopHalf * 2, wallTop - bandY0, 0.16), shopHalf * 2), panelMat('fronthead', shopHalf * 2));
+    head.position.set(0, (bandY0 + wallTop) / 2, halfD);
+    head.castShadow = false;
+    head.userData.occluder = true;
+    env.add(head);
+  }
+  // Tam giác đầu hồi bịt kín dưới mái (trước & sau)
+  const gable = new THREE.Shape();
+  gable.moveTo(-slopeSpanX + roofOverhang, 0);
+  gable.lineTo(slopeSpanX - roofOverhang, 0);
+  gable.lineTo(0, ridgeH - eaveH);
+  gable.lineTo(-slopeSpanX + roofOverhang, 0);
+  const gableGeo = new THREE.ShapeGeometry(gable);
+  for (const z of [-halfD, halfD]) {
+    const tri = new THREE.Mesh(gableGeo, sharedMat('srGable', () => new THREE.MeshStandardMaterial({ color: '#dfe3e8', roughness: 0.65, side: THREE.DoubleSide })));
+    tri.position.set(0, eaveH, z);
+    tri.userData.roof = true;
+    env.add(tri);
   }
 
-  // 5. Hàng cây tán lá thật (thân cong, cành toả, chùm lá) bao quanh khuôn viên ngoài tường kính.
-  //    Chừa khoảng trống trước lối đi bộ sang quán cà phê (tường trái Showroom) để nhìn thấy cổng quán.
-  const portalZ = sceneKind === 'SHOWROOM' ? depthM * 0.32 : null;
-  const treePts: { x: number; z: number; scale: number }[] = [];
-  for (const sgn of [-1, 1]) {
-    for (let z = -halfD + 1; z <= halfD + 2; z += 6.2) {
-      if (sgn < 0 && portalZ !== null && Math.abs(z - portalZ) < 4.5) continue;
-      treePts.push({ x: sgn * (halfW + 4.6 + Math.abs(Math.sin(z * 1.7)) * 0.9), z, scale: 1.2 + Math.abs(Math.cos(z * 0.9)) * 0.3 });
-    }
+  // 5. KHU NHÀ XƯỞNG BÊN NGOÀI: sân bê tông nội bộ, vạch kẻ đường, các khối nhà xưởng lân cận, vài hàng cây
+  const yard = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2 + 70, halfD * 2 + 70), K.paint('#b9bdc2', 0.92));
+  yard.rotation.x = -Math.PI / 2;
+  yard.position.y = -0.045;
+  yard.receiveShadow = true;
+  env.add(yard);
+  const laneMat = K.paint('#f1f5f9', 0.7);
+  for (let x = -halfW - 30; x < halfW + 30; x += 4) {
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.14), laneMat);
+    dash.rotation.x = -Math.PI / 2;
+    dash.position.set(x, -0.03, halfD + 9);
+    env.add(dash);
   }
-  for (let x = -halfW - 2; x <= halfW + 2; x += 6.5) treePts.push({ x, z: -halfD - 5 - Math.abs(Math.sin(x)) * 0.8, scale: 1.25 + Math.abs(Math.sin(x * 0.7)) * 0.3 });
-  for (const sgn of [-1, 1]) treePts.push({ x: sgn * 11, z: halfD + 5, scale: 1.3 });
+  // Khối nhà xưởng lân cận: thân tôn sóng, mái dốc thấp, cửa cuốn, dải cửa sổ — đứng quanh khuôn viên
+  const neighbor = (x: number, z: number, w: number, d: number, h: number, rot: number, color: string) => {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      scaleU(new THREE.BoxGeometry(w, h, d), Math.max(w, d)),
+      sharedMat(`nbBody:${color}`, () =>
+        new THREE.MeshStandardMaterial({ map: corrugatedTex(`nb:${color}`, color, 'rgba(90,100,112,0.3)', false, [1, 1]), roughness: 0.6, metalness: 0.3 }),
+      ),
+    );
+    body.position.y = h / 2;
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.3, d + 0.6), K.paint('#6b7280', 0.6));
+    roof.position.y = h + 0.15;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, 0.9, d + 0.04), glassBand);
+    band.position.y = h - 1.4;
+    g.add(body, roof, band);
+    for (const sx of [-0.25, 0.25]) {
+      const door = new THREE.Mesh(new THREE.BoxGeometry(4, 4.5, 0.1), K.paint('#9aa3ad', 0.5));
+      door.position.set(sx * w, 2.25, d / 2 + 0.05);
+      g.add(door);
+    }
+    g.position.set(x, 0, z);
+    g.rotation.y = rot;
+    g.traverse((c) => {
+      c.castShadow = false;
+      c.userData.occluder = false;
+    });
+    env.add(g);
+  };
+  neighbor(-halfW - 26, -6, 30, 22, 10, Math.PI / 2, '#d4d9df');
+  neighbor(halfW + 24, 0, 34, 20, 11, -Math.PI / 2, '#c9d3de');
+  neighbor(-14, -halfD - 22, 36, 18, 12, 0, '#d4d9df');
+  neighbor(26, -halfD - 26, 28, 18, 9, 0, '#c9d3de');
+  const treePts: { x: number; z: number; scale: number }[] = [];
+  for (let x = -halfW + 2; x <= halfW - 2; x += 7) if (Math.abs(x) > shopHalf + 3) treePts.push({ x, z: halfD + 4.2, scale: 1.1 + Math.abs(Math.sin(x)) * 0.25 });
   env.add(buildTreeRow(treePts, Math.round(widthM * 7 + depthM)));
 
   // 6. Cổng chào TIM Corp tại lối vào (thiết kế cổng doanh nghiệp hiện đại)

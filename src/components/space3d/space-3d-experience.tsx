@@ -40,6 +40,7 @@ import {
 } from '@/server/modules/space3d/actions';
 import type { TeleportTarget } from './space-3d-canvas';
 import { clearPortalPath, portalFor } from '@/lib/space-3d-portals';
+import { doorWallFillers } from '@/lib/space-3d-door-fill';
 import { useSpaceRealtime, type IncomingDm } from './use-space-realtime';
 import { SpaceCafeMenu } from './space-cafe-menu';
 import { SpaceCafeOrders } from './space-cafe-orders';
@@ -744,8 +745,11 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
     const { kind, widthM, depthM } = viewScene;
     const base = previewTemplate ? (templateFor(normalizeSceneKind(kind), { widthM, depthM, departments: data.departments }) as SpaceStructure[]) : structures;
     const portal = portalFor(kind, widthM, depthM);
-    return portal ? clearPortalPath(base, portal, widthM, depthM) : base;
-  }, [structures, previewTemplate, viewScene, data.departments]);
+    const cleared = portal ? clearPortalPath(base, portal, widthM, depthM) : base;
+    // Cửa trên vách kính: lấp kín ô trên đầu cửa & khe 2 bên (không lưu, không hiện khi thiết kế)
+    const fill = editMode ? [] : doorWallFillers(cleared);
+    return fill.length ? [...cleared, ...fill] : cleared;
+  }, [structures, previewTemplate, viewScene, data.departments, editMode]);
   useEffect(() => {
     const calc = () => {
       const isStaffUser = Boolean(data.currentUser);
@@ -772,6 +776,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const [merchInfoId, setMerchInfoId] = useState<number | null>(null);
   // Ngồi ghế: ghế đang chọn (hiện nút "Ngồi ghế") / đang ngồi (hiện nút "Đứng dậy")
   const [seatPick, setSeatPick] = useState<{ label: string } | null>(null);
+  const [forkHint, setForkHint] = useState<'near' | 'driving' | null>(null);
   const [isSitting, setIsSitting] = useState(false);
   /** Phòng đang đứng trong (camera đã chuyển vào phòng) */
   const [roomName, setRoomName] = useState<string | null>(null);
@@ -1347,6 +1352,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         npcDeliveries={isCafe ? npcDeliveries : undefined}
         onNpcArrive={onNpcArrive}
         onSeatCandidate={setSeatPick}
+        onForkliftHint={setForkHint}
         onSittingChange={(v) => {
           isSittingRef.current = v;
           setIsSitting(v);
@@ -1671,8 +1677,26 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         </div>
       )}
 
+      {/* Xe nâng (kho): lên xe / hướng dẫn lái */}
+      {!editMode && forkHint && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 27, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          {forkHint === 'driving' && (
+            <div style={{ ...glassStyle, padding: '8px 14px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.6, textAlign: 'center' }}>
+              <b>W/S</b> tiến – lùi · <b>A/D</b> đánh lái · <b>R/Q</b> nâng – hạ càng
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event('space3d:forklift-toggle'))}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#111827', background: 'linear-gradient(135deg,#facc15,#f59e0b)', boxShadow: '0 10px 28px rgba(245,158,11,0.45)' }}
+          >
+            🚜 {forkHint === 'driving' ? 'Xuống xe (F)' : 'Lái xe nâng (F)'}
+          </button>
+        </div>
+      )}
+
       {/* Nút Ngồi ghế / Đứng dậy */}
-      {!editMode && (seatPick || isSitting) && (
+      {!editMode && !forkHint && (seatPick || isSitting) && (
         <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 26 }}>
           {isSitting ? (
             <button

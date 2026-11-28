@@ -100,9 +100,14 @@ export function buildForklift(o: SpaceObject): THREE.Group {
       g.add(t);
     }
   }
-  // Cột nâng + càng
+  // Cột nâng cố định; giá càng + 2 càng là nhóm riêng nâng/hạ được khi lái (userData.forkCarriage)
   for (const sx of [-1, 1]) g.add(box(0.07, 2.0, 0.08, dark, sx * 0.3, 1.0, d * 0.28));
-  for (const sx of [-1, 1]) g.add(box(0.1, 0.04, 1.0, M.metal('#374151', 0.5), sx * 0.25, 0.08, d * 0.28 + 0.5));
-  g.add(box(0.75, 0.6, 0.04, dark, 0, 0.4, d * 0.3));
+  const carriage = new THREE.Group();
+  carriage.userData = { forkCarriage: true, noMerge: true, dynamic: true };
+  for (const sx of [-1, 1]) carriage.add(box(0.1, 0.04, 1.0, M.metal('#374151', 0.5), sx * 0.25, 0.08, d * 0.28 + 0.5));
+  carriage.add(box(0.75, 0.6, 0.04, dark, 0, 0.4, d * 0.3));
+  g.add(carriage);
+  // Xe lái được → không gộp tĩnh vào lô vẽ chung của cảnh
+  g.userData.vehicle = true;
   return g;
 }

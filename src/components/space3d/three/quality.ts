@@ -59,7 +59,13 @@ export function detectQuality(renderer: THREE.WebGLRenderer): QualityLevel {
   } catch {
     name = '';
   }
-  if (/swiftshader|llvmpipe|software/.test(name)) return 'low';
+  if (/swiftshader|llvmpipe|software|microsoft basic/.test(name)) return 'low';
+  // Máy văn phòng cấu hình yếu: ít nhân CPU / ít RAM → bắt đầu ở mức Thấp (30 FPS, không hậu kỳ)
+  const cores = navigator.hardwareConcurrency || 4;
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+  if (cores <= 4 || mem <= 4) return 'low';
+  // GPU tích hợp Intel đời cũ (HD/UHD 5xx–6xx) → Thấp; Iris Xe / Arc → Vừa
+  if (/intel/.test(name) && !/iris xe|arc/.test(name)) return /uhd graphics 7|iris/.test(name) ? 'medium' : 'low';
   if (/nvidia|geforce|rtx|radeon rx|apple m[2-9]|apple m1 (pro|max|ultra)/.test(name)) return 'high';
   return 'medium';
 }

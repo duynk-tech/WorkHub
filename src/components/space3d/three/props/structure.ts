@@ -50,10 +50,12 @@ export function buildGlassWall(o: SpaceObject): THREE.Group {
   g.add(box(w, 0.05, d, alu, 0, h - 0.025, 0));
   const n = Math.max(1, Math.round(w / 1.2));
   for (let i = 0; i <= n; i++) g.add(box(0.04, h, d, alu, -w / 2 + (w / n) * i, h / 2, 0));
-  // Dải decal mờ ngang tầm mắt (an toàn)
-  const decal = box(w, 0.08, d * 0.45, M.paint('#e2e8f0', 0.9), 0, 1.2, 0);
-  decal.castShadow = false;
-  g.add(decal);
+  // Dải decal mờ ngang tầm mắt (an toàn) — bỏ qua với tấm ô thoáng thấp (trên đầu cửa)
+  if (h > 1.4) {
+    const decal = box(w, 0.08, d * 0.45, M.paint('#e2e8f0', 0.9), 0, 1.2, 0);
+    decal.castShadow = false;
+    g.add(decal);
+  }
   // Tên phòng in trên dải kính mờ (đọc được cả 2 mặt) — vd. "R&D LAB · KEM & SOCOLA"
   // Chỉ in khi người thiết kế đặt tên riêng (bỏ qua tên mặc định "Vách kính" do hệ thống tự gán)
   if (o.label && o.label !== SPACE_OBJECT_DEF_MAP.GLASS_WALL?.label) {

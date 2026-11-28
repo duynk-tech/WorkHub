@@ -39,6 +39,8 @@ import {
 import { createExhibitionHallEnvironment } from './three/hall';
 import { rebuildInstancing } from './three/instancing';
 import { NpcSystem } from './three/npc';
+import { ForkliftDriver, type ForkliftEntry } from './three/forklift-drive';
+import { cafeFrontYard, constrainWalk, crossesFence, gateWaypoint, walkableTarget, type FrontYard } from '@/lib/space-3d-yard';
 import { Birds, FallingLeaves, SteamSystem, buildGroundLeaves } from './three/ambient';
 import { localToWorld } from '@/lib/space-3d-npc';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
@@ -162,6 +164,8 @@ interface Props {
   onNpcArrive?: (orderId: number) => void;
   /** Trạng thái ngồi thay đổi (hiện nút "Đứng dậy") */
   onSittingChange?: (sitting: boolean) => void;
+  /** Kho: đứng cạnh xe nâng ('near') / đang lái ('driving') → hiện hướng dẫn phím */
+  onForkliftHint?: (state: 'near' | 'driving' | null) => void;
   /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
   seatCommand?: { kind: 'sit' | 'stand' | 'dutySit'; nonce: number } | null;
   /** Khung hình đầu tiên đã vẽ xong cảnh (ẩn màn hình tải) */
@@ -337,6 +341,7 @@ export function Space3DCanvas({
   npcDeliveries,
   onNpcArrive,
   onSittingChange,
+  onForkliftHint,
   seatCommand = null,
   onReady,
   onPortal,
@@ -395,6 +400,7 @@ export function Space3DCanvas({
     isSelfOnDuty,
     remoteRoster,
     onSittingChange,
+    onForkliftHint,
   });
   stateRef.current = {
     editMode,
@@ -440,6 +446,7 @@ export function Space3DCanvas({
     isSelfOnDuty,
     remoteRoster,
     onSittingChange,
+    onForkliftHint,
   };
 
   const sceneObjRef = useRef<{
@@ -457,6 +464,9 @@ export function Space3DCanvas({
     instancedGroup: THREE.Group;
     /** Nhân vật tự động quán cà phê */
     npcs: NpcSystem;
+    /** Lái xe nâng (kho) */
+    drive: ForkliftDriver;
+    forklifts: ForkliftEntry[];
     /** Lá rơi quanh cây đa (quán cà phê) */
     leaves: FallingLeaves | null;
     /** Lá khô rải trên nền quanh gốc đa */
@@ -841,6 +851,8 @@ export function Space3DCanvas({
       objectsGroup,
       instancedGroup,
       npcs,
+      drive: new ForkliftDriver(),
+      forklifts: [],
       leaves: null,
       groundLeaves: null,
       steam,
@@ -892,11 +904,27 @@ export function Space3DCanvas({
     let debugFrames = 0;
     let debugTime = 0;
 
+    // Quán cà phê: sân trước ngoài cổng đi bộ được (vỉa hè, mép đường) — ra vào qua cổng
+    let yardSrc: SpaceStructure[] | null = null;
+    let yardCache: FrontYard | null = null;
+    const getYard = (): FrontYard | null => {
+      if (sceneKind !== 'CAFE') return null;
+      const st = stateRef.current.structures;
+      if (st !== yardSrc) {
+        yardSrc = st;
+        yardCache = cafeFrontYard(widthM, depthM, st.find((o) => o.kind === 'GARDEN_GATE'));
+      }
+      return yardCache;
+    };
+    /** Các chặng tiếp theo sau khi tới điểm đang đi (đi vòng qua cổng khi bấm ra ngoài / vào trong) */
+    let walkQueue: THREE.Vector3[] = [];
+
     const keys = new Set<string>();
     const onKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
       if (camRig.introActive) camRig.skipIntro();
       keys.add(e.code);
+      if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey) toggleForklift();
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         if (sceneObjRef.current) {
           sceneObjRef.current.walkTarget = null;
@@ -1162,15 +1190,28 @@ export function Space3DCanvas({
 
       // 4. Click vào mặt sàn -> Click-to-Walk mượt mà
       const floorHits = raycaster.intersectObject(floorMesh, false);
-      if (floorHits.length > 0 && sceneObjRef.current) {
-        const pt = floorHits[0].point;
-        const clampedX = THREE.MathUtils.clamp(pt.x, -widthM * 0.5, widthM * 0.5);
-        const clampedZ = THREE.MathUtils.clamp(pt.z, -depthM * 0.5, depthM * 0.5);
+      const yard = getYard();
+      // Sân trước (ngoài mặt sàn): bấm trúng mặt phẳng nền
+      const yardPt = !floorHits.length && yard ? raycaster.ray.intersectPlane(floorPlane, hitPoint) : null;
+      const pt = floorHits.length ? floorHits[0].point : yardPt && yardPt.z > yard!.zLine && yardPt.z < yard!.zMax + 1 ? yardPt : null;
+      if (pt && sceneObjRef.current) {
+        const tgt = walkableTarget(yard, widthM, depthM, pt.x, pt.z);
         standUp();
         pendingSeat = null;
         setCandidate(null);
-        sceneObjRef.current.walkTarget = new THREE.Vector3(clampedX, 0, clampedZ);
-        walkRing.position.set(clampedX, 0.03, clampedZ);
+        const pl = sceneObjRef.current.player.group.position;
+        walkQueue = [];
+        let first = new THREE.Vector3(tgt.x, 0, tgt.z);
+        if (yard && crossesFence(yard, pl.x, pl.z, tgt.x, tgt.z)) {
+          // Đi vòng qua cổng: tới cổng (phía đang đứng) → ra phía kia → điểm bấm
+          const inside = pl.z <= yard.zLine;
+          const a = gateWaypoint(yard, inside);
+          const b = gateWaypoint(yard, !inside);
+          walkQueue = [new THREE.Vector3(b.x, 0, b.z), new THREE.Vector3(tgt.x, 0, tgt.z)];
+          first = new THREE.Vector3(a.x, 0, a.z);
+        }
+        sceneObjRef.current.walkTarget = first;
+        walkRing.position.set(tgt.x, 0.03, tgt.z);
         walkRing.visible = true;
       }
     };
@@ -1283,6 +1324,40 @@ export function Space3DCanvas({
       rising = { x: sitting.x + Math.sin(sitting.rotY) * 0.6 * dir, z: sitting.z + Math.cos(sitting.rotY) * 0.6 * dir, t: 0 };
       setSitting(null);
     };
+    /** Kho: lên / xuống xe nâng gần nhất (phím F hoặc nút trên giao diện) */
+    const toggleForklift = () => {
+      const so = sceneObjRef.current;
+      if (!so || stateRef.current.editMode) return;
+      const pl = so.player;
+      if (so.drive.active) {
+        const out = so.drive.exit();
+        if (out) {
+          const dx = out.x - pl.group.position.x;
+          const dz = out.z - pl.group.position.z;
+          pl.group.position.x = out.x;
+          pl.group.position.z = out.z;
+          pl.group.rotation.y = out.rotY;
+          camera.position.x += dx;
+          camera.position.z += dz;
+          orbit.target.x += dx;
+          orbit.target.z += dz;
+        }
+        if (playerPosRef) playerPosRef.current.sit = 0;
+        renderer.shadowMap.needsUpdate = true;
+        return;
+      }
+      const f = so.drive.nearest(so.forklifts, pl.group.position.x, pl.group.position.z);
+      if (!f) return;
+      standUp();
+      pendingSeat = null;
+      so.walkTarget = null;
+      walkRing.visible = false;
+      so.drive.enter(f);
+    };
+    const onForkliftToggle = () => toggleForklift();
+    window.addEventListener('space3d:forklift-toggle', onForkliftToggle);
+    let forkHint: 'near' | 'driving' | null = null;
+
     /** Nhân viên vào trực: tự đi tới ghế nhân viên trống gần nhất (≤ 4m) và ngồi */
     const dutySit = () => {
       const pl = sceneObjRef.current?.player ?? player;
@@ -1569,7 +1644,8 @@ export function Space3DCanvas({
       const idle = idleFor > 3000;
       // Rảnh > 3s: 20 FPS · rảnh > 20s hoặc cửa sổ không được focus: 8 FPS (chỉ còn thở/chớp mắt)
       const deepIdle = idle && (idleFor > 20000 || !document.hasFocus());
-      const minInterval = deepIdle ? 1000 / 8 : idle ? 1000 / 20 : 1000 / 60;
+      // Máy yếu (chất lượng Thấp): giữ 30 FPS khi đang chơi → giảm ~½ CPU/GPU, vẫn mượt cho đi bộ
+      const minInterval = deepIdle ? 1000 / 8 : idle ? 1000 / 20 : qualityLevel === 'low' ? 1000 / 30 : 1000 / 60;
       if (frameNow - lastFrameAt < minInterval - 1.5) return;
       lastFrameAt = frameNow;
       renderer.info.reset();
@@ -1600,12 +1676,46 @@ export function Space3DCanvas({
       if (keys.has('KeyD') || keys.has('ArrowRight')) move.x += 1;
 
       const currentPlayer = sceneObjRef.current?.player ?? player;
-      if (move.lengthSq() > 0 && (sitting || seatCandidate)) {
+      const driveSys = sceneObjRef.current?.drive.active ? sceneObjRef.current.drive : null;
+      if (!driveSys && move.lengthSq() > 0 && (sitting || seatCandidate)) {
         standUp();
         pendingSeat = null;
         if (seatCandidate) setCandidate(null);
       }
-      if (sitting) {
+      if (driveSys) {
+        // Lái xe nâng: W/S ga – lùi, A/D đánh lái, R/Q nâng – hạ càng
+        const so = sceneObjRef.current!;
+        if (so.walkTarget) {
+          so.walkTarget = null;
+          walkRing.visible = false;
+        }
+        const throttle = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+        const steerIn = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+        const liftIn = (keys.has('KeyR') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0);
+        const selfId = driveSys.active!.id;
+        const others = stateRef.current.structures.filter((o) => o.id !== selfId);
+        const res = driveSys.update(dt, { throttle, steer: steerIn, lift: liftIn }, (x, z) =>
+          Math.abs(x) > widthM / 2 - 0.15 || Math.abs(z) > depthM / 2 - 0.15 || pointBlocked(x, z, others),
+        );
+        if (res) {
+          currentPlayer.group.position.x = res.seat.x;
+          currentPlayer.group.position.z = res.seat.z;
+          currentPlayer.group.rotation.y = res.seat.rotY;
+          poseSit(currentPlayer, res.seat.y);
+          // Hai tay cầm vô lăng
+          for (const arm of [currentPlayer.leftArm, currentPlayer.rightArm]) arm.rotation.x += (-0.9 - arm.rotation.x) * 0.3;
+          for (const el of [currentPlayer.leftElbow, currentPlayer.rightElbow]) el.rotation.x += (-0.5 - el.rotation.x) * 0.3;
+          if (playerPosRef) playerPosRef.current.sit = res.seat.y;
+          camera.position.x += res.dx;
+          camera.position.z += res.dz;
+          orbit.target.x += res.dx;
+          orbit.target.z += res.dz;
+          if (res.dx || res.dz || throttle || liftIn) {
+            markActive();
+            if (frameCount % 6 === 0) renderer.shadowMap.needsUpdate = true;
+          }
+        }
+      } else if (sitting) {
         // Ngồi xuống như thật: (1) đứng trước ghế xoay lưng lại, (2) lùi nửa bước & hạ hông xuống đệm
         sitT += dt;
         const dr = Math.atan2(Math.sin(sitting.rotY - currentPlayer.group.rotation.y), Math.cos(sitting.rotY - currentPlayer.group.rotation.y));
@@ -1652,8 +1762,9 @@ export function Space3DCanvas({
         const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 9.5 : 5.4;
         const dx = (forward.x * move.z + right.x * move.x) * speed * dt;
         const dz = (forward.z * move.z + right.z * move.x) * speed * dt;
-        const nextX = THREE.MathUtils.clamp(currentPlayer.group.position.x + dx, -widthM * 0.5, widthM * 0.5);
-        const nextZ = THREE.MathUtils.clamp(currentPlayer.group.position.z + dz, -depthM * 0.5, depthM * 0.5);
+        const nxt = constrainWalk(getYard(), widthM, depthM, currentPlayer.group.position.x, currentPlayer.group.position.z, currentPlayer.group.position.x + dx, currentPlayer.group.position.z + dz);
+        const nextX = nxt.x;
+        const nextZ = nxt.z;
         actualDx = nextX - currentPlayer.group.position.x;
         actualDz = nextZ - currentPlayer.group.position.z;
         currentPlayer.group.position.x = nextX;
@@ -1666,7 +1777,10 @@ export function Space3DCanvas({
         const diffX = target.x - currentPlayer.group.position.x;
         const diffZ = target.z - currentPlayer.group.position.z;
         const dist = Math.hypot(diffX, diffZ);
-        if (dist < 0.25) {
+        if (dist < 0.25 && walkQueue.length) {
+          // Tới cổng → đi tiếp chặng sau (qua cổng rồi tới điểm bấm)
+          sceneObjRef.current.walkTarget = walkQueue.shift()!;
+        } else if (dist < 0.25) {
           sceneObjRef.current.walkTarget = null;
           walkRing.visible = false;
           if (pendingSeat) {
@@ -1676,17 +1790,20 @@ export function Space3DCanvas({
           }
         } else {
           const step = Math.min(dist, 6.2 * dt);
-          actualDx = (diffX / dist) * step;
-          actualDz = (diffZ / dist) * step;
-          currentPlayer.group.position.x += actualDx;
-          currentPlayer.group.position.z += actualDz;
+          const px0 = currentPlayer.group.position.x;
+          const pz0 = currentPlayer.group.position.z;
+          const nxt = constrainWalk(getYard(), widthM, depthM, px0, pz0, px0 + (diffX / dist) * step, pz0 + (diffZ / dist) * step);
+          actualDx = nxt.x - px0;
+          actualDz = nxt.z - pz0;
+          currentPlayer.group.position.x = nxt.x;
+          currentPlayer.group.position.z = nxt.z;
           currentPlayer.group.rotation.y = Math.atan2(actualDx, actualDz);
           isMoving = true;
         }
       }
 
       // Va chạm thân người: không đi xuyên nhân vật khác & đồ đạc (đẩy ra mềm), bị chặn thì dừng click-to-walk
-      if (!sitting) {
+      if (!sitting && !driveSys) {
         const before = { x: currentPlayer.group.position.x, z: currentPlayer.group.position.z };
         const others: THREE.Object3D[] = [];
         const so = sceneObjRef.current;
@@ -1747,7 +1864,7 @@ export function Space3DCanvas({
         // Đầm công sở bước ngắn & nhanh hơn để chân luôn nằm trong váy
         walkTime += dt * (currentPlayer.stride < 1 ? 13 : 10);
         poseWalk(currentPlayer, walkTime);
-      } else if (!sitting && !rising) {
+      } else if (!sitting && !rising && !driveSys) {
         relaxPose(currentPlayer);
         if (faceTarget && totalTime < faceTarget.until) {
           const want = Math.atan2(faceTarget.x - currentPlayer.group.position.x, faceTarget.z - currentPlayer.group.position.z);
@@ -1769,6 +1886,21 @@ export function Space3DCanvas({
       }
 
       animateAvatarIdle(currentPlayer, totalTime);
+      // Gợi ý lái xe nâng (kho)
+      if (frameCount % 10 === 0) {
+        const so = sceneObjRef.current;
+        const h: typeof forkHint = !so?.forklifts.length
+          ? null
+          : so.drive.active
+            ? 'driving'
+            : so.drive.nearest(so.forklifts, currentPlayer.group.position.x, currentPlayer.group.position.z)
+              ? 'near'
+              : null;
+        if (h !== forkHint) {
+          forkHint = h;
+          stateRef.current.onForkliftHint?.(h);
+        }
+      }
 
       if (walkRing.visible) {
         const pulse = 1 + Math.sin(totalTime * 6) * 0.14;
@@ -2166,6 +2298,7 @@ export function Space3DCanvas({
     return () => {
       cancelAnimationFrame(rafId);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('space3d:forklift-toggle', onForkliftToggle);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
@@ -2438,6 +2571,23 @@ export function Space3DCanvas({
     obj.instancedGroup.matrixWorldAutoUpdate = editMode;
     // NPC quán cà phê, showroom & kho theo bố cục (tắt khi đang thiết kế)
     obj.npcs.rebuild(structures, (sceneKind === 'CAFE' || sceneKind === 'SHOWROOM' || sceneKind === 'WAREHOUSE') && !editMode);
+    // Xe nâng lái được (kho, không ở chế độ thiết kế)
+    const lifts: ForkliftEntry[] = [];
+    if (sceneKind === 'WAREHOUSE' && !editMode) {
+      for (const [id, entry] of obj.objectMap) {
+        if (entry.root.userData.kind !== 'FORKLIFT') continue;
+        const src = structures.find((st) => st.id === id);
+        if (!src) continue;
+        let carriage: THREE.Object3D | null = null;
+        entry.root.traverse((c) => {
+          if (c.userData.forkCarriage) carriage = c;
+        });
+        lifts.push({ id, root: entry.root, carriage, obj: src });
+      }
+    }
+    obj.forklifts = lifts;
+    if (lifts.length) obj.drive.restore(lifts);
+    else obj.drive.active = null;
     // Lá đa rơi lả tả quanh cây đa
     if (obj.leaves) {
       obj.scene.remove(obj.leaves.mesh);
