@@ -1527,6 +1527,42 @@ export function animateAvatarIdle(av: AnimatedAvatar, time: number): void {
  * Biểu cảm nhanh, t = 0..1 trong suốt thời lượng. Gọi SAU các tư thế khác (ghi đè có trộn mượt theo e).
  * Tay "rightArm" nằm ở +x của nhân vật.
  */
+/**
+ * Giữ vật trên tay phải (ly, bánh…) luôn đứng thẳng dù cánh tay xoay (bù góc vai + khuỷu),
+ * `drink` 0..1 = đang uống: nghiêng miệng ly về phía môi ở giữa nhịp.
+ */
+/** Miếng bánh nhỏ trên tay lúc ăn (hình & vật liệu dùng chung) */
+let biteGeo: THREE.BoxGeometry | null = null;
+let biteMat: THREE.MeshStandardMaterial | null = null;
+const bites = new WeakMap<AnimatedAvatar, THREE.Mesh>();
+/** Ăn bánh: cầm miếng bánh đưa lên miệng cắn (t 0..1), miếng bánh hết sau khi cắn */
+export function poseEatBite(av: AnimatedAvatar, t: number, time: number): void {
+  let b = bites.get(av);
+  if (!b) {
+    biteGeo ??= new THREE.BoxGeometry(0.03, 0.022, 0.026);
+    if (!biteMat) {
+      biteMat = new THREE.MeshStandardMaterial({ color: '#d9b45a', roughness: 0.6 });
+      biteMat.userData.shared = true;
+    }
+    b = new THREE.Mesh(biteGeo, biteMat);
+    b.userData.shared = true;
+    b.position.set(0, -0.37, 0.05);
+    av.rightElbow.add(b);
+    bites.set(av, b);
+  }
+  b.visible = t > 0.08 && t < 0.62;
+  poseEmote(av, 'sip', Math.min(1, Math.max(0, t) * 1.15), time);
+}
+export function hideBite(av: AnimatedAvatar): void {
+  const b = bites.get(av);
+  if (b && b.visible) b.visible = false;
+}
+
+export function uprightInRightHand(av: AnimatedAvatar, obj: THREE.Object3D, drink = 0): void {
+  obj.rotation.x = -(av.rightArm.rotation.x + av.rightElbow.rotation.x) - Math.sin(Math.PI * Math.min(1, Math.max(0, drink))) * 0.55;
+  obj.rotation.z = -av.rightArm.rotation.z;
+}
+
 export function poseEmote(av: AnimatedAvatar, kind: 'wave' | 'nod' | 'bow' | 'clap' | 'sip' | 'brew', t: number, time: number): void {
   const e = Math.sin(Math.PI * Math.min(1, Math.max(0, t))); // vào – ra mềm
   const mix = (cur: number, to: number) => cur + (to - cur) * e;

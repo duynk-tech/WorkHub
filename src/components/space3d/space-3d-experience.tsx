@@ -46,7 +46,7 @@ import { SpaceCafeMenu } from './space-cafe-menu';
 import { SpaceCafeOrders } from './space-cafe-orders';
 import { playChime, startCafeAmbience } from './space-sound';
 import { clearDrinkOrdersAction, getCafeStateAction, npcAdvanceOrderAction, placeDrinkOrderAction, updateDrinkOrderAction } from '@/server/modules/space3d/cafe-actions';
-import { DEFAULT_CAFE_MENU, orderSummary, type CafeMenuItem, type DrinkOrderView, type OrderLine } from '@/lib/space-3d-cafe-menu';
+import { DEFAULT_CAFE_MENU, isFoodItem, orderSummary, type CafeMenuItem, type DrinkOrderView, type OrderLine } from '@/lib/space-3d-cafe-menu';
 import { SpaceChatPanel, type ChatPeer } from './space-chat-panel';
 import { SpaceVisitorChat, type VisitorChatTarget } from './space-visitor-chat';
 import { SpaceGuestInbox, type GuestEvent } from './space-guest-inbox';
@@ -657,9 +657,10 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
       void npcAdvanceOrderAction(orderId, 'SERVED', cu ? null : guestKey).then((res) => {
         if (res.ok) {
           // Không ngồi gần bàn → nhận ly tận tay, cầm trên tay
-          if (!o.spot && o.lines[0]) {
-            realtime.sendHold(o.lines[0].code);
-            setHolding(o.lines[0].code);
+          const drink = o.lines.find((l) => !isFoodItem(cafeMenu.find((m) => m.code === l.code)));
+          if (!o.spot && drink) {
+            realtime.sendHold(drink.code);
+            setHolding(drink.code);
           }
           void refreshCafe();
         }
@@ -776,7 +777,8 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
   const [merchInfoId, setMerchInfoId] = useState<number | null>(null);
   // Ngồi ghế: ghế đang chọn (hiện nút "Ngồi ghế") / đang ngồi (hiện nút "Đứng dậy")
   const [seatPick, setSeatPick] = useState<{ label: string } | null>(null);
-  const [forkHint, setForkHint] = useState<'near' | 'driving' | null>(null);
+  const [forkHint, setForkHint] = useState<'near' | 'driving' | 'pick' | 'carry' | null>(null);
+  const [cartHint, setCartHint] = useState<{ state: 'near' | 'wait' | 'riding' | 'arrived'; departIn: number } | null>(null);
   const [isSitting, setIsSitting] = useState(false);
   /** Phòng đang đứng trong (camera đã chuyển vào phòng) */
   const [roomName, setRoomName] = useState<string | null>(null);
@@ -1338,12 +1340,17 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
           const o = drinkOrders.find((x) => x.id === orderId);
           if (!o || !o.lines[0]) return;
           if (o.customerRid !== myRid) {
-            showToast(false, 'Ly này của khách khác');
+            showToast(false, 'Món này của khách khác');
             return;
           }
-          // Cầm ly lên mang theo (ngồi xuống cạnh bàn khác sẽ tự đặt ly xuống trước mặt)
-          realtime.sendHold(o.lines[0].code);
-          setHolding(o.lines[0].code);
+          // Cầm ly lên mang theo (ngồi xuống cạnh bàn khác sẽ tự đặt ly xuống trước mặt); đĩa bánh để lại bàn
+          const drink = o.lines.find((l) => !isFoodItem(cafeMenu.find((m) => m.code === l.code)));
+          if (!drink) {
+            showToast(false, 'Bánh dùng tại bàn nha!');
+            return;
+          }
+          realtime.sendHold(drink.code);
+          setHolding(drink.code);
           setPickedOrders((prev) => new Set(prev).add(orderId));
           if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
         }}
@@ -1368,6 +1375,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         onNpcArrive={onNpcArrive}
         onSeatCandidate={setSeatPick}
         onForkliftHint={setForkHint}
+        onCartHint={(st, d) => setCartHint(st ? { state: st, departIn: d ?? 0 } : null)}
         onSittingChange={(v) => {
           isSittingRef.current = v;
           setIsSitting(v);
@@ -1692,12 +1700,48 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
         </div>
       )}
 
+      {/* Xe điện tham quan (showroom) */}
+      {!editMode && cartHint && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 27, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={{ ...glassStyle, padding: '8px 14px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.6, textAlign: 'center' }}>
+            {cartHint.state === 'near'
+              ? `🚐 Xe điện tham quan đang đỗ — khởi hành sau ${cartHint.departIn}s`
+              : cartHint.state === 'wait'
+                ? '🚐 Xe đang chạy vòng khuôn viên — chờ xe về trạm để lên'
+                : cartHint.state === 'riding'
+                  ? '🚐 Đang tham quan khuôn viên nhà xưởng… (xuống xe khi về trạm)'
+                  : '🚐 Đã về trạm — xuống xe hoặc ngồi tiếp vòng sau'}
+          </div>
+          {(cartHint.state === 'near' || cartHint.state === 'arrived') && (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('space3d:forklift-toggle'))}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#fff', background: 'linear-gradient(135deg,#2563eb,#1e3a8a)', boxShadow: '0 10px 28px rgba(37,99,235,0.45)' }}
+            >
+              {cartHint.state === 'near' ? 'Lên xe (F)' : 'Xuống xe (F)'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Xe nâng (kho): lên xe / hướng dẫn lái */}
       {!editMode && forkHint && (
         <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 27, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          {forkHint === 'driving' && (
+          {forkHint !== 'near' && (
             <div style={{ ...glassStyle, padding: '8px 14px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.6, textAlign: 'center' }}>
-              <b>W/S</b> tiến – lùi · <b>A/D</b> đánh lái · <b>R/Q</b> nâng – hạ càng
+              {forkHint === 'pick' ? (
+                <>
+                  📦 Càng đã luồn dưới pallet — giữ <b>R</b> để xúc hàng
+                </>
+              ) : forkHint === 'carry' ? (
+                <>
+                  📦 Đang chở pallet — lái tới vị trí, hạ <b>Q</b> xuống sàn hoặc đúng tầng kệ để cất
+                </>
+              ) : (
+                <>
+                  <b>W/S</b> tiến – lùi · <b>A/D</b> đánh lái · <b>R/Q</b> nâng – hạ càng · luồn càng dưới pallet để xúc
+                </>
+              )}
             </div>
           )}
           <button
@@ -1705,13 +1749,13 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
             onClick={() => window.dispatchEvent(new Event('space3d:forklift-toggle'))}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, border: 0, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#111827', background: 'linear-gradient(135deg,#facc15,#f59e0b)', boxShadow: '0 10px 28px rgba(245,158,11,0.45)' }}
           >
-            🚜 {forkHint === 'driving' ? 'Xuống xe (F)' : 'Lái xe nâng (F)'}
+            🚜 {forkHint === 'near' ? 'Lái xe nâng (F)' : 'Xuống xe (F)'}
           </button>
         </div>
       )}
 
       {/* Nút Ngồi ghế / Đứng dậy */}
-      {!editMode && !forkHint && (seatPick || isSitting) && (
+      {!editMode && !forkHint && !cartHint && (seatPick || isSitting) && (
         <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 26 }}>
           {isSitting ? (
             <button

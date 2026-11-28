@@ -59,3 +59,25 @@ export function forkliftSeat(s: ForkliftState, depthM: number): { x: number; z: 
   const lz = -depthM * 0.2;
   return { x: s.x + Math.sin(s.rotY) * lz, z: s.z + Math.cos(s.rotY) * lz, y: 1.0, rotY: s.rotY };
 }
+
+/** Tâm vùng càng (giữa 2 càng, cách cột nâng ~0.5m) — điểm xúc pallet */
+export function forkCenter(s: ForkliftState, depthM: number): { x: number; z: number } {
+  const lz = depthM * 0.28 + 0.5;
+  return { x: s.x + Math.sin(s.rotY) * lz, z: s.z + Math.cos(s.rotY) * lz };
+}
+
+/** Pallet nằm trong vùng càng và ngang tầm càng (sai lệch ≤ 0.45m ngang, ≤ 0.2m cao) → xúc được */
+export function canPickPallet(s: ForkliftState, depthM: number, pallet: { x: number; z: number; y: number }): boolean {
+  const c = forkCenter(s, depthM);
+  return Math.hypot(pallet.x - c.x, pallet.z - c.z) <= 0.45 && Math.abs(pallet.y - s.lift) <= 0.2;
+}
+
+/**
+ * Hạ pallet đang chở: độ cao đáy pallet `bottomY`, điểm (x, z); `levels` = các tầng kệ (độ cao) có lòng kệ chứa (x, z).
+ * Trả về độ cao đặt pallet khi vừa chạm (sàn = 0 hoặc tầng kệ), null nếu còn đang lơ lửng.
+ */
+export function palletLanding(bottomY: number, levels: number[]): number | null {
+  const below = levels.filter((y) => y <= bottomY + 0.015).sort((a, b) => b - a)[0];
+  const floor = below ?? 0;
+  return bottomY <= floor + 0.015 ? floor : null;
+}

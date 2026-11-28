@@ -8,6 +8,22 @@ const vnd = (n: number) => `${n.toLocaleString('vi-VN')}₫`;
 
 /** Hình ly nhỏ vẽ bằng CSS theo kiểu ly & màu đồ uống. */
 function CupIcon({ item }: { item: CafeMenuItem }) {
+  if (item.cupKind === 'banh_tet' || item.cupKind === 'banh_it') {
+    // Đĩa lót lá chuối: khoanh bánh tét (vỏ lá – nếp tím – nhân vàng) hoặc 2 chiếc bánh ít màu kem chấm xanh
+    const tet = item.cupKind === 'banh_tet';
+    return (
+      <span style={{ position: 'relative', width: 38, height: 38, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ position: 'absolute', width: 36, height: 16, bottom: 6, borderRadius: '50%', background: '#4d7c2f', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
+        {tet ? (
+          <span style={{ position: 'relative', top: -3, width: 22, height: 22, borderRadius: '50%', background: 'radial-gradient(circle, #f59e0b 0 22%, #facc15 23% 42%, #6b2d7a 43% 78%, #3f5f22 79%)', border: '1px solid #2f4a17' }} />
+        ) : (
+          [0, 1].map((i) => (
+            <span key={i} style={{ position: 'relative', top: -4, margin: '0 1px', width: 15, height: 13, borderRadius: '50% 50% 30% 30%', background: 'radial-gradient(circle at 50% 22%, #65a30d 0 14%, #efe4ad 16%)', boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.12)' }} />
+          ))
+        )}
+      </span>
+    );
+  }
   const tall = item.cupKind === 'iced' || item.cupKind === 'takeaway' || item.cupKind === 'bottle';
   const w = tall ? 22 : 28;
   const h = tall ? 34 : item.cupKind === 'espresso' ? 18 : 24;

@@ -14,6 +14,9 @@ import {
   poseWalk,
   relaxPose,
   syncBubble,
+  uprightInRightHand,
+  poseEatBite,
+  hideBite,
   type AnimatedAvatar,
   type BubbleSlot,
 } from './avatars';
@@ -168,6 +171,8 @@ interface Patron {
   seat: PatronSeat;
   cupOnTable: THREE.Group;
   cupInHand: THREE.Group;
+  /** Đĩa bánh (nếu khách gọi kèm bánh) */
+  plate?: THREE.Group;
   /** Thời điểm bắt đầu nhấp ly kế tiếp */
   nextSip: number;
   sipStart: number;
@@ -253,6 +258,20 @@ export class NpcSystem {
       const cupOnTable = buildDrink(item);
       cupOnTable.position.set(ps.cup.x, ps.cup.y, ps.cup.z);
       cupOnTable.rotation.y = Math.random() * 6;
+      // Một nửa số khách gọi kèm bánh (bánh ít trần / bánh tét lá cẩm), đĩa đặt phía trong cạnh ly
+      let plate: THREE.Group | undefined;
+      if ((i + day) % 2 === 0) {
+        const food = menu.get((i + day) % 4 < 2 ? 'BANHIT' : 'BANHTET');
+        if (food) {
+          plate = buildDrink(food);
+          const dx = ps.cup.x - ps.seat.x;
+          const dz = ps.cup.z - ps.seat.z;
+          const len = Math.hypot(dx, dz) || 1;
+          plate.position.set(ps.cup.x + (dx / len) * 0.1 - (dz / len) * 0.14, ps.cup.y, ps.cup.z + (dz / len) * 0.1 + (dx / len) * 0.14);
+          plate.rotation.y = Math.random() * 6;
+          this.group.add(plate);
+        }
+      }
       const cupInHand = buildDrink(item);
       cupInHand.position.set(0, -0.34, 0.06);
       cupInHand.visible = false;
@@ -263,6 +282,7 @@ export class NpcSystem {
         seat: ps,
         cupOnTable,
         cupInHand,
+        plate,
         nextSip: 4 + Math.random() * 14,
         sipStart: -10,
         talkUntil: 0,
@@ -286,8 +306,18 @@ export class NpcSystem {
       }
       p.cupInHand.visible = sipping && st > 0.12 && st < 0.88;
       p.cupOnTable.visible = !p.cupInHand.visible;
+      // Có bánh → giữa hai lần uống thỉnh thoảng cắn bánh
+      const eatCyc = (now + p.phase * 3) % 19;
+      if (!sipping && p.plate && eatCyc < 2.4 && now > p.talkUntil) {
+        poseEatBite(av, eatCyc / 2.4, now);
+        poseTalk(av, now, false);
+        continue;
+      }
+      hideBite(av);
       if (sipping) {
         poseEmote(av, 'sip', st, now);
+        // Ly luôn đứng thẳng theo tay, nghiêng về phía môi lúc uống (trước đây bị lộn ngược)
+        uprightInRightHand(av, p.cupInHand, st);
         poseTalk(av, now, false);
         continue;
       }
@@ -624,6 +654,7 @@ export class NpcSystem {
     this.npcs = [];
     for (const p of this.patrons) {
       this.group.remove(p.av.group, p.cupOnTable);
+      if (p.plate) this.group.remove(p.plate);
       disposeObject(p.av.group);
       p.cupOnTable.traverse((c) => (c as THREE.Mesh).geometry?.dispose());
     }

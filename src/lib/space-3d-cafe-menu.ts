@@ -4,7 +4,11 @@
  */
 import type { SpaceObject } from './space-3d-types';
 
-export type CupKind = 'espresso' | 'mug' | 'iced' | 'takeaway' | 'bottle' | 'tea';
+/** Kiểu ly (đồ uống) hoặc đĩa (món ăn: bánh tét lá cẩm, bánh ít trần) */
+export type CupKind = 'espresso' | 'mug' | 'iced' | 'takeaway' | 'bottle' | 'tea' | 'banh_tet' | 'banh_it';
+
+export const FOOD_KINDS = new Set<CupKind>(['banh_tet', 'banh_it']);
+export const isFoodItem = (it: Pick<CafeMenuItem, 'cupKind'> | undefined) => Boolean(it && FOOD_KINDS.has(it.cupKind));
 
 export interface CafeMenuItem {
   code: string;
@@ -31,9 +35,18 @@ export const DEFAULT_CAFE_MENU: CafeMenuItem[] = [
   { code: 'TRASUA', name: 'Trà sữa trân châu', price: 45000, cupKind: 'takeaway', liquid: '#d6b38a', desc: 'Trân châu đen nấu mỗi ngày' },
   { code: 'TRANONG', name: 'Trà nóng', price: 30000, cupKind: 'tea', liquid: '#b45309', desc: 'Trà ô long thơm dịu' },
   { code: 'NUOC', name: 'Nước suối', price: 15000, cupKind: 'bottle', liquid: '#dbeafe', desc: 'Chai 500ml' },
+  ...FOOD_MENU(),
 ];
 
-const CUP_KINDS = new Set<CupKind>(['espresso', 'mug', 'iced', 'takeaway', 'bottle', 'tea']);
+/** Món ăn miền Tây (luôn có trong menu, kể cả menu tuỳ chỉnh) */
+function FOOD_MENU(): CafeMenuItem[] {
+  return [
+    { code: 'BANHTET', name: 'Bánh tét lá cẩm', price: 25000, cupKind: 'banh_tet', liquid: '#6b2d7a', desc: 'Nếp lá cẩm, nhân đậu xanh – chuối, gói lá chuối bó lạt' },
+    { code: 'BANHIT', name: 'Bánh ít trần', price: 20000, cupKind: 'banh_it', liquid: '#ece0a6', desc: 'Nhân dừa sên, trứng muối, hấp trên lá chuối' },
+  ];
+}
+
+const CUP_KINDS = new Set<CupKind>(['espresso', 'mug', 'iced', 'takeaway', 'bottle', 'tea', 'banh_tet', 'banh_it']);
 
 /** Chuẩn hoá menu từ setting `space.cafeMenu` (JSON); không hợp lệ → menu mặc định. */
 export function normalizeCafeMenu(raw: unknown): CafeMenuItem[] {
@@ -52,7 +65,10 @@ export function normalizeCafeMenu(raw: unknown): CafeMenuItem[] {
     const liquid = typeof o.liquid === 'string' && /^#[0-9a-f]{6}$/i.test(o.liquid) ? o.liquid : '#8a5a3b';
     out.push({ code, name, price, cupKind, liquid, foam: Boolean(o.foam), desc: o.desc ? String(o.desc).slice(0, 120) : undefined });
   }
-  return out.length ? out : DEFAULT_CAFE_MENU;
+  if (!out.length) return DEFAULT_CAFE_MENU;
+  // Menu tuỳ chỉnh chưa có món ăn → bổ sung món bánh mặc định
+  for (const f of FOOD_MENU()) if (!seen.has(f.code)) out.push(f);
+  return out;
 }
 
 export const MAX_ORDER_QTY = 5;
@@ -79,7 +95,7 @@ export function validateOrderLines(
     merged.set(code, (merged.get(code) ?? 0) + qty);
   }
   const total = [...merged.values()].reduce((a, b) => a + b, 0);
-  if (total > MAX_ORDER_QTY) return { ok: false, message: `Mỗi lần gọi tối đa ${MAX_ORDER_QTY} ly` };
+  if (total > MAX_ORDER_QTY) return { ok: false, message: `Mỗi lần gọi tối đa ${MAX_ORDER_QTY} món` };
   return { ok: true, lines: [...merged].map(([code, qty]) => ({ code, qty })) };
 }
 

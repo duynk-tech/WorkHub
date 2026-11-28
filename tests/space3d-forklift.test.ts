@@ -36,3 +36,21 @@ describe('xe nâng lái được', () => {
     expect(forkliftSeat(start, 2.4).z).toBeLessThan(0);
   });
 });
+
+describe('xúc & cất pallet', async () => {
+  const { canPickPallet, forkCenter, palletLanding } = await import('@/lib/space-3d-forklift');
+  const s = { x: 0, z: 0, rotY: 0, speed: 0, steer: 0, lift: 0 };
+  it('pallet ngay trước càng, càng hạ thấp → xúc được; lệch xa hoặc lệch tầng → không', () => {
+    const c = forkCenter(s, 2.4);
+    expect(canPickPallet(s, 2.4, { x: c.x, z: c.z, y: 0 })).toBe(true);
+    expect(canPickPallet(s, 2.4, { x: c.x + 0.8, z: c.z, y: 0 })).toBe(false);
+    expect(canPickPallet(s, 2.4, { x: c.x, z: c.z, y: 1.2 })).toBe(false);
+    expect(canPickPallet({ ...s, lift: 1.15 }, 2.4, { x: c.x, z: c.z, y: 1.2 })).toBe(true);
+  });
+  it('hạ pallet: chạm sàn hoặc đúng tầng kệ bên dưới thì đặt, còn lơ lửng thì chưa', () => {
+    expect(palletLanding(0.01, [])).toBe(0);
+    expect(palletLanding(0.5, [])).toBeNull();
+    expect(palletLanding(1.205, [0.18, 1.2, 2.2])).toBe(1.2);
+    expect(palletLanding(1.6, [0.18, 1.2, 2.2])).toBeNull();
+  });
+});

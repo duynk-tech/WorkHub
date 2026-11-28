@@ -2032,40 +2032,124 @@ export function buildChalkboard(o: SpaceObject): THREE.Group {
 }
 
 /** Xe tay ga đậu (bãi giữ xe trước quán): 2 bánh, thân bầu, yên, tay lái, gương */
+/** Thân xe dạng biên dạng (z, y) đùn theo bề ngang X, bo tròn mép */
+function scooterPart(pts: [number, number][], width: number, mat: THREE.Material, bevel = 0.035): THREE.Mesh {
+  const sh = new THREE.Shape();
+  sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+  sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.02, width - bevel * 2), bevelEnabled: true, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3, curveSegments: 6 });
+  geo.translate(0, 0, -(width - bevel * 2) / 2);
+  geo.rotateY(-Math.PI / 2); // x biên dạng → trục Z (dọc xe), bề dày đùn → trục X
+  return new THREE.Mesh(geo, mat);
+}
+
+/** Bánh xe: lốp tròn + mâm 5 chấu + (đĩa phanh) */
+function scooterWheel(r: number, z: number, disc: boolean): THREE.Group {
+  const w = new THREE.Group();
+  const tire = new THREE.Mesh(new THREE.TorusGeometry(r - 0.045, 0.048, 10, 28), M.paint('#141414', 0.85));
+  tire.rotation.y = Math.PI / 2;
+  w.add(tire);
+  const rimMat = M.metal('#b8bec7', 0.32);
+  const rim = cyl(r - 0.085, r - 0.085, 0.07, rimMat, 0, 0, 0, 24);
+  rim.rotation.z = Math.PI / 2;
+  w.add(rim);
+  const hub = cyl(0.045, 0.045, 0.11, M.metal('#6b7280', 0.35), 0, 0, 0, 12);
+  hub.rotation.z = Math.PI / 2;
+  w.add(hub);
+  const dark = M.paint('#2a2d33', 0.6);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const sp = box(0.074, 0.028, r - 0.13, dark, 0, Math.sin(a) * (r - 0.11) * 0.5, Math.cos(a) * (r - 0.11) * 0.5);
+    sp.rotation.x = -a;
+    w.add(sp);
+  }
+  if (disc) {
+    const d = cyl(0.1, 0.1, 0.006, M.chrome(), 0.05, 0, 0, 20);
+    d.rotation.z = Math.PI / 2;
+    w.add(d);
+  }
+  w.position.set(0, r, z);
+  return w;
+}
+
+/** Xe tay ga đậu (kiểu xe phổ thông VN): thân bầu, sàn để chân, yếm trước, yên có gù, mâm 5 chấu, gương, đèn. Mặt trước +Z. */
 export function buildMotorbike(o: SpaceObject): THREE.Group {
   const g = new THREE.Group();
-  const L = o.depthM; // dài theo trục Z cục bộ
-  const paint = M.gloss(o.color ?? '#dc2626');
-  const black = M.paint('#111111', 0.6);
+  const k = o.depthM / 1.85; // thiết kế cho xe dài 1.85m
+  const body = new THREE.Group();
+  const paint = sharedMat(`moto:paint:${o.color ?? '#dc2626'}`, () =>
+    new THREE.MeshPhysicalMaterial({ color: o.color ?? '#dc2626', roughness: 0.28, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.08 }),
+  );
+  const plastic = M.paint('#1b1c1f', 0.55);
   const chrome = M.chrome();
-  for (const z of [-L * 0.36, L * 0.36]) {
-    const wheel = cyl(0.25, 0.25, 0.09, black, 0, 0.25, z, 20);
-    wheel.rotation.z = Math.PI / 2;
-    const hub = cyl(0.12, 0.12, 0.1, chrome, 0, 0.25, z, 14);
-    hub.rotation.z = Math.PI / 2;
-    g.add(wheel, hub);
+  const R = 0.23;
+  const zF = 0.6;
+  const zR = -0.62;
+  body.add(scooterWheel(R, zF, true), scooterWheel(R, zR, false));
+  // Thân sau (ốp hông + đuôi) — vuốt cong lên đuôi
+  const rear = scooterPart(
+    [[-0.84, 0.6], [-0.8, 0.7], [-0.7, 0.76], [0.0, 0.74], [0.1, 0.6], [0.08, 0.42], [-0.3, 0.38], [-0.6, 0.42], [-0.78, 0.5]],
+    0.32,
+    paint,
+  );
+  // Yên có gù, may viền
+  const seat = scooterPart([[-0.74, 0.76], [-0.66, 0.86], [-0.42, 0.88], [-0.32, 0.84], [-0.06, 0.86], [0.04, 0.78], [0.0, 0.74], [-0.7, 0.75]], 0.27, M.leather('#18181b'), 0.03);
+  // Sàn để chân + ốp gầm
+  const floor = scooterPart([[0.06, 0.4], [0.38, 0.4], [0.4, 0.33], [0.04, 0.32]], 0.3, plastic, 0.02);
+  // Yếm trước: mặt nghiêng từ sàn lên ốp đầu
+  const shield = scooterPart([[0.34, 0.36], [0.5, 0.36], [0.64, 0.6], [0.69, 0.9], [0.62, 1.0], [0.5, 0.98], [0.42, 0.72], [0.34, 0.44]], 0.36, paint);
+  body.add(rear, seat, floor, shield);
+  // Dè trước ôm bánh
+  const fenderMat = sharedMat(`moto:fender:${o.color ?? '#dc2626'}`, () =>
+    new THREE.MeshPhysicalMaterial({ color: o.color ?? '#dc2626', roughness: 0.28, metalness: 0.15, clearcoat: 1, side: THREE.DoubleSide }),
+  );
+  const fender = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.03, R + 0.03, 0.12, 16, 1, true, -0.2, 1.9), fenderMat);
+  fender.rotation.z = Math.PI / 2;
+  fender.position.set(0, R, zF);
+  body.add(fender);
+  // Phuộc trước nghiêng
+  for (const sx of [-1, 1]) {
+    const fork = cyl(0.022, 0.026, 0.62, M.metal('#9ca3af', 0.3), sx * 0.075, 0.5, 0.56, 10);
+    fork.rotation.x = 0.33;
+    body.add(fork);
   }
-  // Thân sau bầu + sàn để chân + yếm trước
-  g.add(box(0.3, 0.32, L * 0.42, paint, 0, 0.5, -L * 0.18, 0.1));
-  g.add(box(0.26, 0.06, L * 0.3, black, 0, 0.32, L * 0.06, 0.02));
-  const apron = box(0.3, 0.6, 0.1, paint, 0, 0.62, L * 0.28, 0.06);
-  apron.rotation.x = -0.25;
-  g.add(apron);
-  g.add(box(0.26, 0.08, L * 0.36, M.leather('#1f1f1f'), 0, 0.7, -L * 0.15, 0.04)); // yên
-  // Cổ lái + tay lái + gương
-  const stem = cyl(0.03, 0.03, 0.5, chrome, 0, 0.85, L * 0.33, 8);
-  stem.rotation.x = -0.3;
-  g.add(stem);
-  const bar = cyl(0.016, 0.016, 0.62, black, 0, 1.08, L * 0.38, 8);
+  // Cụm máy + gắp sau + ống pô có ốp chống nóng
+  body.add(box(0.14, 0.17, 0.46, M.paint('#3a3d42', 0.5), 0.09, 0.27, -0.42, 0.03));
+  const pipe = cyl(0.045, 0.05, 0.5, M.metal('#8b9098', 0.35), -0.15, 0.3, -0.5, 14);
+  pipe.rotation.x = Math.PI / 2 - 0.12;
+  const shieldP = cyl(0.052, 0.052, 0.3, M.paint('#26282c', 0.5), -0.165, 0.315, -0.52, 12);
+  shieldP.rotation.x = Math.PI / 2 - 0.12;
+  body.add(pipe, shieldP);
+  // Đầu xe: ốp đầu, tay lái + tay nắm, gương, đèn pha
+  body.add(box(0.36, 0.11, 0.2, paint, 0, 1.03, 0.52, 0.05));
+  const bar = cyl(0.014, 0.014, 0.66, chrome, 0, 1.05, 0.48, 8);
   bar.rotation.z = Math.PI / 2;
-  g.add(bar);
-  for (const s of [-1, 1]) {
-    g.add(cyl(0.006, 0.006, 0.2, chrome, s * 0.24, 1.18, L * 0.37, 6));
-    g.add(sphere(0.04, chrome, s * 0.24, 1.29, L * 0.37));
+  body.add(bar);
+  for (const sx of [-1, 1]) {
+    const grip = cyl(0.02, 0.02, 0.12, plastic, sx * 0.29, 1.05, 0.48, 10);
+    grip.rotation.z = Math.PI / 2;
+    body.add(grip);
+    const stem = cyl(0.006, 0.006, 0.2, chrome, sx * 0.22, 1.15, 0.47, 6);
+    stem.rotation.z = -sx * 0.25;
+    body.add(stem);
+    const mirror = cyl(0.045, 0.045, 0.014, plastic, sx * 0.25, 1.25, 0.46, 16);
+    mirror.rotation.x = Math.PI / 2;
+    mirror.scale.set(1.25, 1, 0.8);
+    body.add(mirror);
   }
-  g.add(sphere(0.06, M.glow('#fffbe6', 0.4, 1.6), 0, 0.95, L * 0.42)); // đèn pha
-  // Chân chống nghiêng nhẹ
-  g.rotation.z = 0.05;
+  body.add(box(0.17, 0.06, 0.03, M.glow('#fffbe6', 0.5, 1.8), 0, 0.92, 0.68, 0.015)); // đèn pha
+  body.add(box(0.14, 0.035, 0.03, M.glow('#ff3b30', 0.5, 1.6), 0, 0.68, -0.84, 0.012)); // đèn hậu
+  const plate = box(0.17, 0.11, 0.008, M.paint('#f4f4f5', 0.5), 0, 0.5, -0.82);
+  plate.rotation.x = 0.25;
+  body.add(plate);
+  // Chân chống nghiêng
+  const stand = cyl(0.012, 0.012, 0.26, M.metal('#4b5563', 0.4), -0.17, 0.12, -0.05, 6);
+  stand.rotation.z = 0.5;
+  body.add(stand);
+  body.scale.setScalar(k);
+  g.add(body);
+  g.rotation.z = 0.07; // đậu nghiêng nhẹ trên chân chống
   return g;
 }
 

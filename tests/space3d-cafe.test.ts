@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAFE_MENU, findServeSpot, MAX_ORDER_QTY, normalizeCafeMenu, orderSummary, orderTotal, validateOrderLines } from '@/lib/space-3d-cafe-menu';
+import { DEFAULT_CAFE_MENU, findServeSpot, isFoodItem, MAX_ORDER_QTY, normalizeCafeMenu, orderSummary, orderTotal, validateOrderLines } from '@/lib/space-3d-cafe-menu';
 import { bubbleTtlMs, clipBubbleText, isSpaceEmote, talkDurationMs } from '@/lib/space-3d-chat';
 import { pushBubble } from '@/components/space3d/use-space-realtime';
 import type { RemoteBubble } from '@/lib/space-3d-types';
@@ -14,8 +14,16 @@ describe('menu quán cà phê', () => {
       { code: 'abc', name: 'Món A', price: 12000.4, cupKind: 'xyz', liquid: 'red' },
       { code: 'ABC', name: 'Trùng', price: 1 },
     ]);
-    expect(m).toHaveLength(1);
+    // 1 món tuỳ chỉnh + 2 món bánh luôn được bổ sung
+    expect(m).toHaveLength(3);
     expect(m[0]).toMatchObject({ code: 'ABC', price: 12000, cupKind: 'mug', liquid: '#8a5a3b' });
+    expect(m.slice(1).map((x) => x.cupKind)).toEqual(['banh_tet', 'banh_it']);
+  });
+  it('món bánh có trong menu mặc định, không trùng khi menu tuỳ chỉnh đã có sẵn', () => {
+    expect(DEFAULT_CAFE_MENU.filter((x) => isFoodItem(x)).map((x) => x.code)).toEqual(['BANHTET', 'BANHIT']);
+    const m = normalizeCafeMenu([{ code: 'BANHIT', name: 'Bánh ít nhà làm', price: 18000, cupKind: 'banh_it' }]);
+    expect(m.filter((x) => x.code === 'BANHIT')).toHaveLength(1);
+    expect(m.find((x) => x.code === 'BANHIT')!.name).toBe('Bánh ít nhà làm');
   });
 });
 

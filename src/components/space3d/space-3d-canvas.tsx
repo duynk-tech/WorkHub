@@ -33,20 +33,25 @@ import {
   poseTalk,
   poseEmote,
   poseSeatActivity,
+  uprightInRightHand,
+  poseEatBite,
+  hideBite,
   type AnimatedAvatar,
   type BubbleSlot,
 } from './three/avatars';
 import { createExhibitionHallEnvironment } from './three/hall';
 import { rebuildInstancing } from './three/instancing';
 import { NpcSystem } from './three/npc';
-import { ForkliftDriver, type ForkliftEntry } from './three/forklift-drive';
-import { cafeFrontYard, constrainWalk, crossesFence, gateWaypoint, walkableTarget, type FrontYard } from '@/lib/space-3d-yard';
+import { TourCart } from './three/tour-cart';
+import { ForkliftDriver, type ForkHint, type ForkliftEntry, type PalletEntry, type RackBay } from './three/forklift-drive';
+import { cafeFrontYard, showroomFrontYard, constrainWalk, crossesFence, gateWaypoint, walkableTarget, type FrontYard } from '@/lib/space-3d-yard';
 import { Birds, FallingLeaves, SteamSystem, buildGroundLeaves } from './three/ambient';
 import { localToWorld } from '@/lib/space-3d-npc';
 import { EMOTE_DURATION_MS, talkDurationMs, type SpaceEmote } from '@/lib/space-3d-chat';
 import type { CafeMenuItem, DrinkOrderView } from '@/lib/space-3d-cafe-menu';
-import { buildDrink, buildOrderDrinks } from './three/props/drinks';
-import { DEFAULT_CAFE_MENU, findServeSpot } from '@/lib/space-3d-cafe-menu';
+import { buildDrink, buildOrderDrinks, setFoodEaten } from './three/props/drinks';
+import { labelTex } from './three/props/textures';
+import { DEFAULT_CAFE_MENU, findServeSpot, isFoodItem } from '@/lib/space-3d-cafe-menu';
 import { PANTRY_KINDS } from './three/props/office-extras';
 import { setDeskScreenOn } from './three/props/office-extras';
 import { createCafeEnvironment, createOfficeEnvironment, createWarehouseEnvironment } from './three/environments';
@@ -164,10 +169,12 @@ interface Props {
   onNpcArrive?: (orderId: number) => void;
   /** Trạng thái ngồi thay đổi (hiện nút "Đứng dậy") */
   onSittingChange?: (sitting: boolean) => void;
+  /** Showroom: xe điện tham quan — đứng gần ('near'), xe đang chạy ('wait'), đang ngồi ('riding'), đã về trạm ('arrived') */
+  onCartHint?: (state: 'near' | 'wait' | 'riding' | 'arrived' | null, departIn?: number) => void;
   /** Bấm vào ly nước của mình trên bàn → cầm ly lên mang theo */
   onPickDrink?: (orderId: number) => void;
   /** Kho: đứng cạnh xe nâng ('near') / đang lái ('driving') → hiện hướng dẫn phím */
-  onForkliftHint?: (state: 'near' | 'driving' | null) => void;
+  onForkliftHint?: (state: ForkHint) => void;
   /** Lệnh từ giao diện: ngồi vào ghế đã chọn / đứng dậy (nonce đổi mỗi lần bấm) */
   seatCommand?: { kind: 'sit' | 'stand' | 'dutySit'; nonce: number } | null;
   /** Khung hình đầu tiên đã vẽ xong cảnh (ẩn màn hình tải) */
@@ -210,6 +217,21 @@ const PASS_THROUGH = new Set([
  * renderer.compileAsync: vật liệu bị huỷ giữa chừng (dựng lại vật thể) thì bỏ qua thay vì ném lỗi & treo mãi;
  * có giới hạn thời gian.
  */
+/** Khách đang có món bánh đã phục vụ (để thỉnh thoảng đưa miếng bánh lên miệng) */
+function foodRidsOf(orders: DrinkOrderView[] | undefined, menu: CafeMenuItem[] | undefined): Set<number> {
+  const out = new Set<number>();
+  if (!orders?.length) return out;
+  const food = new Set((menu ?? DEFAULT_CAFE_MENU).filter((m) => isFoodItem(m)).map((m) => m.code));
+  for (const o of orders) if (o.status === 'SERVED' && o.lines.some((l) => food.has(l.code))) out.add(o.customerRid);
+  return out;
+}
+
+function hashString(t: string): number {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+  return h;
+}
+
 function safeCompileAsync(renderer: THREE.WebGLRenderer, scene: THREE.Object3D, camera: THREE.Camera, timeoutMs: number, targetScene?: THREE.Scene): Promise<void> {
   let mats: Set<THREE.Material>;
   // renderer.compile chỉ duyệt vật đang hiện → vật đang ẩn (vòng đánh dấu, mũi tên cổng, ly trên tay, phần chỉ hiện
@@ -387,6 +409,7 @@ export function Space3DCanvas({
   onSittingChange,
   onForkliftHint,
   onPickDrink,
+  onCartHint,
   seatCommand = null,
   onReady,
   onPortal,
@@ -418,6 +441,7 @@ export function Space3DCanvas({
     emoteRef,
     selfRealtimeId,
     drinkRids: new Set((drinkOrders ?? []).filter((o) => o.status === 'SERVED').map((o) => o.customerRid)) as Set<number>,
+    foodRids: foodRidsOf(drinkOrders, cafeMenu),
     onSelectRemotePlayer,
     currentEmployeeId,
     qualityPref,
@@ -447,6 +471,7 @@ export function Space3DCanvas({
     onSittingChange,
     onForkliftHint,
     onPickDrink,
+    onCartHint,
   });
   stateRef.current = {
     editMode,
@@ -465,6 +490,7 @@ export function Space3DCanvas({
     emoteRef,
     selfRealtimeId,
     drinkRids: new Set((drinkOrders ?? []).filter((o) => o.status === 'SERVED').map((o) => o.customerRid)) as Set<number>,
+    foodRids: foodRidsOf(drinkOrders, cafeMenu),
     onSelectRemotePlayer,
     currentEmployeeId,
     qualityPref,
@@ -494,6 +520,7 @@ export function Space3DCanvas({
     onSittingChange,
     onForkliftHint,
     onPickDrink,
+    onCartHint,
   };
 
   const sceneObjRef = useRef<{
@@ -707,6 +734,9 @@ export function Space3DCanvas({
     interior?.lights.forEach((l) => scene.add(l));
     freezeStaticDescendants(hallEnv);
     scene.add(hallEnv);
+    // Showroom: xe điện chở khách tham quan vòng khuôn viên
+    const tour = sceneKind === 'SHOWROOM' ? new TourCart(widthM, depthM) : null;
+    if (tour) scene.add(tour.group);
     // Kiến trúc tĩnh → tính ma trận 1 lần rồi bỏ qua mỗi khung hình (trừ khi có bộ phận chuyển động)
     let envMoving = false;
     hallEnv.traverse((c) => {
@@ -954,7 +984,9 @@ export function Space3DCanvas({
     // Quán cà phê: sân trước ngoài cổng đi bộ được (vỉa hè, mép đường) — ra vào qua cổng
     let yardSrc: SpaceStructure[] | null = null;
     let yardCache: FrontYard | null = null;
+    const srYard = sceneKind === 'SHOWROOM' ? showroomFrontYard(widthM, depthM) : null;
     const getYard = (): FrontYard | null => {
+      if (srYard) return srYard;
       if (sceneKind !== 'CAFE') return null;
       const st = stateRef.current.structures;
       if (st !== yardSrc) {
@@ -962,6 +994,27 @@ export function Space3DCanvas({
         yardCache = cafeFrontYard(widthM, depthM, st.find((o) => o.kind === 'GARDEN_GATE'));
       }
       return yardCache;
+    };
+    /** Vật thể theo vị trí hiện tại (pallet đã được xe nâng dời chỗ) — dùng cho va chạm */
+    let liveSrc: SpaceStructure[] | null = null;
+    let liveCache: SpaceStructure[] = [];
+    let liveVer = -1;
+    const liveStructures = (): SpaceStructure[] => {
+      const st = stateRef.current.structures;
+      const moved = sceneObjRef.current?.drive.movedPallets;
+      const carryId = sceneObjRef.current?.drive.carrying?.id;
+      const ver = (moved?.size ?? 0) * 1000 + (carryId ? 1 : 0);
+      if (st !== liveSrc || ver !== liveVer || carryId) {
+        liveSrc = st;
+        liveVer = ver;
+        liveCache = !moved?.size && !carryId ? st : st
+          .filter((o) => o.id !== carryId)
+          .map((o) => {
+            const m = moved?.get(o.id);
+            return m ? { ...o, posX: m.x, posZ: m.z, rotY: m.rotY, posY: m.y } : o;
+          });
+      }
+      return liveCache;
     };
     /** Các chặng tiếp theo sau khi tới điểm đang đi (đi vòng qua cổng khi bấm ra ngoài / vào trong) */
     let walkQueue: THREE.Vector3[] = [];
@@ -971,7 +1024,10 @@ export function Space3DCanvas({
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
       if (camRig.introActive) camRig.skipIntro();
       keys.add(e.code);
-      if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey) toggleForklift();
+      if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey) {
+        if (tour) toggleCart();
+        else toggleForklift();
+      }
       if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         if (sceneObjRef.current) {
           sceneObjRef.current.walkTarget = null;
@@ -1412,9 +1468,43 @@ export function Space3DCanvas({
       walkRing.visible = false;
       so.drive.enter(f);
     };
-    const onForkliftToggle = () => toggleForklift();
+    /** Showroom: lên xe điện (đang đỗ ở trạm, đứng ≤ 3.5m) / xuống xe tại trạm */
+    const toggleCart = () => {
+      const so = sceneObjRef.current;
+      if (!tour || !so || stateRef.current.editMode) return;
+      const pl = so.player;
+      if (tour.riding) {
+        if (!tour.atStop) {
+          stateRef.current.onNotice?.('Xe đang chạy — xuống xe khi xe dừng ở trạm nhé');
+          return;
+        }
+        tour.riding = false;
+        const out = tour.alightPoint();
+        const dx = out.x - pl.group.position.x;
+        const dz = out.z - pl.group.position.z;
+        pl.group.position.set(out.x, 0, out.z);
+        camera.position.x += dx;
+        camera.position.z += dz;
+        orbit.target.x += dx;
+        orbit.target.z += dz;
+        if (playerPosRef) playerPosRef.current.sit = 0;
+        return;
+      }
+      if (tour.distanceTo(pl.group.position.x, pl.group.position.z) > 3.5) return;
+      if (!tour.atStop) {
+        stateRef.current.onNotice?.('Xe đang chạy vòng — chờ xe về trạm rồi lên nhé');
+        return;
+      }
+      standUp();
+      pendingSeat = null;
+      so.walkTarget = null;
+      walkRing.visible = false;
+      tour.riding = true;
+    };
+    const onForkliftToggle = () => (tour ? toggleCart() : toggleForklift());
     window.addEventListener('space3d:forklift-toggle', onForkliftToggle);
-    let forkHint: 'near' | 'driving' | null = null;
+    let forkHint: ForkHint = null;
+    let cartHintKey = '';
 
     /** Nhân viên vào trực: tự đi tới ghế nhân viên trống gần nhất (≤ 4m) và ngồi */
     const dutySit = () => {
@@ -1580,15 +1670,14 @@ export function Space3DCanvas({
         heldCups.set(id, { code, cup, av });
       }
     };
-    const poseHold = (av: AnimatedAvatar, cup: THREE.Group, busy: boolean) => {
+    const poseHold = (av: AnimatedAvatar, cup: THREE.Group, busy: boolean, sipT = 0) => {
       if (!busy) {
         // Tay cầm ly trước ngực
         av.rightArm.rotation.x += (-0.3 - av.rightArm.rotation.x) * 0.2;
         av.rightElbow.rotation.x += (-1.2 - av.rightElbow.rotation.x) * 0.2;
       }
-      // Bù góc tay → ly luôn đứng thẳng
-      cup.rotation.x = -(av.rightArm.rotation.x + av.rightElbow.rotation.x);
-      cup.rotation.z = -av.rightArm.rotation.z;
+      // Bù góc tay → ly luôn đứng thẳng (đang uống thì nghiêng miệng ly về phía môi)
+      uprightInRightHand(av, cup, sipT);
     };
 
     // ── Camera vào phòng (ROOM_ZONE): bay tới góc phòng phía lối vào, nhìn bao quát phòng, ẩn mái trong vùng ──
@@ -1767,13 +1856,41 @@ export function Space3DCanvas({
       if (keys.has('KeyD') || keys.has('ArrowRight')) move.x += 1;
 
       const currentPlayer = sceneObjRef.current?.player ?? player;
-      const driveSys = sceneObjRef.current?.drive.active ? sceneObjRef.current.drive : null;
-      if (!driveSys && move.lengthSq() > 0 && (sitting || seatCandidate)) {
+      const cartDelta = tour ? tour.update(dt, totalTime) : null;
+      const riding = Boolean(tour?.riding);
+      const driveSys = !riding && sceneObjRef.current?.drive.active ? sceneObjRef.current.drive : null;
+      if (!driveSys && !riding && move.lengthSq() > 0 && (sitting || seatCandidate)) {
         standUp();
         pendingSeat = null;
         if (seatCandidate) setCandidate(null);
       }
-      if (driveSys) {
+      if (riding && tour && cartDelta) {
+        // Ngồi xe điện tham quan: theo ghế khách, camera đi theo xe
+        if (sceneObjRef.current?.walkTarget) {
+          sceneObjRef.current.walkTarget = null;
+          walkRing.visible = false;
+        }
+        const seat = tour.seatWorld();
+        currentPlayer.group.position.x = seat.x;
+        currentPlayer.group.position.z = seat.z;
+        currentPlayer.group.rotation.y = seat.rotY;
+        poseSit(currentPlayer, seat.y);
+        if (playerPosRef) playerPosRef.current.sit = seat.y;
+        // Camera bám đuôi xe (sau 6.5m, cao 3.4m), nhìn theo hướng xe chạy — mượt, không bị tường kéo sát đất
+        const fx = Math.sin(seat.rotY);
+        const fz = Math.cos(seat.rotY);
+        const kc = 1 - Math.exp(-dt * 2.6);
+        camera.position.x += (seat.x - fx * 6.5 - camera.position.x) * kc + cartDelta.dx;
+        camera.position.y += (3.4 - camera.position.y) * kc;
+        camera.position.z += (seat.z - fz * 6.5 - camera.position.z) * kc + cartDelta.dz;
+        orbit.target.x += (seat.x + fx * 2 - orbit.target.x) * kc + cartDelta.dx;
+        orbit.target.y += (1.2 - orbit.target.y) * kc;
+        orbit.target.z += (seat.z + fz * 2 - orbit.target.z) * kc + cartDelta.dz;
+        if (cartDelta.dx || cartDelta.dz) {
+          markActive();
+          if (frameCount % 8 === 0) renderer.shadowMap.needsUpdate = true;
+        }
+      } else if (driveSys) {
         // Lái xe nâng: W/S ga – lùi, A/D đánh lái, R/Q nâng – hạ càng
         const so = sceneObjRef.current!;
         if (so.walkTarget) {
@@ -1784,9 +1901,14 @@ export function Space3DCanvas({
         const steerIn = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
         const liftIn = (keys.has('KeyR') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0);
         const selfId = driveSys.active!.id;
-        const others = stateRef.current.structures.filter((o) => o.id !== selfId);
-        const res = driveSys.update(dt, { throttle, steer: steerIn, lift: liftIn }, (x, z) =>
-          Math.abs(x) > widthM / 2 - 0.15 || Math.abs(z) > depthM / 2 - 0.15 || pointBlocked(x, z, others),
+        const carryId = driveSys.carrying?.id;
+        // Vật cản theo vị trí sống (pallet đã dời); mũi càng được luồn dưới pallet & vào lòng kệ khi đang nâng
+        const live = liveStructures().filter((o) => o.id !== selfId && o.id !== carryId);
+        const forkFree = live.filter((o) => o.kind !== 'PALLET_STACK' && o.kind !== 'CARTON_STACK' && o.kind !== 'RACK');
+        const res = driveSys.update(dt, { throttle, steer: steerIn, lift: liftIn }, (x, z, tip, lift) =>
+          Math.abs(x) > widthM / 2 - 0.15 ||
+          Math.abs(z) > depthM / 2 - 0.15 ||
+          pointBlocked(x, z, tip ? (lift > 0.3 ? forkFree : live.filter((o) => o.kind !== 'PALLET_STACK')) : live),
         );
         if (res) {
           currentPlayer.group.position.x = res.seat.x;
@@ -1894,7 +2016,7 @@ export function Space3DCanvas({
       }
 
       // Va chạm thân người: không đi xuyên nhân vật khác & đồ đạc (đẩy ra mềm), bị chặn thì dừng click-to-walk
-      if (!sitting && !driveSys) {
+      if (!sitting && !driveSys && !riding) {
         const before = { x: currentPlayer.group.position.x, z: currentPlayer.group.position.z };
         const others: THREE.Object3D[] = [];
         const so = sceneObjRef.current;
@@ -1903,7 +2025,7 @@ export function Space3DCanvas({
           so.npcs.avatars.forEach((a) => others.push(a.group));
           so.remoteAvatars.forEach((e) => others.push(e.av.group));
         }
-        const pushed = resolveBodyCollisions(currentPlayer.group.position, others, isMoving ? stateRef.current.structures : null);
+        const pushed = resolveBodyCollisions(currentPlayer.group.position, others, isMoving ? liveStructures() : null);
         const pdx = currentPlayer.group.position.x - before.x;
         const pdz = currentPlayer.group.position.z - before.z;
         if (pushed) {
@@ -1955,7 +2077,7 @@ export function Space3DCanvas({
         // Đầm công sở bước ngắn & nhanh hơn để chân luôn nằm trong váy
         walkTime += dt * (currentPlayer.stride < 1 ? 13 : 10);
         poseWalk(currentPlayer, walkTime);
-      } else if (!sitting && !rising && !driveSys) {
+      } else if (!sitting && !rising && !driveSys && !riding) {
         relaxPose(currentPlayer);
         if (faceTarget && totalTime < faceTarget.until) {
           const want = Math.atan2(faceTarget.x - currentPlayer.group.position.x, faceTarget.z - currentPlayer.group.position.z);
@@ -1977,13 +2099,23 @@ export function Space3DCanvas({
       }
 
       animateAvatarIdle(currentPlayer, totalTime);
+      // Gợi ý xe điện tham quan (showroom)
+      if (tour && frameCount % 10 === 0) {
+        const near = tour.distanceTo(currentPlayer.group.position.x, currentPlayer.group.position.z) <= 3.5;
+        const h = tour.riding ? (tour.atStop ? 'arrived' : 'riding') : near ? (tour.atStop ? 'near' : 'wait') : null;
+        const key = `${h}:${h === 'near' || h === 'arrived' ? tour.departIn : ''}`;
+        if (key !== cartHintKey) {
+          cartHintKey = key;
+          stateRef.current.onCartHint?.(h, tour.departIn);
+        }
+      }
       // Gợi ý lái xe nâng (kho)
       if (frameCount % 10 === 0) {
         const so = sceneObjRef.current;
-        const h: typeof forkHint = !so?.forklifts.length
+        const h: ForkHint = !so?.forklifts.length
           ? null
           : so.drive.active
-            ? 'driving'
+            ? so.drive.hint
             : so.drive.nearest(so.forklifts, currentPlayer.group.position.x, currentPlayer.group.position.z)
               ? 'near'
               : null;
@@ -2018,6 +2150,9 @@ export function Space3DCanvas({
         if (!talking && stateRef.current.drinkRids?.has(id)) {
           const cyc = (totalTime + Math.abs(id % 17) * 1.9) % 30;
           if (cyc < 2.2) poseEmote(av, 'sip', cyc / 2.2, totalTime);
+          // Có bánh → lệch nửa chu kỳ: cầm miếng bánh đưa lên miệng cắn
+          else if (stateRef.current.foodRids?.has(id) && cyc > 15 && cyc < 17.4) poseEatBite(av, (cyc - 15) / 2.4, totalTime);
+          else hideBite(av);
         }
         const em = emoteMap?.get(id);
         if (em) {
@@ -2181,6 +2316,13 @@ export function Space3DCanvas({
           frameCount,
         );
       }
+      // Đĩa bánh vơi dần (~45s một miếng sau khi phục vụ)
+      if (frameCount % 90 === 0 && sceneObjRef.current) {
+        const nowMs = Date.now();
+        for (const g of sceneObjRef.current.drinkMeshes.values()) {
+          if (g.userData.hasFood) setFoodEaten(g, Math.floor((nowMs - (g.userData.servedAt as number)) / 45_000));
+        }
+      }
       // Ly nước đang cầm (mình + người khác)
       const holds = stateRef.current.holdRef?.current;
       if (holds && sceneObjRef.current) {
@@ -2212,8 +2354,8 @@ export function Space3DCanvas({
           }
           cupToHand(h);
           if (sipping) poseEmote(h.av, 'sip', cyc / 2, totalTime);
-          if (!seated || !h.spot) poseHold(h.av, h.cup, sipping);
-          else h.cup.rotation.x = -(h.av.rightArm.rotation.x + h.av.rightElbow.rotation.x);
+          if (!seated || !h.spot) poseHold(h.av, h.cup, sipping, sipping ? cyc / 2 : 0);
+          else uprightInRightHand(h.av, h.cup, sipping ? cyc / 2 : 0);
         }
       }
       // Gần pantry → hiện nút "Lấy nước"
@@ -2708,7 +2850,45 @@ export function Space3DCanvas({
       }
     }
     obj.forklifts = lifts;
-    if (lifts.length) obj.drive.restore(lifts);
+    // Pallet xúc được + lòng kệ (độ cao các tầng) để cất pallet lên kệ
+    const pallets: PalletEntry[] = [];
+    const bays: RackBay[] = [];
+    if (lifts.length) {
+      for (const [id, entry] of obj.objectMap) {
+        const src = structures.find((st) => st.id === id);
+        if (!src) continue;
+        if (src.kind === 'PALLET_STACK') {
+          pallets.push({ id, root: entry.root, obj: src });
+          // Nhãn hàng thật dán 2 mặt pallet: tên + mã sản phẩm trong kho (chọn theo pallet, ổn định giữa các lần dựng)
+          if (merchItems.length && !entry.root.userData.labeled) {
+            const it = merchItems[Math.abs(hashString(id)) % merchItems.length];
+            const tex = labelTex(
+              [
+                { text: (it.itemCode ?? 'SKU').slice(0, 18), size: 70, color: '#111827', weight: 800, y: 92 },
+                { text: it.name.slice(0, 30), size: 44, color: '#1f2937', weight: 600, y: 170 },
+                { text: 'NHẬP KHO · PALLET', size: 34, color: '#b91c1c', weight: 700, y: 232 },
+              ],
+              '#f8fafc',
+              900,
+              270,
+            );
+            const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 });
+            for (const sz of [1, -1]) {
+              const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.126), mat);
+              lab.position.set(0, src.heightM * 0.55, sz * (src.depthM / 2 + 0.006));
+              if (sz < 0) lab.rotation.y = Math.PI;
+              lab.castShadow = false;
+              // Đi theo pallet khi xe nâng chở → không gộp vào lô vẽ tĩnh
+              lab.userData.dynamic = true;
+              entry.root.add(lab);
+            }
+            entry.root.userData.labeled = true;
+          }
+        }
+        if (src.kind === 'RACK') bays.push({ x: src.posX, z: src.posZ, rotY: src.rotY, hw: src.widthM / 2 - 0.1, hd: src.depthM / 2 + 0.05, levels: entry.shelves.map((sh) => sh.y) });
+      }
+    }
+    if (lifts.length) obj.drive.restore(lifts, pallets, bays);
     else obj.drive.active = null;
     // Lá đa rơi lả tả quanh cây đa
     if (obj.leaves) {

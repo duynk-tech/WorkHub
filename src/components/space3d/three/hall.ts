@@ -3,7 +3,8 @@ import type { SpaceKind, SpaceStructure } from '@/lib/space-3d-types';
 import { labelTex } from './props/textures';
 import { buildTreeRow } from './props/garden';
 import { corrugatedTex } from './environments';
-import { M as K } from './props/kit';
+import { showroomRing } from '@/lib/space-3d-tour';
+import { M as K, box, cyl } from './props/kit';
 import {
   applyWindSway,
   createCarpetTexture,
@@ -545,7 +546,25 @@ export function createExhibitionHallEnvironment(
   const shopHalf = Math.min(8, halfW * 0.45);
   wallRun(true, halfD, -halfW, -shopHalf, 'front', false);
   wallRun(true, halfD, shopHalf, halfW, 'front', false);
-  glassRun(true, halfD, -shopHalf, shopHalf, bandY0);
+  // Kính mặt tiền chừa lối cửa tự động ở giữa (±1.3m) để đi ra sân & đường nội bộ
+  glassRun(true, halfD, -shopHalf, -1.3, bandY0);
+  glassRun(true, halfD, 1.3, shopHalf, bandY0);
+  {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.35, 0.22), mullionMat);
+    door.position.set(0, 2.62, halfD);
+    env.add(door);
+    // 2 cánh kính trượt đã mở hé sang hai bên
+    for (const s of [-1, 1]) {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.25, 2.35, 0.04), glassMat);
+      leaf.position.set(s * 1.95, 1.27, halfD - 0.1);
+      leaf.renderOrder = 2;
+      env.add(leaf);
+    }
+    const mat = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.6), K.paint('#3a3a3a', 0.95));
+    mat.rotation.x = -Math.PI / 2;
+    mat.position.set(0, 0.012, halfD + 0.9);
+    env.add(mat);
+  }
   {
     const head = new THREE.Mesh(scaleU(new THREE.BoxGeometry(shopHalf * 2, wallTop - bandY0, 0.16), shopHalf * 2), panelMat('fronthead', shopHalf * 2));
     head.position.set(0, (bandY0 + wallTop) / 2, halfD);
@@ -612,9 +631,86 @@ export function createExhibitionHallEnvironment(
   neighbor(halfW + 24, 0, 34, 20, 11, -Math.PI / 2, '#c9d3de');
   neighbor(-14, -halfD - 22, 36, 18, 12, 0, '#d4d9df');
   neighbor(26, -halfD - 26, 28, 18, 9, 0, '#c9d3de');
+  // ĐƯỜNG NỘI BỘ vòng quanh nhà xưởng (xe điện chở khách tham quan chạy theo vòng này — xem tour-cart.ts)
+  const ring = showroomRing(widthM, depthM);
+  const asphalt = K.paint('#4a4e55', 0.95);
+  const curb = K.paint('#d1d5db', 0.8);
+  const RW = ring.roadW;
+  const roadStrip = (cx: number, cz: number, w: number, d: number) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), asphalt);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(cx, -0.025, cz);
+    m.receiveShadow = true;
+    env.add(m);
+  };
+  roadStrip(0, ring.z1, ring.x1 * 2 + RW, RW);
+  roadStrip(0, ring.z0, ring.x1 * 2 + RW, RW);
+  roadStrip(ring.x0, (ring.z0 + ring.z1) / 2, RW, ring.z1 - ring.z0 - RW);
+  roadStrip(ring.x1, (ring.z0 + ring.z1) / 2, RW, ring.z1 - ring.z0 - RW);
+  // Vạch giữa đường (nét đứt) + bó vỉa 2 bên
+  const dashMat = K.paint('#f8fafc', 0.6);
+  const dash = (x: number, z: number, alongX: boolean) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(alongX ? 1.6 : 0.12, alongX ? 0.12 : 1.6), dashMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, -0.018, z);
+    env.add(m);
+  };
+  for (let x = ring.x0 + 3; x < ring.x1 - 2; x += 3.6) {
+    dash(x, ring.z0, true);
+    dash(x, ring.z1, true);
+  }
+  for (let z = ring.z0 + 3; z < ring.z1 - 2; z += 3.6) {
+    dash(ring.x0, z, false);
+    dash(ring.x1, z, false);
+  }
+  for (const off of [-RW / 2 - 0.12, RW / 2 + 0.12]) {
+    for (const z of [ring.z0, ring.z1]) env.add(box(ring.x1 * 2 + RW + 0.5, 0.12, 0.22, curb, 0, 0.02, z + off));
+    for (const x of [ring.x0, ring.x1]) env.add(box(0.22, 0.12, ring.z1 - ring.z0 + RW + 0.5, curb, x + off, 0.02, (ring.z0 + ring.z1) / 2));
+  }
+  // Hàng cây hai bên đường + đèn đường mỗi ~14m
   const treePts: { x: number; z: number; scale: number }[] = [];
-  for (let x = -halfW + 2; x <= halfW - 2; x += 7) if (Math.abs(x) > shopHalf + 3) treePts.push({ x, z: halfD + 4.2, scale: 1.1 + Math.abs(Math.sin(x)) * 0.25 });
+  const outer = RW / 2 + 2.6;
+  for (let x = ring.x0; x <= ring.x1 + 0.1; x += 8.5) {
+    for (const z of [ring.z0 - outer, ring.z1 + outer]) treePts.push({ x: x + Math.sin(x) * 0.6, z, scale: 1.05 + Math.abs(Math.sin(x * 0.7)) * 0.3 });
+  }
+  for (let z = ring.z0 + 8; z <= ring.z1 - 4; z += 8.5) {
+    for (const x of [ring.x0 - outer, ring.x1 + outer]) treePts.push({ x, z: z + Math.cos(z) * 0.6, scale: 1.05 + Math.abs(Math.cos(z * 0.7)) * 0.3 });
+  }
   env.add(buildTreeRow(treePts, Math.round(widthM * 7 + depthM)));
+  const poleMat = K.paint('#374151', 0.5);
+  const lampMat = sharedMat('srStreetLamp', () => {
+    const m = new THREE.MeshStandardMaterial({ color: '#fff7e0', emissive: '#ffe9b0', emissiveIntensity: 0.4 });
+    registerEmissive({ mat: m, day: 0.3, night: 2.6, mode: 'emissive' });
+    return m;
+  });
+  const lamp = (x: number, z: number, faceX: number, faceZ: number) => {
+    env.add(cyl(0.06, 0.08, 5.2, poleMat, x, 2.6, z, 8));
+    const arm = box(Math.abs(faceX) > 0 ? 1.1 : 0.08, 0.07, Math.abs(faceZ) > 0 ? 1.1 : 0.08, poleMat, x + faceX * 0.55, 5.15, z + faceZ * 0.55);
+    env.add(arm);
+    env.add(box(0.42, 0.1, 0.22, lampMat, x + faceX * 1.05, 5.08, z + faceZ * 1.05));
+  };
+  const inner = RW / 2 + 0.7;
+  for (let x = ring.x0 + 6; x <= ring.x1 - 5; x += 14) {
+    lamp(x, ring.z0 + inner, 0, -1);
+    lamp(x, ring.z1 - inner, 0, 1);
+  }
+  for (let z = ring.z0 + 10; z <= ring.z1 - 8; z += 14) {
+    lamp(ring.x0 + inner, z, -1, 0);
+    lamp(ring.x1 - inner, z, 1, 0);
+  }
+  // Trạm xe điện tham quan trước cửa: mái che + biển
+  {
+    const st = ring.stop;
+    const roofM = K.paint('#1e3a8a', 0.5);
+    for (const sx of [-1.6, 1.6]) env.add(cyl(0.05, 0.05, 2.6, poleMat, st.x + sx, 1.3, st.z - RW / 2 - 1.1, 8));
+    env.add(box(3.8, 0.1, 1.6, roofM, st.x, 2.65, st.z - RW / 2 - 1.1));
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.8, 0.45),
+      lightboxMat(labelTex([{ text: 'XE ĐIỆN THAM QUAN', size: 64, color: '#ffffff', weight: 800, y: 80 }, { text: 'Lên xe tại đây · vòng khuôn viên', size: 34, color: '#bfdbfe', weight: 600, y: 140 }], '#1e3a8a', 900, 190)),
+    );
+    sign.position.set(st.x, 2.35, st.z - RW / 2 - 0.3);
+    env.add(sign);
+  }
 
   // 6. Cổng chào TIM Corp tại lối vào (thiết kế cổng doanh nghiệp hiện đại)
   const archGroup = createEntranceGate(companyName, logoUrl, sceneKind);

@@ -14,6 +14,25 @@ export interface FrontYard {
   xMax: number;
   /** Gốc cây ngoài cổng (không đi xuyên) */
   trees: { x: number; z: number; r: number }[];
+  /** Lớp tường thứ 2 (vd. vách kính mặt tiền showroom) — cũng chỉ qua được ở khoảng cổng */
+  zWall?: number;
+}
+
+/**
+ * Showroom trong khu nhà xưởng: đi ra cửa kính giữa mặt tiền (cửa tự động ±1.2m) ra sân trước & đường nội bộ.
+ * Sàn trong nhà tới depth/2, vách kính ở depth/2 + 2.
+ */
+export function showroomFrontYard(widthM: number, depthM: number): FrontYard {
+  return {
+    gateX0: -1.2,
+    gateX1: 1.2,
+    zLine: depthM / 2,
+    zWall: depthM / 2 + 2,
+    zMax: depthM / 2 + 2 + 16,
+    xMin: -widthM / 2 - 12,
+    xMax: widthM / 2 + 12,
+    trees: [],
+  };
 }
 
 type GateLike = { posX: number; posZ: number; widthM: number } | undefined;
@@ -38,16 +57,21 @@ export function cafeFrontYard(widthM: number, depthM: number, gate: GateLike): F
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 /** Đoạn (a → b) có băng qua hàng rào mặt tiền ở ngoài khoảng cổng không */
-export function crossesFence(y: FrontYard, ax: number, az: number, bx: number, bz: number): boolean {
-  if (az <= y.zLine === bz <= y.zLine) return false;
-  const t = (y.zLine - az) / (bz - az);
+function crossesLine(line: number, y: FrontYard, ax: number, az: number, bx: number, bz: number): boolean {
+  if (az <= line === bz <= line) return false;
+  const t = (line - az) / (bz - az);
   const cx = ax + (bx - ax) * t;
   return cx < y.gateX0 || cx > y.gateX1;
+}
+export function crossesFence(y: FrontYard, ax: number, az: number, bx: number, bz: number): boolean {
+  return crossesLine(y.zLine, y, ax, az, bx, bz) || (y.zWall !== undefined && crossesLine(y.zWall, y, ax, az, bx, bz));
 }
 
 /** Điểm giữa cổng, lùi vào phía `inside` hoặc ra ngoài 0.6m */
 export function gateWaypoint(y: FrontYard, inside: boolean): { x: number; z: number } {
-  return { x: (y.gateX0 + y.gateX1) / 2, z: y.zLine + (inside ? -0.6 : 0.6) };
+  // Có vách thứ 2: điểm ngoài nằm sau vách (đi thẳng qua cả 2 lớp trong khoảng cổng)
+  const outZ = (y.zWall ?? y.zLine) + 0.6;
+  return { x: (y.gateX0 + y.gateX1) / 2, z: inside ? y.zLine - 0.6 : outZ };
 }
 
 /**
@@ -59,7 +83,8 @@ export function constrainWalk(y: FrontYard | null, widthM: number, depthM: numbe
   let z = nz;
   if (!y) return { x: clamp(x, -widthM / 2, widthM / 2), z: clamp(z, -depthM / 2, depthM / 2) };
   const wasIn = pz <= y.zLine;
-  if (crossesFence(y, px, pz, x, z)) z = wasIn ? y.zLine - 0.01 : y.zLine + 0.01;
+  if (crossesLine(y.zLine, y, px, pz, x, z)) z = wasIn ? y.zLine - 0.01 : y.zLine + 0.01;
+  if (y.zWall !== undefined && crossesLine(y.zWall, y, px, pz, x, z)) z = pz <= y.zWall ? y.zWall - 0.01 : y.zWall + 0.01;
   if (z <= y.zLine) {
     x = clamp(x, -widthM / 2, widthM / 2);
     z = clamp(z, -depthM / 2, y.zLine);

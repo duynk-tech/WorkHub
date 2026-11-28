@@ -65,6 +65,8 @@ export function buildPalletStack(o: SpaceObject): THREE.Group {
   const wrap = box(o.widthM, o.heightM - 0.2, o.depthM, M.glass(), 0, 0.145 + (o.heightM - 0.2) / 2, 0);
   wrap.castShadow = false;
   g.add(wrap);
+  // Xe nâng xúc / dời được → không gộp tĩnh vào lô vẽ chung (xem registry: vehicle)
+  g.userData.vehicle = true;
   return g;
 }
 
