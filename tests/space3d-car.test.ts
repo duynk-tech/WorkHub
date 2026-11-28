@@ -34,6 +34,15 @@ describe('ô tô lái được', () => {
   });
 });
 
+describe('phanh tay drift', () => {
+  it('kéo phanh tay khi cua: xe xoay gắt hơn so với chỉ nhả ga', () => {
+    const base = { ...start, speed: 12, steer: 1 };
+    const hb = run(base, { throttle: 0, steer: 1, handbrake: true }, 0.4);
+    const no = run(base, { throttle: 0, steer: 1, handbrake: false }, 0.4);
+    expect(Math.abs(hb.rotY)).toBeGreaterThan(Math.abs(no.rotY));
+  });
+});
+
 describe('đi bộ & lái xe khắp khuôn viên showroom', () => {
   const c = campusLayout(36, 32);
   it('chỗ đậu ô tô nằm ngoài nhà xưởng, trong khuôn viên', () => {
@@ -50,5 +59,14 @@ describe('đi bộ & lái xe khắp khuôn viên showroom', () => {
     expect(r.length).toBe(3);
     expect(Math.abs(r[0].x)).toBeLessThanOrEqual(1.2);
     expect(r[2]).toEqual({ x: -21, z: -5 });
+  });
+  it('gốc cây & cột đèn ven đường chặn xe/người; tim đường vòng thông thoáng', () => {
+    expect(c.trees.length).toBeGreaterThan(10);
+    expect(c.lamps.length).toBeGreaterThan(4);
+    for (const t of c.trees) expect(campusFree(c, t.x, t.z)).toBe(false);
+    for (const l of c.lamps) {
+      expect(campusFree(c, l.x, l.z)).toBe(false);
+      expect(campusFree(c, l.x + 0.4, l.z + 0.4)).toBe(true);
+    }
   });
 });

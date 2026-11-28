@@ -118,3 +118,121 @@ export function startCafeAmbience(volume = 0.05): () => void {
     }, 700);
   };
 }
+
+/**
+ * Tiếng máy ô tô tổng hợp (không tải file): 2 dao động răng cưa lệch nhẹ qua lọc thấp, cao độ theo vòng tua
+ * (tốc độ + chân ga) — kèm tiếng rít lốp (ồn trắng lọc dải) và tiếng va chạm. Âm lượng nhỏ.
+ */
+export interface EngineSound {
+  /** speed m/s, throttle -1…1, skid đang trượt lốp */
+  update(speed: number, throttle: number, skid: boolean): void;
+  thud(strength: number): void;
+  horn(on: boolean): void;
+  stop(): void;
+}
+
+export function createEngineSound(volume = 0.05): EngineSound | null {
+  const ac = audio();
+  if (!ac) return null;
+  const master = ac.createGain();
+  master.gain.value = 0;
+  master.gain.linearRampToValueAtTime(volume, ac.currentTime + 0.4);
+  master.connect(ac.destination);
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 420;
+  lp.Q.value = 2;
+  lp.connect(master);
+  const oscs = [0, 7].map((det) => {
+    const o = ac.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = 38;
+    o.detune.value = det;
+    o.connect(lp);
+    o.start();
+    return o;
+  });
+  // Ồn trắng dùng chung cho tiếng rít lốp
+  const nlen = ac.sampleRate;
+  const nbuf = ac.createBuffer(1, nlen, ac.sampleRate);
+  const nd = nbuf.getChannelData(0);
+  for (let i = 0; i < nlen; i++) nd[i] = Math.random() * 2 - 1;
+  const noise = ac.createBufferSource();
+  noise.buffer = nbuf;
+  noise.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 2200;
+  bp.Q.value = 6;
+  const skidGain = ac.createGain();
+  skidGain.gain.value = 0;
+  noise.connect(bp).connect(skidGain).connect(master);
+  noise.start();
+  // Còi xe: 2 nốt vuông lệch quãng 3
+  const hornGain = ac.createGain();
+  hornGain.gain.value = 0;
+  hornGain.connect(master);
+  const horns = [415, 523].map((f) => {
+    const o = ac.createOscillator();
+    o.type = 'square';
+    o.frequency.value = f;
+    o.connect(hornGain);
+    o.start();
+    return o;
+  });
+  // Số tự động giả lập: vòng tua tụt khi lên số
+  const gears = [0, 4.5, 8.5, 12.5, 99];
+  let rpmSmooth = 0;
+  return {
+    update(speed, throttle, skid) {
+      const v = Math.abs(speed);
+      let g = 0;
+      while (v > gears[g + 1]) g++;
+      const inGear = (v - gears[g]) / Math.max(1, Math.min(gears[g + 1], 16) - gears[g]);
+      const rpm = 0.12 + Math.min(1, inGear) * 0.75 + Math.max(0, throttle) * 0.13;
+      rpmSmooth += (rpm - rpmSmooth) * 0.15;
+      const t = ac.currentTime;
+      const f = 34 + rpmSmooth * 90;
+      for (const o of oscs) o.frequency.setTargetAtTime(f, t, 0.05);
+      lp.frequency.setTargetAtTime(300 + rpmSmooth * 900 + Math.max(0, throttle) * 400, t, 0.08);
+      skidGain.gain.setTargetAtTime(skid ? 0.5 : 0, t, skid ? 0.03 : 0.12);
+    },
+    thud(strength) {
+      const t = ac.currentTime;
+      const o = ac.createOscillator();
+      const g2 = ac.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(90, t);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.25);
+      g2.gain.setValueAtTime(Math.min(1.5, strength * 0.12), t);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.connect(g2).connect(master);
+      o.start(t);
+      o.stop(t + 0.4);
+    },
+    horn(on) {
+      hornGain.gain.setTargetAtTime(on ? 0.35 : 0, ac.currentTime, 0.015);
+    },
+    stop() {
+      const t = ac.currentTime;
+      master.gain.cancelScheduledValues(t);
+      master.gain.setValueAtTime(master.gain.value, t);
+      master.gain.linearRampToValueAtTime(0, t + 0.5);
+      window.setTimeout(() => {
+        for (const o of [...oscs, ...horns]) {
+          try {
+            o.stop();
+          } catch {
+            /* đã dừng */
+          }
+        }
+        try {
+          noise.stop();
+        } catch {
+          /* đã dừng */
+        }
+        master.disconnect();
+      }, 600);
+    },
+  };
+}

@@ -632,6 +632,18 @@ export function createExhibitionHallEnvironment(
   for (const n of campus.neighbors) neighbor(n.x, n.z, n.w, n.d, n.h, n.rot, n.color);
   {
     const lineMat = K.paint('#f8fafc', 0.6);
+    // Nền nhựa bãi đỗ (nối ra đường vòng) — xe đậu trên mặt nhựa thay vì vỉa hè
+    {
+      const zs = campus.parking.map((p) => p.z);
+      const z0 = Math.min(...zs) - 3.4;
+      const z1 = Math.max(...zs) + 3.4;
+      const px = campus.parking[0].x;
+      const pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, z1 - z0), K.paint('#3f444b', 0.95));
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set(px, -0.022, (z0 + z1) / 2);
+      pad.receiveShadow = true;
+      env.add(pad);
+    }
     for (const p of campus.parking) {
       for (const dz of [-3.1, 3.1]) {
         const ln = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.1), lineMat);
@@ -686,15 +698,7 @@ export function createExhibitionHallEnvironment(
     for (const x of [ring.x0, ring.x1]) env.add(box(0.22, 0.12, ring.z1 - ring.z0 + RW + 0.5, curb, x + off, 0.02, (ring.z0 + ring.z1) / 2));
   }
   // Hàng cây hai bên đường + đèn đường mỗi ~14m
-  const treePts: { x: number; z: number; scale: number }[] = [];
-  const outer = RW / 2 + 2.6;
-  for (let x = ring.x0; x <= ring.x1 + 0.1; x += 8.5) {
-    for (const z of [ring.z0 - outer, ring.z1 + outer]) treePts.push({ x: x + Math.sin(x) * 0.6, z, scale: 1.05 + Math.abs(Math.sin(x * 0.7)) * 0.3 });
-  }
-  for (let z = ring.z0 + 8; z <= ring.z1 - 4; z += 8.5) {
-    for (const x of [ring.x0 - outer, ring.x1 + outer]) treePts.push({ x, z: z + Math.cos(z) * 0.6, scale: 1.05 + Math.abs(Math.cos(z * 0.7)) * 0.3 });
-  }
-  env.add(buildTreeRow(treePts, Math.round(widthM * 7 + depthM)));
+  env.add(buildTreeRow(campus.trees, Math.round(widthM * 7 + depthM)));
   const poleMat = K.paint('#374151', 0.5);
   const lampMat = sharedMat('srStreetLamp', () => {
     const m = new THREE.MeshStandardMaterial({ color: '#fff7e0', emissive: '#ffe9b0', emissiveIntensity: 0.4 });
@@ -707,15 +711,7 @@ export function createExhibitionHallEnvironment(
     env.add(arm);
     env.add(box(0.42, 0.1, 0.22, lampMat, x + faceX * 1.05, 5.08, z + faceZ * 1.05));
   };
-  const inner = RW / 2 + 0.7;
-  for (let x = ring.x0 + 6; x <= ring.x1 - 5; x += 14) {
-    lamp(x, ring.z0 + inner, 0, -1);
-    lamp(x, ring.z1 - inner, 0, 1);
-  }
-  for (let z = ring.z0 + 10; z <= ring.z1 - 8; z += 14) {
-    lamp(ring.x0 + inner, z, -1, 0);
-    lamp(ring.x1 - inner, z, 1, 0);
-  }
+  for (const l of campus.lamps) lamp(l.x, l.z, l.faceX, l.faceZ);
   // Trạm xe điện tham quan trước cửa: mái che + biển
   {
     const st = ring.stop;

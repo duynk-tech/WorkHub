@@ -13,6 +13,8 @@ export const CAR_L = 4.5;
 
 interface CarRig {
   root: THREE.Group;
+  /** Thân xe (chúi/nghiêng theo gia tốc — lốp đứng yên trên mặt đất) */
+  body: THREE.Group;
   wheels: { spin: THREE.Object3D; steer: THREE.Object3D | null }[];
   brake: THREE.MeshStandardMaterial;
 }
@@ -20,7 +22,11 @@ interface CarRig {
 function buildCar(color: string): CarRig {
   const root = new THREE.Group();
   const body = new THREE.Group();
-  const paint = sharedMat(`car:paint:${color}`, () => new THREE.MeshPhysicalMaterial({ color, roughness: 0.22, metalness: 0.45, clearcoat: 1, clearcoatRoughness: 0.05 }));
+  const paint = sharedMat(`car:paint:${color}`, () => {
+    // Sơn sáng màu: ít kim loại hơn để không bị loá dưới nắng / bloom
+    const light = new THREE.Color(color).getHSL({ h: 0, s: 0, l: 0 }).l > 0.7;
+    return new THREE.MeshPhysicalMaterial({ color, roughness: light ? 0.32 : 0.22, metalness: light ? 0.1 : 0.45, clearcoat: light ? 0.6 : 1, clearcoatRoughness: 0.08 });
+  });
   const trim = M.paint('#16181c', 0.5);
   const glass = sharedMat('car:glass', () => new THREE.MeshPhysicalMaterial({ color: '#1d2733', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.72, clearcoat: 1 }));
   // Thân dưới bo tròn + cản trước/sau
@@ -87,27 +93,125 @@ function buildCar(color: string): CarRig {
   root.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
   });
-  return { root, wheels, brake };
+  // Vệt sáng đèn pha trên mặt đường (chỉ hiện ban đêm — độ mờ theo ngày/đêm, không tốn đèn thật)
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 7), headPoolMat());
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(0, 0.02, CAR_L / 2 + 3.4);
+  pool.renderOrder = 2;
+  root.add(pool);
+  // Bóng mềm dưới gầm (ăn khớp xe với mặt đất cả khi bóng đổ thưa)
+  const ao = new THREE.Mesh(new THREE.PlaneGeometry(CAR_W + 0.5, CAR_L + 0.5), underShadowMat());
+  ao.rotation.x = -Math.PI / 2;
+  ao.position.y = 0.012;
+  root.add(ao);
+  return { root, body, wheels, brake };
+}
+
+function radialTex(key: string, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void, w = 128, h = 256): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d')!, w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.name = key;
+  return t;
+}
+
+function headPoolMat(): THREE.MeshBasicMaterial {
+  return sharedMat('car:headPool', () => {
+    const tex = radialTex('car:headPool', (g, w, h) => {
+      // Hai chùm đèn hình nón loe ra phía trước (gốc ở cạnh dưới ảnh = mũi xe)
+      for (const cx of [w * 0.3, w * 0.7]) {
+        const gr = g.createRadialGradient(cx, h, 4, cx, h * 0.55, h * 0.6);
+        gr.addColorStop(0, 'rgba(255,240,200,0.95)');
+        gr.addColorStop(0.5, 'rgba(255,232,180,0.35)');
+        gr.addColorStop(1, 'rgba(255,230,170,0)');
+        g.fillStyle = gr;
+        g.fillRect(0, 0, w, h);
+      }
+    });
+    const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    registerEmissive({ mat: m, day: 0, night: 0.75, mode: 'opacity' });
+    return m;
+  });
+}
+
+function underShadowMat(): THREE.MeshBasicMaterial {
+  return sharedMat('car:under', () => {
+    const tex = radialTex(
+      'car:under',
+      (g, w, h) => {
+        const gr = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, h / 2);
+        gr.addColorStop(0, 'rgba(0,0,0,0.75)');
+        gr.addColorStop(0.6, 'rgba(0,0,0,0.45)');
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr;
+        g.fillRect(0, 0, w, h);
+      },
+      64,
+      128,
+    );
+    return new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.7 });
+  });
+}
+
+/** Vệt lốp khi phanh gấp / phanh tay / cua gắt: 1 InstancedMesh vòng tròn (tối đa 240 vệt, cũ nhất bị ghi đè) */
+class SkidMarks {
+  readonly mesh: THREE.InstancedMesh;
+  private next = 0;
+  private readonly m = new THREE.Matrix4();
+  private readonly q = new THREE.Quaternion();
+  private readonly up = new THREE.Vector3(0, 1, 0);
+  private readonly scl = new THREE.Vector3(1, 1, 1);
+  private readonly pos = new THREE.Vector3();
+  constructor(readonly max = 240) {
+    const geo = new THREE.PlaneGeometry(0.2, 0.5);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: '#111111', transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    this.mesh = new THREE.InstancedMesh(geo, mat, max);
+    this.mesh.count = 0;
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 1;
+  }
+  add(x: number, z: number, rotY: number) {
+    this.q.setFromAxisAngle(this.up, rotY);
+    this.pos.set(x, 0.006, z);
+    this.m.compose(this.pos, this.q, this.scl);
+    this.mesh.setMatrixAt(this.next, this.m);
+    this.next = (this.next + 1) % this.max;
+    this.mesh.count = Math.min(this.max, this.mesh.count + 1);
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 export interface CarEntry {
   rig: CarRig;
   state: CarState;
+  /** Chúi (gia tốc dọc) & nghiêng (gia tốc ngang) thân xe — làm mượt */
+  pitch: number;
+  roll: number;
 }
 
 export class CarDriver {
   readonly group = new THREE.Group();
   readonly cars: CarEntry[] = [];
   active: CarEntry | null = null;
+  private skids = new SkidMarks();
+  private skidAcc = 0;
+  /** Đang trượt lốp (để phát tiếng rít) */
+  skidding = false;
 
   constructor(spots: { x: number; z: number; rotY: number; color: string }[]) {
     for (const s of spots) {
       const rig = buildCar(s.color);
       const state: CarState = { x: s.x, z: s.z, rotY: s.rotY, speed: 0, steer: 0 };
-      this.cars.push({ rig, state });
+      const entry = { rig, state, pitch: 0, roll: 0 };
+      this.cars.push(entry);
       this.group.add(rig.root);
-      this.apply({ rig, state }, 0, false);
+      this.apply(entry, 0, false);
     }
+    this.group.add(this.skids.mesh);
   }
 
   nearest(px: number, pz: number): CarEntry | null {
@@ -132,7 +236,12 @@ export class CarDriver {
     const c = this.active;
     if (!c || Math.abs(c.state.speed) > 1.2) return null;
     c.state.speed = 0;
+    c.pitch = 0;
+    c.roll = 0;
+    c.rig.body.rotation.set(0, 0, 0);
+    c.rig.body.position.y = 0;
     this.active = null;
+    this.skidding = false;
     this.apply(c, 0, false);
     const side = -(CAR_W / 2 + 0.6);
     const cs = Math.cos(c.state.rotY);
@@ -163,18 +272,53 @@ export class CarDriver {
    * Lái 1 khung hình. `free(x, z)` = điểm còn trong vùng lái được (ngoài nhà xưởng, trong khuôn viên).
    * Trả về độ dời để camera đi theo + ghế tài xế.
    */
-  update(dt: number, input: CarInput, free: (x: number, z: number) => boolean): { dx: number; dz: number; seat: { x: number; z: number; y: number; rotY: number }; speed: number } | null {
+  update(
+    dt: number,
+    input: CarInput,
+    free: (x: number, z: number) => boolean,
+  ): { dx: number; dz: number; seat: { x: number; z: number; y: number; rotY: number }; speed: number; hit: boolean; throttle: number } | null {
     const c = this.active;
     if (!c) return null;
     const prev = c.state;
     let next = stepCar(prev, input, dt);
+    let hit = false;
     if (carCorners(next, CAR_W, CAR_L).some(([x, z]) => !free(x, z))) {
       // Va chạm: dội ngược nhẹ, mất đà
       next = { ...prev, speed: -prev.speed * 0.25, steer: next.steer };
+      hit = Math.abs(prev.speed) > 2.5;
     }
     c.state = next;
     const braking = input.handbrake || (input.throttle < 0 && prev.speed > 0.3) || next.speed < -0.1;
+    // Thân xe chúi khi phanh / ngửa khi tăng tốc, nghiêng ra ngoài khi cua (gia tốc ngang = v·ω)
+    if (dt > 0) {
+      const ax = (next.speed - prev.speed) / dt;
+      const yaw = Math.atan2(Math.sin(next.rotY - prev.rotY), Math.cos(next.rotY - prev.rotY)) / dt;
+      const lat = next.speed * yaw;
+      const k = 1 - Math.exp(-dt * 7);
+      c.pitch += (Math.max(-0.05, Math.min(0.05, ax * 0.006)) - c.pitch) * k;
+      c.roll += (Math.max(-0.06, Math.min(0.06, lat * 0.004)) - c.roll) * k;
+      if (hit) c.pitch = Math.sign(prev.speed) * 0.07;
+      c.rig.body.rotation.x = -c.pitch;
+      c.rig.body.rotation.z = -c.roll;
+      c.rig.body.position.y = -Math.abs(c.pitch) * 0.6;
+    }
+    // Vệt lốp: phanh tay / phanh gấp / cua gắt ở tốc độ cao → in vệt ở 2 bánh sau
+    const v = Math.abs(next.speed);
+    const slide = v > 3.5 && (input.handbrake || (braking && v > 8 && input.throttle < 0) || Math.abs(next.steer) > 0.75 && v > 10);
+    this.skidding = slide;
+    if (slide) {
+      this.skidAcc += v * dt;
+      if (this.skidAcc > 0.42) {
+        this.skidAcc = 0;
+        const cs = Math.cos(next.rotY);
+        const sn = Math.sin(next.rotY);
+        for (const lx of [-(CAR_W / 2 - 0.12), CAR_W / 2 - 0.12]) {
+          const lz = -1.38;
+          this.skids.add(next.x + lx * cs + lz * sn, next.z - lx * sn + lz * cs, next.rotY);
+        }
+      }
+    }
     this.apply(c, dt, braking);
-    return { dx: next.x - prev.x, dz: next.z - prev.z, seat: this.seat(c), speed: next.speed };
+    return { dx: next.x - prev.x, dz: next.z - prev.z, seat: this.seat(c), speed: next.speed, hit, throttle: input.throttle };
   }
 }

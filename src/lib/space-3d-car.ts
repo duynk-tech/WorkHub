@@ -23,7 +23,7 @@ export const CAR_MAX_REV = 5;
 const ACCEL = 5;
 const BRAKE = 10;
 const COAST = 1.6;
-const HANDBRAKE = 14;
+const HANDBRAKE = 11;
 const WHEELBASE = 2.7;
 const MAX_STEER = 0.6;
 
@@ -38,7 +38,9 @@ export function stepCar(s: CarState, input: CarInput, dt: number): CarState {
   const steer = s.steer + (want - s.steer) * Math.min(1, dt * (want === 0 ? 6 : 4));
   // Chạy nhanh → góc lái tối đa nhỏ lại (ổn định như xe thật)
   const maxA = MAX_STEER / (1 + Math.abs(v) * 0.09);
-  const yaw = (v * Math.tan(steer * maxA)) / WHEELBASE;
+  // Phanh tay khi đang chạy: bánh sau trượt → xe xoay gắt hơn (drift nhẹ)
+  const drift = input.handbrake && Math.abs(v) > 3 ? 1.8 : 1;
+  const yaw = ((v * Math.tan(steer * maxA)) / WHEELBASE) * drift;
   const rotY = s.rotY - yaw * dt;
   return { x: s.x + Math.sin(rotY) * v * dt, z: s.z + Math.cos(rotY) * v * dt, rotY, speed: v, steer };
 }

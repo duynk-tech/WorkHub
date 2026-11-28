@@ -1710,7 +1710,7 @@ export function Space3DExperience({ data }: { data: SpacePayload }) {
               <span style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: 'tabular-nums', minWidth: 46, textAlign: 'right' }}>{carHint.kmh}</span>
               <span style={{ color: '#94a3b8', marginLeft: -8 }}>km/h</span>
               <span style={{ lineHeight: 1.6 }}>
-                <b>W</b> ga · <b>S</b> phanh/lùi · <b>A/D</b> lái · <b>Space</b> phanh tay
+                <b>W</b> ga · <b>S</b> phanh/lùi · <b>A/D</b> lái · <b>Space</b> phanh tay · <b>H</b> còi
               </span>
             </div>
           )}

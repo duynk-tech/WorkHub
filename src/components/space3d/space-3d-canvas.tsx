@@ -44,6 +44,7 @@ import { rebuildInstancing } from './three/instancing';
 import { NpcSystem } from './three/npc';
 import { TourCart } from './three/tour-cart';
 import { CarDriver } from './three/car-drive';
+import { createEngineSound, type EngineSound } from './space-sound';
 import { kmh } from '@/lib/space-3d-car';
 import { campusCarFree, campusLayout, campusRoute, campusWalk } from '@/lib/space-3d-tour';
 import { ForkliftDriver, type ForkHint, type ForkliftEntry, type PalletEntry, type RackBay } from './three/forklift-drive';
@@ -748,6 +749,7 @@ export function Space3DCanvas({
     // Showroom: khuôn viên đi bộ khắp nơi + ô tô lái được ở bãi đỗ hông trái
     const campus = sceneKind === 'SHOWROOM' ? campusLayout(widthM, depthM) : null;
     const cars = campus ? new CarDriver(campus.parking) : null;
+    let engine: EngineSound | null = null;
     if (cars) scene.add(cars.group);
     // Kiến trúc tĩnh → tính ma trận 1 lần rồi bỏ qua mỗi khung hình (trừ khi có bộ phận chuyển động)
     let envMoving = false;
@@ -1520,6 +1522,8 @@ export function Space3DCanvas({
         if (playerPosRef) playerPosRef.current.sit = 0;
         renderer.shadowMap.needsUpdate = true;
         camRig.easeDistance(5.6);
+        engine?.stop();
+        engine = null;
         return;
       }
       const c = cars.nearest(pl.group.position.x, pl.group.position.z);
@@ -1532,6 +1536,8 @@ export function Space3DCanvas({
       cars.enter(c);
       // Camera lùi xa hơn khi lái (rig giữ khoảng cách ưu tiên)
       camRig.easeDistance(8.5);
+      engine?.stop();
+      engine = createEngineSound();
     };
     /** Showroom: lên xe điện (đang đỗ ở trạm, đứng ≤ 3.5m) / xuống xe tại trạm */
     const toggleCart = () => {
@@ -1973,6 +1979,11 @@ export function Space3DCanvas({
             if (frameCount % 8 === 0) renderer.shadowMap.needsUpdate = true;
           }
           if (frameCount % 10 === 0) stateRef.current.onCarHint?.('driving', kmh(res.speed));
+          if (engine) {
+            engine.update(res.speed, throttle, cars.skidding);
+            engine.horn(keys.has('KeyH'));
+            if (res.hit) engine.thud(Math.abs(res.speed) * 4);
+          }
         }
       } else if (riding && tour && cartDelta) {
         // Ngồi xe điện tham quan: theo ghế khách, camera đi theo xe
@@ -2669,6 +2680,8 @@ export function Space3DCanvas({
 
     return () => {
       cancelAnimationFrame(rafId);
+      engine?.stop();
+      engine = null;
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('space3d:forklift-toggle', onForkliftToggle);
       window.removeEventListener('keyup', onKeyUp);

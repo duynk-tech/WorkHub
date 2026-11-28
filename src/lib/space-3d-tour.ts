@@ -83,6 +83,37 @@ export interface CampusLayout {
   neighbors: (Box2 & { h: number; rot: number; w: number; d: number; color: string })[];
   /** Chỗ đậu ô tô (bãi hông trái) */
   parking: { x: number; z: number; rotY: number; color: string }[];
+  /** Hàng cây ven đường (gốc cây chắn xe/người, bán kính ~0.35m) */
+  trees: { x: number; z: number; scale: number }[];
+  /** Cột đèn đường (mặt đèn hướng ra ngoài) */
+  lamps: { x: number; z: number; faceX: number; faceZ: number }[];
+}
+
+const TREE_R = 0.35;
+const LAMP_R = 0.14;
+
+/** Cây & cột đèn dọc đường vòng — dựng cảnh và va chạm dùng chung */
+function roadsideProps(ring: ShowroomRing): Pick<CampusLayout, 'trees' | 'lamps'> {
+  const RW = ring.roadW;
+  const trees: CampusLayout['trees'] = [];
+  const outer = RW / 2 + 2.6;
+  for (let x = ring.x0; x <= ring.x1 + 0.1; x += 8.5) {
+    for (const z of [ring.z0 - outer, ring.z1 + outer]) trees.push({ x: x + Math.sin(x) * 0.6, z, scale: 1.05 + Math.abs(Math.sin(x * 0.7)) * 0.3 });
+  }
+  for (let z = ring.z0 + 8; z <= ring.z1 - 4; z += 8.5) {
+    for (const x of [ring.x0 - outer, ring.x1 + outer]) trees.push({ x, z: z + Math.cos(z) * 0.6, scale: 1.05 + Math.abs(Math.cos(z * 0.7)) * 0.3 });
+  }
+  const lamps: CampusLayout['lamps'] = [];
+  const inner = RW / 2 + 0.7;
+  for (let x = ring.x0 + 6; x <= ring.x1 - 5; x += 14) {
+    lamps.push({ x, z: ring.z0 + inner, faceX: 0, faceZ: -1 });
+    lamps.push({ x, z: ring.z1 - inner, faceX: 0, faceZ: 1 });
+  }
+  for (let z = ring.z0 + 10; z <= ring.z1 - 8; z += 14) {
+    lamps.push({ x: ring.x0 + inner, z, faceX: -1, faceZ: 0 });
+    lamps.push({ x: ring.x1 - inner, z, faceX: 1, faceZ: 0 });
+  }
+  return { trees, lamps };
 }
 
 export function campusLayout(widthM: number, depthM: number): CampusLayout {
@@ -105,9 +136,10 @@ export function campusLayout(widthM: number, depthM: number): CampusLayout {
       nb(26, -halfD - 26, 28, 18, 9, 0, '#c9d3de'),
     ],
     parking: [
-      { x: -halfW - 2.1, z: -2.5, rotY: 0, color: '#f8fafc' },
+      { x: -halfW - 2.1, z: -2.5, rotY: 0, color: '#e2e8f0' },
       { x: -halfW - 2.1, z: -9, rotY: 0, color: '#1e3a8a' },
     ],
+    ...roadsideProps(showroomRing(widthM, depthM)),
   };
 }
 
@@ -117,7 +149,12 @@ const inBox = (b: Box2, x: number, z: number, pad = 0) => Math.abs(x - b.x) < b.
 export function campusFree(c: CampusLayout, x: number, z: number, pad = 0): boolean {
   if (x < c.bounds.x0 + pad || x > c.bounds.x1 - pad || z < c.bounds.z0 + pad || z > c.bounds.z1 - pad) return false;
   if (inBox(c.building, x, z, pad)) return false;
-  return !c.neighbors.some((n) => inBox(n, x, z, pad));
+  if (c.neighbors.some((n) => inBox(n, x, z, pad))) return false;
+  // Gốc cây / cột đèn: chỉ chừa thêm tối đa 0.1m (không chặn rộng theo pad của bãi đỗ)
+  const pp = Math.min(pad, 0.1);
+  for (const t of c.trees) if ((x - t.x) ** 2 + (z - t.z) ** 2 < (TREE_R + pp) ** 2) return false;
+  for (const l of c.lamps) if ((x - l.x) ** 2 + (z - l.z) ** 2 < (LAMP_R + pp) ** 2) return false;
+  return true;
 }
 
 /** Đang ở trong nhà (sàn hoặc hành lang cửa) */
