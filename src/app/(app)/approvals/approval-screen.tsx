@@ -14,7 +14,8 @@ import { useToast } from '@/components/ui/toast';
 import { ApprovalStatusBadge } from '@/components/domain/task-badges';
 import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/date';
 import { formatDays } from '@/lib/utils';
-import { approveLeaveAction } from '@/server/modules/leave/actions';
+import { approveLeaveAction, bulkApproveLeaveAction } from '@/server/modules/leave/actions';
+import { Checkbox } from '@/components/ui';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function ApprovalScreen({
@@ -29,6 +30,21 @@ export function ApprovalScreen({
   const [busy, startTransition] = useTransition();
   const [decision, setDecision] = useState<{ taskId: number; type: 'APPROVE' | 'REJECT'; leave: any } | null>(null);
   const [comment, setComment] = useState('');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const leaveTaskIds = pending.filter((t) => t.instance.entityType === 'LEAVE').map((t) => t.id as number);
+  const toggle = (id: number) => setSelected((cur) => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const allSelected = leaveTaskIds.length > 0 && leaveTaskIds.every((id) => selected.has(id));
+
+  const bulkApprove = () => {
+    const ids = leaveTaskIds.filter((id) => selected.has(id));
+    if (!ids.length) return;
+    startTransition(async () => {
+      const res = await bulkApproveLeaveAction(ids);
+      if (res.failed.length) toast.warning(res.message); else toast.success(res.message);
+      setSelected(new Set());
+      router.refresh();
+    });
+  };
 
   const leaveById = new Map(leaves.map((l) => [l.id, l]));
   const overdueCount = pending.filter((t) => t.dueAt && new Date(t.dueAt) < new Date()).length;
@@ -84,6 +100,17 @@ export function ApprovalScreen({
           <Card><CardBody><EmptyState icon={<CheckSquare size={20} />} title="Không có đơn nào chờ bạn duyệt" description="Mọi đơn được giao cho bạn đã được xử lý xong." /></CardBody></Card>
         ) : (
           <div className="stack" style={{ gap: 12 }}>
+            {leaveTaskIds.length > 1 && (
+              <div className="row-between" style={{ gap: 12, padding: '8px 12px', border: '1px solid var(--border-base)', borderRadius: 'var(--radius-md)', background: selected.size ? 'var(--brand-soft)' : 'var(--surface-card)' }}>
+                <label className="row" style={{ gap: 8, fontSize: 13 }}>
+                  <Checkbox checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(leaveTaskIds))} />
+                  {selected.size ? `Đã chọn ${selected.size} đơn nghỉ phép` : 'Chọn tất cả đơn nghỉ phép'}
+                </label>
+                <Button size="sm" variant="primary" disabled={!selected.size} loading={busy} onClick={bulkApprove}>
+                  <Check /> Duyệt {selected.size || ''} đơn đã chọn
+                </Button>
+              </div>
+            )}
             {pending.map((task) => {
               const leave = task.instance.entityType === 'LEAVE' ? leaveById.get(task.instance.entityId) : null;
               const overdue = task.dueAt && new Date(task.dueAt) < new Date();
@@ -97,6 +124,9 @@ export function ApprovalScreen({
                     <div className="row-between" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 14 }}>
                       <div style={{ flex: 1, minWidth: 260 }}>
                         <div className="row" style={{ gap: 8, marginBottom: 9, flexWrap: 'wrap' }}>
+                          {leaveTaskIds.length > 1 && (
+                            <Checkbox checked={selected.has(task.id)} onChange={() => toggle(task.id)} aria-label={`Chọn đơn ${leave.code}`} />
+                          )}
                           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>{leave.code}</span>
                           <Badge style={{ background: `${leave.leaveType.color}1f`, color: leave.leaveType.color }}>{leave.leaveType.name}</Badge>
                           <Badge tone="outline">Bước {task.stepOrder}: {task.step.name}</Badge>

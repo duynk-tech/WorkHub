@@ -3,6 +3,8 @@ import { customerDebtReport } from '@/server/modules/report/customer-debt';
 import { attendanceReport, taskReport, leaveReport, overviewReport } from '@/server/modules/report/service';
 import { getDisabledReportKeys } from '@/server/modules/report/config';
 import { visibleReports } from '@/server/modules/report/registry';
+import Link from 'next/link';
+import { CalendarClock } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
 import { ReportScreen } from './report-screen';
 
@@ -44,6 +46,7 @@ export default async function ReportsPage({
       <PageHeader
         title="Báo cáo"
         description="Tổng hợp báo cáo công việc, chấm công, nghỉ phép và công nợ khách hàng"
+        actions={<Link href="/reports/schedules" className="btn btn-secondary"><CalendarClock /> Lịch gửi tự động</Link>}
       />
       <ReportScreen
         tab={tab}

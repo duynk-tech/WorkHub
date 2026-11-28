@@ -1,5 +1,6 @@
 'use client';
 
+import { SavedViewsBar } from '@/components/ui/saved-views';
 import dynamic from 'next/dynamic';
 import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
@@ -161,6 +162,7 @@ export function PurchasesScreen({
           )
         }
       />
+      <SavedViewsBar module="purchases" />
 
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14 }}>

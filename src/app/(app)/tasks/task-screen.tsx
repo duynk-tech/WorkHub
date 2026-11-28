@@ -1,5 +1,6 @@
 'use client';
 
+import { SavedViewsBar } from '@/components/ui/saved-views';
 import React, { useOptimistic, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -346,6 +347,7 @@ export function TaskScreen({
           ) : undefined
         }
       />
+      <SavedViewsBar module="tasks" />
 
       {view === 'list' && (
         <div className="tabs">

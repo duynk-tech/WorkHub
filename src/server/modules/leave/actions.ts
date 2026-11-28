@@ -15,6 +15,10 @@ export async function approveLeaveAction(approvalTaskId: number, decision: 'APPR
   return internal.approveLeaveAction(approvalTaskId, decision, comment);
 }
 
+export async function bulkApproveLeaveAction(approvalTaskIds: number[]) {
+  return internal.bulkApproveLeaveAction(approvalTaskIds);
+}
+
 export async function cancelLeaveAction(requestId: number, reason?: string) {
   return internal.cancelLeaveAction(requestId, reason);
 }

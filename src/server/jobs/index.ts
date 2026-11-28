@@ -10,6 +10,7 @@ import { generateRecurringTasks } from '@/server/modules/task/recurrence-job';
 import { escalateOverdueApprovals } from '@/server/modules/workflow/escalation';
 import { findLowStockItems } from '@/server/modules/spare-parts/low-stock';
 import { runDebtReminders } from '@/server/modules/customer/debt-reminders';
+import { runReportSchedules } from '@/server/modules/report/schedules';
 import { employeeIdsWithPermission } from '@/server/lib/permission-holders';
 
 export interface JobResult { job: string; message: string; count?: number }
@@ -336,6 +337,12 @@ export async function jobDebtReminders(): Promise<JobResult> {
   };
 }
 
+/** Gửi các báo cáo định kỳ đến hạn hôm nay (email kèm Excel hoặc thông báo trong app). */
+export async function jobReportSchedules(): Promise<JobResult> {
+  const r = await runReportSchedules();
+  return { job: 'report-schedules', message: `Đã gửi ${r.sent} báo cáo định kỳ${r.skipped ? `, dừng ${r.skipped} lịch không còn quyền` : ''}`, count: r.sent };
+}
+
 export const JOBS = {
   'task-reminders': jobTaskReminders,
   'overdue-tasks': jobOverdueTasks,
@@ -349,6 +356,7 @@ export const JOBS = {
   'recurring-tasks': jobRecurringTasks,
   'low-stock': jobLowStock,
   'debt-reminders': jobDebtReminders,
+  'report-schedules': jobReportSchedules,
 } as const;
 
 export type JobName = keyof typeof JOBS;

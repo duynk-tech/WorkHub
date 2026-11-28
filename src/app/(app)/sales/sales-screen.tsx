@@ -1,5 +1,6 @@
 'use client';
 
+import { SavedViewsBar } from '@/components/ui/saved-views';
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -307,6 +308,7 @@ export function SalesScreen({
           </>
         }
       />
+      <SavedViewsBar module="sales" />
 
       <div className="grid-stats">
         <StatCard

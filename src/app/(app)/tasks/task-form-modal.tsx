@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, LayoutTemplate } from 'lucide-react';
 import { Button, Field, Input, Select, SearchableSelect, Textarea, Checkbox, Badge } from '@/components/ui';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
 import { TASK_STATUS, TASK_PRIORITY } from '@/lib/enums';
 import { saveTaskAction } from '@/server/modules/task/actions';
+import { listTaskTemplatesAction, saveTaskTemplateAction, type TaskTemplateDto } from '@/server/modules/task/template-actions';
 
 export interface TaskFormValue {
   id?: number;
@@ -62,13 +63,46 @@ export function TaskFormModal({
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<TaskFormValue>(initial ?? empty);
   const [checklistDraft, setChecklistDraft] = useState('');
+  const [templates, setTemplates] = useState<TaskTemplateDto[]>([]);
+  const [templateId, setTemplateId] = useState('');
 
   useEffect(() => {
     if (open) {
       setForm(initial ?? { ...empty, assigneeId: canAssign ? null : currentEmployeeId });
       setChecklistDraft('');
+      setTemplateId('');
+      // Mẫu chỉ cần khi tạo mới — tải lười để không làm chậm mở form sửa
+      if (!initial?.id) listTaskTemplatesAction().then(setTemplates).catch(() => setTemplates([]));
     }
   }, [open, initial, canAssign, currentEmployeeId]);
+
+  const applyTemplate = (id: string) => {
+    setTemplateId(id);
+    const t = templates.find((x) => String(x.id) === id);
+    if (!t) return;
+    setForm((f) => ({
+      ...f,
+      title: t.title,
+      description: t.description,
+      priority: t.priority,
+      estimateHours: t.estimateHours,
+      tags: t.tags,
+      checklist: [...t.checklist],
+    }));
+  };
+
+  const saveAsTemplate = () => {
+    const name = window.prompt('Tên mẫu công việc', form.title)?.trim();
+    if (!name) return;
+    startTransition(async () => {
+      const res = await saveTaskTemplateAction({
+        name, title: form.title, description: form.description, priority: form.priority as 'MEDIUM',
+        estimateHours: form.estimateHours ? Number(form.estimateHours) : null, checklist: form.checklist, tags: form.tags,
+      });
+      if (res.ok) { toast.success(res.message); listTaskTemplatesAction().then(setTemplates).catch(() => {}); }
+      else toast.error(res.message);
+    });
+  };
 
   const submit = () => {
     startTransition(async () => {
@@ -98,12 +132,28 @@ export function TaskFormModal({
       size="lg"
       footer={
         <>
+          {form.title.trim() && (
+            <Button variant="ghost" onClick={saveAsTemplate} disabled={pending} style={{ marginRight: 'auto' }} title="Lưu tiêu đề, mô tả, ưu tiên và checklist để lần sau tạo nhanh">
+              <LayoutTemplate /> Lưu thành mẫu
+            </Button>
+          )}
           <Button variant="secondary" onClick={onClose}>Hủy</Button>
           <Button variant="primary" onClick={submit} loading={pending}>{form.id ? 'Lưu thay đổi' : 'Tạo công việc'}</Button>
         </>
       }
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        {!form.id && templates.length > 0 && (
+          <Field label="Dùng mẫu" className="span-2" hint="Điền sẵn tiêu đề, mô tả, ưu tiên và checklist — vẫn sửa được trước khi tạo">
+            <SearchableSelect
+              value={templateId}
+              onChange={applyTemplate}
+              options={[{ value: '', label: '— Không dùng mẫu —' }, ...templates.map((t) => ({ value: String(t.id), label: t.name, subLabel: t.isOwn ? 'Của bạn' : 'Dùng chung' }))]}
+              placeholder="— Không dùng mẫu —"
+              searchPlaceholder="Tìm mẫu…"
+            />
+          </Field>
+        )}
         <Field label="Tiêu đề" required className="span-2">
           <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="vd: Hoàn thiện báo cáo doanh thu quý" autoFocus />
         </Field>

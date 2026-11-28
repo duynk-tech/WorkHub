@@ -1,5 +1,6 @@
 'use client';
 
+import { SavedViewsBar } from '@/components/ui/saved-views';
 import dynamic from 'next/dynamic';
 import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
@@ -153,6 +154,7 @@ export function QuotationsScreen({
           )
         }
       />
+      <SavedViewsBar module="quotations" />
 
       {/* KPI Metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>

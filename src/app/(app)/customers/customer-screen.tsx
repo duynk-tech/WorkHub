@@ -1,5 +1,6 @@
 'use client';
 
+import { SavedViewsBar } from '@/components/ui/saved-views';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -129,6 +130,7 @@ export function CustomerScreen({
         )}
         <ImportExcelModal kind="customers" open={importOpen} onClose={() => setImportOpen(false)} />
       </div>
+      <SavedViewsBar module="customers" />
 
       {/* 2. Tabs */}
       <ScrollTabs>

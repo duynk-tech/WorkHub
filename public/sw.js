@@ -27,7 +27,7 @@ self.addEventListener('notificationclick', (event) => {
   n.close();
 
   // Nút thao tác nhanh (vd. Duyệt) — gọi API kèm token ký sẵn, rồi báo kết quả
-  if (event.action && data.actionUrl && data.actionToken) {
+  if (event.action === 'APPROVE' && data.actionUrl && data.actionToken) {
     event.waitUntil(
       fetch(data.actionUrl, {
         method: 'POST',

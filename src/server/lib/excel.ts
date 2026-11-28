@@ -133,3 +133,23 @@ export function streamXlsxResponse(
     },
   });
 }
+
+/**
+ * Dựng file .xlsx hoàn chỉnh trong bộ nhớ (để đính kèm email). Cùng định dạng với bản tải về:
+ * tiêu đề xanh dương đậm, dòng kẻ sọc, cố định dòng tiêu đề.
+ */
+export async function buildXlsxBuffer(
+  sheets: { name: string; columns: SheetColumn[]; rows: Record<string, unknown>[] }[],
+  meta: { creator?: string } = {},
+): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = meta.creator ?? 'WorkHub';
+  wb.created = new Date();
+  for (const s of sheets) {
+    const ws = wb.addWorksheet(s.name.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31), { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.columns = s.columns.map((c) => ({ key: c.key, width: c.width, style: c.numFmt ? { numFmt: c.numFmt } : undefined }));
+    styleHeaderRow(ws.addRow(s.columns.map((c) => c.header)), s.columns.length);
+    s.rows.forEach((r, i) => styleDataRow(ws.addRow(r), i + 2, s.columns.length));
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}

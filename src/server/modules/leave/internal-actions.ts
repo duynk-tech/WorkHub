@@ -14,6 +14,7 @@ import {
 } from './service';
 import { dispatchOutboundWebhook } from '@/server/modules/webhook/dispatcher';
 import { writeAudit } from '@/server/lib/audit';
+import { signActionToken } from '@/server/lib/action-token';
 
 export interface Result { ok: boolean; message: string; id?: number }
 
@@ -304,11 +305,17 @@ export async function notifyPendingApprovers(requestId: number) {
   const approverIds = request.workflow.tasks.map((t) => t.approverId);
   if (approverIds.length === 0) return;
 
+  // Thông báo đẩy có nút "Duyệt" — token gắn với phiên duyệt, route kiểm lại người bấm
+  const actionToken = await signActionToken({ kind: 'workflow', id: request.workflow.id }).catch(() => null);
+
   await notify({
     templateCode: 'LEAVE_SUBMITTED',
     employeeIds: approverIds,
     linkPath: `/leaves/${requestId}`,
     dedupeKey: `LEAVE_SUBMITTED:${requestId}:${request.workflow.currentStepOrder}`,
+    push: actionToken
+      ? { actions: [{ action: 'APPROVE', title: 'Duyệt' }, { action: 'OPEN', title: 'Xem đơn' }], data: { actionUrl: '/api/approvals/decide', actionToken } }
+      : undefined,
     vars: {
       code: request.code,
       employee: request.employee.fullName,
@@ -324,6 +331,30 @@ export async function notifyPendingApprovers(requestId: number) {
 
 export async function approveLeaveAction(approvalTaskId: number, decision: 'APPROVE' | 'REJECT', comment?: string): Promise<Result> {
   const ctx = await requirePermission('FEATURE_LEAVE_APPROVE');
+  return approveLeaveAs(ctx, approvalTaskId, decision, comment);
+}
+
+/** Duyệt nhiều đơn phép một lượt (màn Chờ duyệt). Trả về số đơn thành công và lỗi từng đơn. */
+export async function bulkApproveLeaveAction(approvalTaskIds: number[]): Promise<Result & { done: number; failed: string[] }> {
+  const ctx = await requirePermission('FEATURE_LEAVE_APPROVE');
+  const ids = Array.from(new Set(approvalTaskIds)).slice(0, 100);
+  let done = 0;
+  const failed: string[] = [];
+  for (const id of ids) {
+    const r = await approveLeaveAs(ctx, id, 'APPROVE');
+    if (r.ok) done++; else failed.push(r.message);
+  }
+  return {
+    ok: done > 0,
+    message: failed.length ? `Đã duyệt ${done}/${ids.length} đơn — ${failed.length} đơn chưa duyệt được` : `Đã duyệt ${done} đơn`,
+    done,
+    failed,
+  };
+}
+
+/** Lõi duyệt đơn phép, dùng chung cho màn hình, duyệt hàng loạt và nút trên thông báo đẩy. */
+export async function approveLeaveAs(ctx: AuthContext, approvalTaskId: number, decision: 'APPROVE' | 'REJECT', comment?: string): Promise<Result> {
+  if (!can(ctx, 'FEATURE_LEAVE_APPROVE')) return { ok: false, message: 'Bạn không có quyền duyệt đơn phép' };
 
   if (decision === 'REJECT' && !comment?.trim()) {
     return { ok: false, message: 'Vui lòng nhập lý do từ chối' };
